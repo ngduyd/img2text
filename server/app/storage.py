@@ -75,9 +75,15 @@ class S3Driver:
             ):
                 keys = [{"Key": o["Key"]} for o in page.get("Contents") or []]
                 if keys:
-                    self.client.delete_objects(
+                    resp = self.client.delete_objects(
                         Bucket=self.bucket, Delete={"Objects": keys}
                     )
+                    # delete_objects reports per-key failures in-body, no raise
+                    errors = resp.get("Errors") or []
+                    if errors:
+                        raise RuntimeError(
+                            f"S3 delete_objects failed: {errors!r:.400}"
+                        )
 
         await asyncio.to_thread(_delete)
 

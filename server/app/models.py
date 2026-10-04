@@ -117,7 +117,9 @@ class Job(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"))
-    status: Mapped[str] = mapped_column(Text, default="queued")
+    status: Mapped[str] = mapped_column(
+        Text, default="queued", server_default=text("'queued'")
+    )
     storage_key: Mapped[str] = mapped_column(Text)
     file_type: Mapped[str] = mapped_column(Text)
     page_count: Mapped[int] = mapped_column(Integer)
@@ -128,7 +130,9 @@ class Job(Base):
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=text("now()"),
     )
     started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
