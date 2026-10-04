@@ -217,14 +217,25 @@ Pipeline per job:
    - **Pre-check (CPU):** `cv2.Laplacian(gray).var()`. `< 100` → blurry. Width `< 1000 px` or estimated glyph height `< ~20 px` → too small.
      - Both failed → skip VLM for the page, `page_flag = unreadable`, warning added; job continues.
      - One failed → run VLM but `page_flag = low_confidence` on the page.
-   - **VLM inference (GPU):** PaddleOCR-VL. Exact model tag pinned in the notebook config cell at implementation start (design assumes the PaddleOCR 3.x Python API; no server code depends on the tag).
-   - **Parse:** layout markdown + available bboxes → `regions[]`. Regions with no recoverable bbox get `bbox: null` (UI falls back to text-only issue rows).
+   - **VLM inference (GPU):** confirmed API (verified working on Colab):
+
+     ```python
+     from paddleocr import PaddleOCRVL
+     pipeline = PaddleOCRVL(pipeline_version="v1.5",
+         vl_rec_model_name="PaddleOCR-VL-1.5-0.9B",
+         layout_detection_model_name="PP-DocLayoutV3")
+     output = pipeline.predict(page_png)
+     ```
+
+   - **Parse:** `res.json` → structured regions + markdown. Bboxes come from PP-DocLayoutV3, so `regions[].bbox` is populated; `bbox: null` only on degenerate output (UI falls back to text-only issue rows).
    - **GPU seconds:** measured around inference, stored in result.
 4. Build `markdown` per page and full document; embed warning markers at region positions where detectable:
 
    ```
    **[Hình ảnh chưa trích xuất: vùng p3r2]**
    ```
+
+**Structure fidelity (first-class requirement).** Exam hierarchy survives into the canonical markdown, not just loose text: layout title → `##`, Part/passage blocks → `###`, question numbering (`5.`, `6.`) verbatim, options A/B/C/D kept in order under their question. Preview renders this hierarchy; a wrong reading order or a question under the wrong Part is visible and fixed inline via `edited_markdown` before export. Pandoc maps heading levels to Word Heading styles, so the .docx keeps Part → passage → questions structure.
 
 5. `POST result`.
 6. Any exception: `POST fail` with error class; notebook continues polling next job.
@@ -383,6 +394,6 @@ img2text/
 
 ## 15. Open items for implementation
 
-1. Pin exact PaddleOCR-VL model tag in the notebook config cell (design is tag-agnostic).
-2. Confirm `paddleocr` Python API output shape for layout+bbox mapping on Colab; regions without bboxes degrade gracefully (spec §7).
-3. `pdftoppm` availability: install in notebook setup cell (`apt-get install poppler-utils`).
+1. `pdftoppm` availability: install in notebook setup cell (`apt-get install poppler-utils`).
+
+Resolved: model + API pinned (§7): `PaddleOCR-VL-1.5-0.9B` + `PP-DocLayoutV3` via `PaddleOCRVL(pipeline_version="v1.5")`, structured output via `res.json`.
