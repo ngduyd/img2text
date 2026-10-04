@@ -53,6 +53,7 @@ Server tests default to `postgresql+asyncpg://img2text:img2text@localhost:5433/i
 
 ```bash
 cd web && npm run build                              # tsc -b && vite build → web/dist
+test -f web/dist/index.html || echo "WARNING: web/dist missing — run npm run build in web/ first"
 
 cd ..
 cp deploy/.env.example deploy/.env                   # then fill (see below)

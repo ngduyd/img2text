@@ -2,3 +2,4 @@
 server/.tools/
 deploy/.env
 __pycache__/
+.superpowers/
