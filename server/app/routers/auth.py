@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -155,7 +155,20 @@ async def refresh(
         raise HTTPException(status_code=401, detail="not authenticated")
     if row.expires_at <= now:
         raise HTTPException(status_code=401, detail="not authenticated")
-    row.used_at = now
+    # atomic rotation claim: conditional UPDATE closes the check-then-set race
+    # (two concurrent refreshes with same jti); rowcount 0 → concurrent claim
+    # won → treat as reuse → revoke family
+    claim = await session.execute(
+        update(RefreshToken)
+        .where(RefreshToken.jti == jti, RefreshToken.used_at.is_(None))
+        .values(used_at=now)
+    )
+    if claim.rowcount != 1:
+        await session.execute(
+            delete(RefreshToken).where(RefreshToken.user_id == row.user_id)
+        )
+        await session.commit()
+        raise HTTPException(status_code=401, detail="not authenticated")
     new_token, new_jti, exp = _mint_refresh(user_id)
     _store_refresh(session, user_id, new_token, new_jti, exp)
     await session.commit()
