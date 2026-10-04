@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Job } from "../api/types";
 import MarkdownPreview from "../components/MarkdownPreview";
+import IssuesPanel from "../components/IssuesPanel";
 
 const STATUS_TEXT: Record<Job["status"], string> = {
   queued: "Đang chờ worker Colab",
@@ -44,7 +45,13 @@ export default function JobDetail() {
         </button>
       )}
       {job.status === "done" && job.result && (
-        <MarkdownPreview markdown={job.result.edited_markdown ?? job.result.markdown} />
+        <>
+          <MarkdownPreview markdown={job.result.edited_markdown ?? job.result.markdown} />
+          <IssuesPanel
+            jobId={id!}
+            regions={job.result.pages.flatMap((p) => p.regions)}
+          />
+        </>
       )}
     </main>
   );
