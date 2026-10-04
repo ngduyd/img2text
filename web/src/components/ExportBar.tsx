@@ -8,20 +8,27 @@ const FORMATS = [
   { fmt: "pdf", testid: "export-pdf", label: "Tải .pdf" },
 ] as const;
 
+type Fmt = (typeof FORMATS)[number]["fmt"];
+
 export default function ExportBar({ jobId }: { jobId: string }) {
-  const [busyFmt, setBusyFmt] = useState<string | null>(null);
+  const [busy, setBusy] = useState<Set<Fmt>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
 
-  const exportFmt = async (fmt: string) => {
-    setBusyFmt(fmt);
+  const exportFmt = async (fmt: Fmt) => {
+    setBusy((prev) => new Set(prev).add(fmt));
     setError(null);
+    const w = window.open("", "_blank");
     try {
       const { url } = await api.exportJob(jobId, fmt);
-      window.open(url, "_blank");
+      if (w) w.location = url;
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Xuất file thất bại.");
     } finally {
-      setBusyFmt(null);
+      setBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(fmt);
+        return next;
+      });
     }
   };
 
@@ -41,7 +48,7 @@ export default function ExportBar({ jobId }: { jobId: string }) {
             key={fmt}
             type="button"
             data-testid={testid}
-            disabled={busyFmt === fmt}
+            disabled={busy.has(fmt)}
             onClick={() => exportFmt(fmt)}
             className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
           >

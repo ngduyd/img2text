@@ -22,7 +22,8 @@ afterEach(() => {
 
 it("four export buttons exist and call api with fmt", async () => {
   vi.mocked(api.exportJob).mockResolvedValue({ url: "https://r2/exports/5/docx" });
-  const open = vi.fn();
+  const w = { location: "about:blank" };
+  const open = vi.fn().mockReturnValue(w);
   vi.stubGlobal("open", open);
   render(<ExportBar jobId="5" />);
   for (const fmt of ["md", "html", "docx", "pdf"]) {
@@ -30,9 +31,7 @@ it("four export buttons exist and call api with fmt", async () => {
   }
   await userEvent.click(screen.getByTestId("export-docx"));
   expect(api.exportJob).toHaveBeenCalledWith("5", "docx");
-  await waitFor(() =>
-    expect(open).toHaveBeenCalledWith("https://r2/exports/5/docx", "_blank"),
-  );
+  await waitFor(() => expect(w.location).toBe("https://r2/exports/5/docx"));
 });
 
 it("shows ApiError detail when export fails", async () => {
@@ -42,4 +41,23 @@ it("shows ApiError detail when export fails", async () => {
   expect(await screen.findByTestId("export-error")).toHaveTextContent(
     "Xuất file thất bại.",
   );
+});
+
+it("disables only in-flight formats under concurrent clicks", async () => {
+  const resolvers: Array<(v: { url: string }) => void> = [];
+  vi.mocked(api.exportJob).mockImplementation(
+    () => new Promise((res) => resolvers.push(res)),
+  );
+  render(<ExportBar jobId="5" />);
+  const md = screen.getByTestId("export-md");
+  const html = screen.getByTestId("export-html");
+  await userEvent.click(md);
+  await userEvent.click(html);
+  expect(md).toBeDisabled();
+  expect(html).toBeDisabled();
+  resolvers[0]({ url: "https://r2/exports/5/md" });
+  await waitFor(() => expect(md).not.toBeDisabled());
+  expect(html).toBeDisabled();
+  resolvers[1]({ url: "https://r2/exports/5/html" });
+  await waitFor(() => expect(html).not.toBeDisabled());
 });
