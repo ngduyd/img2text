@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     r2_secret_access_key: str = ""
     r2_bucket: str = ""
     r2_region: str = "auto"
+    # Spec-reserved public CDN domain for crops/exports; no consumer yet.
+    r2_public_base: str = ""
 
 
 settings = Settings()

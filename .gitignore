@@ -1,3 +1,4 @@
 .worktrees/
 server/.tools/
+deploy/.env
 __pycache__/
