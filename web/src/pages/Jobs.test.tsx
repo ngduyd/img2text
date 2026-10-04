@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
 import type { Job, User } from "../api/types";
 import Jobs from "./Jobs";
 
@@ -69,6 +69,21 @@ it("upload button enabled and calls api when granted", async () => {
   await user.upload(screen.getByTestId("input-file"), file);
   expect(api.uploadJob).toHaveBeenCalledWith(file);
   await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs/42"));
+});
+
+it("upload error surfaces server detail", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  vi.mocked(api.uploadJob).mockRejectedValue(new ApiError("Đã đạt giới hạn upload hôm nay."));
+  renderWithRouter(<Jobs />);
+  await screen.findByTestId("btn-upload");
+  const file = new File(["x"], "a.jpg", { type: "image/jpeg" });
+  const user = userEvent.setup();
+  await user.upload(screen.getByTestId("input-file"), file);
+  expect(await screen.findByTestId("upload-error")).toHaveTextContent(
+    "Đã đạt giới hạn upload hôm nay.",
+  );
+  expect(api.uploadJob).toHaveBeenCalledWith(file);
 });
 
 it("job rows render status badge", async () => {
