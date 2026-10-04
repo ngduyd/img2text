@@ -9,8 +9,14 @@ would otherwise hit UndefinedTable.
 """
 
 import base64
+import os
+import tempfile
 from unittest.mock import AsyncMock
 from uuid import uuid4
+
+# weasyprint first-run font-cache warning must not pollute pytest output;
+# point its cache at a tempdir (v70 removed the cache dir, kept for safety)
+os.environ.setdefault("WEASYPRINT_CACHE_DIR", tempfile.gettempdir())
 
 import boto3
 import httpx

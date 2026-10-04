@@ -18,6 +18,7 @@ dependencies = [
     "pillow",
     "python-multipart",
     "python-docx",
+    "bleach",
 ]
 
 [project.optional-dependencies]
