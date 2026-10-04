@@ -1,14 +1,22 @@
-"""Auth endpoints: register / login / me (Task 3)."""
+"""Auth endpoints: register / login / me / refresh / logout (Task 3+4)."""
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+import hashlib
+import warnings
+from datetime import datetime, timedelta, timezone
+from uuid import UUID, uuid4
+
+import jwt
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db import get_session
 from app.deps import get_current_user
-from app.models import User
+from app.models import RefreshToken, User
 from app.security import (
+    JWT_ISSUER,
     create_access_token,
     hash_password,
     set_auth_cookies,
@@ -16,6 +24,51 @@ from app.security import (
 )
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+_REFRESH_TTL = timedelta(days=30)
+REFRESH_COOKIE = "refresh"
+
+
+def _mint_refresh(user_id: int) -> tuple[str, UUID, datetime]:
+    now = datetime.now(timezone.utc)
+    jti = uuid4()
+    exp = now + _REFRESH_TTL
+    payload = {
+        "sub": str(user_id),
+        "jti": str(jti),
+        "iss": JWT_ISSUER,
+        "iat": now,
+        "exp": exp,
+    }
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", jwt.InsecureKeyLengthWarning)
+        token = jwt.encode(payload, settings.app_secret, algorithm="HS256")
+    return token, jti, exp
+
+
+def _decode_refresh(token: str) -> tuple[int, UUID] | None:
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", jwt.InsecureKeyLengthWarning)
+            payload = jwt.decode(
+                token, settings.app_secret, algorithms=["HS256"], issuer=JWT_ISSUER
+            )
+        return int(payload["sub"]), UUID(payload["jti"])
+    except (jwt.PyJWTError, KeyError, ValueError):
+        return None
+
+
+def _store_refresh(
+    session: AsyncSession, user_id: int, token: str, jti: UUID, exp: datetime
+) -> None:
+    session.add(
+        RefreshToken(
+            user_id=user_id,
+            jti=jti,
+            token_hash=hashlib.sha256(token.encode()).hexdigest(),
+            expires_at=exp,
+        )
+    )
 
 
 class Credentials(BaseModel):
@@ -61,10 +114,70 @@ async def login(
     if user is None or not verify_password(creds.password, user.password_hash):
         raise HTTPException(status_code=401, detail="invalid credentials")
     token = create_access_token(sub=str(user.id), role=user.role)
-    set_auth_cookies(response, access=token)
+    # Task 3 ponytail deferred refresh-cookie plumbing to Task 4: mint+store
+    # refresh at login so the session has a rotatable refresh token.
+    # ponytail: register does not set a refresh cookie; add when a client
+    # needs a session straight from registration.
+    refresh, jti, exp = _mint_refresh(user.id)
+    _store_refresh(session, user.id, refresh, jti, exp)
+    await session.commit()
+    set_auth_cookies(response, access=token, refresh=refresh)
     return _user_out(user)
 
 
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)) -> UserOut:
     return _user_out(user)
+
+
+@router.post("/refresh")
+async def refresh(
+    request: Request,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Rotate refresh token. Reuse of a used jti revokes the whole family."""
+    token = request.cookies.get(REFRESH_COOKIE)
+    decoded = _decode_refresh(token) if token is not None else None
+    if decoded is None:
+        raise HTTPException(status_code=401, detail="not authenticated")
+    user_id, jti = decoded
+    row = await session.scalar(select(RefreshToken).where(RefreshToken.jti == jti))
+    if row is None or row.user_id != user_id:
+        raise HTTPException(status_code=401, detail="not authenticated")
+    now = datetime.now(timezone.utc)
+    if row.used_at is not None:
+        # reuse detection: token replayed → revoke every refresh token for user
+        await session.execute(
+            delete(RefreshToken).where(RefreshToken.user_id == row.user_id)
+        )
+        await session.commit()
+        raise HTTPException(status_code=401, detail="not authenticated")
+    if row.expires_at <= now:
+        raise HTTPException(status_code=401, detail="not authenticated")
+    row.used_at = now
+    new_token, new_jti, exp = _mint_refresh(user_id)
+    _store_refresh(session, user_id, new_token, new_jti, exp)
+    await session.commit()
+    user = await session.get(User, user_id)
+    new_access = create_access_token(sub=str(user.id), role=user.role)
+    set_auth_cookies(response, access=new_access, refresh=new_token)
+    return {}
+
+
+@router.post("/logout")
+async def logout(
+    request: Request,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    token = request.cookies.get(REFRESH_COOKIE)
+    decoded = _decode_refresh(token) if token is not None else None
+    if decoded is not None:
+        await session.execute(
+            delete(RefreshToken).where(RefreshToken.user_id == decoded[0])
+        )
+        await session.commit()
+    response.delete_cookie("access", path="/")
+    response.delete_cookie(REFRESH_COOKIE, path="/")
+    return {}
