@@ -15,6 +15,7 @@ dependencies = [
     "apscheduler",
     "boto3",
     "pypdf",
+    "pillow",
     "python-multipart",
 ]
 
