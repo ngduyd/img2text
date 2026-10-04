@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Job } from "../api/types";
+import MarkdownEditor from "../components/MarkdownEditor";
 import MarkdownPreview from "../components/MarkdownPreview";
 import IssuesPanel from "../components/IssuesPanel";
 import ExportBar from "../components/ExportBar";
@@ -47,6 +48,11 @@ export default function JobDetail() {
       )}
       {job.status === "done" && job.result && (
         <>
+          {/* Editor controls the source: edit first, then preview (Task 8). */}
+          <MarkdownEditor
+            jobId={id!}
+            initial={job.result.edited_markdown ?? job.result.markdown}
+          />
           <MarkdownPreview markdown={job.result.edited_markdown ?? job.result.markdown} />
           <IssuesPanel
             jobId={id!}
