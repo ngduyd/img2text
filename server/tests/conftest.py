@@ -8,6 +8,7 @@ lifespan (create_all lives in main.lifespan), so a fresh Postgres volume
 would otherwise hit UndefinedTable.
 """
 
+import base64
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -121,6 +122,73 @@ async def worker_client(app, monkeypatch):
         headers={"Authorization": "Bearer test-runner-key"},
     ) as c:
         yield c
+
+PNG_1PX = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+)
+
+@pytest_asyncio.fixture
+async def worker_client2(app, monkeypatch):
+    """Second Bearer client, same runner key (concurrency tests)."""
+    monkeypatch.setattr(settings, "runner_key", "test-runner-key")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": "Bearer test-runner-key"},
+    ) as c:
+        yield c
+
+@pytest_asyncio.fixture
+async def client_no_runner_key(app):
+    """Plain client without Authorization header (runner-key 401 tests)."""
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+@pytest_asyncio.fixture
+async def seed_job(auth_client) -> int:
+    """Real uploaded job (status queued); returns job id."""
+    r = await auth_client.post(
+        "/api/jobs", files={"file": ("t.png", PNG_1PX, "image/png")}
+    )
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+@pytest_asyncio.fixture
+def VALID_RESULT_JSONB() -> dict:
+    """Spec §4 result shape: 1 page, verdicts ok + image_unextractable."""
+    return {
+        "model_version": "paddleocr-vl-1.5-0.9B",
+        "gpu_seconds": 12.5,
+        "warnings": [],
+        "markdown": "# tài liệu",
+        "pages": [
+            {
+                "index": 0,
+                "width": 800,
+                "height": 600,
+                "page_flag": "ok",
+                "markdown": "# tài liệu",
+                "regions": [
+                    {
+                        "id": "r0",
+                        "bbox": [1, 2, 30, 40],
+                        "text": "Xin chào",
+                        "verdict": "ok",
+                        "placeholder": False,
+                    },
+                    {
+                        "id": "r1",
+                        "bbox": [5, 6, 70, 80],
+                        "text": "",
+                        "verdict": "image_unextractable",
+                        "placeholder": True,
+                    },
+                ],
+            }
+        ],
+    }
 
 @pytest_asyncio.fixture
 async def storage_spy(app):

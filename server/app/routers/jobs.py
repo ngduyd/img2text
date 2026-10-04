@@ -3,19 +3,24 @@ Task 3: GET /api/jobs, GET /api/jobs/{id}, GET /api/jobs/{id}/file.
 """
 
 import hashlib
+import hmac
 import io
+import secrets
 import tempfile
+from datetime import datetime, timedelta, timezone
 
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
-from app.deps import get_current_user, require_ocr
+from app.deps import get_current_user, get_runner_key, require_ocr
 from app.limiter import DailyCounter
 from app.models import Job, User
+from app.schemas import ResultBody
 from app.storage import StorageDriver, get_storage
 
 UPLOAD_DAILY_LIMIT = 20
@@ -24,6 +29,8 @@ MAX_PDF_PAGES = 50
 CHUNK_BYTES = 1024 * 1024
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "pdf"}
 PRESIGN_EXPIRES_SECONDS = 3600
+LEASE_MINUTES = 45
+ERROR_MAX_CHARS = 500
 
 router = APIRouter(tags=["jobs"])
 
@@ -133,6 +140,43 @@ async def list_jobs(
     ]
     return {"items": items, "total": len(items)}
 
+@router.get("/api/jobs/next")  # BEFORE /api/jobs/{id}: "next" must not match {id}
+async def next_job(
+    _: str = Depends(get_runner_key),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+):
+    """Claim oldest queued job; race-safe via FOR UPDATE SKIP LOCKED.
+
+    Returns the claim payload, or a bare 204 Response when the queue is
+    empty (Response return bypasses FastAPI response-model handling)."""
+    job = (
+        await session.execute(
+            select(Job)
+            .where(Job.status == "queued")
+            .order_by(Job.id)
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if job is None:
+        return Response(status_code=204)
+    now = _utcnow()
+    token = secrets.token_urlsafe(32)
+    job.status = "running"
+    job.started_at = now
+    job.lease_expires_at = now + timedelta(minutes=LEASE_MINUTES)
+    job.worker_token = token
+    await session.commit()
+    file_url = await storage.presign_get(job.storage_key, PRESIGN_EXPIRES_SECONDS)
+    return {
+        "job_id": job.id,
+        "worker_token": token,
+        "file_url": file_url,
+        "file_type": job.file_type,
+        "page_count": job.page_count,
+    }
+
 @router.get("/api/jobs/{id}")
 async def get_job(
     id: int,
@@ -163,3 +207,87 @@ async def get_job_file(
     job = await _job_or_403(session, id, user)
     url = await storage.presign_get(job.storage_key, PRESIGN_EXPIRES_SECONDS)
     return {"url": url}
+
+# ---- Task 4: worker protocol (next / heartbeat / result / fail) ----
+
+class FailBody(BaseModel):
+    error: str
+
+def _bearer_token(request: Request) -> str | None:
+    scheme, _, token = request.headers.get("Authorization", "").partition(" ")
+    return token if scheme.lower() == "bearer" else None
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+async def _worker_job_or_401(
+    session: AsyncSession, job_id: int, token: str | None
+) -> Job:
+    job = await session.get(Job, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    if (
+        token is None
+        or job.worker_token is None
+        or not hmac.compare_digest(token, job.worker_token)
+    ):  # capability-token check (ruling R11)
+        raise HTTPException(status_code=401, detail="bad worker token")
+    return job
+
+@router.post("/api/jobs/{id}/heartbeat")
+async def heartbeat_job(
+    id: int,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    job = await _worker_job_or_401(session, id, _bearer_token(request))
+    if job.status != "running":
+        raise HTTPException(status_code=404, detail="job not running")
+    if job.lease_expires_at is None or job.lease_expires_at <= _utcnow():
+        raise HTTPException(status_code=409, detail="lease expired")
+    job.lease_expires_at = _utcnow() + timedelta(minutes=LEASE_MINUTES)
+    await session.commit()
+    return {"lease_expires_at": job.lease_expires_at}
+
+@router.post("/api/jobs/{id}/result")
+async def submit_result(
+    id: int,
+    body: ResultBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    # precedence: not runnable → 409 before token check (brief: failed job
+    # posts result with cleared token → 409, not 401)
+    job = await session.get(Job, id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    if (
+        job.status != "running"
+        or job.lease_expires_at is None
+        or job.lease_expires_at <= _utcnow()
+    ):
+        raise HTTPException(status_code=409, detail="job not runnable")
+    await _worker_job_or_401(session, id, _bearer_token(request))
+    job.result = body.model_dump()
+    job.status = "done"
+    job.finished_at = _utcnow()
+    job.worker_token = None
+    job.lease_expires_at = None
+    await session.commit()
+    return {}
+
+@router.post("/api/jobs/{id}/fail")
+async def fail_job(
+    id: int,
+    body: FailBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    job = await _worker_job_or_401(session, id, _bearer_token(request))
+    job.error = body.error[:ERROR_MAX_CHARS]
+    job.status = "failed"
+    job.finished_at = _utcnow()
+    job.worker_token = None
+    job.lease_expires_at = None
+    await session.commit()
+    return {}
