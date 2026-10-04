@@ -1,0 +1,12 @@
+# Host-only artifacts must not enter the image: pip layer runs inside the
+# image (python:3.11-slim); a host .venv/.tools bloats COPY and stalls
+# chown -R in the final RUN (T4 gate).
+server/.venv/
+server/.tools/
+**/__pycache__/
+*.egg-info/
+.pytest_cache/
+node_modules/
+web/dist/
+.superpowers/
+.git/
