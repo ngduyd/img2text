@@ -12,6 +12,7 @@ dependencies = [
     "alembic",
     "passlib[bcrypt]",
     "PyJWT",
+    "apscheduler",
 ]
 
 [project.optional-dependencies]
