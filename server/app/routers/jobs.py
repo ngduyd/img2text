@@ -1,4 +1,6 @@
-"""Task 2: POST /api/jobs — upload validation, sha256 dedupe, job create."""
+"""Task 2: POST /api/jobs — upload validation, sha256 dedupe, job create.
+Task 3: GET /api/jobs, GET /api/jobs/{id}, GET /api/jobs/{id}/file.
+"""
 
 import hashlib
 import io
@@ -7,6 +9,7 @@ import tempfile
 from PIL import Image
 from pypdf import PdfReader, PdfWriter
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
@@ -20,6 +23,7 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 MAX_PDF_PAGES = 50
 CHUNK_BYTES = 1024 * 1024
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "pdf"}
+PRESIGN_EXPIRES_SECONDS = 3600
 
 router = APIRouter(tags=["jobs"])
 
@@ -92,3 +96,70 @@ async def upload_job(
         "page_count": job.page_count,
         "file_type": job.file_type,
     }
+
+async def _job_or_403(
+    session: AsyncSession, job_id: int, user: User
+) -> Job:
+    """Unknown id → 404; known but not owner (non-admin) → 403."""
+    job = await session.get(Job, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    if job.user_id != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="forbidden")
+    return job
+
+@router.get("/api/jobs")
+async def list_jobs(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    rows = (
+        await session.execute(
+            select(Job)
+            .where(Job.user_id == user.id)
+            .order_by(Job.created_at.desc())
+        )
+    ).scalars().all()
+    items = [
+        {
+            "id": j.id,
+            "status": j.status,
+            "page_count": j.page_count,
+            "file_type": j.file_type,
+            "created_at": j.created_at,
+            "error": j.error,
+        }
+        for j in rows
+    ]
+    return {"items": items, "total": len(items)}
+
+@router.get("/api/jobs/{id}")
+async def get_job(
+    id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    job = await _job_or_403(session, id, user)
+    # storage_key deliberately omitted — never leak bucket keys to users
+    return {
+        "id": job.id,
+        "status": job.status,
+        "file_type": job.file_type,
+        "page_count": job.page_count,
+        "error": job.error,
+        "result": job.result if job.status == "done" else None,
+        "created_at": job.created_at,
+        "started_at": job.started_at,
+        "finished_at": job.finished_at,
+    }
+
+@router.get("/api/jobs/{id}/file")
+async def get_job_file(
+    id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> dict:
+    job = await _job_or_403(session, id, user)
+    url = await storage.presign_get(job.storage_key, PRESIGN_EXPIRES_SECONDS)
+    return {"url": url}
