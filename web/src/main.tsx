@@ -1,16 +1,12 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "./index.css";
 import App from "./App.tsx";
 
-const queryClient = new QueryClient();
-
-// Routing: BrowserRouter is inside App.tsx (App must render standalone in tests).
+// Routing + QueryClientProvider live inside App.tsx (App must render
+// standalone in tests); main.tsx only mounts.
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
+    <App />
   </StrictMode>,
 );

@@ -49,6 +49,16 @@ export interface Job {
   finished_at: string | null;
 }
 
+/** List endpoint subset: server /api/jobs items omit result/started_at/finished_at. */
+export interface JobListItem {
+  id: number;
+  status: JobStatus;
+  file_type: string;
+  page_count: number;
+  error: string | null;
+  created_at: string;
+}
+
 export interface AdminStatsDay {
   date: string;
   users_registered: number;

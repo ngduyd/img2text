@@ -1,7 +1,8 @@
 import type { Query } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { useParams } from "react-router-dom";
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
 import type { Job } from "../api/types";
 import MarkdownEditor from "../components/MarkdownEditor";
 import MarkdownPreview from "../components/MarkdownPreview";
@@ -27,6 +28,7 @@ export default function JobDetail() {
     queryFn: () => api.getJob(id!),
     refetchInterval: jobRefetchInterval,
   });
+  const [retryError, setRetryError] = useState<string | null>(null);
 
   if (!job) return null;
 
@@ -39,12 +41,22 @@ export default function JobDetail() {
           type="button"
           data-testid="btn-retry"
           onClick={async () => {
-            await api.retryJob(id!);
-            await queryClient.invalidateQueries({ queryKey: ["job", id] });
+            setRetryError(null);
+            try {
+              await api.retryJob(id!);
+              await queryClient.invalidateQueries({ queryKey: ["job", id] });
+            } catch (err) {
+              setRetryError(err instanceof ApiError ? err.detail : "Thử lại thất bại.");
+            }
           }}
         >
           Thử lại
         </button>
+      )}
+      {retryError && (
+        <p data-testid="retry-error" className="text-sm text-red-600">
+          {retryError}
+        </p>
       )}
       {job.status === "done" && job.result && (
         <>

@@ -1,5 +1,3 @@
-import type { Verdict } from "../api/types";
-
 /** Spec §7 verdict → Vietnamese UI label. Keys match server RegionOut.verdict. */
 export const VERDICT_LABELS: Record<string, string> = {
   ok: "Đã trích xuất",
@@ -7,7 +5,3 @@ export const VERDICT_LABELS: Record<string, string> = {
   unreadable: "Không trích xuất được văn bản",
   low_confidence: "Cần kiểm tra",
 };
-
-export function verdictLabel(v: Verdict): string {
-  return VERDICT_LABELS[v] ?? v;
-}

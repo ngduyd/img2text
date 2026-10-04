@@ -1,4 +1,4 @@
-import type { AdminStatsDay, Job, User } from "./types";
+import type { AdminStatsDay, Job, JobListItem, User } from "./types";
 
 /** Thrown for any non-2xx response; `detail` mirrors FastAPI {detail} bodies. */
 export class ApiError extends Error {
@@ -40,6 +40,11 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     } catch {
       // non-JSON error body → keep generic detail
     }
+    // R36: non-auth 401 → session lost, bounce to login. Auth endpoints
+    // (login/register/forgot/reset/refresh/logout) handle their own failures.
+    if (res.status === 401 && !path.startsWith("/api/auth/")) {
+      window.location.assign("/login");
+    }
     throw new ApiError(detail);
   }
   return (await res.json()) as T;
@@ -57,7 +62,7 @@ export const api = {
     request<unknown>("/api/auth/password/forgot", { method: "POST", body: { email } }),
   resetPassword: (token: string, password: string) =>
     request<unknown>("/api/auth/password/reset", { method: "POST", body: { token, password } }),
-  listJobs: () => request<{ items: Job[]; total: number }>("/api/jobs"),
+  listJobs: () => request<{ items: JobListItem[]; total: number }>("/api/jobs"),
   getJob: (id: number | string) => request<Job>(`/api/jobs/${id}`),
   uploadJob: (file: File) => {
     const form = new FormData();

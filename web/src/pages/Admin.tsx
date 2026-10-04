@@ -19,6 +19,11 @@ export default function Admin() {
   const { data: me, isError } = useQuery({ queryKey: ["me"], queryFn: api.me });
   const [tab, setTab] = useState<TabId>("users");
 
+  // Unauthenticated /api/auth/me → 401; send to login, not a blank page.
+  useEffect(() => {
+    if (isError) navigate("/login");
+  }, [isError, navigate]);
+
   useEffect(() => {
     if (me && me.role !== "admin") navigate("/");
   }, [me, navigate]);

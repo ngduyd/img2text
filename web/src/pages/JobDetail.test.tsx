@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { Job, ResultBody } from "../api/types";
 import JobDetail from "./JobDetail";
 
@@ -104,6 +104,16 @@ it("failed shows retry button and calls api", async () => {
   const user = userEvent.setup();
   await user.click(screen.getByTestId("btn-retry"));
   expect(api.retryJob).toHaveBeenCalledWith("5");
+});
+
+it("retry failure shows retry-error with server detail", async () => {
+  mockJob({ id: 5, status: "failed", error: "boom", result: null } as Job);
+  vi.mocked(api.retryJob).mockRejectedValue(new ApiError("Forbidden."));
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  expect(await screen.findByText("Xử lý thất bại")).toBeInTheDocument();
+  const user = userEvent.setup();
+  await user.click(screen.getByTestId("btn-retry"));
+  expect(await screen.findByTestId("retry-error")).toHaveTextContent("Forbidden.");
 });
 
 it("done stops polling", async () => {
