@@ -1,0 +1,11 @@
+{
+  "width": 1240,
+  "height": 1754,
+  "markdown": "## Midterm Test\n\nPart 2\n5. A. cat B. car C. cap D. can\n\n| Q1 | Q2 |\n| --- | --- |\n| a | b |\n\nHình minh họa:\n\n![alt](page1.png)\n",
+  "layout": [
+    {"type": "title", "bbox": [1, 2, 3, 4], "rec_texts": ["Midterm Test"], "rec_scores": [0.98]},
+    {"type": "text", "bbox": [5, 6, 7, 8], "rec_texts": ["Part 2", "5. A. cat B. car C. cap D. can"], "rec_scores": [0.9, 0.95]},
+    {"type": "image", "bbox": [9, 10, 11, 12], "rec_texts": [], "rec_scores": []},
+    {"type": "table", "bbox": [13, 14, 15, 16], "rec_texts": ["| Q1 | Q2 |"], "rec_scores": [0.93]}
+  ]
+}
