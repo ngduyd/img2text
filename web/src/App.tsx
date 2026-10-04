@@ -1,16 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
 import Forgot from "./pages/Forgot";
+import Admin from "./pages/Admin";
 import JobDetail from "./pages/JobDetail";
 import Jobs from "./pages/Jobs";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Reset from "./pages/Reset";
-
-/** Placeholder page — replaced by real pages in later tasks. */
-function Placeholder({ name }: { name: string }) {
-  return <main data-testid="page-placeholder">{name}</main>;
-}
 
 export default function App() {
   // BrowserRouter + QueryClientProvider live here (not main.tsx): App.test.tsx
@@ -37,7 +33,7 @@ export default function App() {
           <Route path="/reset" element={<Reset />} />
           <Route path="/" element={<Jobs />} />
           <Route path="/jobs/:id" element={<JobDetail />} />
-          <Route path="/admin" element={<Placeholder name="admin" />} />
+          <Route path="/admin" element={<Admin />} />
         </Routes>
       </div>
       </BrowserRouter>

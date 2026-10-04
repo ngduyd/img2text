@@ -74,8 +74,8 @@ export const api = {
     request<{ url: string }>(`/api/jobs/${jobId}/regions/${rid}/crop`),
   adminListUsers: (page: number) =>
     request<{ items: User[]; total: number }>(`/api/admin/users?page=${page}`),
-  adminPatchUser: (id: number | string, ocr_enabled: boolean) =>
-    request<User>(`/api/admin/users/${id}`, { method: "PATCH", body: { ocr_enabled } }),
+  adminPatchUser: (id: number | string, body: { ocr_enabled: boolean }) =>
+    request<User>(`/api/admin/users/${id}`, { method: "PATCH", body }),
   adminStats: (from: string, to: string) =>
     request<{ days: AdminStatsDay[] }>(`/api/admin/stats?from=${from}&to=${to}`),
   adminLogs: (filters: { status_class?: string; ip?: string; limit?: number }) => {
