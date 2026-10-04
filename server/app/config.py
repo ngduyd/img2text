@@ -9,8 +9,8 @@ class Settings(BaseSettings):
     )
     app_secret: str = "dev-secret-change-me"
     base_url: str = "http://localhost:8000"
-    admin_email: str = "admin@example.com"
-    admin_password: str = "change-me"
+    admin_email: str = ""
+    admin_password: str = ""
     log_path: str = "logs/img2text.log"
     runner_key: str = "dev-runner-key"
     smtp_host: str = "localhost"
