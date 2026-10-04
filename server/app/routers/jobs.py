@@ -244,14 +244,41 @@ async def heartbeat_job(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    job = await _worker_job_or_401(session, id, _bearer_token(request))
-    if job.status != "running":
-        raise HTTPException(status_code=404, detail="job not running")
-    if job.lease_expires_at is None or job.lease_expires_at <= _utcnow():
-        raise HTTPException(status_code=409, detail="lease expired")
-    job.lease_expires_at = _utcnow() + timedelta(minutes=LEASE_MINUTES)
+    token = _bearer_token(request)
+    now = _utcnow()
+    job = await session.get(Job, id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    if (
+        token is None
+        or not token.isascii()  # compare_digest TypeError → 500 on non-ascii
+        or job.worker_token is None
+        or not hmac.compare_digest(token, job.worker_token)
+    ):  # capability-token check stays first (ruling R11)
+        raise HTTPException(status_code=401, detail="bad worker token")
+    # Ruling R17 (atomic heartbeat): token-first gate, then ONE conditional
+    # UPDATE re-checks the claim at commit time — closes the read-guard-
+    # commit TOCTOU (stale heartbeat after reaper requeue + reclaim would
+    # extend the NEW claim's lease against a stale read). Uniform 409 detail
+    # with /result and /fail; new lease value computed in Python from the
+    # same `now` used in the WHERE.
+    new_lease = now + timedelta(minutes=LEASE_MINUTES)
+    rowcount = (
+        await session.execute(
+            update(Job)
+            .where(
+                Job.id == id,
+                Job.status == "running",
+                Job.lease_expires_at > now,
+                Job.worker_token == token,
+            )
+            .values(lease_expires_at=new_lease)
+        )
+    ).rowcount
+    if rowcount == 0:
+        raise HTTPException(status_code=409, detail="job not runnable")
     await session.commit()
-    return {"lease_expires_at": job.lease_expires_at}
+    return {"lease_expires_at": new_lease}
 
 @router.post("/api/jobs/{id}/result")
 async def submit_result(
