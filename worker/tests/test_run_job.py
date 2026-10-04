@@ -89,12 +89,17 @@ def noop_guard(n):
 
 
 class FakePipeline:
-    def predict(self, img, page_index):
+    def predict(self, img):
         return SimpleNamespace(json=CANNED)
 
+class FakePipelineNoDims:
+    """res.json without width/height → run_job setdefault must fill raster dims."""
+    def predict(self, img):
+        return SimpleNamespace(json={k: v for k, v in CANNED.items()
+                                    if k not in ("width", "height")})
 
 class FlakyPipeline:
-    def predict(self, img, page_index):
+    def predict(self, img):
         raise RuntimeError("boom " * 200)
 
 
@@ -121,7 +126,28 @@ def test_full_job_success_calls_heartbeat_per_page_and_result():
     assert paths[-1] == "/api/jobs/1/result"
     result = state.last_json("/api/jobs/1/result")
     assert result["gpu_seconds"] >= 0 and len(result["pages"]) == 2
+    assert all(p["width"] > 0 and p["height"] > 0 for p in result["pages"])
 
+def test_inference_pages_get_dims_from_raster_when_res_json_lacks_them():
+    state = State([httpx.Response(200, json=_job(file_type="pdf", page_count=1))],
+                  file_bytes=b"%PDF-1.4 fake")
+    client = httpx.Client(transport=state.transport)
+
+    def fake_raster(data, file_type):
+        return [(_png(1200, 800), 1200, 800)]
+
+    run_job(BASE, "key", client, pipeline_factory=lambda: FakePipelineNoDims(),
+            sleep_fn=noop_guard(1), rasterize_fn=fake_raster)
+    pages = state.last_json("/api/jobs/1/result")["pages"]
+    assert [(p["width"], p["height"]) for p in pages] == [(1200, 800)]
+
+def test_next_500_backoff_continues_without_parsing_body():
+    state = State([httpx.Response(500, text="<html>boom</html>"),
+                   httpx.Response(200, json=_job())],
+                  file_bytes=_png(1200, 800))
+    client = httpx.Client(transport=state.transport)
+    n = run_job(BASE, "key", client, pipeline_factory=lambda: FakePipeline(), sleep_fn=noop_guard(2))
+    assert n == 1
 
 def test_401_stops_without_fail():
     state = State([httpx.Response(401)])

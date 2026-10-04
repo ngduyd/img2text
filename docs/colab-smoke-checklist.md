@@ -31,6 +31,13 @@ Upload a test image as `TA.jpg` into `/content/`, run the smoke cell.
 - [ ] `layout` key present — [ ] matches assumption — mismatches:
 - [ ] `markdown` key present — [ ] matches assumption — mismatches:
 
+**Smoke de-risk (confirms final-review findings #1–#4 assumptions):**
+
+- [ ] (a) `predict(page_png)` called with SINGLE arg works — note any TypeError verbatim:
+- [ ] (b) `res.json` contains `width`/`height`, OR markdown carries dims — note which:
+- [ ] (c) placeholder token format observed — note which: `[image]` vs `![alt](path)`:
+- [ ] (d) title regions appear as `## ` headings in page markdown — yes/no:
+
 **Mismatches / notes:**
 
 ```

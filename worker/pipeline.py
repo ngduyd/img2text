@@ -2,8 +2,8 @@
 
 res_json shape assumed: {"layout": [{"type": "text|image|table|title",
 "bbox": [x1,y1,x2,y2], "rec_texts": [...], "rec_scores": [...]}],
-"markdown": "<page md>"}. Assumption verified against real Colab output in
-Task 5 smoke — single-function blast radius if shape drifts.
+"markdown": "<page md>"}. Assumption to be verified in Task 5 smoke
+(docs/colab-smoke-checklist.md); single-function blast radius if shape drifts.
 
 Contract choice: page_markdown_from PRESERVES VLM markdown structure and only
 injects warning markers. Title → "## {text}" mapping (when VLM markdown lacks
@@ -156,9 +156,12 @@ def run_job(base_url: str, runner_key: str, client: httpx.Client, pipeline_facto
             sleep_fn, rasterize_fn=default_pdftoppm) -> int:
     """Forever job loop → returns jobs processed; raises RunnerAuthError on 401.
 
-    204 → backoff sleep_fn(random.uniform(5, 30)); per page: heartbeat →
-    precheck → maybe predict → build_page; result via build_result; 409/422 or
-    processing exception → POST /fail {"error": "<class>: <msg≤500>"} → continue.
+    /next non-200: 401 → RunnerAuthError (spec §7: ONLY auth stops the loop);
+    204 or any other non-200 → backoff sleep_fn(random.uniform(5, 30)), never
+    parse body (5xx HTML body must not crash the loop); per page: heartbeat →
+    precheck → maybe predict (single-arg PaddleOCRVL.predict API, spec §7) →
+    build_page; result via build_result; 409/422 or processing exception →
+    POST /fail {"error": "<class>: <msg≤500>"} → continue.
     ponytail: StopIteration from next/sleep = test loop guard → return count.
     """
     jobs = 0
@@ -170,7 +173,7 @@ def run_job(base_url: str, runner_key: str, client: httpx.Client, pipeline_facto
             return jobs
         if r.status_code == 401:
             raise RunnerAuthError("runner key rejected by GET /api/jobs/next")
-        if r.status_code == 204:
+        if r.status_code != 200:
             try:
                 sleep_fn(random.uniform(5, 30))
             except StopIteration:
@@ -196,8 +199,10 @@ def run_job(base_url: str, runner_key: str, client: httpx.Client, pipeline_facto
                     pages.append(build_page({"width": w, "height": h}, i, inference_ran=False))
                 else:
                     t0 = time.monotonic()
-                    out = pipeline_factory().predict(arr, i)
+                    out = pipeline_factory().predict(arr)
                     gpu_seconds += time.monotonic() - t0
+                    out.json.setdefault("width", w)
+                    out.json.setdefault("height", h)
                     pages.append(build_page(out.json, i, precheck=pc, inference_ran=True))
             rr = client.post(f"{base_url}/api/jobs/{job_id}/result",
                              json=build_result(pages, gpu_seconds), headers=hdr)
