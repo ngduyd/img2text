@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
 import Forgot from "./pages/Forgot";
+import JobDetail from "./pages/JobDetail";
 import Jobs from "./pages/Jobs";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -35,7 +36,7 @@ export default function App() {
           <Route path="/forgot" element={<Forgot />} />
           <Route path="/reset" element={<Reset />} />
           <Route path="/" element={<Jobs />} />
-          <Route path="/jobs/:id" element={<Placeholder name="job detail" />} />
+          <Route path="/jobs/:id" element={<JobDetail />} />
           <Route path="/admin" element={<Placeholder name="admin" />} />
         </Routes>
       </div>
