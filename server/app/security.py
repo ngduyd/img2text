@@ -1,0 +1,68 @@
+"""Password hashing, JWT minting, cookie helpers (Task 3).
+
+bcrypt used directly (not passlib): bcrypt 5.x + passlib 1.7.4 log a
+`__about__` AttributeError that pollutes test output.
+"""
+
+from datetime import datetime, timedelta, timezone
+from uuid import UUID, uuid4
+
+import warnings
+
+import bcrypt
+import jwt
+from fastapi import Response
+
+from app.config import settings
+
+_BCRYPT_ROUNDS = 12
+JWT_ISSUER = "img2text"
+_ACCESS_TTL = timedelta(minutes=15)
+
+
+def hash_password(p: str) -> str:
+    return bcrypt.hashpw(
+        p.encode(), bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)
+    ).decode()
+
+
+def verify_password(p: str, h: str) -> bool:
+    try:
+        return bcrypt.checkpw(p.encode(), h.encode())
+    except Exception:
+        return False
+
+
+def create_access_token(sub: str, role: str) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": sub,
+        "role": role,
+        "iss": JWT_ISSUER,
+        "iat": now,
+        "exp": now + _ACCESS_TTL,
+    }
+    # ponytail: dev secret is 20 bytes < RFC 7518 32-byte minimum for HS256;
+    # longer secret set at deploy via env. Warnings-as-errors otherwise breaks
+    # pytest -W error. Upgrade: raise default dev secret once Task 4 lands.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", jwt.InsecureKeyLengthWarning)
+        return jwt.encode(payload, settings.app_secret, algorithm="HS256")
+
+
+def _cookie_secure() -> bool:
+    return str(settings.base_url).startswith("https")
+
+
+def set_auth_cookies(response: Response, access: str, refresh: str | None = None) -> None:
+    """Set auth cookies. Refresh-cookie plumbing lands in Task 4
+    (ponytail: pass-through only; no refresh minting/storage here)."""
+    response.set_cookie(
+        "access", access,
+        httponly=True, samesite="lax", path="/", secure=_cookie_secure(),
+    )
+    if refresh is not None:
+        response.set_cookie(
+            "refresh", refresh,
+            httponly=True, samesite="lax", path="/", secure=_cookie_secure(),
+        )
