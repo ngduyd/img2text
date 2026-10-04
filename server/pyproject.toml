@@ -13,6 +13,7 @@ dependencies = [
     "bcrypt>=4",
     "PyJWT",
     "apscheduler",
+    "boto3",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +21,7 @@ test = [
     "pytest",
     "pytest-asyncio",
     "httpx",
+    "moto[server]",
 ]
 
 [build-system]

@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from app.models import RefreshToken, Setting, User
+from app.models import Job, RefreshToken, Setting, User
 
 
 async def test_create_user_and_refresh(db_session):
@@ -22,3 +22,12 @@ async def test_create_user_and_refresh(db_session):
     s = Setting(key="usd_per_gpu_hour", value="0.0")
     db_session.add(s)
     await db_session.flush()
+    j = Job(
+        user_id=u.id,
+        storage_key="uploads/abc.jpg",
+        file_type="image",
+        page_count=1,
+    )
+    db_session.add(j)
+    await db_session.flush()
+    assert j.id and j.user_id == u.id and j.status == "queued"

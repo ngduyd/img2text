@@ -11,6 +11,7 @@ from app.db import Base, SessionLocal, engine
 from app.middleware import PageViewsMiddleware, RequestLogsMiddleware
 from app.routers import admin, auth, health
 from app.scheduler import init_scheduler
+from app.storage import build_storage
 
 
 @asynccontextmanager
@@ -34,6 +35,7 @@ def create_app() -> FastAPI:
     app.state.settings = settings
     # Ruling R6: pure-ASGI logging middlewares open their own sessions here
     app.state.session_factory = SessionLocal
+    app.state.storage = build_storage()
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(admin.router)
