@@ -10,14 +10,28 @@ injects warning markers. Title → "## {text}" mapping (when VLM markdown lacks
 headings) happens at notebook/adapter level later, not here.
 """
 
+import glob
+import io
+import os
+import random
 import re
-from pathlib import Path
+import subprocess
+import tempfile
+import time
 
-from verdict import PrecheckResult, Region, SourceResult, resolve
+import httpx
+import numpy as np
+from PIL import Image
+
+from verdict import PrecheckResult, Region, SourceResult, precheck, resolve
 
 _UNREADABLE_MARKDOWN = "Không trích xuất được văn bản"
 _MARKER = "**[Hình ảnh chưa trích xuất: vùng {region_id}]**"
-_PLACEHOLDER_RE = re.compile(r"\[image\]|!\[[^\]]*\]\([^)]*\)")
+_PLACEHOLDER_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)|\[image\]")
+
+class RunnerAuthError(Exception):
+    """Bearer runner_key rejected by GET /api/jobs/next — STOP, no fail POST."""
+
 
 def _mean(xs):
     return sum(xs) / len(xs) if xs else None
@@ -119,3 +133,77 @@ def build_result(pages: list[dict], gpu_seconds: float,
         "edited_markdown": None,
         "pages": pages,
     }
+
+def default_pdftoppm(pdf_bytes: bytes, file_type: str) -> list[tuple[bytes, int, int]]:
+    """pdftoppm -r 200 -png into tempdir → [(png_bytes, width, height), ...]."""
+    with tempfile.TemporaryDirectory() as td:
+        src = os.path.join(td, "input.pdf")
+        with open(src, "wb") as f:
+            f.write(pdf_bytes)
+        subprocess.run(["pdftoppm", "-r", "200", "-png", src, os.path.join(td, "page")],
+                       check=True, capture_output=True)
+        out = []
+        names = sorted(glob.glob(os.path.join(td, "page-*.png")),
+                       key=lambda p: int(os.path.basename(p).rsplit("-", 1)[1].split(".")[0]))
+        for name in names:
+            with open(name, "rb") as f:
+                data = f.read()
+            w, h = Image.open(io.BytesIO(data)).size
+            out.append((data, w, h))
+        return out
+
+def run_job(base_url: str, runner_key: str, client: httpx.Client, pipeline_factory,
+            sleep_fn, rasterize_fn=default_pdftoppm) -> int:
+    """Forever job loop → returns jobs processed; raises RunnerAuthError on 401.
+
+    204 → backoff sleep_fn(random.uniform(5, 30)); per page: heartbeat →
+    precheck → maybe predict → build_page; result via build_result; 409/422 or
+    processing exception → POST /fail {"error": "<class>: <msg≤500>"} → continue.
+    ponytail: StopIteration from next/sleep = test loop guard → return count.
+    """
+    jobs = 0
+    runner_hdr = {"Authorization": f"Bearer {runner_key}"}
+    while True:
+        try:
+            r = client.get(f"{base_url}/api/jobs/next", headers=runner_hdr)
+        except StopIteration:
+            return jobs
+        if r.status_code == 401:
+            raise RunnerAuthError("runner key rejected by GET /api/jobs/next")
+        if r.status_code == 204:
+            try:
+                sleep_fn(random.uniform(5, 30))
+            except StopIteration:
+                return jobs
+            continue
+        job = r.json()
+        job_id, token = job["job_id"], job["worker_token"]
+        hdr = {"Authorization": f"Bearer {token}"}
+        try:
+            file_bytes = client.get(job["file_url"]).content
+            if job["file_type"] == "pdf":
+                raster = rasterize_fn(file_bytes, job["file_type"])
+            else:
+                im = Image.open(io.BytesIO(file_bytes))
+                raster = [(file_bytes, im.size[0], im.size[1])]
+            pages: list[dict] = []
+            gpu_seconds = 0.0
+            for i, (png, w, h) in enumerate(raster, 1):
+                client.post(f"{base_url}/api/jobs/{job_id}/heartbeat", headers=hdr)
+                arr = np.array(Image.open(io.BytesIO(png)))
+                pc = precheck(arr)
+                if pc.blurry and pc.too_small:
+                    pages.append(build_page({"width": w, "height": h}, i, inference_ran=False))
+                else:
+                    t0 = time.monotonic()
+                    out = pipeline_factory().predict(arr, i)
+                    gpu_seconds += time.monotonic() - t0
+                    pages.append(build_page(out.json, i, precheck=pc, inference_ran=True))
+            rr = client.post(f"{base_url}/api/jobs/{job_id}/result",
+                             json=build_result(pages, gpu_seconds), headers=hdr)
+            rr.raise_for_status()   # 409/422 → HTTPStatusError → fail below
+            jobs += 1
+        except Exception as e:
+            err = f"{type(e).__name__}: {e}"[:500]
+            client.post(f"{base_url}/api/jobs/{job_id}/fail", json={"error": err}, headers=hdr)
+            continue

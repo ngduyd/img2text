@@ -20,6 +20,12 @@ def test_page_markdown_structure_fidelity():
     assert "| Q1 |" in md                                # table pipes preserved
     assert "**[Hình ảnh chưa trích xuất: vùng p1r2]**" in md  # marker replaces placeholder token
 
+def test_placeholder_image_form_token_replaced_wholesale():
+    res = {"markdown": "trước [image] sau", "layout": [
+        {"type": "image", "bbox": [0, 0, 1, 1], "rec_texts": [], "rec_scores": []}]}
+    md = page_markdown_from(res, res_json_to_regions(res), "ok", 1)
+    assert md == "trước **[Hình ảnh chưa trích xuất: vùng p1r0]** sau"
+
 def test_build_result_shape_matches_spec():
     fx = load_fixture("res_json_canned.json")
     page = build_page(fx, 1, inference_ran=True)
@@ -32,7 +38,7 @@ def test_build_result_shape_matches_spec():
 
 def test_unreadable_page_skips_inference():
     fx = load_fixture("res_json_canned.json")
-    page = build_page(fx, 3, inference_ran=False)   # precheck both-fail path
+    page = build_page(fx, 3, inference_ran=False)   # inference_ran=False path
     assert page["page_flag"] == "unreadable"
     assert page["regions"] == []
     assert "Không trích xuất được văn bản" in page["markdown"]
