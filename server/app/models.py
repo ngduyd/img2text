@@ -37,6 +37,21 @@ class RefreshToken(Base):
     )
 
 
+class PasswordResetToken(Base):
+    """Single-use password-reset token; DB stores sha256(raw) only (ruling R2)."""
+
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String, unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
 class PageView(Base):
     __tablename__ = "page_views"
 

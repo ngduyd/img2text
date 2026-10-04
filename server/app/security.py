@@ -5,6 +5,7 @@ bcrypt used directly (not passlib): bcrypt 5.x + passlib 1.7.4 log a
 """
 
 from datetime import datetime, timedelta, timezone
+from secrets import token_urlsafe
 from uuid import UUID, uuid4
 
 import warnings
@@ -52,6 +53,12 @@ def create_access_token(sub: str, role: str) -> str:
 
 def _cookie_secure() -> bool:
     return str(settings.base_url).startswith("https")
+
+def generate_reset_token() -> str:
+    """Raw password-reset token. Route and tests share this generator (ruling
+    R2); DB stores sha256(token) only — tests regex the raw token out of the
+    captured email body."""
+    return token_urlsafe(32)
 
 
 def set_auth_cookies(response: Response, access: str, refresh: str | None = None) -> None:

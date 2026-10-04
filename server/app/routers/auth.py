@@ -11,13 +11,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import mailer
 from app.config import settings
 from app.db import get_session
 from app.deps import get_current_user
-from app.models import RefreshToken, User
+from app.models import PasswordResetToken, RefreshToken, User
 from app.security import (
     JWT_ISSUER,
     create_access_token,
+    generate_reset_token,
     hash_password,
     set_auth_cookies,
     verify_password,
@@ -26,6 +28,7 @@ from app.security import (
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _REFRESH_TTL = timedelta(days=30)
+_RESET_TTL = timedelta(hours=1)
 REFRESH_COOKIE = "refresh"
 
 
@@ -193,4 +196,69 @@ async def logout(
         await session.commit()
     response.delete_cookie("access", path="/")
     response.delete_cookie(REFRESH_COOKIE, path="/")
+    return {}
+
+class ForgotIn(BaseModel):
+    email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+class ResetIn(BaseModel):
+    token: str
+    password: str = Field(min_length=8)
+
+@router.post("/password/forgot", status_code=202)
+async def forgot(
+    body: ForgotIn, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """Always 202 {} — identical body for known/unknown email (no user
+    enumeration). If the user exists: store sha256(raw) token, email the raw
+    link. send_email never raises (mailer swallows SMTP failures)."""
+    user = await session.scalar(select(User).where(User.email == body.email))
+    if user is not None:
+        raw = generate_reset_token()
+        session.add(
+            PasswordResetToken(
+                user_id=user.id,
+                token_hash=hashlib.sha256(raw.encode()).hexdigest(),
+                expires_at=datetime.now(timezone.utc) + _RESET_TTL,
+            )
+        )
+        await session.commit()
+        await mailer.send_email(
+            user.email,
+            "Reset your password",
+            f"Reset your password: {settings.base_url}/reset?token={raw}\n"
+            "If you did not request this, ignore this email.",
+        )
+    return {}
+
+@router.post("/password/reset")
+async def reset(
+    body: ResetIn, session: AsyncSession = Depends(get_session)
+) -> dict:
+    """Consume reset token (single-use), rehash password, revoke ALL refresh
+    tokens. Invalid/expired/used token → 422."""
+    token_hash = hashlib.sha256(body.token.encode()).hexdigest()
+    now = datetime.now(timezone.utc)
+    # atomic single-use claim: WHERE used_at IS NULL AND not expired —
+    # concurrent resets with same token → one winner, rest get rowcount 0
+    claim = await session.execute(
+        update(PasswordResetToken)
+        .where(
+            PasswordResetToken.token_hash == token_hash,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.expires_at > now,
+        )
+        .values(used_at=now)
+    )
+    if claim.rowcount != 1:
+        raise HTTPException(status_code=422, detail="invalid or expired token")
+    row = await session.scalar(
+        select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash)
+    )
+    user = await session.get(User, row.user_id)
+    user.password_hash = hash_password(body.password)
+    await session.execute(
+        delete(RefreshToken).where(RefreshToken.user_id == user.id)
+    )
+    await session.commit()
     return {}
