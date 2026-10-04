@@ -321,11 +321,33 @@ async def fail_job(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    job = await _worker_job_or_401(session, id, _bearer_token(request))
-    job.error = body.error[:ERROR_MAX_CHARS]
-    job.status = "failed"
-    job.finished_at = _utcnow()
-    job.worker_token = None
-    job.lease_expires_at = None
+    token = _bearer_token(request)
+    await _worker_job_or_401(session, id, token)  # 401/404 gate before write
+    # Atomic transition (ruling R16, same pattern as /result): ONE
+    # conditional UPDATE re-checks the claim at commit time; a stale fail
+    # after reaper requeue + reclaim flips rowcount to 0 → 409 instead of
+    # marking another worker's claim failed / clearing their fresh token.
+    # Lease check kept symmetric with /result.
+    now = _utcnow()
+    rowcount = (
+        await session.execute(
+            update(Job)
+            .where(
+                Job.id == id,
+                Job.status == "running",
+                Job.lease_expires_at > now,
+                Job.worker_token == token,
+            )
+            .values(
+                status="failed",
+                error=body.error[:ERROR_MAX_CHARS],
+                finished_at=now,
+                worker_token=None,
+                lease_expires_at=None,
+            )
+        )
+    ).rowcount
+    if rowcount == 0:
+        raise HTTPException(status_code=409, detail="job not runnable")
     await session.commit()
     return {}
