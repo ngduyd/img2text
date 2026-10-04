@@ -1,4 +1,4 @@
-"""Task 8: admin bootstrap + temporary /api/admin/__probe route."""
+"""Task 8: admin bootstrap (probe route removed in Task 1)."""
 
 from sqlalchemy import select
 
@@ -24,23 +24,3 @@ async def test_bootstrap_admin_noop_on_empty_email(db_session):
     await bootstrap_admin(db_session, "", "whatever")
     users = (await db_session.execute(select(User))).scalars().all()
     assert len(users) == 0
-
-
-async def test_admin_probe_403_for_registered_user(client):
-    resp = await client.post(
-        "/api/auth/register", json={"email": "n@x.io", "password": "secret123"}
-    )
-    assert resp.status_code == 201
-    probe = await client.get("/api/admin/__probe")
-    assert probe.status_code == 403
-
-
-async def test_admin_probe_200_for_admin(client, db_session):
-    await bootstrap_admin(db_session, "admin@x.io", "adminpass1")
-    login = await client.post(
-        "/api/auth/login", json={"email": "admin@x.io", "password": "adminpass1"}
-    )
-    assert login.status_code == 200
-    probe = await client.get("/api/admin/__probe")
-    assert probe.status_code == 200
-    assert probe.json() == {"ok": True}
