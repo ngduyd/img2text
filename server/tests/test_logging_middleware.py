@@ -14,6 +14,22 @@ async def test_request_logged(client, db_session):
     assert any(r.path == "/api/auth/register" and r.status == 201 for r in rows)
 
 
+async def test_request_log_resolves_authenticated_user(client, db_session):
+    email, password = "auth@x.io", "secret123"
+    r = await client.post("/api/auth/register", json={"email": email, "password": password})
+    assert r.status_code == 201
+    r = await client.post("/api/auth/login", json={"email": email, "password": password})
+    assert r.status_code == 200
+    user_id = r.json()["id"]
+    r = await client.get("/api/auth/me")
+    assert r.status_code == 200
+    rows = (await db_session.execute(
+        select(RequestLog).where(RequestLog.path == "/api/auth/me")
+    )).scalars().all()
+    assert rows, "no RequestLog row for /api/auth/me"
+    assert rows[0].user_id is not None
+    assert rows[0].user_id == user_id
+
 async def test_page_view_logged_and_api_excluded(client, db_session):
     await client.get("/")                      # SPA route → 1 page_view
     await client.get("/api/auth/me")           # api → 0 page_views

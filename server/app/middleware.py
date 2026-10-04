@@ -29,9 +29,8 @@ def _normalized_path(scope: Scope) -> str:
     return scope["path"].split("?")[0][:512]
 
 
-def _user_id(scope: Scope) -> int | None:
-    cookies = scope.get("cookies") or {}
-    token = cookies.get("access")
+def _user_id(request: Request) -> int | None:
+    token = request.cookies.get("access")
     if not token:
         return None
     return decode_access_sub(token)
@@ -73,7 +72,7 @@ class RequestLogsMiddleware(_LoggingMiddleware):
             method=scope["method"],
             path=_normalized_path(scope),
             status=status,
-            user_id=_user_id(scope),
+            user_id=_user_id(request),
             ip=net.client_ip(request),
             ua=request.headers.get("user-agent"),
         )
@@ -92,7 +91,7 @@ class PageViewsMiddleware(_LoggingMiddleware):
         path = _normalized_path(scope)
         if path.startswith("/api/") or path.endswith(_STATIC_SUFFIXES):
             return
-        pv = PageView(path=path, user_id=_user_id(scope))
+        pv = PageView(path=path, user_id=_user_id(Request(scope)))
         session_factory = scope["app"].state.session_factory
         async with session_factory() as session:
             session.add(pv)
