@@ -1,15 +1,18 @@
 """Admin routers (Task 1 user list + ocr grant; Task 2 stats)."""
 
+import asyncio
 from datetime import date, datetime, time, timedelta, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, StrictBool
 from sqlalchemy import Date, Float, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db import get_session
 from app.deps import get_current_user, require_admin
-from app.models import Job, PageView, Setting, User
+from app.models import Job, PageView, RequestLog, Setting, User
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -85,6 +88,59 @@ async def _grouped(
         .group_by(day)
     )
     return {r[0]: r[1:] for r in (await session.execute(stmt)).all()}
+
+def _log_json(r: RequestLog) -> dict:
+    return {
+        "id": r.id,
+        "ts": r.ts.isoformat() if r.ts else None,
+        "method": r.method,
+        "path": r.path,
+        "status": r.status,
+        "user_id": r.user_id,
+        "ip": r.ip,
+        "ua": r.ua,
+    }
+
+@router.get("/logs")
+async def list_logs(
+    status_class: str | None = Query(default=None),
+    ip: str | None = Query(default=None),
+    limit: int = 100,
+    session: AsyncSession = Depends(get_session),
+    _: User = Depends(_admin_user),
+) -> dict:
+    """RequestLog newest first; status_class in 2xx|4xx|5xx; limit clamp 1..500.
+
+    ponytail: unknown status_class value = no status filter (ignore, not 422).
+    """
+    limit = min(500, max(1, limit))
+    stmt = select(RequestLog).order_by(RequestLog.ts.desc())
+    bands = {"2xx": (200, 299), "4xx": (400, 499), "5xx": (500, 599)}
+    if status_class in bands:
+        lo, hi = bands[status_class]
+        stmt = stmt.where(RequestLog.status.between(lo, hi))
+    if ip is not None:
+        stmt = stmt.where(RequestLog.ip == ip)
+    rows = (await session.scalars(stmt.limit(limit))).all()
+    return {"items": [_log_json(r) for r in rows]}
+
+@router.get("/logs/tail")
+async def tail_logs(
+    lines: int = 200,
+    _: User = Depends(_admin_user),
+) -> dict:
+    """Last N lines of app log; path from Settings ONLY (no path query param —
+    traversal impossible by construction); lines clamp 1..500; missing file = [].
+
+    ponytail: whole-file read + splitlines tail; fine for modest admin logs;
+    switch to seek-from-end binary tail if files grow huge.
+    """
+    lines = min(500, max(1, lines))
+    path = Path(settings.log_path)
+    if not path.exists():
+        return {"lines": []}
+    text = await asyncio.to_thread(path.read_text)
+    return {"lines": text.splitlines()[-lines:]}
 
 @router.get("/stats")
 async def stats(
