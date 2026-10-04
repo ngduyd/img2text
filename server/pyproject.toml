@@ -1,0 +1,29 @@
+[project]
+name = "img2text-server"
+version = "0.1.0"
+description = "img2text server: FastAPI + SQLAlchemy async + asyncpg"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy[asyncio]",
+    "asyncpg",
+    "pydantic-settings",
+    "alembic",
+    "passlib[bcrypt]",
+    "PyJWT",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
