@@ -6,7 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.config import settings
-from app.db import Base, engine
+from app.db import Base, SessionLocal, engine
+from app.middleware import PageViewsMiddleware, RequestLogsMiddleware
 from app.routers import auth, health
 
 
@@ -23,6 +24,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     app = FastAPI(lifespan=lifespan)
     app.state.settings = settings
+    # Ruling R6: pure-ASGI logging middlewares open their own sessions here
+    app.state.session_factory = SessionLocal
     app.include_router(health.router)
     app.include_router(auth.router)
+    # Starlette add_middleware inserts at head → last added = outermost
+    app.add_middleware(PageViewsMiddleware)
+    app.add_middleware(RequestLogsMiddleware)
     return app

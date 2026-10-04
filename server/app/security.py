@@ -33,6 +33,19 @@ def verify_password(p: str, h: str) -> bool:
     except Exception:
         return False
 
+def decode_access_sub(token: str) -> int | None:
+    """Access-JWT sub → int user_id; None on any failure (Ruling R6:
+    logging middleware logs anonymously, never raises)."""
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", jwt.InsecureKeyLengthWarning)
+            payload = jwt.decode(
+                token, settings.app_secret, algorithms=["HS256"], issuer=JWT_ISSUER
+            )
+        return int(payload["sub"])
+    except (jwt.PyJWTError, KeyError, ValueError):
+        return None
+
 
 def create_access_token(sub: str, role: str) -> str:
     now = datetime.now(timezone.utc)
