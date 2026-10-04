@@ -15,6 +15,7 @@ from app import mailer
 from app.config import settings
 from app.db import get_session
 from app.deps import get_current_user
+from app.limiter import rate_limit_auth
 from app.models import PasswordResetToken, RefreshToken, User
 from app.security import (
     JWT_ISSUER,
@@ -96,7 +97,10 @@ def _user_out(user: User) -> UserOut:
 
 @router.post("/register", status_code=201, response_model=UserOut)
 async def register(
-    creds: Credentials, response: Response, session: AsyncSession = Depends(get_session)
+    creds: Credentials,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(rate_limit_auth),
 ) -> UserOut:
     existing = await session.scalar(select(User).where(User.email == creds.email))
     if existing is not None:
@@ -111,7 +115,10 @@ async def register(
 
 @router.post("/login", response_model=UserOut)
 async def login(
-    creds: Credentials, response: Response, session: AsyncSession = Depends(get_session)
+    creds: Credentials,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(rate_limit_auth),
 ) -> UserOut:
     user = await session.scalar(select(User).where(User.email == creds.email))
     if user is None or not verify_password(creds.password, user.password_hash):
@@ -207,7 +214,9 @@ class ResetIn(BaseModel):
 
 @router.post("/password/forgot", status_code=202)
 async def forgot(
-    body: ForgotIn, session: AsyncSession = Depends(get_session)
+    body: ForgotIn,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(rate_limit_auth),
 ) -> dict:
     """Always 202 {} — identical body for known/unknown email (no user
     enumeration). If the user exists: store sha256(raw) token, email the raw
