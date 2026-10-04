@@ -54,8 +54,10 @@ def require_ocr(user: User) -> User:
 def get_runner_key(request: Request) -> str:
     auth = request.headers.get("Authorization", "")
     scheme, _, key = auth.partition(" ")
-    if scheme.lower() != "bearer" or not hmac.compare_digest(
-        key, settings.runner_key
+    if (
+        scheme.lower() != "bearer"
+        or not key.isascii()  # compare_digest TypeError → 500 on non-ascii
+        or not hmac.compare_digest(key, settings.runner_key)
     ):
         raise HTTPException(status_code=401, detail="bad runner key")
     return key

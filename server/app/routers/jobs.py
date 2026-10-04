@@ -13,7 +13,7 @@ from PIL import Image
 from pypdf import PdfReader, PdfWriter
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
@@ -167,8 +167,11 @@ async def next_job(
     job.started_at = now
     job.lease_expires_at = now + timedelta(minutes=LEASE_MINUTES)
     job.worker_token = token
-    await session.commit()
+    # presign BEFORE commit: storage_key is known pre-commit; a presign
+    # failure must leave the job queued, not running with an undiscoverable
+    # worker_token (fix round 1).
     file_url = await storage.presign_get(job.storage_key, PRESIGN_EXPIRES_SECONDS)
+    await session.commit()
     return {
         "job_id": job.id,
         "worker_token": token,
@@ -228,6 +231,7 @@ async def _worker_job_or_401(
         raise HTTPException(status_code=404, detail="job not found")
     if (
         token is None
+        or not token.isascii()  # compare_digest TypeError → 500 on non-ascii
         or job.worker_token is None
         or not hmac.compare_digest(token, job.worker_token)
     ):  # capability-token check (ruling R11)
@@ -256,23 +260,57 @@ async def submit_result(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    # precedence: not runnable → 409 before token check (brief: failed job
-    # posts result with cleared token → 409, not 401)
+    token = _bearer_token(request)
+    now = _utcnow()
     job = await session.get(Job, id)
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
+    # precedence: not runnable → 409 before token check (brief: failed job
+    # posts result with cleared token → 409, not 401).
+    # Ruling R14 (accepted for MVP): 409-before-401 here leaks job
+    # existence/status-class to callers who know the id. Internal runner
+    # surface, no content disclosure; read paths ownership-enforced.
+    # Hardening path: per-runner keys + internet exposure → move token
+    # check first (consistent with heartbeat).
     if (
         job.status != "running"
         or job.lease_expires_at is None
-        or job.lease_expires_at <= _utcnow()
+        or job.lease_expires_at <= now
     ):
         raise HTTPException(status_code=409, detail="job not runnable")
-    await _worker_job_or_401(session, id, _bearer_token(request))
-    job.result = body.model_dump()
-    job.status = "done"
-    job.finished_at = _utcnow()
-    job.worker_token = None
-    job.lease_expires_at = None
+    if (
+        token is None
+        or not token.isascii()  # compare_digest TypeError → 500 on non-ascii
+        or job.worker_token is None
+        or not hmac.compare_digest(token, job.worker_token)
+    ):
+        raise HTTPException(status_code=401, detail="bad worker token")
+    # Atomic transition (fix round 1): ONE conditional UPDATE re-checks the
+    # claim at commit time — closes the read-guard-commit TOCTOU (Task 5
+    # reaper requeue between guard and commit; concurrent double-submit).
+    # Token in WHERE too: a reaper requeue + reclaim by another worker
+    # flips rowcount to 0 → 409 instead of marking their claim done and
+    # clearing their fresh token.
+    rowcount = (
+        await session.execute(
+            update(Job)
+            .where(
+                Job.id == id,
+                Job.status == "running",
+                Job.lease_expires_at > now,
+                Job.worker_token == token,
+            )
+            .values(
+                result=body.model_dump(),
+                status="done",
+                finished_at=now,
+                worker_token=None,
+                lease_expires_at=None,
+            )
+        )
+    ).rowcount
+    if rowcount == 0:
+        raise HTTPException(status_code=409, detail="job not runnable")
     await session.commit()
     return {}
 

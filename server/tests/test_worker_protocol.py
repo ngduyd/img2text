@@ -62,3 +62,13 @@ async def test_result_409_lease_expired(worker_client, db_session, seed_job, VAL
                                  headers={"Authorization": f"Bearer {tok}"})
     assert r.status_code == 409                       # expired lease ≠ runnable
     # requeue + reclaimable path covered in Task 5 (reaper)
+
+async def test_heartbeat_lease_expired_409(worker_client, db_session, seed_job):
+    """Fix round 1 minor: heartbeat on expired lease → 409, not 200."""
+    claim = await worker_client.get("/api/jobs/next"); tok = claim.json()["worker_token"]
+    job = await db_session.get(Job, seed_job)
+    job.lease_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    await db_session.commit()
+    r = await worker_client.post(f"/api/jobs/{seed_job}/heartbeat",
+                                 headers={"Authorization": f"Bearer {tok}"})
+    assert r.status_code == 409
