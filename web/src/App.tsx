@@ -1,4 +1,8 @@
 import { BrowserRouter, Link, Route, Routes } from "react-router-dom";
+import Forgot from "./pages/Forgot";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Reset from "./pages/Reset";
 
 /** Placeholder page — replaced by real pages in later tasks. */
 function Placeholder({ name }: { name: string }) {
@@ -23,10 +27,10 @@ export default function App() {
           </Link>
         </nav>
         <Routes>
-          <Route path="/login" element={<Placeholder name="login" />} />
-          <Route path="/register" element={<Placeholder name="register" />} />
-          <Route path="/forgot" element={<Placeholder name="forgot" />} />
-          <Route path="/reset" element={<Placeholder name="reset" />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/forgot" element={<Forgot />} />
+          <Route path="/reset" element={<Reset />} />
           <Route path="/" element={<Placeholder name="jobs" />} />
           <Route path="/jobs/:id" element={<Placeholder name="job detail" />} />
           <Route path="/admin" element={<Placeholder name="admin" />} />
