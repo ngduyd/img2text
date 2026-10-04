@@ -60,11 +60,18 @@ async def test_tail_no_path_param_ignores_traversal(admin_client, tmp_settings_l
     r = await admin_client.get("/api/admin/logs/tail?lines=2&path=../../../etc/passwd")
     assert all("root:" not in ln for ln in r.json()["lines"])
 
-async def test_tail_lines_clamped(admin_client, tmp_settings_log):
-    """Pin (Plan E final review): lines clamp 1..500 — min(500, max(1, lines))."""
+async def test_tail_lines_clamped(admin_client, tmp_settings_log, tmp_path, monkeypatch):
+    """Pin (Plan E final review): lines clamp 1..500 — min(500, max(1, lines)).
+
+    Exact-equality pins: each assertion FAILS if the clamp is deleted
+    (re-reviewer round 2: subset/≤500 assertions were vacuous on small files).
+    """
+    # -5 clamps to max(1, -5) = 1 → last 1 line; unclamped splitlines()[5:] = []
     r = await admin_client.get("/api/admin/logs/tail?lines=-5")
-    assert r.status_code == 200
-    file_lines = tmp_settings_log.read_text().splitlines()
-    assert set(r.json()["lines"]) <= set(file_lines)  # no error, subset of file
+    assert r.status_code == 200 and r.json()["lines"] == ["line3"]
+    # 99999 clamps to 500 on a 600-line file; unclamped = 600 lines
+    big = tmp_path / "big.log"
+    big.write_text("".join(f"line{i}\n" for i in range(1, 601)))
+    monkeypatch.setattr(settings, "log_path", str(big))
     r = await admin_client.get("/api/admin/logs/tail?lines=99999")
-    assert r.status_code == 200 and len(r.json()["lines"]) <= 500
+    assert r.status_code == 200 and len(r.json()["lines"]) == 500
