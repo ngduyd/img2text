@@ -24,14 +24,20 @@ def _send_sync(to: str, subject: str, body: str) -> None:
     msg.set_content(body)
     # ponytail: port 465 → implicit TLS, else plain (+STARTTLS when authed);
     # add per-provider config when a real deploy needs it.
+    # timeout=10: no socket-default hang — unreachable SMTP would pin the
+    # anyio.to_thread pool and make known-email forgot hang while unknown
+    # returns instant 202 (timing-based user enumeration).
     if settings.smtp_port == 465:
         conn = smtplib.SMTP_SSL(
             settings.smtp_host,
             settings.smtp_port,
             context=ssl.create_default_context(),
+            timeout=10,
         )
     else:
-        conn = smtplib.SMTP(settings.smtp_host, settings.smtp_port)
+        conn = smtplib.SMTP(
+            settings.smtp_host, settings.smtp_port, timeout=10
+        )
         if settings.smtp_user:
             conn.starttls(context=ssl.create_default_context())
     with conn:
