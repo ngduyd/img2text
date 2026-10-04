@@ -216,6 +216,52 @@ async def get_job_file(
     url = await storage.presign_get(job.storage_key, PRESIGN_EXPIRES_SECONDS)
     return {"url": url}
 
+# ---- Plan E Task 4: owner retry (Plan D binding: no stale artifacts) ----
+
+@router.post("/api/jobs/{id}/retry")
+async def retry_job(
+    id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> dict:
+    """Requeue a failed job for its owner.
+
+    OWNER semantics (contract): strict ownership — no admin bypass, unlike
+    _job_or_403. Unknown → 404; other user → 403; not failed → 409.
+    Deletes BOTH exports/{id}/ and crops/{id}/ prefixes BEFORE commit: a
+    re-run may produce different regions/bboxes, so stale export bytes and
+    old-bbox crops must not survive (Plan D final review, binding). Delete
+    failure leaves the job failed (owner retries again) instead of queued
+    with stale bytes.
+    """
+    job = await session.get(Job, id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    if job.user_id != user.id:
+        raise HTTPException(status_code=403, detail="forbidden")
+    rowcount = (
+        await session.execute(
+            update(Job)
+            .where(Job.id == id, Job.status == "failed")
+            .values(
+                status="queued",
+                error=None,
+                worker_token=None,
+                lease_expires_at=None,
+                started_at=None,
+                finished_at=None,
+            )
+        )
+    ).rowcount
+    if rowcount == 0:
+        raise HTTPException(status_code=409, detail="job not retryable")
+    await storage.delete_prefix(f"exports/{id}/")
+    await storage.delete_prefix(f"crops/{id}/")
+    await session.commit()
+    # ORM instance not expired (expire_on_commit=False): return known values
+    return {"id": id, "status": "queued"}
+
 # ---- Task 4: worker protocol (next / heartbeat / result / fail) ----
 
 class FailBody(BaseModel):

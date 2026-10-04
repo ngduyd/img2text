@@ -25,6 +25,7 @@ from moto import mock_aws
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.admin import bootstrap_admin
 from app.config import settings
 from app.db import Base, SessionLocal, engine
 from app.main import create_app
@@ -113,6 +114,26 @@ async def auth_client(client, db_session):
     await grant_ocr(db_session, email)
     r = await client.post(
         "/api/auth/login", json={"email": email, "password": "secret123"}
+    )
+    assert r.status_code == 200, r.text
+    return client
+
+@pytest_asyncio.fixture
+async def admin_client(client, db_session):
+    """Ruling R28: per-test bootstrap admin (AFTER truncate) + cookies.
+
+    Register may 409 (bootstrap already created the email); login is what
+    sets the access cookie.
+    """
+    await bootstrap_admin(db_session, "admin@test.local", "adminpass1")
+    r = await client.post(
+        "/api/auth/register",
+        json={"email": "admin@test.local", "password": "adminpass1"},
+    )
+    assert r.status_code in (201, 409), r.text
+    r = await client.post(
+        "/api/auth/login",
+        json={"email": "admin@test.local", "password": "adminpass1"},
     )
     assert r.status_code == 200, r.text
     return client
