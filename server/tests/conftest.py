@@ -162,14 +162,14 @@ def VALID_RESULT_JSONB() -> dict:
         "model_version": "paddleocr-vl-1.5-0.9B",
         "gpu_seconds": 12.5,
         "warnings": [],
-        "markdown": "# tài liệu",
+        "markdown": "# tài liệu\n\n## Phần 2",
         "pages": [
             {
                 "index": 0,
                 "width": 800,
                 "height": 600,
                 "page_flag": "ok",
-                "markdown": "# tài liệu",
+                "markdown": "# tài liệu\n\n## Phần 2",
                 "regions": [
                     {
                         "id": "r0",

@@ -17,6 +17,7 @@ dependencies = [
     "pypdf",
     "pillow",
     "python-multipart",
+    "python-docx",
 ]
 
 [project.optional-dependencies]

@@ -1,11 +1,15 @@
 """Plan D: PATCH /api/jobs/{id}/content + POST /api/jobs/{id}/export
-+ GET /api/jobs/{id}/regions/{rid}/crop (lazy region crops, Task 2).
++ GET /api/jobs/{id}/regions/{rid}/crop (lazy region crops, Task 2)
++ html/docx export via pandoc + deploy/reference.docx (Task 3).
 
-Task 1 ships the md branch; html/docx/pdf arrive in later tasks
-(others → 501 for now).
+pdf stays 501 until Task 4.
 """
 
 import io
+import logging
+import subprocess
+import tempfile
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,16 +17,22 @@ from PIL import Image
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.convert import PANDOC_BIN, REFERENCE_DOCX
 from app.db import get_session
 from app.deps import get_current_user
 from app.models import Job, User
 from app.routers.jobs import _job_or_403
 from app.storage import StorageDriver, get_storage
 
+logger = logging.getLogger(__name__)
+
 EXPORT_PRESIGN_EXPIRES_SECONDS = 86400
 MAX_MARKDOWN_BYTES = 2 * 1024 * 1024
 CROP_MAX_WIDTH = 800
 CROP_JPEG_QUALITY = 70
+PANDOC_TIMEOUT_SECONDS = 55
+# Exact marker emitted by worker/pipeline.py for unextractable image regions.
+_MARKER = "**[Hình ảnh chưa trích xuất: vùng {rid}]**"
 
 router = APIRouter(tags=["exports"])
 
@@ -73,6 +83,76 @@ async def get_or_make_crop(
     await storage.put(key, buf.getvalue())
     return key
 
+async def _materialize_crops(
+    job_id: int, markdown: str, job: Job, storage: StorageDriver, tempdir: Path
+) -> str:
+    """Marker→image rewrite: materialize crops into tempdir/crops/{rid}.jpg.
+
+    Region verdict image_unextractable WITH bbox → crop cached/generated,
+    marker `**[Hình ảnh chưa trích xuất: vùng {rid}]**` replaced by
+    `![vùng {rid}](crops/{rid}.jpg)`. bbox-less/missing regions keep the
+    marker text (Plan D Global Constraints). Returns rewritten markdown.
+    """
+    result = dict(job.result or {})
+    for page in result.get("pages", []):
+        for region in page.get("regions", []):
+            if region.get("verdict") != "image_unextractable":
+                continue
+            if region.get("bbox") is None:
+                continue
+            rid = region["id"]
+            try:
+                key = await get_or_make_crop(job_id, rid, job, result, storage)
+                crop_bytes = await storage.get(key)
+            except (KeyError, HTTPException):
+                # missing region/bbox/original → marker survives (best-effort)
+                continue
+            crop_dir = tempdir / "crops"
+            crop_dir.mkdir(parents=True, exist_ok=True)
+            (crop_dir / f"{rid}.jpg").write_bytes(crop_bytes)
+            markdown = markdown.replace(
+                _MARKER.format(rid=rid), f"![vùng {rid}](crops/{rid}.jpg)"
+            )
+    return markdown
+
+async def _pandoc_export(
+    fmt: str, job_id: int, markdown: str, job: Job, storage: StorageDriver
+) -> bytes:
+    """pandoc markdown→fmt via tempdir (crops materialized first); 500 on failure."""
+    with tempfile.TemporaryDirectory() as td:
+        tempdir = Path(td)
+        in_md = tempdir / "in.md"
+        in_md.write_text(
+            await _materialize_crops(job_id, markdown, job, storage, tempdir),
+            encoding="utf-8",
+        )
+        out = tempdir / f"out.{fmt}"
+        cmd = [PANDOC_BIN, "-f", "markdown", "-t", fmt]
+        if fmt == "html":
+            cmd.append("--standalone")
+        else:  # docx: reference styles from committed deploy/reference.docx
+            cmd += ["--reference-doc", REFERENCE_DOCX]
+        cmd += ["-o", str(out), str(in_md)]
+        try:
+            # cwd=tempdir: markdown image paths (crops/{rid}.jpg) resolve here
+            proc = subprocess.run(
+                cmd, capture_output=True, timeout=PANDOC_TIMEOUT_SECONDS, cwd=str(tempdir)
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning("pandoc timed out fmt=%s job=%s", fmt, job_id)
+            raise HTTPException(status_code=500, detail="Xuất file thất bại.")
+        if proc.returncode != 0:
+            # sanitized: stdout/stderr to log only, never the response body
+            logger.warning(
+                "pandoc failed fmt=%s job=%s rc=%s stderr=%s",
+                fmt,
+                job_id,
+                proc.returncode,
+                proc.stderr[:500],
+            )
+            raise HTTPException(status_code=500, detail="Xuất file thất bại.")
+        return out.read_bytes()
+
 class ContentBody(BaseModel):
     markdown: str
 
@@ -118,12 +198,17 @@ async def export_job(
     job = await _job_or_403(session, id, user)
     if job.status != "done":
         raise HTTPException(status_code=409, detail="job not done")
-    if body.fmt != "md":
-        # ponytail: html/docx/pdf land in later Plan D tasks
+    if body.fmt == "pdf":
+        # ruling: pdf (weasyprint) lands in Task 4
         raise HTTPException(status_code=501, detail="Chưa hỗ trợ.")
-    key = f"exports/{id}/md"
-    if not await storage.exists(key):  # cache hit → presign only, no re-put
-        await storage.put(key, current_markdown(job.result).encode())
+    key = f"exports/{id}/{body.fmt}"
+    if not await storage.exists(key):  # cache hit → presign only, no re-generate
+        markdown = current_markdown(job.result or {})
+        if body.fmt == "md":
+            data = markdown.encode()
+        else:  # html / docx via pandoc
+            data = await _pandoc_export(body.fmt, id, markdown, job, storage)
+        await storage.put(key, data)
     url = await storage.presign_get(key, EXPORT_PRESIGN_EXPIRES_SECONDS)
     return {"url": url}
 
