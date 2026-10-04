@@ -2,7 +2,10 @@
 
 Ruling R1: `db_session` (fresh AsyncSession, rollback after each test) and a
 function-scoped truncation fixture that clears all tables between tests are
-required by Tasks 2+; both are defined here for Task 1.
+required by Tasks 2+; both are defined here for Task 1. Session-scoped
+`db_schema` owns schema bootstrap: httpx.ASGITransport never runs the app
+lifespan (create_all lives in main.lifespan), so a fresh Postgres volume
+would otherwise hit UndefinedTable.
 """
 
 import httpx
@@ -10,8 +13,16 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import SessionLocal, engine
+from app.db import Base, SessionLocal, engine
 from app.main import create_app
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def db_schema():
+    """Session-scoped: create schema ONCE against the test engine."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
 
 
 @pytest_asyncio.fixture

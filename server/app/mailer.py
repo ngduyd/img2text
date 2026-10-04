@@ -16,6 +16,7 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 def _send_sync(to: str, subject: str, body: str) -> None:
     msg = EmailMessage()
     msg["From"] = settings.smtp_from
@@ -44,6 +45,7 @@ def _send_sync(to: str, subject: str, body: str) -> None:
         if settings.smtp_user:
             conn.login(settings.smtp_user, settings.smtp_pass)
         conn.send_message(msg)
+
 
 async def send_email(to: str, subject: str, body: str) -> None:
     try:

@@ -10,7 +10,7 @@ dependencies = [
     "asyncpg",
     "pydantic-settings",
     "alembic",
-    "passlib[bcrypt]",
+    "bcrypt>=4",
     "PyJWT",
     "apscheduler",
 ]

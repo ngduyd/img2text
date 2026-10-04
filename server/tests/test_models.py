@@ -3,17 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-import pytest_asyncio
-
-from app.db import Base, engine
 from app.models import RefreshToken, Setting, User
-
-
-@pytest_asyncio.fixture(autouse=True)
-async def _create_tables():
-    # ponytail: create_all per test until conftest owns schema bootstrapping.
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
 
 
 async def test_create_user_and_refresh(db_session):

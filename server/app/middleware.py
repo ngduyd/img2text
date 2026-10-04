@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app import net
+from app.deps import ACCESS_COOKIE
 from app.models import PageView, RefreshToken, RequestLog
 from app.security import decode_access_sub
 
@@ -25,12 +26,13 @@ _STATIC_SUFFIXES = (".js", ".css", ".png", ".svg", ".ico", ".woff2")
 
 
 def _normalized_path(scope: Scope) -> str:
-    """Path with query stripped, capped at 512 chars (brief spec)."""
-    return scope["path"].split("?")[0][:512]
+    """Path capped at 512 chars. ASGI scope["path"] never carries the query
+    string (it lives in scope["query_string"], Ruling R6 brief spec)."""
+    return scope["path"][:512]
 
 
 def _user_id(request: Request) -> int | None:
-    token = request.cookies.get("access")
+    token = request.cookies.get(ACCESS_COOKIE)
     if not token:
         return None
     return decode_access_sub(token)

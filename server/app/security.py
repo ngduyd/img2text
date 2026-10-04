@@ -4,17 +4,17 @@ bcrypt used directly (not passlib): bcrypt 5.x + passlib 1.7.4 log a
 `__about__` AttributeError that pollutes test output.
 """
 
+import warnings
 from datetime import datetime, timedelta, timezone
 from secrets import token_urlsafe
 from uuid import UUID, uuid4
-
-import warnings
 
 import bcrypt
 import jwt
 from fastapi import Response
 
 from app.config import settings
+from app.deps import ACCESS_COOKIE, REFRESH_COOKIE
 
 _BCRYPT_ROUNDS = 12
 JWT_ISSUER = "img2text"
@@ -32,6 +32,7 @@ def verify_password(p: str, h: str) -> bool:
         return bcrypt.checkpw(p.encode(), h.encode())
     except Exception:
         return False
+
 
 def decode_access_sub(token: str) -> int | None:
     """Access-JWT sub → int user_id; None on any failure (Ruling R6:
@@ -67,6 +68,7 @@ def create_access_token(sub: str, role: str) -> str:
 def _cookie_secure() -> bool:
     return str(settings.base_url).startswith("https")
 
+
 def generate_reset_token() -> str:
     """Raw password-reset token. Route and tests share this generator (ruling
     R2); DB stores sha256(token) only — tests regex the raw token out of the
@@ -78,11 +80,11 @@ def set_auth_cookies(response: Response, access: str, refresh: str | None = None
     """Set auth cookies. Refresh-cookie plumbing lands in Task 4
     (ponytail: pass-through only; no refresh minting/storage here)."""
     response.set_cookie(
-        "access", access,
+        ACCESS_COOKIE, access,
         httponly=True, samesite="lax", path="/", secure=_cookie_secure(),
     )
     if refresh is not None:
         response.set_cookie(
-            "refresh", refresh,
+            REFRESH_COOKIE, refresh,
             httponly=True, samesite="lax", path="/", secure=_cookie_secure(),
         )

@@ -6,15 +6,22 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Request,
+    Response,
+)
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import mailer
 from app.config import settings
 from app.db import get_session
-from app.deps import get_current_user
+from app.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user
 from app.limiter import rate_limit_auth
 from app.models import PasswordResetToken, RefreshToken, User
 from app.security import (
@@ -30,9 +37,11 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _REFRESH_TTL = timedelta(days=30)
 _RESET_TTL = timedelta(hours=1)
-REFRESH_COOKIE = "refresh"
 
 
+# Deviation from plan Task 3 interface: refresh minting is a private 3-tuple
+# helper here instead of an exported security.create_refresh_token; nothing
+# consumes the plan's name.
 def _mint_refresh(user_id: int) -> tuple[str, UUID, datetime]:
     now = datetime.now(timezone.utc)
     jti = uuid4()
@@ -75,7 +84,20 @@ def _store_refresh(
     )
 
 
-class Credentials(BaseModel):
+class _EmailIn(BaseModel):
+    """Shared email input normalized case-insensitively (spec §4) before any
+    DB use; the unique constraint stays case-sensitive until a citext/DB-level
+    migration lands (Alembic, later)."""
+
+    @field_validator("email", mode="before", check_fields=False)
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        # isinstance guard: non-str input falls through to pattern/type
+        # validation → 422, never AttributeError → 500
+        return v.strip().lower() if isinstance(v, str) else v
+
+
+class Credentials(_EmailIn):
     # ponytail: regex format check; upgrade to EmailStr + email-validator when
     # deploy needs stricter RFC validation
     email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -201,26 +223,37 @@ async def logout(
             delete(RefreshToken).where(RefreshToken.user_id == decoded[0])
         )
         await session.commit()
-    response.delete_cookie("access", path="/")
+    # ponytail: access-only client revokes nothing (stateless access ≤15m);
+    # upgrade path: access-jwt sub fallback for identification once a
+    # server-side access store exists.
+    response.delete_cookie(ACCESS_COOKIE, path="/")
     response.delete_cookie(REFRESH_COOKIE, path="/")
     return {}
 
-class ForgotIn(BaseModel):
+
+class ForgotIn(_EmailIn):
     email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
 
 class ResetIn(BaseModel):
     token: str
     password: str = Field(min_length=8)
 
+
 @router.post("/password/forgot", status_code=202)
 async def forgot(
     body: ForgotIn,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     _: None = Depends(rate_limit_auth),
 ) -> dict:
     """Always 202 {} — identical body for known/unknown email (no user
-    enumeration). If the user exists: store sha256(raw) token, email the raw
-    link. send_email never raises (mailer swallows SMTP failures)."""
+    enumeration). SMTP is enqueued via BackgroundTasks AFTER the token
+    commit: the handler never awaits the mail server, so a slow SMTP cannot
+    create a timing oracle. (Real timing parity is a Plan G manual e2e item —
+    ruling R8 forbids a wall-clock assertion here: httpx ASGITransport awaits
+    background tasks within the app call.) send_email swallows SMTP failures
+    itself, so a mail outage never turns this into a 500."""
     user = await session.scalar(select(User).where(User.email == body.email))
     if user is not None:
         raw = generate_reset_token()
@@ -232,13 +265,15 @@ async def forgot(
             )
         )
         await session.commit()
-        await mailer.send_email(
+        background_tasks.add_task(
+            mailer.send_email,
             user.email,
             "Reset your password",
             f"Reset your password: {settings.base_url}/reset?token={raw}\n"
             "If you did not request this, ignore this email.",
         )
     return {}
+
 
 @router.post("/password/reset")
 async def reset(

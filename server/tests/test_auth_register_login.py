@@ -39,3 +39,20 @@ async def test_login_malformed_stored_hash_401_not_500(client, db_session):
     await db_session.commit()
     r = await client.post("/api/auth/login", json={"email": "m@x.io", "password": "secret123"})
     assert r.status_code == 401
+
+
+async def test_email_case_insensitive(client):
+    """Emails normalized to lowercase at the boundary (spec §4); unique
+    constraint still catches case-variant duplicates."""
+    r = await client.post(
+        "/api/auth/register", json={"email": "  Case@X.IO ", "password": "secret123"}
+    )
+    assert r.status_code == 201 and r.json()["email"] == "case@x.io"
+    r2 = await client.post(
+        "/api/auth/login", json={"email": "case@x.io", "password": "secret123"}
+    )
+    assert r2.status_code == 200 and r2.json()["email"] == "case@x.io"
+    dup = await client.post(
+        "/api/auth/register", json={"email": "CASE@x.io", "password": "secret123"}
+    )
+    assert dup.status_code == 409
