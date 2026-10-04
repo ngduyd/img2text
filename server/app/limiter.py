@@ -6,6 +6,7 @@ Postgres (or Redis) before scale.
 
 import time
 from collections import deque
+from datetime import date
 
 from fastapi import HTTPException, Request
 
@@ -37,6 +38,29 @@ class SlidingWindow:
         hits.append(now)
         return True
 
+
+class DailyCounter:
+    """Calendar-day (midnight local) counter per key, for upload limits.
+
+    ponytail: same ceiling as SlidingWindow — single-process in-memory dict;
+    multi-worker deploy → move to Postgres (or Redis) before scale.
+    """
+
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
+        self._days: dict[str, tuple[date, int]] = {}
+
+    def check(self, key: str) -> bool:
+        """True = allowed, False = limited. Lazy same-day prune bounds memory."""
+        today = date.today()
+        for k, (day, _) in list(self._days.items()):
+            if day != today:
+                del self._days[k]
+        count = self._days.get(key, (today, 0))[1]
+        if count >= self.limit:
+            return False
+        self._days[key] = (today, count + 1)
+        return True
 
 async def rate_limit_auth(request: Request) -> None:
     # lazy per-app instance: one limiter per create_app() (fresh per test

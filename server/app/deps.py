@@ -47,7 +47,7 @@ def require_admin(user: User) -> User:
 
 def require_ocr(user: User) -> User:
     if not user.ocr_enabled:
-        raise HTTPException(status_code=403, detail="ocr not enabled")
+        raise HTTPException(status_code=403, detail="Chưa được cấp quyền OCR.")
     return user
 
 

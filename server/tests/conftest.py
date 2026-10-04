@@ -8,13 +8,21 @@ lifespan (create_all lives in main.lifespan), so a fresh Postgres volume
 would otherwise hit UndefinedTable.
 """
 
+from unittest.mock import AsyncMock
+from uuid import uuid4
+
+import boto3
 import httpx
 import pytest_asyncio
-from sqlalchemy import text
+from moto import mock_aws
+from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db import Base, SessionLocal, engine
 from app.main import create_app
+from app.models import User
+from app.storage import S3Driver
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
@@ -57,9 +65,67 @@ async def db_truncate():
     yield
 
 
+async def grant_ocr(session: AsyncSession, email: str) -> None:
+    """Ruling R10: enable ocr_enabled directly in DB (no admin HTTP flow)."""
+    await session.execute(
+        update(User).where(User.email == email).values(ocr_enabled=True)
+    )
+    await session.commit()
+
 @pytest_asyncio.fixture
-async def client():
-    app = create_app()
+async def app():
+    """create_app() with moto-backed S3 driver wired into app.state.storage."""
+    application = create_app()
+    with mock_aws():
+        boto3.client("s3", region_name="us-east-1").create_bucket(
+            Bucket="img2text-test"
+        )
+        application.state.storage = S3Driver(
+            endpoint=None,
+            key_id="test-key",
+            secret="test-secret",
+            bucket="img2text-test",
+            region="us-east-1",
+        )
+        yield application
+
+@pytest_asyncio.fixture
+async def client(app):
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
+
+@pytest_asyncio.fixture
+async def auth_client(client, db_session):
+    """Ruling R10: fresh registered+logged-in user, ocr_enabled granted."""
+    email = f"u-{uuid4().hex}@test.io"
+    r = await client.post(
+        "/api/auth/register", json={"email": email, "password": "secret123"}
+    )
+    assert r.status_code == 201, r.text
+    await grant_ocr(db_session, email)
+    r = await client.post(
+        "/api/auth/login", json={"email": email, "password": "secret123"}
+    )
+    assert r.status_code == 200, r.text
+    return client
+
+@pytest_asyncio.fixture
+async def worker_client(app, monkeypatch):
+    """Ruling R10: bearer-authenticated client; test runner_key value."""
+    monkeypatch.setattr(settings, "runner_key", "test-runner-key")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": "Bearer test-runner-key"},
+    ) as c:
+        yield c
+
+@pytest_asyncio.fixture
+async def storage_spy(app):
+    """Ruling R10: wrap app.state.storage driver methods; real op still runs."""
+    driver = app.state.storage
+    for name in ("put", "exists", "presign_get", "delete_prefix"):
+        setattr(driver, name, AsyncMock(wraps=getattr(driver, name)))
+    yield driver
