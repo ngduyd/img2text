@@ -6,6 +6,7 @@
 """
 
 import asyncio
+import base64
 import io
 import logging
 import re
@@ -65,6 +66,24 @@ def sanitize_pandoc_html(html: str) -> str:
         attributes=_HTML_ATTRS,
         strip=True,
     )
+
+def _embed_crops_as_data_uris(html: str, tempdir: Path) -> str:
+    """Rewrite pandoc <img src="crops/X.jpg"> to data URIs (html/pdf path).
+
+    Presign URLs don't carry the tempdir, so relative crop refs 404 when
+    the exported html is opened; data URIs are self-contained. Applied
+    AFTER bleach (R34-bounded): data: URLs stay out of the global allowlist
+    because data:href is click-XSS on the R2 origin.
+    """
+    def _repl(m: re.Match) -> str:
+        crop = tempdir / m.group(1)
+        try:
+            b64 = base64.b64encode(crop.read_bytes()).decode("ascii")
+        except OSError:
+            return m.group(0)  # crop missing → keep ref (no data loss)
+        return f'src="data:image/jpeg;base64,{b64}"'
+
+    return re.sub(r'src="(crops/[^\"]+\.jpg)"', _repl, html)
 
 def _run_pandoc(cmd: list[str], fmt: str, job_id: int, cwd: Path) -> None:
     """Run pandoc; any failure → sanitized 500 (never raw subprocess error)."""
@@ -169,6 +188,7 @@ async def _materialize_crops(
             crop_dir = tempdir / "crops"
             crop_dir.mkdir(parents=True, exist_ok=True)
             (crop_dir / f"{rid}.jpg").write_bytes(crop_bytes)
+            # ceiling: .md exports need sibling crops/ dir (documented)
             markdown = markdown.replace(marker, f"![vùng {rid}](crops/{rid}.jpg)")
     return markdown
 
@@ -196,7 +216,11 @@ async def _pandoc_export(
         _run_pandoc(cmd, fmt, job_id, tempdir)
         data = out.read_bytes()
         if fmt == "html":  # sanitize AFTER pandoc (markdown itself cannot carry script)
-            data = sanitize_pandoc_html(data.decode("utf-8")).encode("utf-8")
+            clean = sanitize_pandoc_html(data.decode("utf-8"))
+            # post-bleach: relative crop refs → data URIs (html opened from
+            # presign URL can't resolve crops/ siblings; R34, not global)
+            clean = _embed_crops_as_data_uris(clean, tempdir)
+            data = clean.encode("utf-8")
         return data
 
 async def _pdf_export(
@@ -220,6 +244,8 @@ async def _pdf_export(
         ]
         _run_pandoc(cmd, "html", job_id, tempdir)
         clean_html = sanitize_pandoc_html(out.read_text(encoding="utf-8"))
+        # same clean html as html export: crop refs → data URIs (R34)
+        clean_html = _embed_crops_as_data_uris(clean_html, tempdir)
         # heavy weasyprint import + pdf render off the event loop
         return await asyncio.to_thread(_render_pdf, clean_html, str(tempdir))
 

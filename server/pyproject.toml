@@ -19,6 +19,7 @@ dependencies = [
     "python-multipart",
     "python-docx",
     "bleach",
+    "weasyprint",
 ]
 
 [project.optional-dependencies]

@@ -125,3 +125,20 @@ async def test_script_in_markdown_not_executable_in_html(auth_client, done_job_w
     await auth_client.post(f"/api/jobs/{done_job_with_xss}/export", json={"fmt": "html"})
     body = (await storage.get(f"exports/{done_job_with_xss}/html")).decode()
     assert "<script>alert(1)</script>" not in body
+
+async def test_html_export_embeds_crop_as_data_uri(auth_client, done_job_with_marker_and_crop, storage):
+    # R34: html crop refs must be data URIs (presign URL has no crops/ sibling)
+    await auth_client.post(
+        f"/api/jobs/{done_job_with_marker_and_crop}/export", json={"fmt": "html"}
+    )
+    body = (await storage.get(f"exports/{done_job_with_marker_and_crop}/html")).decode()
+    assert "data:image/jpeg;base64," in body
+    assert 'src="crops/' not in body
+
+async def test_pandoc_missing_html_export_sanitized_500(auth_client, done_job_with_result, monkeypatch):
+    # plan-pinned: missing pandoc on the html path (runs pandoc) → sanitized 500
+    monkeypatch.setattr("app.routers.exports.PANDOC_BIN", "/nonexistent/pandoc")
+    r = await auth_client.post(f"/api/jobs/{done_job_with_result}/export", json={"fmt": "html"})
+    assert r.status_code == 500
+    assert r.json()["detail"] == "Xuất file thất bại."
+    assert "Traceback" not in r.text
