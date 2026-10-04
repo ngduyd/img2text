@@ -18,3 +18,6 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_pass: str = ""
     smtp_from: str = "noreply@example.com"
+
+
+settings = Settings()
