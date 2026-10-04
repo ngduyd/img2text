@@ -39,13 +39,15 @@ async def test_heartbeat_expired_lease_409_extends_nothing(
     job = await db_session.get(Job, seed_job)
     job.lease_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
     await db_session.commit()
+    old_lease = job.lease_expires_at
     r = await worker_client.post(
         f"/api/jobs/{seed_job}/heartbeat",
         headers={"Authorization": f"Bearer {tok}"},
     )
     assert r.status_code == 409
     await db_session.refresh(job)
-    assert job.lease_expires_at is not None
+    # strengthened: capture lease before heartbeat → unchanged after 409
+    assert job.lease_expires_at == old_lease
     assert job.lease_expires_at < datetime.now(timezone.utc)  # not extended
 
 async def test_next_nonascii_auth_401(worker_client, seed_job):

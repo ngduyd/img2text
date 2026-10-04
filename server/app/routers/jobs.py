@@ -4,13 +4,11 @@ Task 3: GET /api/jobs, GET /api/jobs/{id}, GET /api/jobs/{id}/file.
 
 import hashlib
 import hmac
-import io
 import secrets
 import tempfile
 from datetime import datetime, timedelta, timezone
 
-from PIL import Image
-from pypdf import PdfReader, PdfWriter
+from pypdf import PdfReader
 from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select, update
@@ -73,7 +71,14 @@ async def upload_job(
             hasher.update(chunk)
             tmp.write(chunk)
         if ext == "pdf":
-            page_count = _pdf_page_count(tmp)
+            try:
+                page_count = _pdf_page_count(tmp)
+            except Exception:
+                # spec §6: corrupt/encrypted PDF is a synchronous 422,
+                # never a 500, and no job row / storage write happens.
+                raise HTTPException(
+                    status_code=422, detail="File PDF không hợp lệ."
+                )
             if page_count > MAX_PDF_PAGES:
                 raise HTTPException(
                     status_code=422, detail="File PDF quá 50 trang."

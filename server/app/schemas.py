@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 class RegionOut(BaseModel):
     id: str
@@ -10,6 +10,14 @@ class RegionOut(BaseModel):
     text: str
     verdict: Literal["ok", "image_unextractable", "unreadable", "low_confidence"]
     placeholder: bool
+
+    @field_validator("bbox")
+    @classmethod
+    def _bbox_shape(cls, v: list[int] | None) -> list[int] | None:
+        # spec §4: bbox is [x1, y1, x2, y2]; Plan D PIL-crops need len==4.
+        if v is not None and len(v) != 4:
+            raise ValueError("bbox phải có đúng 4 phần tử [x1, y1, x2, y2].")
+        return v
 
 class ResultPage(BaseModel):
     index: int
@@ -25,3 +33,6 @@ class ResultBody(BaseModel):
     warnings: list[str]
     markdown: str
     pages: list[ResultPage]
+    # spec §4 result JSONB includes edited_markdown (null default); kept so a
+    # worker-posted value survives model_dump into job.result (Plan D seam).
+    edited_markdown: str | None = None

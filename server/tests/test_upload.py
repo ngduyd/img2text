@@ -37,6 +37,20 @@ async def test_upload_pdf_51_pages_422_no_storage(auth_client, storage_spy):
     assert r.status_code == 422 and "50 trang" in r.json()["detail"]
     assert storage_spy.put.call_count == 0
 
+async def test_upload_corrupt_pdf_422_no_storage(auth_client, storage_spy):
+    """Malformed PDF bytes → synchronous 422, no storage write (spec §6)."""
+    r = await auth_client.post("/api/jobs", files={"file": ("a.pdf", b"not a pdf", "application/pdf")})
+    assert r.status_code == 422 and r.json()["detail"] == "File PDF không hợp lệ."
+    assert storage_spy.put.call_count == 0
+
+async def test_upload_over_size_cap_422(auth_client, storage_spy, monkeypatch):
+    import app.routers.jobs as jobs_module
+
+    monkeypatch.setattr(jobs_module, "MAX_UPLOAD_BYTES", 1024)
+    r = await auth_client.post("/api/jobs", files={"file": ("big.jpg", b"x" * 2048, "image/jpeg")})
+    assert r.status_code == 422 and "50MB" in r.json()["detail"]
+    assert storage_spy.put.call_count == 0
+
 async def test_upload_bad_type_422(auth_client):
     r = await auth_client.post("/api/jobs", files={"file": ("a.gif", b"RIFF", "image/gif")})
     assert r.status_code == 422

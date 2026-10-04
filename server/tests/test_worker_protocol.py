@@ -24,11 +24,23 @@ async def test_concurrent_next_single_claim(worker_client, worker_client2, seed_
     claimed = [r for r in rs if r.status_code == 200]
     assert len(claimed) == 1 and sum(r.status_code == 204 for r in rs) == 1
 
-async def test_heartbeat_extends(worker_client, seed_job):
+async def test_heartbeat_extends(worker_client, db_session, seed_job):
     claim = await worker_client.get("/api/jobs/next"); tok = claim.json()["worker_token"]
+    job = await db_session.get(Job, seed_job)
+    old_lease = job.lease_expires_at
     r = await worker_client.post(f"/api/jobs/{seed_job}/heartbeat",
                                  headers={"Authorization": f"Bearer {tok}"})
-    assert r.status_code == 200 and "lease_expires_at" in r.json()
+    assert r.status_code == 200
+    new_lease = datetime.fromisoformat(r.json()["lease_expires_at"])
+    assert new_lease > old_lease  # heartbeat actually extends the lease
+
+async def test_result_422_bad_bbox_shape(worker_client, seed_job, VALID_RESULT_JSONB):
+    """spec §4 bbox = [x1, y1, x2, y2]; len!=4 → 422 (Plan D crop safety)."""
+    claim = await worker_client.get("/api/jobs/next"); tok = claim.json()["worker_token"]
+    bad = deepcopy(VALID_RESULT_JSONB); bad["pages"][0]["regions"][0]["bbox"] = [1, 2, 3]
+    r = await worker_client.post(f"/api/jobs/{seed_job}/result", json=bad,
+                                 headers={"Authorization": f"Bearer {tok}"})
+    assert r.status_code == 422
 
 async def test_result_done(worker_client, db_session, seed_job, VALID_RESULT_JSONB):
     claim = await worker_client.get("/api/jobs/next"); tok = claim.json()["worker_token"]
