@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import type { Job } from "../api/types";
 import MarkdownPreview from "../components/MarkdownPreview";
 import IssuesPanel from "../components/IssuesPanel";
+import ExportBar from "../components/ExportBar";
 
 const STATUS_TEXT: Record<Job["status"], string> = {
   queued: "Đang chờ worker Colab",
@@ -51,6 +52,7 @@ export default function JobDetail() {
             jobId={id!}
             regions={job.result.pages.flatMap((p) => p.regions)}
           />
+          <ExportBar jobId={id!} />
         </>
       )}
     </main>
