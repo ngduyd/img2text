@@ -53,7 +53,7 @@ Run in this order (matches the notebook's own markdown header):
    layout_detection_model_name="PP-DocLayoutV3")` (reuses the smoke cell's
    `PIPELINE` when present — no double model load).
 5. **Loop** — `run_job(BASE_URL, RUNNER_KEY, ...)`:
-   `GET /api/jobs/next` (Bearer `RUNNER_KEY`) → per page: heartbeat every 10 min →
+   `GET /api/jobs/next` (Bearer `RUNNER_KEY`) → per page: heartbeat per page (lease 45 min) →
    `POST /api/jobs/{id}/result`. Auth failure (`RunnerAuthError`) stops the loop
    loudly (quota/key issue) — check the secret matches `deploy/.env`.
 
@@ -71,7 +71,7 @@ Free-tier GPU availability is Colab's — queue wait is normal.
 
 Colab may disconnect mid-job. Nothing is lost: the server's lease reaper
 (APScheduler, every 1 min) re-queues any `running` job whose lease expired
-(lease 45 min, heartbeat extends it every 10 min while alive) and clears the
+(lease 45 min, heartbeat per page (lease 45 min) while alive) and clears the
 `worker_token`. To resume: reopen the notebook, re-run cells 1–2 (secrets),
 then cell 5 (loop) — the re-queued job is claimed again (retry redoes all
 pages, idempotent overwrite). Claiming is atomic (`SELECT … FOR UPDATE SKIP
