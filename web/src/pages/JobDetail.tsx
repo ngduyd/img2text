@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type { Job } from "../api/types";
+import MarkdownPreview from "../components/MarkdownPreview";
 
 const STATUS_TEXT: Record<Job["status"], string> = {
   queued: "Đang chờ worker Colab",
@@ -42,8 +43,9 @@ export default function JobDetail() {
           Thử lại
         </button>
       )}
-      {/* Real preview lands Task 5/6 — slot reserved here. */}
-      {job.status === "done" && <div data-testid="preview-markdown" />}
+      {job.status === "done" && job.result && (
+        <MarkdownPreview markdown={job.result.edited_markdown ?? job.result.markdown} />
+      )}
     </main>
   );
 }
