@@ -71,7 +71,7 @@ Free-tier GPU availability is Colab's — queue wait is normal.
 
 Colab may disconnect mid-job. Nothing is lost: the server's lease reaper
 (APScheduler, every 1 min) re-queues any `running` job whose lease expired
-(lease 45 min, heartbeat per page (lease 45 min) while alive) and clears the
+(lease 45 min, heartbeat per page while alive) and clears the
 `worker_token`. To resume: reopen the notebook, re-run cells 1–2 (secrets),
 then cell 5 (loop) — the re-queued job is claimed again (retry redoes all
 pages, idempotent overwrite). Claiming is atomic (`SELECT … FOR UPDATE SKIP

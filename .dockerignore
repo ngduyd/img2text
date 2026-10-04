@@ -4,9 +4,9 @@
 server/.venv/
 server/.tools/
 **/__pycache__/
-*.egg-info/
+**/*.egg-info/
 .pytest_cache/
-node_modules/
+**/node_modules/
 web/dist/
 .superpowers/
 .git/

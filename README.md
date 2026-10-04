@@ -33,6 +33,8 @@ Layout: `server/` (FastAPI + tests), `web/` (SPA; scoped notes in
 docker compose -f deploy/docker-compose.test.yml up -d --wait   # Postgres 16 on :5433
 
 cd server && python -m venv .venv
+# Export tests need pandoc at the explicit path convert.py expects (R25, pinned 3.10.2):
+mkdir -p .tools/pandoc && curl -fsSL https://github.com/jgm/pandoc/releases/download/3.10.2/pandoc-3.10.2-linux-amd64.tar.gz | tar -xz -C .tools/pandoc --strip-components=2
 .venv/bin/pip install -e ".[test]"
 .venv/bin/pytest -v
 
