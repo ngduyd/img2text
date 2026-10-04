@@ -61,6 +61,8 @@ async def get_or_make_crop(
     except KeyError:
         raise HTTPException(status_code=404, detail="File gốc không tồn tại.")
     img = Image.open(io.BytesIO(original))
+    # no exif_transpose: crop must match VLM pixel frame (worker sees raw pixels)
+    img = img.convert("RGB")  # RGBA/P-mode/WEBP originals cannot save as JPEG
     crop = img.crop((x1, y1, x2, y2))
     if crop.width > CROP_MAX_WIDTH:
         crop = crop.resize(
@@ -134,6 +136,9 @@ async def region_crop(
     storage: StorageDriver = Depends(get_storage),
 ) -> dict:
     job = await _job_or_403(session, id, user)
+    if job.file_type != "image":
+        # ruling R26: PDF jobs have no PIL-decodable original
+        raise HTTPException(status_code=404, detail="Crop chỉ hỗ trợ file ảnh.")
     result = dict(job.result or {})
     try:
         key = await get_or_make_crop(id, rid, job, result, storage)

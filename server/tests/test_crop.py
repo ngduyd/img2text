@@ -46,8 +46,23 @@ def _result(bbox) -> dict:
         ],
     }
 
-async def _seed_done_job(db_session, storage, bbox) -> int:
-    """Done job for auth_client user; original JPEG seeded under storage_key."""
+def _original_png_rgba() -> bytes:
+    """200x400 RGBA PNG — JPEG save must survive RGB conversion."""
+    img = Image.new("RGBA", (200, 400), (255, 0, 0, 128))
+    img.paste("blue", (100, 0, 200, 400))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+async def _seed_done_job(
+    db_session,
+    storage,
+    bbox,
+    original: bytes | None = None,
+    file_type: str = "image",
+    storage_key: str = ORIGINAL_KEY,
+) -> int:
+    """Done job for auth_client user; original seeded under storage_key."""
     user = (
         await db_session.execute(select(User).order_by(User.id))
     ).scalars().first()
@@ -55,14 +70,14 @@ async def _seed_done_job(db_session, storage, bbox) -> int:
         user_id=user.id,
         status="done",
         result=_result(bbox),
-        storage_key=ORIGINAL_KEY,
-        file_type="image",
+        storage_key=storage_key,
+        file_type=file_type,
         page_count=1,
     )
     db_session.add(job)
     await db_session.commit()
     await db_session.refresh(job)
-    await storage.put(ORIGINAL_KEY, _original_jpeg())
+    await storage.put(storage_key, original if original is not None else _original_jpeg())
     return job.id
 
 @pytest_asyncio.fixture
@@ -94,3 +109,33 @@ async def test_crop_404_unknown_region(auth_client, done_job_with_bbox):
 
 async def test_crop_owner_only(auth_client, other_client, done_job_with_bbox):
     assert (await other_client.get(f"/api/jobs/{done_job_with_bbox}/regions/p1r0/crop")).status_code == 403
+
+@pytest_asyncio.fixture
+async def done_job_with_rgba_original(auth_client, db_session, storage) -> int:
+    """Done job whose original is an RGBA PNG (review round 1, Important 1)."""
+    return await _seed_done_job(
+        db_session, storage, [100, 50, 200, 150], original=_original_png_rgba()
+    )
+
+@pytest_asyncio.fixture
+async def done_job_pdf(auth_client, db_session, storage) -> int:
+    """Done job with file_type='pdf' (review round 1, Important 2)."""
+    return await _seed_done_job(
+        db_session,
+        storage,
+        [100, 50, 200, 150],
+        original=b"%PDF-1.4 not really",
+        file_type="pdf",
+        storage_key="uploads/test.pdf",
+    )
+
+async def test_crop_rgba_original_200_valid_jpeg(auth_client, done_job_with_rgba_original, storage):
+    r = await auth_client.get(f"/api/jobs/{done_job_with_rgba_original}/regions/p1r0/crop")
+    assert r.status_code == 200
+    data = await storage.get(f"crops/{done_job_with_rgba_original}/p1r0.jpg")
+    assert Image.open(io.BytesIO(data)).format == "JPEG"
+
+async def test_crop_pdf_job_404(auth_client, done_job_pdf):
+    r = await auth_client.get(f"/api/jobs/{done_job_pdf}/regions/p1r0/crop")
+    assert r.status_code == 404
+    assert r.json()["detail"] == "Crop chỉ hỗ trợ file ảnh."

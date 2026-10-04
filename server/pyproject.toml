@@ -25,7 +25,6 @@ test = [
     "pytest-asyncio",
     "httpx",
     "moto[server]",
-    "pillow",
 ]
 
 [build-system]
