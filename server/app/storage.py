@@ -18,6 +18,7 @@ class StorageDriver(Protocol):
     async def put(self, key: str, data: bytes) -> None: ...
     async def presign_get(self, key: str, expires: int) -> str: ...
     async def exists(self, key: str) -> bool: ...
+    async def get(self, key: str) -> bytes: ...
     async def delete_prefix(self, prefix: str) -> None: ...
 
 class S3Driver:
@@ -67,6 +68,19 @@ class S3Driver:
                 raise
 
         return await asyncio.to_thread(_head)
+
+    async def get(self, key: str) -> bytes:
+        def _get() -> bytes:
+            try:
+                resp = self.client.get_object(Bucket=self.bucket, Key=key)
+                return resp["Body"].read()
+            except ClientError as e:
+                # ruling R24: missing key raises KeyError so callers can 404
+                if e.response["Error"]["Code"] in ("NoSuchKey", "404"):
+                    raise KeyError(key) from e
+                raise
+
+        return await asyncio.to_thread(_get)
 
     async def delete_prefix(self, prefix: str) -> None:
         def _delete() -> None:

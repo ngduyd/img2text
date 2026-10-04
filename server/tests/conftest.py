@@ -16,13 +16,13 @@ import boto3
 import httpx
 import pytest_asyncio
 from moto import mock_aws
-from sqlalchemy import text, update
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import Base, SessionLocal, engine
 from app.main import create_app
-from app.models import User
+from app.models import Job, User
 from app.storage import S3Driver
 
 
@@ -191,9 +191,34 @@ def VALID_RESULT_JSONB() -> dict:
     }
 
 @pytest_asyncio.fixture
+async def done_job_with_result(auth_client, db_session, VALID_RESULT_JSONB) -> int:
+    """Ruling R24: done job owned by the auth_client user (uploaded state
+    faked directly); returns job id."""
+    user = (
+        await db_session.execute(select(User).order_by(User.id))
+    ).scalars().first()
+    job = Job(
+        user_id=user.id,
+        status="done",
+        result=VALID_RESULT_JSONB,
+        storage_key="uploads/test.jpg",
+        file_type="image",
+        page_count=1,
+    )
+    db_session.add(job)
+    await db_session.commit()
+    await db_session.refresh(job)
+    return job.id
+
+@pytest_asyncio.fixture
+async def storage(app):
+    """Raw app.state.storage driver (no spies)."""
+    return app.state.storage
+
+@pytest_asyncio.fixture
 async def storage_spy(app):
     """Ruling R10: wrap app.state.storage driver methods; real op still runs."""
     driver = app.state.storage
-    for name in ("put", "exists", "presign_get", "delete_prefix"):
+    for name in ("put", "exists", "presign_get", "delete_prefix", "get"):
         setattr(driver, name, AsyncMock(wraps=getattr(driver, name)))
     yield driver
