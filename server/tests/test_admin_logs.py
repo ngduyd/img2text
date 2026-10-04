@@ -59,3 +59,12 @@ async def test_tail_missing_file_empty(admin_client, settings_log_missing):
 async def test_tail_no_path_param_ignores_traversal(admin_client, tmp_settings_log):
     r = await admin_client.get("/api/admin/logs/tail?lines=2&path=../../../etc/passwd")
     assert all("root:" not in ln for ln in r.json()["lines"])
+
+async def test_tail_lines_clamped(admin_client, tmp_settings_log):
+    """Pin (Plan E final review): lines clamp 1..500 — min(500, max(1, lines))."""
+    r = await admin_client.get("/api/admin/logs/tail?lines=-5")
+    assert r.status_code == 200
+    file_lines = tmp_settings_log.read_text().splitlines()
+    assert set(r.json()["lines"]) <= set(file_lines)  # no error, subset of file
+    r = await admin_client.get("/api/admin/logs/tail?lines=99999")
+    assert r.status_code == 200 and len(r.json()["lines"]) <= 500

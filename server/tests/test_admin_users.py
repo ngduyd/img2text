@@ -1,8 +1,13 @@
-"""Task 1: admin user list + PATCH ocr_enabled toggle."""
+"""Task 1: admin user list + PATCH ocr_enabled toggle + ocr-disable pin."""
 
+from uuid import uuid4
+
+import httpx
 import pytest
+from sqlalchemy import select
 
-from app.models import User
+from app.models import Job, User
+from tests.conftest import PNG_1PX, grant_ocr
 
 
 @pytest.fixture
@@ -39,3 +44,35 @@ async def test_patch_404_unknown(admin_client):
 
 async def test_admin_required_403(auth_client):
     assert (await auth_client.get("/api/admin/users")).status_code == 403
+
+async def test_patch_ocr_disable_keeps_queued_job_claimable(
+    admin_client, db_session, app, worker_client
+):
+    """Pin (Plan E final review): PATCH ocr_enabled=false does NOT touch the
+    job queue — require_ocr gates upload, NOT claim; job stays queued and
+    claimable by the worker.
+
+    Seeded on a separate httpx client: admin_client and auth_client share the
+    same cookie jar, so a second login would clobber the admin session.
+    """
+    c = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+    email = f"pin-{uuid4().hex}@test.io"
+    r = await c.post("/api/auth/register", json={"email": email, "password": "secret123"})
+    assert r.status_code == 201, r.text
+    await grant_ocr(db_session, email)
+    r = await c.post("/api/auth/login", json={"email": email, "password": "secret123"})
+    assert r.status_code == 200, r.text
+    r = await c.post("/api/jobs", files={"file": ("t.png", PNG_1PX, "image/png")})
+    assert r.status_code == 201, r.text
+    job_id = r.json()["id"]
+    await c.aclose()
+
+    job = await db_session.get(Job, job_id)
+    r = await admin_client.patch(
+        f"/api/admin/users/{job.user_id}", json={"ocr_enabled": False}
+    )
+    assert r.status_code == 200 and r.json()["ocr_enabled"] is False
+    await db_session.refresh(job)
+    assert job.status == "queued"  # require_ocr gates upload, NOT claim
+    r = await worker_client.get("/api/jobs/next")
+    assert r.status_code == 200 and r.json()["job_id"] == job_id

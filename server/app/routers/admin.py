@@ -1,4 +1,6 @@
-"""Admin routers (Task 1 user list + ocr grant; Task 2 stats)."""
+"""Admin routers: users (list + ocr_enabled PATCH), stats, request-log
+filter + safe tail. Job retry lives in jobs.py (POST /api/jobs/{id}/retry).
+"""
 
 import asyncio
 from datetime import date, datetime, time, timedelta, timezone
