@@ -8,6 +8,7 @@ import MarkdownEditor from "../components/MarkdownEditor";
 import MarkdownPreview from "../components/MarkdownPreview";
 import IssuesPanel from "../components/IssuesPanel";
 import ExportBar from "../components/ExportBar";
+import Button from "../components/ui/Button";
 
 const STATUS_TEXT: Record<Job["status"], string> = {
   queued: "Đang chờ worker Colab",
@@ -33,13 +34,12 @@ export default function JobDetail() {
   if (!job) return null;
 
   return (
-    <main className="mx-auto max-w-3xl p-4">
+    <main id="main" className="mx-auto max-w-3xl p-4">
       <h1 className="mb-4 text-xl font-bold">Chi tiết công việc #{job.id}</h1>
       <p data-testid={`status-${id}`}>{STATUS_TEXT[job.status]}</p>
       {job.status === "failed" && (
-        <button
-          type="button"
-          data-testid="btn-retry"
+        <Button
+          testid="btn-retry"
           onClick={async () => {
             setRetryError(null);
             try {
@@ -51,10 +51,10 @@ export default function JobDetail() {
           }}
         >
           Thử lại
-        </button>
+        </Button>
       )}
       {retryError && (
-        <p data-testid="retry-error" className="text-sm text-red-600">
+        <p data-testid="retry-error" className="text-sm text-error">
           {retryError}
         </p>
       )}

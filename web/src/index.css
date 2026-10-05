@@ -1,1 +1,60 @@
 @import "tailwindcss";
+@import "./styles/tokens.css";
+
+/* Tailwind v4 dark strategy: dark = .dark class on <html> (dark DEFAULT).
+   Token values flip via html:not(.dark) in tokens.css — no dark: variants needed. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Semantic token utilities: bg-bg, bg-surface, text-text, text-muted,
+   bg-accent, border-border, text-success/warning/error, rounded-card. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-border: var(--border);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --radius-card: 10px;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+}
+
+/* Visible focus ring on every interactive element (a11y, ui-ux-dev). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Skip link: off-screen until keyboard-focused (#main target in App). */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 50;
+}
+.skip-link:focus-visible {
+  left: 8px;
+  top: 8px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 16px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

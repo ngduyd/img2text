@@ -14,9 +14,9 @@ export default function AdminUsers() {
   });
 
   return (
-    <table className="w-full border-collapse bg-white text-left">
+    <table className="w-full border-collapse rounded-card bg-surface text-left">
       <thead>
-        <tr className="border-b border-gray-200 text-sm text-gray-500">
+        <tr className="border-b border-border text-sm text-muted">
           <th className="px-3 py-2">ID</th>
           <th className="px-3 py-2">Email</th>
           <th className="px-3 py-2">Vai trò</th>
@@ -25,7 +25,7 @@ export default function AdminUsers() {
       </thead>
       <tbody>
         {(data?.items ?? []).map((u: User) => (
-          <tr key={u.id} data-testid={`user-row-${u.id}`} className="border-b border-gray-100">
+          <tr key={u.id} data-testid={`user-row-${u.id}`} className="border-b border-border/40">
             <td className="px-3 py-2">{u.id}</td>
             <td className="px-3 py-2">{u.email}</td>
             <td className="px-3 py-2">{u.role}</td>

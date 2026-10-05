@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api/client";
+import Input from "./ui/Input";
 
 function isoDate(d: Date) {
   return d.toISOString().slice(0, 10);
@@ -35,30 +36,24 @@ export default function AdminStats() {
   return (
     <div>
       <div className="mb-4 flex items-end gap-4">
-        <label className="flex flex-col text-sm text-gray-500">
-          Từ
-          <input
-            type="date"
-            data-testid="input-stats-from"
-            value={range.from}
-            onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
-            className="mt-1 rounded border border-gray-300 px-2 py-1"
-          />
-        </label>
-        <label className="flex flex-col text-sm text-gray-500">
-          Đến
-          <input
-            type="date"
-            data-testid="input-stats-to"
-            value={range.to}
-            onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
-            className="mt-1 rounded border border-gray-300 px-2 py-1"
-          />
-        </label>
+        <Input
+          label="Từ"
+          testid="input-stats-from"
+          type="date"
+          value={range.from}
+          onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
+        />
+        <Input
+          label="Đến"
+          testid="input-stats-to"
+          type="date"
+          value={range.to}
+          onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
+        />
       </div>
-      <table className="w-full border-collapse bg-white text-left text-sm">
+      <table className="w-full border-collapse rounded-card bg-surface text-left text-sm">
         <thead>
-          <tr className="border-b border-gray-200 text-gray-500">
+          <tr className="border-b border-border text-muted">
             {HEADERS.map((h) => (
               <th key={h} className="px-3 py-2">
                 {h}
@@ -68,7 +63,7 @@ export default function AdminStats() {
         </thead>
         <tbody>
           {(data?.days ?? []).map((d) => (
-            <tr key={d.date} data-testid={`stats-row-${d.date}`} className="border-b border-gray-100">
+            <tr key={d.date} data-testid={`stats-row-${d.date}`} className="border-b border-border/40">
               <td className="px-3 py-2">{d.date}</td>
               <td className="px-3 py-2">{d.users_registered}</td>
               <td className="px-3 py-2">{d.jobs_submitted}</td>

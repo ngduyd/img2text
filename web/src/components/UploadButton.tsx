@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { ApiError, api } from "../api/client";
+import Button from "./ui/Button";
 
 /** POST /api/jobs returns a partial job; callers only need `id` for routing. */
 export default function UploadButton({
@@ -31,13 +32,16 @@ export default function UploadButton({
       {denied && (
         <div
           data-testid="banner-no-access"
-          className="mb-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-amber-800"
+          className="mb-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-warning"
         >
           Chờ admin cấp quyền
         </div>
       )}
       {error && (
-        <div data-testid="upload-error" className="mb-2 rounded border border-red-300 bg-red-50 px-3 py-2 text-red-700">
+        <div
+          data-testid="upload-error"
+          className="mb-2 rounded-lg border border-error/40 bg-error/10 px-3 py-2 text-error"
+        >
           {error}
         </div>
       )}
@@ -55,15 +59,14 @@ export default function UploadButton({
           e.target.value = "";
         }}
       />
-      <button
-        type="button"
-        data-testid="btn-upload"
+      <Button
+        testid="btn-upload"
         disabled={busy || denied}
+        loading={busy}
         onClick={() => inputRef.current?.click()}
-        className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
       >
         Tải file lên
-      </button>
+      </Button>
     </div>
   );
 }

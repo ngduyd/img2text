@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api/client";
+import Button from "./ui/Button";
+import Input from "./ui/Input";
 
 interface LogRow {
   id: number;
@@ -28,28 +30,20 @@ export default function AdminLogs() {
   return (
     <div>
       <div className="mb-4 flex items-end gap-4">
-        <label className="flex flex-col text-sm text-gray-500">
-          Lọc theo IP
-          <input
-            type="text"
-            data-testid="input-log-ip"
-            value={ipInput}
-            onChange={(e) => setIpInput(e.target.value)}
-            placeholder="10.0.0.1"
-            className="mt-1 rounded border border-gray-300 px-2 py-1"
-          />
-        </label>
-        <button
-          data-testid="btn-logs-refresh"
-          onClick={() => setIp(ipInput)}
-          className="rounded bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-        >
+        <Input
+          label="Lọc theo IP"
+          testid="input-log-ip"
+          value={ipInput}
+          onChange={(e) => setIpInput(e.target.value)}
+          placeholder="10.0.0.1"
+        />
+        <Button testid="btn-logs-refresh" size="sm" onClick={() => setIp(ipInput)}>
           Làm mới
-        </button>
+        </Button>
       </div>
-      <table className="w-full border-collapse bg-white text-left text-sm">
+      <table className="w-full border-collapse rounded-card bg-surface text-left text-sm">
         <thead>
-          <tr className="border-b border-gray-200 text-gray-500">
+          <tr className="border-b border-border text-muted">
             <th className="px-3 py-2">Method</th>
             <th className="px-3 py-2">Path</th>
             <th className="px-3 py-2">Status</th>
@@ -61,7 +55,7 @@ export default function AdminLogs() {
           {(logs?.items ?? []).map((r, i) => {
             const row = r as unknown as LogRow;
             return (
-              <tr key={row.id ?? i} className="border-b border-gray-100">
+              <tr key={row.id ?? i} className="border-b border-border/40">
                 <td className="px-3 py-2">{row.method}</td>
                 <td className="px-3 py-2">{row.path}</td>
                 <td className="px-3 py-2">{row.status}</td>
@@ -72,7 +66,10 @@ export default function AdminLogs() {
           })}
         </tbody>
       </table>
-      <pre data-testid="logs-tail" className="mt-4 overflow-x-auto rounded border border-gray-200 bg-gray-900 p-3 text-xs text-gray-100">
+      <pre
+        data-testid="logs-tail"
+        className="mt-4 overflow-x-auto rounded-card border border-border bg-surface p-3 text-xs text-muted"
+      >
         {(tail?.lines ?? []).join("\n")}
       </pre>
     </div>

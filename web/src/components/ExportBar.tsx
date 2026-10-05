@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ApiError, api } from "../api/client";
+import Button from "./ui/Button";
 
 const FORMATS = [
   { fmt: "md", testid: "export-md", label: "Tải .md" },
@@ -37,23 +38,22 @@ export default function ExportBar({ jobId }: { jobId: string }) {
       {error && (
         <div
           data-testid="export-error"
-          className="mb-2 rounded border border-red-300 bg-red-50 px-3 py-2 text-red-700"
+          className="mb-2 rounded-lg border border-error/40 bg-error/10 px-3 py-2 text-error"
         >
           {error}
         </div>
       )}
       <div className="flex gap-2">
         {FORMATS.map(({ fmt, testid, label }) => (
-          <button
+          <Button
             key={fmt}
-            type="button"
-            data-testid={testid}
-            disabled={busy.has(fmt)}
+            testid={testid}
+            variant="secondary"
+            loading={busy.has(fmt)}
             onClick={() => exportFmt(fmt)}
-            className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
           >
             {label}
-          </button>
+          </Button>
         ))}
       </div>
     </div>

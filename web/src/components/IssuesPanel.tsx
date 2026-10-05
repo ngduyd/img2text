@@ -21,9 +21,13 @@ export default function IssuesPanel({ jobId, regions }: { jobId: string; regions
     <section className="mt-4">
       <h2 className="mb-2 text-lg font-bold">Vấn đề ({issues.length})</h2>
       {issues.map((r) => (
-        <article key={r.id} data-testid={`issue-${r.id}`} className="mb-2 rounded border p-2">
+        <article
+          key={r.id}
+          data-testid={`issue-${r.id}`}
+          className="mb-2 rounded-card border border-border p-2"
+        >
           <span className="font-semibold">{VERDICT_LABELS[r.verdict] ?? r.verdict}</span>{" "}
-          <span className="text-sm text-gray-500">{r.id}</span>
+          <span className="text-sm text-muted">{r.id}</span>
           {r.bbox != null && <Crop jobId={jobId} rid={r.id} />}
           {r.text && <p className="text-sm">{r.text}</p>}
         </article>

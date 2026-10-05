@@ -5,6 +5,7 @@ import { api } from "../api/client";
 import AdminLogs from "../components/AdminLogs";
 import AdminStats from "../components/AdminStats";
 import AdminUsers from "../components/AdminUsers";
+import Button from "../components/ui/Button";
 
 const TABS = [
   { id: "users", label: "Người dùng" },
@@ -31,26 +32,27 @@ export default function Admin() {
   if (isError || (me && me.role !== "admin")) return null;
 
   return (
-    <main className="mx-auto max-w-5xl p-4">
+    <main id="main" className="mx-auto max-w-5xl p-4">
       <h1 className="mb-4 text-xl font-bold">Quản trị</h1>
-      <div className="mb-4 flex gap-2 border-b border-gray-200">
+      <div className="mb-4 flex gap-2 border-b border-border">
         {TABS.map((t) => (
-          <button
+          <Button
             key={t.id}
-            data-testid={`tab-${t.id}`}
-            onClick={() => setTab(t.id)}
+            testid={`tab-${t.id}`}
+            variant="ghost"
             className={
               tab === t.id
-                ? "border-b-2 border-blue-600 px-4 py-2 font-semibold text-blue-700"
-                : "px-4 py-2 text-gray-500"
+                ? "border-b-2 border-accent font-semibold text-accent"
+                : "text-muted"
             }
+            onClick={() => setTab(t.id)}
           >
             {t.label}
-          </button>
+          </Button>
         ))}
       </div>
       {!me ? (
-        <div data-testid="admin-loading" className="p-8 text-center text-gray-500">
+        <div data-testid="admin-loading" className="p-8 text-center text-muted">
           Đang tải…
         </div>
       ) : (

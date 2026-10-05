@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError, api } from "../api/client";
+import Button from "../components/ui/Button";
+import Input from "../components/ui/Input";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -24,38 +26,33 @@ export default function Login() {
   }
 
   return (
-    <main className="mx-auto max-w-sm p-6">
+    <main id="main" className="mx-auto max-w-sm p-6">
       <h1 className="mb-4 text-xl font-bold">Đăng nhập</h1>
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
-        <input
-          data-testid="input-email"
+        <Input
+          label="Email"
+          testid="input-email"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Email"
-          className="rounded border border-gray-300 px-3 py-2"
         />
-        <input
-          data-testid="input-password"
+        <Input
+          label="Mật khẩu"
+          testid="input-password"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Mật khẩu"
-          className="rounded border border-gray-300 px-3 py-2"
         />
         {error && (
-          <p data-testid="error-detail" className="text-sm text-red-600">
+          <p data-testid="error-detail" className="text-sm text-error">
             {error}
           </p>
         )}
-        <button
-          data-testid="btn-login"
-          type="submit"
-          disabled={loading}
-          className="rounded bg-blue-600 px-3 py-2 font-semibold text-white disabled:opacity-50"
-        >
+        <Button testid="btn-login" type="submit" loading={loading}>
           Đăng nhập
-        </button>
+        </Button>
       </form>
     </main>
   );
