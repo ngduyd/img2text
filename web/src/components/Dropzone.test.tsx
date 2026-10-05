@@ -5,6 +5,14 @@ import { api } from "../api/client";
 import type { User } from "../api/types";
 import Dropzone from "./Dropzone";
 
+// R30: pdfjs mocked at module boundary — pdf wizard never loads real pdfjs in tests.
+vi.mock("../lib/pdfjs", () => ({
+  loadPdf: vi.fn(async () => ({
+    numPages: 1,
+    getPage: vi.fn(async () => ({ viewport: { width: 10, height: 10 }, renderCanvas: vi.fn() })),
+  })),
+}));
+
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
   return {
@@ -43,6 +51,22 @@ it("dragover preventDefault and drop triggers uploadJob", async () => {
   fireEvent.drop(dz, { dataTransfer: { files: [file] } });
   await waitFor(() => expect(api.uploadJob).toHaveBeenCalledWith(file));
   await waitFor(() => expect(onUploaded).toHaveBeenCalledWith({ id: 42, status: "queued" }));
+});
+
+it("pdf selection opens wizard instead of immediate upload", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.uploadJob).mockResolvedValue({ id: 42, status: "queued" });
+  renderDropzone();
+  await screen.findByTestId("btn-upload");
+  const file = new File(["%PDF-1.7"], "a.pdf", { type: "application/pdf" });
+  fireEvent.change(screen.getByTestId("input-file"), { target: { files: [file] } });
+  await screen.findByTestId("wizard-pdf");
+  expect(screen.queryByTestId("input-file")).not.toBeInTheDocument();
+  expect(api.uploadJob).not.toHaveBeenCalled();
+  // cancel → back to empty dropzone
+  fireEvent.click(screen.getByTestId("wizard-cancel"));
+  await screen.findByTestId("input-file");
+  expect(screen.queryByTestId("wizard-pdf")).not.toBeInTheDocument();
 });
 
 it("drop uploads nothing when ocr not enabled", async () => {

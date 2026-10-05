@@ -28,6 +28,25 @@ describe("api client", () => {
     await expect(api.uploadJob(new File([], "a.jpg"))).rejects.toThrow("Chưa được cấp quyền OCR.");
   });
 
+  it("uploadJob appends preprocess JSON field when opts.preprocess present", async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1, status: "queued" }), { status: 200 }));
+    vi.stubGlobal("fetch", spy);
+    const file = new File(["%PDF"], "a.pdf", { type: "application/pdf" });
+    await api.uploadJob(file, { preprocess: { pages: [1, 3], rotate: { "2": 90 } } });
+    const [, opts] = spy.mock.calls[0];
+    const form = opts.body as FormData;
+    expect(form.get("file")).toBe(file);
+    expect(form.get("preprocess")).toBe(JSON.stringify({ pages: [1, 3], rotate: { "2": 90 } }));
+  });
+
+  it("uploadJob omits preprocess field when opts absent", async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1, status: "queued" }), { status: 200 }));
+    vi.stubGlobal("fetch", spy);
+    await api.uploadJob(new File(["x"], "a.jpg", { type: "image/jpeg" }));
+    const [, opts] = spy.mock.calls[0];
+    expect((opts.body as FormData).get("preprocess")).toBeNull();
+  });
+
   it("401 on non-auth path redirects to /login and still throws ApiError", async () => {
     const assign = stubLocationAssign();
     vi.stubGlobal(
