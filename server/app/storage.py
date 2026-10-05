@@ -1,7 +1,9 @@
 """S3/R2 object storage driver (Task 1).
 
-R2 speaks the S3 API; `r2_region` defaults to "auto" (R2's fixed region).
-All boto3 calls run via asyncio.to_thread — boto3 is synchronous.
+Rulings embedded: R2 — S3 API, r2_region "auto"; R24 — missing key raises
+KeyError so callers map to 404. Dev/prod endpoint split (storage_public_
+endpoint): ops client = internal endpoint, presign client = public endpoint
+(browser-fetched URLs); empty public = single client, prod R2 unchanged.
 """
 
 import asyncio

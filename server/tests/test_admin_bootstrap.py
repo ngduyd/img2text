@@ -2,7 +2,7 @@
 
 from sqlalchemy import select
 
-from app.admin import bootstrap_admin
+from app.admin_bootstrap import bootstrap_admin
 from app.models import User
 
 

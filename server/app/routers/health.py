@@ -1,4 +1,7 @@
-"""Health endpoint: SELECT 1 against the database."""
+"""Health endpoint: SELECT 1 against the database.
+
+Monitoring probe, unauthenticated; DB failure maps to 503 (never 500).
+"""
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text

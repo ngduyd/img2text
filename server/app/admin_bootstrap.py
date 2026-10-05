@@ -1,4 +1,9 @@
-"""Admin bootstrap (Task 8)."""
+"""First-run admin bootstrap (Task 8, ruling R28).
+
+Creates role='admin' user from settings.admin_email/password at startup;
+no-op when credentials empty or user already exists. Trusted first identity:
+bootstrap admin is created with ocr_enabled=True unconditionally.
+"""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

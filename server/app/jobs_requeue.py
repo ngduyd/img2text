@@ -7,7 +7,6 @@ Started-at reset is deliberate: a reclaimed job's clock must be honest
 import logging
 
 from sqlalchemy import func, update
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Job
 

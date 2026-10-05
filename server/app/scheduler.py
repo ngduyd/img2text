@@ -3,9 +3,11 @@
 ponytail: brief names apscheduler 4.x `AsyncScheduler`; package mirror has no
 stable 4.x (only alphas), so this uses stable 3.x `AsyncIOScheduler` with the
 same jobs. Upgrade to AsyncScheduler when 4.x is stable on the mirror.
+R58a: server-side upload kick was deleted (reaper ≠ claim); fresh queued
+jobs are claimed by workers polling GET /api/jobs/next, the sweep loop only
+requeues expired leases.
 """
 
-import asyncio
 import logging
 import os
 
@@ -15,10 +17,6 @@ from fastapi import FastAPI
 from app.config import settings
 
 logger = logging.getLogger(__name__)
-
-# R58a: upload kick deleted (reaper ≠ claim); the periodic sweep loop is the
-# only claim caller. Lock kept as a cheap guard if a second caller appears.
-_claim_lock = asyncio.Lock()
 
 async def _run_jobs_once() -> None:
     """One claim pass: requeue expired leases (only server-side job advance;
@@ -38,11 +36,10 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
 
     async def reap_all() -> None:
-        async with _claim_lock:
-            try:
-                await _run_jobs_once()
-            except Exception:  # one failing pass must not kill the job
-                logger.warning("scheduler claim pass failed", exc_info=True)
+        try:
+            await _run_jobs_once()
+        except Exception:  # one failing pass must not kill the job
+            logger.warning("scheduler claim pass failed", exc_info=True)
 
     scheduler.add_job(
         reap_all,

@@ -1,4 +1,8 @@
-"""SQLAlchemy ORM models (Task 2)."""
+"""SQLAlchemy ORM models (Task 2): users, tokens, jobs, analytics, settings.
+
+Spec §4 shapes: Job carries storage_key/file_type/page_count/preprocess/
+result; worker_token plaintext per ruling R11 (hash-at-rest rides Alembic).
+"""
 
 from datetime import datetime, timezone
 from uuid import UUID, uuid4

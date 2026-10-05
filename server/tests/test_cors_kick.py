@@ -42,7 +42,7 @@ async def test_cors_evil_origin_absent(client):
 
 async def test_cors_evilvscode_subdomain_rejected(client):
     """Tightened default (R58 review): vscode pattern is subdomain-anchored —
-    evilvscode.dev must NOT match (old ".*vscode\.dev" did)."""
+    evilvscode.dev must NOT match (old ".*vscode\\.dev" did)."""
     pre = await _preflight(client, "https://evilvscode.dev")
     assert "access-control-allow-origin" not in pre.headers
     get = await client.get("/api/health", headers={"Origin": "https://evilvscode.dev"})

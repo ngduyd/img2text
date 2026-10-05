@@ -1,6 +1,6 @@
 """Task 2: GET /api/admin/stats aggregates + settings-backed gpu cost."""
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest_asyncio

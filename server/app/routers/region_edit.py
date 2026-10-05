@@ -1,4 +1,9 @@
-"""Plan H Task 2: PATCH /api/jobs/{id}/regions/{rid} — per-region edit."""
+"""Plan H Task 2: PATCH /api/jobs/{id}/regions/{rid} — per-region text edit.
+
+Ruling embedded: every edit invalidates cached exports (delete exports/{id}/
+prefix, Plan D binding); markdown auto-replace writes edited_markdown only
+when the old text occurs (first occurrence), else the flag stays false.
+"""
 
 import copy
 
@@ -8,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.deps import get_current_user
-from app.models import Job, User
+from app.models import User
 from app.routers.exports import current_markdown, find_region
 from app.routers.jobs import _job_or_403
 from app.storage import StorageDriver, get_storage

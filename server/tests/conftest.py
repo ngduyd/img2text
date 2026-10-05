@@ -25,7 +25,7 @@ from moto import mock_aws
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.admin import bootstrap_admin
+from app.admin_bootstrap import bootstrap_admin
 from app.config import settings
 from app.db import Base, SessionLocal, engine
 from app.main import create_app
