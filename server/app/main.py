@@ -9,7 +9,7 @@ from app.admin import bootstrap_admin
 from app.config import settings
 from app.db import Base, SessionLocal, engine
 from app.middleware import PageViewsMiddleware, RequestLogsMiddleware
-from app.routers import admin, auth, exports, health, jobs, profile
+from app.routers import admin, auth, exports, health, jobs, profile, region_edit
 from app.scheduler import init_scheduler
 from app.storage import build_storage
 
@@ -43,6 +43,7 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     app.include_router(jobs.router)
     app.include_router(exports.router)
+    app.include_router(region_edit.router)
     # Starlette add_middleware inserts at head → last added = outermost
     app.add_middleware(PageViewsMiddleware)
     app.add_middleware(RequestLogsMiddleware)
