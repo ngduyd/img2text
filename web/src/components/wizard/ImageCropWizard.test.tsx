@@ -1,7 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { toast } from "sonner";
 import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "../../api/client";
 import ImageCropWizard from "./ImageCropWizard";
+
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 // jsdom canvas: getContext returns null unless mocked — recording 2d ctx.
 const { ctx } = vi.hoisted(() => ({
@@ -13,6 +16,7 @@ const { ctx } = vi.hoisted(() => ({
     restore: vi.fn(),
     translate: vi.fn(),
     rotate: vi.fn(),
+    scale: vi.fn(),
     fillStyle: "",
     strokeStyle: "",
   },
@@ -75,18 +79,36 @@ beforeEach(() => {
   });
 });
 
-it("renders wizard-image + crop-canvas + crop buttons; canvas at natural dims on load", () => {
+it("renders hidden measurement img + canvas sole surface; icon toolbar ABOVE canvas; display capped 720px", () => {
   renderWizard();
-  expect(screen.getByTestId("wizard-image")).toBeInTheDocument();
-  expect(screen.getByTestId("crop-canvas")).toBeInTheDocument();
-  for (const id of ["btn-crop-rotate", "btn-crop-reset", "wizard-submit", "wizard-cancel"]) {
-    expect(screen.getByTestId(id)).toBeInTheDocument();
+  const img = screen.getByTestId("wizard-image") as HTMLImageElement;
+  expect(img).toBeInTheDocument();
+  expect(img).toHaveClass("hidden"); // R51: measurement-only, hidden — canvas is the sole visible surface
+  const canvas = screen.getByTestId("crop-canvas");
+  // R61: toolbar row BEFORE canvas in DOM
+  for (const id of ["btn-crop-rotate", "btn-crop-reset", "wizard-submit"]) {
+    const btn = screen.getByTestId(id);
+    expect(btn.compareDocumentPosition(canvas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   }
+  expect(screen.getByTestId("wizard-cancel")).toBeInTheDocument();
   loadImage();
-  const canvas = screen.getByTestId("crop-canvas") as HTMLCanvasElement;
-  expect(canvas.width).toBe(800);
-  expect(canvas.height).toBe(600);
+  const el = screen.getByTestId("crop-canvas") as HTMLCanvasElement;
+  // 800×600 natural → display scale capped at 720px wide, aspect preserved
+  expect(el.width).toBe(720);
+  expect(el.height).toBe(540);
   expect(ctx.drawImage).toHaveBeenCalled();
+});
+
+it("icon buttons carry title + aria-label tooltips (R61)", () => {
+  renderWizard();
+  for (const [id, title] of [
+    ["btn-crop-rotate", "Xoay 90°"],
+    ["btn-crop-reset", "Xóa vùng chọn"],
+    ["wizard-submit", "Gửi lên"],
+  ] as const) {
+    expect(screen.getByTestId(id)).toHaveAttribute("title", title);
+    expect(screen.getByTestId(id)).toHaveAttribute("aria-label", title);
+  }
 });
 
 it("pointer drag draws rect overlay in image px (display scaled 2x)", () => {
@@ -94,7 +116,9 @@ it("pointer drag draws rect overlay in image px (display scaled 2x)", () => {
   loadImage();
   drawRect();
   // display (50,50)-(150,125) ×2 → image {x:100,y:100,w:200,h:150}
+  // overlay drawn under ctx.scale(display→image ratio) — mock records image-px args
   expect(ctx.fillRect).toHaveBeenCalledWith(100, 100, 200, 150);
+  expect(ctx.scale).toHaveBeenCalled();
   expect(String(ctx.fillStyle)).toContain("rgba");
 });
 
@@ -113,26 +137,33 @@ it("submit uploads cropped JPEG blob with -crop.jpg filename, NOT the original F
   expect(blob.size).toBeGreaterThan(0);
   expect(opts?.filename).toBe("photo-crop.jpg");
   await waitFor(() => expect(onUploaded).toHaveBeenCalledWith({ id: 7, status: "queued" }));
+  expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý.");
 });
 
-it("no rect → wizard-error 'Chọn vùng cần cắt trước.', NO api call", async () => {
-  renderWizard();
+it("no rect (R62) → submit ORIGINAL File + full-image toast, no wizard-error", async () => {
+  const { onUploaded } = renderWizard();
+  vi.mocked(api.uploadJob).mockResolvedValue({ id: 7, status: "queued" });
   loadImage();
   fireEvent.click(screen.getByTestId("wizard-submit"));
-  expect(await screen.findByTestId("wizard-error")).toHaveTextContent("Chọn vùng cần cắt trước.");
-  expect(api.uploadJob).not.toHaveBeenCalled();
+  await waitFor(() => expect(api.uploadJob).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(api.uploadJob).mock.calls[0][0]).toBe(file);
+  expect(toast.success).toHaveBeenCalledWith("Không có vùng chọn — gửi ảnh gốc");
+  await waitFor(() => expect(onUploaded).toHaveBeenCalledWith({ id: 7, status: "queued" }));
+  expect(screen.queryByTestId("wizard-error")).not.toBeInTheDocument();
 });
 
-it("rect smaller than 10 image-px is ignored", async () => {
+it("rect smaller than 10 image-px ignored → full-image upload (R62 fallback)", async () => {
   renderWizard();
+  vi.mocked(api.uploadJob).mockResolvedValue({ id: 7, status: "queued" });
   loadImage();
   const canvas = screen.getByTestId("crop-canvas");
   fireEvent.pointerDown(canvas, { clientX: 50, clientY: 50 });
   fireEvent.pointerMove(canvas, { clientX: 52, clientY: 53 }); // 4×6 image-px
   fireEvent.pointerUp(canvas, { clientX: 52, clientY: 53 });
   fireEvent.click(screen.getByTestId("wizard-submit"));
-  expect(await screen.findByTestId("wizard-error")).toHaveTextContent("Chọn vùng cần cắt trước.");
-  expect(api.uploadJob).not.toHaveBeenCalled();
+  await waitFor(() => expect(api.uploadJob).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(api.uploadJob).mock.calls[0][0]).toBe(file);
+  expect(screen.queryByTestId("wizard-error")).not.toBeInTheDocument();
 });
 
 it("rotate 90° cw twice → ctx.save/rotate/restore sequence recorded", async () => {
@@ -155,14 +186,16 @@ it("rotate reprojects existing rect into the rotated frame (crop on ROTATED bitm
   expect(ctx.fillRect).toHaveBeenCalledWith(350, 100, 150, 200);
 });
 
-it("reset clears rect → submit errors, no api call", async () => {
+it("reset clears rect → submit falls back to full-image upload, no wizard-error", async () => {
   renderWizard();
+  vi.mocked(api.uploadJob).mockResolvedValue({ id: 7, status: "queued" });
   loadImage();
   drawRect();
   fireEvent.click(screen.getByTestId("btn-crop-reset"));
   fireEvent.click(screen.getByTestId("wizard-submit"));
-  expect(await screen.findByTestId("wizard-error")).toHaveTextContent("Chọn vùng cần cắt trước.");
-  expect(api.uploadJob).not.toHaveBeenCalled();
+  await waitFor(() => expect(api.uploadJob).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(api.uploadJob).mock.calls[0][0]).toBe(file);
+  expect(screen.queryByTestId("wizard-error")).not.toBeInTheDocument();
 });
 
 it("cancel calls onCancel, no api call", () => {

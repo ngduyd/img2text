@@ -13,6 +13,7 @@
   "dependencies": {
     "@tanstack/react-query": "^5.104.1",
     "dompurify": "^3.4.16",
+    "lucide-react": "^1.52.0",
     "mammoth": "^1.13.0",
     "marked": "^18.0.14",
     "pdfjs-dist": "^6.4.299",
