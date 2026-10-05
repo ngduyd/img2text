@@ -5,13 +5,30 @@ stable 4.x (only alphas), so this uses stable 3.x `AsyncIOScheduler` with the
 same jobs. Upgrade to AsyncScheduler when 4.x is stable on the mirror.
 """
 
+import asyncio
 import logging
 import os
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
+
+# R58: one lock-protected claim path shared by the periodic loop and the
+# upload kick — no busy-loop, no concurrent double-claim passes.
+_claim_lock = asyncio.Lock()
+
+async def _run_jobs_once() -> None:
+    """One claim pass: requeue expired leases (only server-side job advance;
+    fresh queued jobs are claimed by workers polling GET /api/jobs/next)."""
+    from app.db import SessionLocal
+    from app.jobs_requeue import reap_leases
+
+    async with SessionLocal() as session:
+        n = await reap_leases(session)
+    logger.info("reap-leases: requeued %d", n)
 
 
 def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
@@ -21,14 +38,17 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
 
     async def reap_all() -> None:
-        from app.jobs_requeue import reap_leases
-
-        async with app.state.session_factory() as session:
-            n = await reap_leases(session)
-        logger.info("reap-leases: requeued %d", n)
+        async with _claim_lock:
+            try:
+                await _run_jobs_once()
+            except Exception:  # one failing pass must not kill the job
+                logger.warning("scheduler claim pass failed", exc_info=True)
 
     scheduler.add_job(
-        reap_all, trigger="interval", minutes=1, id="reap-leases"
+        reap_all,
+        trigger="interval",
+        seconds=settings.scheduler_interval_seconds,
+        id="reap-leases",
     )
 
     async def prune_all() -> None:

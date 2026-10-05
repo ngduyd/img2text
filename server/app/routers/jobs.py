@@ -5,16 +5,18 @@ Task 3: GET /api/jobs, GET /api/jobs/{id}, GET /api/jobs/{id}/file.
 import hashlib
 import hmac
 import json
+import logging
 import secrets
 import tempfile
 from datetime import datetime, timedelta, timezone
 
 from pypdf import PdfReader
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import scheduler
 from app.db import get_session
 from app.deps import get_current_user, get_runner_key, require_ocr
 from app.limiter import DailyCounter
@@ -34,6 +36,17 @@ ROTATE_ANGLES = {0, 90, 180, 270}
 
 router = APIRouter(tags=["jobs"])
 
+logger = logging.getLogger(__name__)
+
+async def _kick_processing() -> None:
+    """R58: nudge one claim pass right after upload — same lock-protected
+    path as the scheduler loop; failure logs a warning, never the request."""
+    try:
+        async with scheduler._claim_lock:
+            await scheduler._run_jobs_once()
+    except Exception:
+        logger.warning("upload kick failed", exc_info=True)
+
 def _ocr_user(user: User = Depends(get_current_user)) -> User:
     return require_ocr(user)
 
@@ -48,6 +61,7 @@ async def upload_job(
     user: User = Depends(_ocr_user),
     storage: StorageDriver = Depends(get_storage),
     session: AsyncSession = Depends(get_session),
+    background_tasks: BackgroundTasks = None,
 ) -> dict:
     # lazy per-app instance; same pattern as auth SlidingWindow
     limiter = getattr(request.app.state, "upload_limiter", None)
@@ -139,6 +153,7 @@ async def upload_job(
     session.add(job)
     await session.commit()
     await session.refresh(job)
+    background_tasks.add_task(_kick_processing)
     return {
         "id": job.id,
         "status": job.status,

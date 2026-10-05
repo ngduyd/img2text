@@ -1,5 +1,6 @@
 """App settings, read from environment (env names are case-insensitive)."""
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -25,6 +26,16 @@ class Settings(BaseSettings):
     r2_region: str = "auto"
     # Spec-reserved public CDN domain for crops/exports; no consumer yet.
     r2_public_base: str = ""
+    # CORS: comma-separated regex parts, joined with "|" (R58; VSCode
+    # port-forward origins bypass the vite dev proxy's same-origin setup).
+    allowed_origins: str = r"http://localhost:.*|http://127\.0\.0\.1:.*|.*vscode\.dev"
+    # Scheduler claim/reap interval (R58); floor 5s — no busy-loop.
+    scheduler_interval_seconds: int = 60
+
+    @field_validator("scheduler_interval_seconds")
+    @classmethod
+    def _floor_scheduler_interval(cls, v: int) -> int:
+        return max(5, v)
 
 
 settings = Settings()

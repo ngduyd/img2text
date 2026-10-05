@@ -1,9 +1,11 @@
 """FastAPI app factory."""
 
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.admin import bootstrap_admin
 from app.config import settings
@@ -47,6 +49,20 @@ def create_app() -> FastAPI:
     # Starlette add_middleware inserts at head → last added = outermost
     app.add_middleware(PageViewsMiddleware)
     app.add_middleware(RequestLogsMiddleware)
+    # R58 CORS: prod nginx serves same-origin; regex covers localhost/127.0.0.1
+    # ports and VSCode forwarded origins. allow_methods: full safe set —
+    # Starlette's GET-only default would 400 the POST /jobs preflight.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[],
+        allow_origin_regex=re.compile(
+            "|".join(
+                p.strip() for p in settings.allowed_origins.split(",") if p.strip()
+            )
+        ),
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    )
     return app
 
 # uvicorn entrypoint (dev + deploy/Dockerfile CMD: uvicorn app.main:app)
