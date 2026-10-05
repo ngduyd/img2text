@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_session
 from app.deps import get_current_user
+from app.limiter import rate_limit_auth
 from app.models import User
 from app.routers.auth import UserOut, _EmailIn, _user_out, revoke_all_refresh
 from app.security import hash_password, verify_password
@@ -35,6 +36,7 @@ async def update_profile(
     body: ProfileIn,
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit_auth),  # bcrypt verify per request; no brute-force surface
 ) -> UserOut:
     if not verify_password(body.current_password, user.password_hash):
         raise HTTPException(status_code=401, detail="Sai mật khẩu.")

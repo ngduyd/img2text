@@ -188,10 +188,7 @@ async def refresh(
     now = datetime.now(timezone.utc)
     if row.used_at is not None:
         # reuse detection: token replayed → revoke every refresh token for user
-        await session.execute(
-            delete(RefreshToken).where(RefreshToken.user_id == row.user_id)
-        )
-        await session.commit()
+        await revoke_all_refresh(session, row.user_id)
         raise HTTPException(status_code=401, detail="not authenticated")
     if row.expires_at <= now:
         raise HTTPException(status_code=401, detail="not authenticated")
@@ -204,10 +201,7 @@ async def refresh(
         .values(used_at=now)
     )
     if claim.rowcount != 1:
-        await session.execute(
-            delete(RefreshToken).where(RefreshToken.user_id == row.user_id)
-        )
-        await session.commit()
+        await revoke_all_refresh(session, row.user_id)
         raise HTTPException(status_code=401, detail="not authenticated")
     new_token, new_jti, exp = _mint_refresh(user_id)
     _store_refresh(session, user_id, new_token, new_jti, exp)

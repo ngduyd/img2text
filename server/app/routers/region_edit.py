@@ -11,6 +11,7 @@ from app.deps import get_current_user
 from app.models import Job, User
 from app.routers.exports import current_markdown, find_region
 from app.routers.jobs import _job_or_403
+from app.storage import StorageDriver, get_storage
 
 MAX_REGION_TEXT_CHARS = 10_000
 
@@ -35,6 +36,7 @@ async def edit_region_text(
     body: RegionTextBody,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
 ) -> dict:
     job = await _job_or_403(session, id, user)
     if job.status != "done":
@@ -56,4 +58,7 @@ async def edit_region_text(
             markdown_replaced = True
     job.result = result
     await session.commit()
+    # cache invalidation: exported md must reflect the edit (Plan D binding,
+    # same as patch_content); crops untouched — bboxes unchanged
+    await storage.delete_prefix(f"exports/{id}/")
     return {"id": rid, "text": new, "markdown_replaced": markdown_replaced}

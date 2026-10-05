@@ -129,6 +129,15 @@ async def test_region_edit_other_user_403(auth_client, db_session, other_client)
     )
     assert r.status_code == 403, r.text
 
+async def test_region_edit_invalidates_export_cache(auth_client, db_session, storage_spy):
+    job_id = await _seed_done(db_session, _result(_MD_WITH_TEXT))
+    r = await auth_client.post(f"/api/jobs/{job_id}/export", json={"fmt": "md"})
+    assert r.status_code == 200, r.text
+    await auth_client.patch(
+        f"/api/jobs/{job_id}/regions/r0", json={"text": "Tạm biệt"}
+    )
+    storage_spy.delete_prefix.assert_any_call(f"exports/{job_id}/")
+
 async def test_region_edit_queued_job_409(auth_client, seed_job):
     r = await auth_client.patch(
         f"/api/jobs/{seed_job}/regions/r0", json={"text": "x"}
