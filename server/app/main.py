@@ -9,7 +9,7 @@ from app.admin import bootstrap_admin
 from app.config import settings
 from app.db import Base, SessionLocal, engine
 from app.middleware import PageViewsMiddleware, RequestLogsMiddleware
-from app.routers import admin, auth, exports, health, jobs
+from app.routers import admin, auth, exports, health, jobs, profile
 from app.scheduler import init_scheduler
 from app.storage import build_storage
 
@@ -38,6 +38,8 @@ def create_app() -> FastAPI:
     app.state.storage = build_storage()
     app.include_router(health.router)
     app.include_router(auth.router)
+    # profile after auth (same /api/auth prefix; PATCH /profile)
+    app.include_router(profile.router)
     app.include_router(admin.router)
     app.include_router(jobs.router)
     app.include_router(exports.router)

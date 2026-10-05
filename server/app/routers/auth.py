@@ -97,6 +97,14 @@ class _EmailIn(BaseModel):
         return v.strip().lower() if isinstance(v, str) else v
 
 
+async def revoke_all_refresh(session: AsyncSession, user_id: int) -> None:
+    """Delete every refresh token row for user + commit. Ruling R50: exported
+    so profile.py shares the logic instead of duplicating it."""
+    await session.execute(
+        delete(RefreshToken).where(RefreshToken.user_id == user_id)
+    )
+    await session.commit()
+
 class Credentials(_EmailIn):
     # ponytail: regex format check; upgrade to EmailStr + email-validator when
     # deploy needs stricter RFC validation
@@ -219,10 +227,7 @@ async def logout(
     token = request.cookies.get(REFRESH_COOKIE)
     decoded = _decode_refresh(token) if token is not None else None
     if decoded is not None:
-        await session.execute(
-            delete(RefreshToken).where(RefreshToken.user_id == decoded[0])
-        )
-        await session.commit()
+        await revoke_all_refresh(session, decoded[0])
     # ponytail: access-only client revokes nothing (stateless access ≤15m);
     # upgrade path: access-jwt sub fallback for identification once a
     # server-side access store exists.
@@ -301,8 +306,5 @@ async def reset(
     )
     user = await session.get(User, row.user_id)
     user.password_hash = hash_password(body.password)
-    await session.execute(
-        delete(RefreshToken).where(RefreshToken.user_id == user.id)
-    )
-    await session.commit()
+    await revoke_all_refresh(session, user.id)
     return {}
