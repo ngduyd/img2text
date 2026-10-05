@@ -4,13 +4,14 @@ import { BrowserRouter, Link, Route, Routes, useNavigate } from "react-router-do
 import { api } from "./api/client";
 import type { User } from "./api/types";
 import ThemeToggle from "./components/ThemeToggle";
-import Badge from "./components/ui/Badge";
+import OcrBadge from "./components/OcrBadge";
 import Button, { buttonClasses } from "./components/ui/Button";
 import Forgot from "./pages/Forgot";
 import Admin from "./pages/Admin";
 import JobDetail from "./pages/JobDetail";
 import Jobs from "./pages/Jobs";
 import Login from "./pages/Login";
+import Profile from "./pages/Profile";
 import Register from "./pages/Register";
 import Reset from "./pages/Reset";
 
@@ -19,19 +20,6 @@ import Reset from "./pages/Reset";
 // Module scope so re-renders keep the cache. Exported: App.test.tsx clears it
 // per test (fresh mount must not inherit another test's ["me"] resolution).
 export const queryClient = new QueryClient();
-
-/** OCR status in right auth zone (binding nav contract, Task 0). */
-function OcrBadge({ enabled }: { enabled: boolean }) {
-  return enabled ? (
-    <Badge tone="success" testid="badge-ocr">
-      OCR đã cấp
-    </Badge>
-  ) : (
-    <Badge tone="warning" testid="badge-ocr">
-      Chờ admin cấp quyền
-    </Badge>
-  );
-}
 
 /** RIGHT auth zone: logged-out btn-login+btn-register; logged-in badge+avatar+profile+logout. */
 function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () => void }) {
@@ -166,16 +154,6 @@ function AppNav() {
   );
 }
 
-/** Task 3 placeholder — /profile route lands with the Profile page. */
-function ProfilePlaceholder() {
-  return (
-    <main id="main" className="mx-auto max-w-3xl p-4">
-      <h1 className="mb-4 text-xl font-bold">Hồ sơ</h1>
-      <p className="text-muted">Trang hồ sơ đang được xây dựng.</p>
-    </main>
-  );
-}
-
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -190,7 +168,7 @@ export default function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/forgot" element={<Forgot />} />
             <Route path="/reset" element={<Reset />} />
-            <Route path="/profile" element={<ProfilePlaceholder />} />
+            <Route path="/profile" element={<Profile />} />
             <Route path="/" element={<Jobs />} />
             <Route path="/jobs/:id" element={<JobDetail />} />
             <Route path="/admin" element={<Admin />} />

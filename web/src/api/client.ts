@@ -57,6 +57,8 @@ export const api = {
     request<User>("/api/auth/login", { method: "POST", body: { email, password } }),
   logout: () => request<unknown>("/api/auth/logout", { method: "POST" }),
   me: () => request<User>("/api/auth/me"),
+  updateProfile: (body: { current_password: string; email?: string; new_password?: string }) =>
+    request<User>("/api/auth/profile", { method: "PATCH", body }),
   refresh: () => request<unknown>("/api/auth/refresh", { method: "POST" }),
   forgotEmail: (email: string) =>
     request<unknown>("/api/auth/password/forgot", { method: "POST", body: { email } }),
