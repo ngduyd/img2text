@@ -4,6 +4,13 @@ from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
+class PreprocessIn(BaseModel):
+    """Plan W upload wizard: page selection + per-page rotation.
+    Stored as JSON string in jobs.preprocess (TEXT column)."""
+
+    pages: list[int] | None = None
+    rotate: dict[str, int] = {}
+
 class RegionOut(BaseModel):
     id: str
     bbox: list[int] | None

@@ -4,13 +4,14 @@ Task 3: GET /api/jobs, GET /api/jobs/{id}, GET /api/jobs/{id}/file.
 
 import hashlib
 import hmac
+import json
 import secrets
 import tempfile
 from datetime import datetime, timedelta, timezone
 
 from pypdf import PdfReader
-from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, UploadFile
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +19,7 @@ from app.db import get_session
 from app.deps import get_current_user, get_runner_key, require_ocr
 from app.limiter import DailyCounter
 from app.models import Job, User
-from app.schemas import ResultBody
+from app.schemas import PreprocessIn, ResultBody
 from app.storage import StorageDriver, get_storage
 
 UPLOAD_DAILY_LIMIT = 20
@@ -29,6 +30,7 @@ ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "pdf"}
 PRESIGN_EXPIRES_SECONDS = 3600
 LEASE_MINUTES = 45
 ERROR_MAX_CHARS = 500
+ROTATE_ANGLES = {0, 90, 180, 270}
 
 router = APIRouter(tags=["jobs"])
 
@@ -42,6 +44,7 @@ def _pdf_page_count(tmp) -> int:
 async def upload_job(
     request: Request,
     file: UploadFile = File(...),
+    preprocess: str | None = Form(None),
     user: User = Depends(_ocr_user),
     storage: StorageDriver = Depends(get_storage),
     session: AsyncSession = Depends(get_session),
@@ -87,6 +90,39 @@ async def upload_job(
         else:
             page_count = 1
             file_type = "image"
+        # Plan W: preprocess validated AFTER page_count known, BEFORE storage.put
+        preprocess_json: str | None = None
+        if preprocess is not None:
+            try:
+                pp = PreprocessIn.model_validate(json.loads(preprocess))
+            except (json.JSONDecodeError, ValidationError):
+                raise HTTPException(422, detail="Preprocess không hợp lệ.")
+            if pp.pages == []:
+                raise HTTPException(422, detail="Chưa chọn trang nào.")
+            if pp.pages is not None and any(
+                p < 1 or p > page_count for p in pp.pages
+            ):
+                raise HTTPException(
+                    422, detail="Trang chọn vượt quá số trang của file."
+                )
+            if file_type != "pdf":
+                raise HTTPException(422, detail="Chỉ file PDF hỗ trợ chọn trang.")
+            # ponytail: pages=None means "all pages" — rotate keys then skip
+            # the selected-set check; add per-page bounds if wizard needs it.
+            if pp.pages is not None:
+                selected = set(pp.pages)
+                for key in pp.rotate:
+                    try:
+                        if int(key) not in selected:
+                            raise ValueError
+                    except ValueError:
+                        raise HTTPException(
+                            422, detail="Xoay áp dụng cho trang đã chọn."
+                        )
+            for angle in pp.rotate.values():
+                if angle not in ROTATE_ANGLES:
+                    raise HTTPException(422, detail="Góc xoay không hợp lệ.")
+            preprocess_json = json.dumps(pp.model_dump())
         key = f"uploads/{hasher.hexdigest()}.{ext}"
         # driver.put no-ops when the content-addressed key already exists
         tmp.seek(0)
@@ -98,6 +134,7 @@ async def upload_job(
         storage_key=key,
         file_type=file_type,
         page_count=page_count,
+        preprocess=preprocess_json,
     )
     session.add(job)
     await session.commit()
@@ -183,6 +220,7 @@ async def next_job(
         "file_url": file_url,
         "file_type": job.file_type,
         "page_count": job.page_count,
+        "preprocess": json.loads(job.preprocess) if job.preprocess else None,
     }
 
 @router.get("/api/jobs/{id}")

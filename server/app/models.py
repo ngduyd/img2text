@@ -123,6 +123,7 @@ class Job(Base):
     storage_key: Mapped[str] = mapped_column(Text)
     file_type: Mapped[str] = mapped_column(Text)
     page_count: Mapped[int] = mapped_column(Integer)
+    preprocess: Mapped[str | None] = mapped_column(Text, nullable=True)
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     worker_token: Mapped[str | None] = mapped_column(Text, nullable=True)
