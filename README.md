@@ -63,6 +63,8 @@ docker run -d --name img2text-minio -p 9000:9000 -p 9001:9001 -v img2text-minio-
 docker run --rm --network=host minio/mc --alias local http://localhost:9000 mb local/img2text
 ```
 
+(Linux — on Docker Desktop use the web console at localhost:9001 instead)
+
 (or open the console at http://localhost:9001 — login `minioadmin`/`minioadmin` — and create bucket `img2text`).
 
 **Dev env file:**
@@ -115,7 +117,8 @@ inject a canned result — **DEV STUB ONLY**, bypasses the VLM:
 
 ```bash
 # 1. Claim a job (returns job_id, worker_token, page_count — stub below posts 1 page;
-#    if page_count > 1 the result is rejected, use an image upload for multi-page)
+#    NOTE: the server does not validate pages against page_count — a 1-page stub result
+#    marks even a multi-page job done (dev convenience, no guard))
 curl -X GET localhost:8000/api/jobs/next -H "Authorization: Bearer dev-runner-key"
 
 # 2. Post the stub result ({id} = job_id from step 1, {worker_token} likewise):
