@@ -47,6 +47,17 @@ describe("api client", () => {
     expect((opts.body as FormData).get("preprocess")).toBeNull();
   });
 
+  it("uploadJob accepts Blob + filename (cropped JPEG multipart name)", async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1, status: "queued" }), { status: 200 }));
+    vi.stubGlobal("fetch", spy);
+    const blob = new Blob(["x"], { type: "image/jpeg" });
+    await api.uploadJob(blob, { filename: "photo-crop.jpg" });
+    const [, opts] = spy.mock.calls[0];
+    const entry = (opts.body as FormData).get("file") as File;
+    expect(entry.name).toBe("photo-crop.jpg");
+    expect(entry.type).toBe("image/jpeg");
+  });
+
   it("401 on non-auth path redirects to /login and still throws ApiError", async () => {
     const assign = stubLocationAssign();
     vi.stubGlobal(

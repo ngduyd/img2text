@@ -43,7 +43,7 @@ it("dragover preventDefault and drop triggers uploadJob", async () => {
   vi.mocked(api.uploadJob).mockResolvedValue({ id: 42, status: "queued" });
   const onUploaded = renderDropzone();
   await screen.findByTestId("btn-upload");
-  const file = new File(["x"], "a.jpg", { type: "image/jpeg" });
+  const file = new File(["x"], "a.txt", { type: "text/plain" });
   const dz = screen.getByTestId("dropzone");
   const over = createEvent.dragOver(dz, { cancelable: true, dataTransfer: { files: [] } });
   fireEvent(dz, over);
@@ -51,6 +51,28 @@ it("dragover preventDefault and drop triggers uploadJob", async () => {
   fireEvent.drop(dz, { dataTransfer: { files: [file] } });
   await waitFor(() => expect(api.uploadJob).toHaveBeenCalledWith(file));
   await waitFor(() => expect(onUploaded).toHaveBeenCalledWith({ id: 42, status: "queued" }));
+});
+
+it("image selection opens crop wizard instead of eager upload", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  renderDropzone();
+  await screen.findByTestId("btn-upload");
+  // jsdom has no URL.createObjectURL — stub for the wizard's <img src>.
+  Object.defineProperty(URL, "createObjectURL", {
+    value: vi.fn(() => "blob:mock"),
+    configurable: true,
+    writable: true,
+  });
+  Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), configurable: true, writable: true });
+  const file = new File(["x"], "photo.png", { type: "image/png" });
+  fireEvent.change(screen.getByTestId("input-file"), { target: { files: [file] } });
+  await screen.findByTestId("wizard-image");
+  expect(screen.queryByTestId("input-file")).not.toBeInTheDocument();
+  expect(api.uploadJob).not.toHaveBeenCalled();
+  // cancel → back to empty dropzone
+  fireEvent.click(screen.getByTestId("wizard-cancel"));
+  await screen.findByTestId("input-file");
+  expect(screen.queryByTestId("wizard-image")).not.toBeInTheDocument();
 });
 
 it("pdf selection opens wizard instead of immediate upload", async () => {

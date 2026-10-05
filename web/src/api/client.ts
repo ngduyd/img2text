@@ -66,9 +66,11 @@ export const api = {
     request<unknown>("/api/auth/password/reset", { method: "POST", body: { token, password } }),
   listJobs: () => request<{ items: JobListItem[]; total: number }>("/api/jobs"),
   getJob: (id: number | string) => request<Job>(`/api/jobs/${id}`),
-  uploadJob: (file: File, opts?: { preprocess?: object }) => {
+  // Blob has no name — `filename` supplies the multipart filename (e.g. cropped JPEG).
+  uploadJob: (file: File | Blob, opts?: { filename?: string; preprocess?: object }) => {
     const form = new FormData();
-    form.append("file", file);
+    if (opts?.filename !== undefined) form.append("file", file, opts.filename);
+    else form.append("file", file);
     // R56: optional multipart field "preprocess" (JSON string) — server validates shape.
     if (opts?.preprocess !== undefined) form.append("preprocess", JSON.stringify(opts.preprocess));
     return request<{ id: number; status: string }>("/api/jobs", { method: "POST", body: form });

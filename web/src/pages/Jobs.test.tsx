@@ -64,8 +64,10 @@ it("upload button enabled and calls api when granted", async () => {
   renderWithRouter(<Jobs />);
   const btn = await screen.findByTestId("btn-upload");
   expect(btn).toBeEnabled();
-  const file = new File(["x"], "a.jpg", { type: "image/jpeg" });
-  const user = userEvent.setup();
+  // Image files route to the crop wizard — txt exercises the immediate upload path.
+  // applyAccept is a setup() option: input.accept would otherwise filter out non-matching files.
+  const file = new File(["x"], "a.txt", { type: "text/plain" });
+  const user = userEvent.setup({ applyAccept: false });
   await user.upload(screen.getByTestId("input-file"), file);
   expect(api.uploadJob).toHaveBeenCalledWith(file);
   await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs/42"));
@@ -77,8 +79,8 @@ it("upload error surfaces server detail", async () => {
   vi.mocked(api.uploadJob).mockRejectedValue(new ApiError("Đã đạt giới hạn upload hôm nay."));
   renderWithRouter(<Jobs />);
   await screen.findByTestId("btn-upload");
-  const file = new File(["x"], "a.jpg", { type: "image/jpeg" });
-  const user = userEvent.setup();
+  const file = new File(["x"], "a.txt", { type: "text/plain" });
+  const user = userEvent.setup({ applyAccept: false });
   await user.upload(screen.getByTestId("input-file"), file);
   expect(await screen.findByTestId("upload-error")).toHaveTextContent(
     "Đã đạt giới hạn upload hôm nay.",
