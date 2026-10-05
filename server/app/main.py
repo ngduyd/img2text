@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.admin import bootstrap_admin
+from app.admin_bootstrap import bootstrap_admin
 from app.config import settings
 from app.db import Base, SessionLocal, engine
 from app.middleware import PageViewsMiddleware, RequestLogsMiddleware
