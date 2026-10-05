@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
+import { mapApiError } from "../lib/errors";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 
@@ -17,9 +19,11 @@ export default function Login() {
     setLoading(true);
     try {
       await api.login(email, password);
+      toast.success("Đã đăng nhập.");
       navigate("/");
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Đã xảy ra lỗi.");
+      toast.error(mapApiError(err));
     } finally {
       setLoading(false);
     }

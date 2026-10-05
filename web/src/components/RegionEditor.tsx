@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
+import { mapApiError } from "../lib/errors";
 import type { RegionOut } from "../api/types";
 import Button from "./ui/Button";
 
@@ -27,10 +29,12 @@ export default function RegionEditor({
     setError(null);
     try {
       const res = await api.patchRegion(jobId, region.id, value);
+      toast.success("Đã lưu.");
       onSaved(region.id, value, res.markdown_replaced);
       await queryClient.invalidateQueries({ queryKey: ["job", jobId] });
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Lưu thất bại.");
+      toast.error(mapApiError(err));
     } finally {
       setSaving(false);
     }

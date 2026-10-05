@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { ApiError, api } from "../../api/client";
+import { mapApiError } from "../../lib/errors";
 import { loadPdf } from "../../lib/pdfjs";
 import Button from "../ui/Button";
 
@@ -98,9 +100,12 @@ export default function PdfWizard({
     for (const p of pages) if (p.rotate !== 0) rotate[String(p.n)] = p.rotate;
     try {
       const job = await api.uploadJob(file, { preprocess: { pages: chosen, rotate } });
+      toast.success("Đã tải lên — đang chờ xử lý.");
       onUploaded(job);
     } catch (err) {
+      // R51: inline wizard-error kept; toast mirrors it (R59).
       setError(err instanceof ApiError ? err.detail : "Tải file thất bại.");
+      toast.error(mapApiError(err));
     } finally {
       setBusy(false);
     }

@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ApiError, api } from "../api/client";
 import type { User } from "../api/types";
+import { toast } from "sonner";
 import Forgot from "./Forgot";
 import Login from "./Login";
 import Register from "./Register";
@@ -23,6 +24,8 @@ vi.mock("../api/client", async (importOriginal) => {
     },
   };
 });
+
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 /** App.tsx BrowserRouter is for prod; page tests use MemoryRouter per page. */
 function renderWithRouter(ui: ReactElement, { route = "/" } = {}) {
@@ -52,6 +55,8 @@ it("login shows server detail error", async () => {
   renderWithRouter(<Login />);
   await userEvent.click(screen.getByTestId("btn-login"));
   expect(await screen.findByText("Sai mật khẩu.")).toBeInTheDocument();
+  // R59: failing login also toasts mapped detail.
+  expect(toast.error).toHaveBeenCalledWith("Sai mật khẩu.");
 });
 
 it("register button exists and submits", async () => {

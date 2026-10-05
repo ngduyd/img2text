@@ -6,6 +6,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ApiError, api } from "../api/client";
 import type { Job, User } from "../api/types";
+import { toast } from "sonner";
 import Jobs from "./Jobs";
 
 vi.mock("../api/client", async (importOriginal) => {
@@ -20,6 +21,8 @@ vi.mock("../api/client", async (importOriginal) => {
     },
   };
 });
+
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 export const mockNavigate = vi.fn();
 
@@ -70,7 +73,9 @@ it("upload button enabled and calls api when granted", async () => {
   const user = userEvent.setup({ applyAccept: false });
   await user.upload(screen.getByTestId("input-file"), file);
   expect(api.uploadJob).toHaveBeenCalledWith(file);
-  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs/42"));
+  // R59: upload success → toast + navigate to /jobs (file list).
+  expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý.");
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs"));
 });
 
 it("upload error surfaces server detail", async () => {
@@ -85,6 +90,8 @@ it("upload error surfaces server detail", async () => {
   expect(await screen.findByTestId("upload-error")).toHaveTextContent(
     "Đã đạt giới hạn upload hôm nay.",
   );
+  // R59: failing upload also toasts mapped detail (inline block kept, R51).
+  expect(toast.error).toHaveBeenCalledWith("Đã đạt giới hạn upload hôm nay.");
   expect(api.uploadJob).toHaveBeenCalledWith(file);
 });
 

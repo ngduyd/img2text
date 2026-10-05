@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { api } from "../../api/client";
+import { mapApiError } from "../../lib/errors";
 import type { User } from "../../api/types";
 import Badge from "../../components/ui/Badge";
 import Card from "../../components/ui/Card";
@@ -12,7 +14,11 @@ export default function AdminUsers() {
   const patchUser = useMutation({
     mutationFn: (vars: { id: number; ocr_enabled: boolean }) =>
       api.adminPatchUser(vars.id, { ocr_enabled: vars.ocr_enabled }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-users"] }),
+    onSuccess: () => {
+      toast.success("Đã cập nhật.");
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+    onError: (err) => toast.error(mapApiError(err)),
   });
 
   return (

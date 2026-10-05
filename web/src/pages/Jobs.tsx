@@ -18,7 +18,7 @@ export default function Jobs() {
   return (
     <main id="main" className="mx-auto max-w-3xl p-4">
       <h1 className="mb-4 text-xl font-bold">Công việc</h1>
-      <Dropzone onUploaded={(job) => navigate(`/jobs/${job.id}`)} />
+      <Dropzone onUploaded={() => navigate("/jobs")} />
       {jobs !== undefined && items.length === 0 ? (
         <Card testid="empty-state" title="Chưa có công việc">
           <p className="text-sm text-muted">

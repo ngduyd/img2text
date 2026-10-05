@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+import { toast } from "sonner";
 import { api } from "../api/client";
 import type { User } from "../api/types";
 import Dropzone from "./Dropzone";
@@ -24,6 +25,8 @@ vi.mock("../api/client", async (importOriginal) => {
     },
   };
 });
+
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 function renderDropzone(onUploaded = vi.fn()) {
   render(
@@ -51,6 +54,8 @@ it("dragover preventDefault and drop triggers uploadJob", async () => {
   fireEvent.drop(dz, { dataTransfer: { files: [file] } });
   await waitFor(() => expect(api.uploadJob).toHaveBeenCalledWith(file));
   await waitFor(() => expect(onUploaded).toHaveBeenCalledWith({ id: 42, status: "queued" }));
+  // R59: upload success toast fires alongside inline behaviors.
+  expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý.");
 });
 
 it("image selection opens crop wizard instead of eager upload", async () => {

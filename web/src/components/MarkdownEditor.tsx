@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
+import { mapApiError } from "../lib/errors";
 import Button from "./ui/Button";
 
 export default function MarkdownEditor({ jobId, initial }: { jobId: string; initial: string }) {
@@ -13,12 +15,14 @@ export default function MarkdownEditor({ jobId, initial }: { jobId: string; init
     setError(null);
     try {
       await api.patchContent(jobId, value);
+      toast.success("Đã lưu.");
       setEditing(false);
       // Binding (T5 ledger): invalidate job query or preview shows stale
       // edited_markdown (polling stopped at done).
       await queryClient.invalidateQueries({ queryKey: ["job", jobId] });
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Lưu thất bại.");
+      toast.error(mapApiError(err));
     }
   };
 

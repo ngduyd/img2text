@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { BrowserRouter, Link, Route, Routes, useNavigate } from "react-router-dom";
+import { Toaster, toast } from "sonner";
 import { api } from "./api/client";
 import type { User } from "./api/types";
 import ThemeToggle from "./components/ThemeToggle";
@@ -14,6 +15,7 @@ import Login from "./pages/Login";
 import Profile from "./pages/Profile";
 import Register from "./pages/Register";
 import Reset from "./pages/Reset";
+import { mapApiError } from "./lib/errors";
 
 // BrowserRouter + QueryClientProvider live here (not main.tsx): App.test.tsx
 // renders <App /> standalone, so the shell must be provider-self-contained.
@@ -68,8 +70,10 @@ function AppNav() {
   async function onLogout() {
     try {
       await api.logout();
-    } catch {
+      toast.success("Đã đăng xuất.");
+    } catch (err) {
       // best-effort: clear local session even if server call fails
+      toast.error(mapApiError(err));
     }
     queryClient.clear();
     navigate("/login");
@@ -158,6 +162,7 @@ export default function App() {
             Bỏ qua điều hướng
           </a>
           <AppNav />
+          <Toaster theme="dark" position="top-right" richColors />
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />

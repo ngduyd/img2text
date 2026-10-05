@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { ApiError, api } from "../../api/client";
+import { mapApiError } from "../../lib/errors";
 import Button from "../ui/Button";
 
 interface Rect {
@@ -178,9 +180,12 @@ export default function ImageCropWizard({
               if (!blob) throw new Error("toBlob failed");
               const base = file.name.replace(/\.[^.]+$/, "") || "image";
               const job = await api.uploadJob(blob, { filename: `${base}-crop.jpg` });
+              toast.success("Đã tải lên — đang chờ xử lý.");
               onUploaded(job);
             } catch (err) {
+              // R51: inline wizard-error kept; toast mirrors it (R59).
               setError(err instanceof ApiError ? err.detail : "Không cắt được ảnh.");
+              toast.error(mapApiError(err));
             } finally {
               setBusy(false);
             }

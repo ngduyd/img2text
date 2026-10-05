@@ -1,6 +1,8 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
+import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
+import { mapApiError } from "../lib/errors";
 import PdfWizard from "./wizard/PdfWizard";
 import ImageCropWizard from "./wizard/ImageCropWizard";
 import Button from "./ui/Button";
@@ -27,9 +29,16 @@ export default function Dropzone({
       setError(null);
       setBusy(true);
     },
-    onSuccess: (job) => onUploaded(job),
-    onError: (err) =>
-      setError(err instanceof ApiError ? err.detail : "Tải file thất bại."),
+    onSuccess: (job) => {
+      // R59: toast + parent navigates to /jobs (file list visible).
+      toast.success("Đã tải lên — đang chờ xử lý.");
+      onUploaded(job);
+    },
+    onError: (err) => {
+      // R51: inline block kept; toast mirrors it (R59).
+      setError(err instanceof ApiError ? err.detail : "Tải file thất bại.");
+      toast.error(mapApiError(err));
+    },
     onSettled: () => setBusy(false),
   });
 

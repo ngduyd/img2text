@@ -1,6 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
+import { mapApiError } from "../lib/errors";
 import OcrBadge from "../components/OcrBadge";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
@@ -38,12 +40,14 @@ export default function Profile() {
     setPwBusy(true);
     try {
       await api.updateProfile({ current_password: curPw, new_password: newPw });
+      toast.success("Đã lưu thay đổi.");
       setPwSuccess(true);
       setCurPw("");
       setNewPw("");
       setNewPw2("");
     } catch (err) {
       setPwError(err instanceof ApiError ? err.detail : "Đổi mật khẩu thất bại.");
+      toast.error(mapApiError(err));
     } finally {
       setPwBusy(false);
     }
@@ -56,12 +60,14 @@ export default function Profile() {
     setEmBusy(true);
     try {
       const updated = await api.updateProfile({ current_password: curPw2, email: newEmail });
+      toast.success("Đã lưu thay đổi.");
       queryClient.setQueryData(["me"], updated);
       setEmSuccess(true);
       setCurPw2("");
       setNewEmail("");
     } catch (err) {
       setEmError(err instanceof ApiError ? err.detail : "Đổi email thất bại.");
+      toast.error(mapApiError(err));
     } finally {
       setEmBusy(false);
     }

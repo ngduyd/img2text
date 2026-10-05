@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
+import { mapApiError } from "../lib/errors";
 import Button from "./ui/Button";
 
 const FORMATS = [
@@ -21,9 +23,11 @@ export default function ExportBar({ jobId }: { jobId: string }) {
     const w = window.open("", "_blank");
     try {
       const { url } = await api.exportJob(jobId, fmt);
+      toast.success("Đã tạo bản xuất.");
       if (w) w.location = url;
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Xuất file thất bại.");
+      toast.error(mapApiError(err));
     } finally {
       setBusy((prev) => {
         const next = new Set(prev);
