@@ -82,6 +82,23 @@ export const api = {
     request<unknown>(`/api/jobs/${id}/content`, { method: "PATCH", body: { markdown } }),
   exportJob: (id: number | string, fmt: string) =>
     request<{ url: string }>(`/api/jobs/${id}/export`, { method: "POST", body: { fmt } }),
+  // Task 5: same-origin blob download of a cached export (presign window.open not usable for iframe srcdoc).
+  downloadExport: async (id: number | string, fmt: string): Promise<Blob> => {
+    const path = `/api/jobs/${id}/export/${fmt}/download`;
+    const res = await fetch(path, { credentials: "include" });
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const data = (await res.json()) as { detail?: string } | null;
+        if (data && typeof data.detail === "string") detail = data.detail;
+      } catch {
+        // non-JSON error body → keep generic detail
+      }
+      if (res.status === 401) window.location.assign("/login");
+      throw new ApiError(detail);
+    }
+    return await res.blob();
+  },
   getCropUrl: (jobId: number | string, rid: string) =>
     request<{ url: string }>(`/api/jobs/${jobId}/regions/${rid}/crop`),
   patchRegion: (jobId: number | string, rid: string, text: string) =>

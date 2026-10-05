@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Literal
 
 import bleach
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from PIL import Image
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +31,13 @@ from app.storage import StorageDriver, get_storage
 logger = logging.getLogger(__name__)
 
 EXPORT_PRESIGN_EXPIRES_SECONDS = 86400
+# GET download Content-Type per fmt (Task 5 brief, verbatim)
+EXPORT_CONTENT_TYPES = {
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "pdf": "application/pdf",
+    "html": "text/html; charset=utf-8",
+    "md": "text/markdown; charset=utf-8",
+}
 MAX_MARKDOWN_BYTES = 2 * 1024 * 1024
 CROP_MAX_WIDTH = 800
 CROP_JPEG_QUALITY = 70
@@ -317,6 +324,28 @@ async def export_job(
         await storage.put(key, data)
     url = await storage.presign_get(key, EXPORT_PRESIGN_EXPIRES_SECONDS)
     return {"url": url}
+
+@router.get("/api/jobs/{id}/export/{fmt}/download")
+async def download_export(
+    id: int,
+    fmt: Literal["md", "html", "docx", "pdf"],
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> Response:
+    """Same-origin download of a cached export (Task 5; client shows blob).
+
+    fmt is a Literal path segment — no user path reaches storage keys.
+    Cache miss → 404: client must POST /export first to generate.
+    """
+    job = await _job_or_403(session, id, user)
+    if job.status != "done":
+        raise HTTPException(status_code=409, detail="job not done")
+    try:
+        data = await storage.get(f"exports/{id}/{fmt}")
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Chưa xuất file.")
+    return Response(content=data, media_type=EXPORT_CONTENT_TYPES[fmt])
 
 @router.get("/api/jobs/{id}/regions/{rid}/crop")
 async def region_crop(
