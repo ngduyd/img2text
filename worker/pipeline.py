@@ -82,6 +82,8 @@ def build_page(res_json: dict, page_index: int, precheck: PrecheckResult | None 
                inference_ran: bool = True) -> dict:
     """Spec §4 page shape {index, width, height, page_flag, markdown, regions}.
 
+    index = ORIGINAL 1-based PDF page number (R55): preprocess page filter
+    keeps original numbering — result indices are never renumbered 1..k.
     precheck None → page_flag "ok" (test shortcut); inference_ran False →
     "unreadable", regions [], unreadable markdown; else flag from precheck
     (both-fail → unreadable, one-fail → low_confidence, none → ok).
@@ -152,6 +154,34 @@ def default_pdftoppm(pdf_bytes: bytes, file_type: str) -> list[tuple[bytes, int,
             out.append((data, w, h))
         return out
 
+def _apply_preprocess(raster: list[tuple[bytes, int, int]], preprocess: dict | None
+                      ) -> list[tuple[int, bytes, int, int]]:
+    """Raster → [(original_page_no, png, w, h)] honoring job preprocess (plan W).
+
+    pages: keep ONLY selected 1-based page numbers, preserving ORIGINAL numbers
+    (R55 — result page index stays the PDF page number, never renumbered).
+    rotate: {"<page>": 0|90|180|270}, CLOCKWISE (PIL ROTATE_270 = 90° CW);
+    0/absent = no-op (original bytes untouched). 90/270 swap (w, h).
+    No preprocess / empty → original numbering, all pages, untouched bytes.
+    """
+    out: list[tuple[int, bytes, int, int]] = []
+    pages_sel = (preprocess or {}).get("pages")
+    rotate = (preprocess or {}).get("rotate") or {}
+    cw = {90: Image.ROTATE_270, 180: Image.ROTATE_180, 270: Image.ROTATE_90}
+    for n, (png, w, h) in enumerate(raster, 1):
+        if pages_sel is not None and n not in pages_sel:
+            continue
+        v = int(rotate.get(str(n), 0) or 0)
+        if v in cw:
+            im = Image.open(io.BytesIO(png)).transpose(cw[v])
+            buf = io.BytesIO()
+            im.save(buf, "PNG")
+            png = buf.getvalue()
+            if v in (90, 270):
+                w, h = h, w
+        out.append((n, png, w, h))
+    return out
+
 def run_job(base_url: str, runner_key: str, client: httpx.Client, pipeline_factory,
             sleep_fn, rasterize_fn=default_pdftoppm) -> int:
     """Forever job loop → returns jobs processed; raises RunnerAuthError on 401.
@@ -189,9 +219,12 @@ def run_job(base_url: str, runner_key: str, client: httpx.Client, pipeline_facto
             else:
                 im = Image.open(io.BytesIO(file_bytes))
                 raster = [(file_bytes, im.size[0], im.size[1])]
+            # (original_page_no, png, w, h): preprocess filter/rotate keeps
+            # ORIGINAL 1-based page numbers (R55); absent → all, unchanged.
+            raster = _apply_preprocess(raster, job.get("preprocess") or None)
             pages: list[dict] = []
             gpu_seconds = 0.0
-            for i, (png, w, h) in enumerate(raster, 1):
+            for i, png, w, h in raster:
                 client.post(f"{base_url}/api/jobs/{job_id}/heartbeat", headers=hdr)
                 arr = np.array(Image.open(io.BytesIO(png)))
                 pc = precheck(arr)
