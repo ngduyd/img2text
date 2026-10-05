@@ -21,6 +21,22 @@ class StorageDriver(Protocol):
     async def get(self, key: str) -> bytes: ...
     async def delete_prefix(self, prefix: str) -> None: ...
 
+def _s3_client(endpoint: str, key_id: str, secret: str, region: str):
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint or None,
+        aws_access_key_id=key_id or None,
+        aws_secret_access_key=secret or None,
+        region_name=region,
+        # R2 requires SigV4; botocore defaults us-east-1 S3 to legacy sigv2.
+        # path-style addressing: MinIO (dev storage, localhost endpoints)
+        # breaks with AWS-style virtual-host addressing; R2 accepts
+        # path-style too, so one config covers both dev and prod.
+        config=Config(
+            signature_version="s3v4", s3={"addressing_style": "path"}
+        ),
+    )
+
 class S3Driver:
     def __init__(
         self,
@@ -29,21 +45,21 @@ class S3Driver:
         secret: str,
         bucket: str,
         region: str,
+        public_endpoint: str | None = None,
     ) -> None:
         self.bucket = bucket
-        self.client = boto3.client(
-            "s3",
-            endpoint_url=endpoint or None,
-            aws_access_key_id=key_id or None,
-            aws_secret_access_key=secret or None,
-            region_name=region,
-            # R2 requires SigV4; botocore defaults us-east-1 S3 to legacy sigv2.
-            # path-style addressing: MinIO (dev storage, localhost endpoints)
-            # breaks with AWS-style virtual-host addressing; R2 accepts
-            # path-style too, so one config covers both dev and prod.
-            config=Config(
-                signature_version="s3v4", s3={"addressing_style": "path"}
-            ),
+        # Ops client (put/get/exists/head): internal endpoint — dev localstack
+        # in-network name (container→host-published :4566 times out on hosts
+        # with broken DNAT).
+        self.client = _s3_client(endpoint, key_id, secret, region)
+        # Presign client: signed URLs are fetched by the USER'S BROWSER on the
+        # host, so they need the PUBLIC endpoint (dev: http://localhost:4566).
+        # Empty public = ops endpoint — single client, prod R2 unchanged.
+        public = public_endpoint or endpoint
+        self.presign_client = (
+            self.client
+            if public == endpoint
+            else _s3_client(public, key_id, secret, region)
         )
 
     async def put(self, key: str, data: bytes) -> None:
@@ -55,8 +71,9 @@ class S3Driver:
         )
 
     async def presign_get(self, key: str, expires: int) -> str:
+        # PUBLIC client only — URL must be browser-reachable on the host
         return await asyncio.to_thread(
-            self.client.generate_presigned_url,
+            self.presign_client.generate_presigned_url,
             "get_object",
             Params={"Bucket": self.bucket, "Key": key},
             ExpiresIn=expires,
@@ -119,4 +136,5 @@ def build_storage() -> S3Driver:
         settings.r2_secret_access_key,
         settings.r2_bucket,
         settings.r2_region,
+        public_endpoint=settings.storage_public_endpoint,
     )

@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     r2_region: str = "auto"
     # Spec-reserved public CDN domain for crops/exports; no consumer yet.
     r2_public_base: str = ""
+    # Public endpoint for presigned file links (fetched by the USER'S BROWSER,
+    # e.g. http://localhost:4566 in dev). Empty = ops endpoint (prod R2
+    # unchanged — single-endpoint behavior).
+    storage_public_endpoint: str = ""
     # CORS: comma-separated regex parts, joined with "|" (R58; VSCode
     # port-forward origins bypass the vite dev proxy's same-origin setup).
     allowed_origins: str = (

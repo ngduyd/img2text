@@ -77,12 +77,16 @@ services:
     environment:
       # Compose service name — NOT localhost (container-to-container DNS).
       DATABASE_URL: postgresql+asyncpg://img2text:img2text@postgres:5432/img2text_dev
-    # R2_ENDPOINT=http://host.docker.internal:4566 (env file) resolves inside the
-    # container via host-gateway → host :4566 → LocalStack. Same URL the host
-    # browser fetches presigned object URLs from (Docker Desktop resolves it on
-    # the host natively; plain Linux hosts need a /etc/hosts line).
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      # Storage endpoint split (dev upload 500 fix): ops calls (put/head)
+      # use the IN-NETWORK localstack name — container→host-published :4566
+      # times out on hosts with broken DNAT. Presigned file links are fetched
+      # by the USER'S BROWSER on the host → public endpoint stays localhost.
+      R2_ENDPOINT: http://localstack:4566
+      STORAGE_PUBLIC_ENDPOINT: http://localhost:4566
+    # host.docker.internal/extra_hosts dropped: nothing in the container uses
+    # it anymore (presigned URLs the browser fetches use
+    # STORAGE_PUBLIC_ENDPOINT http://localhost:4566 — forward port 4566 in
+    # VSCode when viewing images/preview from another host).
     volumes:
       # Hot reload: image has PYTHONPATH=/app/server, so `app` imports fresh
       # source from the mount; third-party deps stay in site-packages

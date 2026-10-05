@@ -87,12 +87,14 @@ Port 8000 is commonly taken on dev boxes (e.g. portainer) — the old manual gui
 - Postgres publishes host `:5433` (`img2text_dev`) — **don't run
   `deploy/docker-compose.test.yml` at the same time** (same host port).
 - Server code hot-reloads (`../server` mounted over `/app/server`, `uvicorn --reload`).
-- `R2_ENDPOINT=http://host.docker.internal:4566` — one URL for container,
-  host tools, and browser-fetched presigned object URLs (preview / export
-  download). Docker Desktop resolves it on the host natively; plain Linux
-  hosts need a `/etc/hosts` line for the browser side (see `.env.dev.example`).
-  Prod uses real R2 presigned hosts; `R2_PUBLIC_BASE` stays spec-reserved for
-  a future CDN.
+- Storage endpoints are split (dev upload 500 fix): server-container ops
+  calls use the in-network `R2_ENDPOINT=http://localstack:4566`
+  (container→host-published :4566 times out on some hosts); browser-fetched
+  presigned object URLs (preview / export download) use
+  `STORAGE_PUBLIC_ENDPOINT=http://localhost:4566` — forward port **4566** in
+  VSCode too when viewing images/preview from another machine. Prod keeps the
+  single `R2_ENDPOINT` (public falls back to it); `R2_PUBLIC_BASE` stays
+  spec-reserved for a future CDN.
 
 **Upload wizard:** PDF uploads open a wizard — pick which pages to OCR and
 rotate individual pages 90°; image uploads open a crop/rotate step first.
