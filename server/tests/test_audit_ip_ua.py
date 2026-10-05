@@ -8,7 +8,7 @@ leftmost is client-controlled and forgeable.
 
 from sqlalchemy import select
 
-from app.models import RequestLog
+from app.models import RequestLog, User
 
 async def _health_log(db_session) -> RequestLog:
     rows = (
@@ -57,3 +57,8 @@ async def test_admin_logs_returns_ip_and_ua(admin_client, db_session):
     items = r.json()["items"]
     assert items and items[0]["ip"] == "203.0.113.9"
     assert items[0]["ua"] == "TestUA/2.0"
+    # R60a: attributed request (admin JWT cookie) → row carries owner user_id
+    admin = (
+        await db_session.execute(select(User).where(User.email == "admin@test.local"))
+    ).scalars().one()
+    assert items[0]["user_id"] == admin.id

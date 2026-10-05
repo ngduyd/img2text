@@ -17,8 +17,9 @@ interface LogRow {
   ua: string | null;
 }
 
-/** Audit trail (request_logs): IP filter (refresh click) + raw log tail.
- * Plan X R60: IP + User-Agent columns (UA truncated 160px, title = full). */
+/** Audit trail (request_logs): actor + IP filter (refresh click) + raw log tail.
+ * Plan X R60: actor (user_id) + IP + User-Agent columns, truncated 160px,
+ * title = full value; missing user_id renders "—". */
 export default function AdminLogs() {
   const [ipInput, setIpInput] = useState("");
   const [ip, setIp] = useState("");
@@ -67,10 +68,10 @@ export default function AdminLogs() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[720px] border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-border text-muted">
-                  {["Method", "Path", "Status", "IP", "User-Agent", "Thời gian"].map((h) => (
+                  {["Method", "Người dùng", "Path", "Status", "IP", "User-Agent", "Thời gian"].map((h) => (
                     <th
                       key={h}
                       scope="col"
@@ -88,6 +89,14 @@ export default function AdminLogs() {
                     className="border-b border-border/40 odd:bg-bg/60"
                   >
                     <td className="px-4 py-3">{row.method}</td>
+                    <td data-testid="audit-actor" className="px-4 py-3">
+                      <span
+                        className="block max-w-[160px] truncate"
+                        title={String(row.user_id ?? "")}
+                      >
+                        {row.user_id ?? "—"}
+                      </span>
+                    </td>
                     <td className="px-4 py-3">{row.path}</td>
                     <td className="px-4 py-3">{row.status}</td>
                     <td data-testid="audit-ip" className="px-4 py-3">

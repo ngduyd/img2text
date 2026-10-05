@@ -224,9 +224,19 @@ it("logs tab filters by ip", async () => {
         method: "POST",
         path: "/api/auth/login",
         status: 401,
-        user_id: null,
+        user_id: null, // anonymous → actor cell renders "—"
         ip: "10.0.0.1",
         ua: "x",
+      },
+      {
+        id: 2,
+        ts: "2026-10-04T00:00:01Z",
+        method: "GET",
+        path: "/api/jobs",
+        status: 200,
+        user_id: 5,
+        ip: "10.0.0.1",
+        ua: "y",
       },
     ],
   });
@@ -238,13 +248,20 @@ it("logs tab filters by ip", async () => {
   await user.click(screen.getByTestId("btn-logs-refresh"));
   await waitFor(() => expect(api.adminLogs).toHaveBeenCalledWith(expect.objectContaining({ ip: "10.0.0.1" })));
   // Plan X R60: audit rows expose IP + User-Agent cells (truncate, title = full)
-  const ipCell = await screen.findByTestId("audit-ip");
-  expect(ipCell).toHaveTextContent("10.0.0.1");
-  expect(ipCell.firstChild).toHaveAttribute("title", "10.0.0.1");
-  const uaCell = screen.getByTestId("audit-ua");
-  expect(uaCell).toHaveTextContent("x");
-  expect(uaCell.firstChild).toHaveAttribute("title", "x");
+  const ipCells = await screen.findAllByTestId("audit-ip");
+  expect(ipCells[0]).toHaveTextContent("10.0.0.1");
+  expect(ipCells[0].firstChild).toHaveAttribute("title", "10.0.0.1");
+  const uaCells = screen.getAllByTestId("audit-ua");
+  expect(uaCells[0]).toHaveTextContent("x");
+  expect(uaCells[0].firstChild).toHaveAttribute("title", "x");
   expect(screen.getByRole("columnheader", { name: "User-Agent" })).toBeInTheDocument();
+  // R60a: actor column — user_id rendered, anonymous → em dash, title = full
+  expect(screen.getByRole("columnheader", { name: "Người dùng" })).toBeInTheDocument();
+  const actorCells = screen.getAllByTestId("audit-actor");
+  expect(actorCells[0]).toHaveTextContent("—");
+  expect(actorCells[0].firstChild).toHaveAttribute("title", "");
+  expect(actorCells[1]).toHaveTextContent("5");
+  expect(actorCells[1].firstChild).toHaveAttribute("title", "5");
 });
 
 it("admin home has no jobs board, no dropzone (absence asserts)", async () => {
