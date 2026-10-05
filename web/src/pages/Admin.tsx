@@ -2,23 +2,27 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import AdminLogs from "../components/AdminLogs";
-import AdminStats from "../components/AdminStats";
-import AdminUsers from "../components/AdminUsers";
 import Button from "../components/ui/Button";
+import AdminApi from "./admin/AdminApi";
+import AdminLogs from "./admin/AdminLogs";
+import AdminOverview from "./admin/AdminOverview";
+import type { AdminTabId } from "./admin/AdminOverview";
+import AdminStats from "./admin/AdminStats";
+import AdminUsers from "./admin/AdminUsers";
 
 const TABS = [
+  { id: "overview", label: "Tổng quan" },
   { id: "users", label: "Người dùng" },
-  { id: "stats", label: "Thống kê" },
+  { id: "api", label: "API" },
   { id: "logs", label: "Logs" },
+  { id: "stats", label: "Thống kê" },
 ] as const;
-type TabId = (typeof TABS)[number]["id"];
 
-/** Admin-only page; tabs are in-page state (not routes). Non-admins go home. */
+/** Admin-only page; tabs are in-page state (not routes). Non-admins go home. No jobs board. */
 export default function Admin() {
   const navigate = useNavigate();
   const { data: me, isError } = useQuery({ queryKey: ["me"], queryFn: api.me });
-  const [tab, setTab] = useState<TabId>("users");
+  const [tab, setTab] = useState<AdminTabId>("overview");
 
   // Unauthenticated /api/auth/me → 401; send to login, not a blank page.
   useEffect(() => {
@@ -57,9 +61,11 @@ export default function Admin() {
         </div>
       ) : (
         <>
+          {tab === "overview" && <AdminOverview onNavigate={setTab} />}
           {tab === "users" && <AdminUsers />}
-          {tab === "stats" && <AdminStats />}
+          {tab === "api" && <AdminApi />}
           {tab === "logs" && <AdminLogs />}
+          {tab === "stats" && <AdminStats />}
         </>
       )}
     </main>

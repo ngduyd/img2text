@@ -7,6 +7,8 @@ export interface User {
   email: string;
   role: string;
   ocr_enabled: boolean;
+  /** Present on /api/admin/users items; /api/auth/me (UserOut) omits it. */
+  created_at?: string;
 }
 
 export interface RegionOut {
