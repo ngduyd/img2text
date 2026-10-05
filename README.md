@@ -116,9 +116,9 @@ Run infra manually and uvicorn on the host. Takes host `:5433`, `:4566` and
 **Storage — LocalStack S3 (dev stand-in for R2):**
 
 ```bash
-docker run -d --name img2text-localstack -p 4566:4566 -v img2text-localstack-data:/var/lib/localstack localstack/localstack:latest
+docker run -d --name img2text-localstack -p 4566:4566 -v img2text-localstack-data:/var/lib/localstack localstack/localstack:4.13.0
 
-docker run --rm --network=host amazon/aws-cli --endpoint-url http://localhost:4566 s3 mb s3://img2text --region us-east-1
+docker run --rm --network=host amazon/aws-cli:2.17.0 --endpoint-url http://localhost:4566 s3 mb s3://img2text --region us-east-1
 ```
 
 (Any non-empty AWS creds work against LocalStack — the dev env file uses

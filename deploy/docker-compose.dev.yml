@@ -1,7 +1,7 @@
 # img2text dev stack — one command: Postgres + LocalStack S3 (+ bucket init) + hot-reload server.
 #   cp deploy/.env.dev.example deploy/.env.dev
 #   docker compose -f deploy/docker-compose.dev.yml up -d --build
-# Web dev server stays on the host: cd web && npm run dev (Vite :5173, proxies /api → :8000).
+# Web dev server stays on the host: cd web && npm run dev (Vite :5173, proxies /api → :8010).
 #
 # Ruling R47: dev storage backend = localstack/localstack + amazon/aws-cli init.
 # MinIO's public Docker Hub images are gone (org pulled them) — not mirrored onto
@@ -46,7 +46,7 @@ services:
   # `docker run --network=host mc ...` path). Idempotent: head-bucket first,
   # mb only when missing; retry loop + on-failure restart are the backstop.
   s3-init:
-    image: amazon/aws-cli:latest
+    image: amazon/aws-cli:2.17.0
     depends_on:
       localstack:
         condition: service_started
