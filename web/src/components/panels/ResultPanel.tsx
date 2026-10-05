@@ -26,9 +26,12 @@ export default function ResultPanel({
 }) {
   const markdown = result.edited_markdown ?? result.markdown;
   return (
-    <Card testid="panel-result" title="Kết quả">
-      {/* Editor controls the source: edit first, then preview (Task 8). */}
-      <MarkdownEditor jobId={jobId} initial={markdown} />
+    <Card
+      testid="panel-result"
+      title="Kết quả"
+      actions={<MarkdownEditor jobId={jobId} initial={markdown} />}
+    >
+      {/* Editor in Card header slot (binding plan line 79): btn-edit stays prominent. */}
       <p data-testid="result-stats" className="mb-2 text-sm text-muted">
         {statsLine(result.pages)}
       </p>

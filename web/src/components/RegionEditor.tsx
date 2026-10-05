@@ -18,9 +18,12 @@ export default function RegionEditor({
 }) {
   const [value, setValue] = useState(region.text);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const queryClient = useQueryClient();
 
   const save = async () => {
+    if (saving) return;
+    setSaving(true);
     setError(null);
     try {
       const res = await api.patchRegion(jobId, region.id, value);
@@ -28,6 +31,8 @@ export default function RegionEditor({
       await queryClient.invalidateQueries({ queryKey: ["job", jobId] });
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Lưu thất bại.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -46,7 +51,13 @@ export default function RegionEditor({
         className="mb-2 w-full rounded-lg border border-border bg-surface p-2 text-sm text-text"
       />
       <div className="flex gap-2">
-        <Button testid={`btn-save-region-${region.id}`} size="sm" onClick={save}>
+        <Button
+          testid={`btn-save-region-${region.id}`}
+          size="sm"
+          loading={saving}
+          disabled={saving}
+          onClick={save}
+        >
           Lưu
         </Button>
         <Button

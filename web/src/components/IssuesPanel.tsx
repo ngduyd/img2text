@@ -54,8 +54,7 @@ export default function IssuesPanel({
           {r.text && <p className="text-sm">{r.text}</p>}
           {replacedNotes[r.id] && (
             <p data-testid={`region-note-${r.id}`} className="mt-1 text-sm text-warning">
-              Văn bản vùng đã cập nhật; markdown chưa thay thế (text gốc không còn trong bản xem
-              trước)
+              Văn bản vùng đã cập nhật; markdown chưa thay thế (text gốc không còn trong bản xem trước)
             </p>
           )}
           {activeRid === r.id ? (
