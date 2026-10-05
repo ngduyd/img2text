@@ -28,7 +28,9 @@ class Settings(BaseSettings):
     r2_public_base: str = ""
     # CORS: comma-separated regex parts, joined with "|" (R58; VSCode
     # port-forward origins bypass the vite dev proxy's same-origin setup).
-    allowed_origins: str = r"http://localhost:.*|http://127\.0\.0\.1:.*|.*vscode\.dev"
+    allowed_origins: str = (
+        r"http://localhost:.*|http://127\.0\.0\.1:.*|https://[a-z0-9-]+\.vscode\.dev"
+    )
     # Scheduler claim/reap interval (R58); floor 5s — no busy-loop.
     scheduler_interval_seconds: int = 60
 

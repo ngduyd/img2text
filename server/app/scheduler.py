@@ -16,8 +16,8 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# R58: one lock-protected claim path shared by the periodic loop and the
-# upload kick — no busy-loop, no concurrent double-claim passes.
+# R58a: upload kick deleted (reaper ≠ claim); the periodic sweep loop is the
+# only claim caller. Lock kept as a cheap guard if a second caller appears.
 _claim_lock = asyncio.Lock()
 
 async def _run_jobs_once() -> None:

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
@@ -10,6 +10,7 @@ import Card from "../components/ui/Card";
 
 export default function Jobs() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data: jobs } = useQuery({ queryKey: ["jobs"], queryFn: api.listJobs });
   const [filter, setFilter] = useState<StatusFilter>("all");
   const items = jobs?.items ?? [];
@@ -18,7 +19,13 @@ export default function Jobs() {
   return (
     <main id="main" className="mx-auto max-w-3xl p-4">
       <h1 className="mb-4 text-xl font-bold">Công việc</h1>
-      <Dropzone onUploaded={() => navigate("/jobs")} />
+      {/* R59: file list lives at "/" — invalidate so the new job shows without a remount. */}
+      <Dropzone
+        onUploaded={() => {
+          queryClient.invalidateQueries({ queryKey: ["jobs"] });
+          navigate("/");
+        }}
+      />
       {jobs !== undefined && items.length === 0 ? (
         <Card testid="empty-state" title="Chưa có công việc">
           <p className="text-sm text-muted">

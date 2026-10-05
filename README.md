@@ -66,7 +66,7 @@ cd web && npm install && npm run dev
 
 Open http://localhost:5173 — Vite proxies `/api` to `:8010` (`web/vite.config.ts`; server CORS
 origin-regex (`ALLOWED_ORIGINS`, comma-separated) default covers `http://localhost:*`,
-`http://127.0.0.1:*` and `*vscode.dev` — VSCode port-forwarding works out of the box;
+`http://127.0.0.1:*` and `https://<subdomain>.vscode.dev` — VSCode port-forwarding works out of the box;
 other origins (LAN access from another host) → set `ALLOWED_ORIGINS` env regex;
 host port defaults to 8010 via `DEV_PORT` in the compose file — keep the proxy in
 sync when overridden).
@@ -75,10 +75,11 @@ Port 8000 is commonly taken on dev boxes (e.g. portainer) — the old manual gui
 
 - `ADMIN_EMAIL`/`ADMIN_PASSWORD` bootstraps the admin user on first server boot.
 - `ALLOWED_ORIGINS` — comma-separated origin regexes for CORS; default
-  `http://localhost:.*|http://127\.0\.0\.1:.*|.*vscode\.dev` (VSCode port-forward);
+  `http://localhost:.*|http://127\.0\.0\.1:.*|https://[a-z0-9-]+\.vscode\.dev`
+  (VSCode port-forward; subdomain-anchored — `evilvscode.dev` does NOT match);
   set for LAN access from other origins.
-- `SCHEDULER_INTERVAL_SECONDS` — server sweep interval (lease reaper + queue
-  claim loop), default 60, floor 5; admin-set env.
+- `SCHEDULER_INTERVAL_SECONDS` — server sweep interval (lease reaper),
+  default 60, floor 5; admin-set env.
 - Bucket `img2text` auto-created by `s3-init` (official `amazon/aws-cli`
   image against LocalStack — MinIO's public images are gone, ruling R47).
 - LocalStack S3 API on http://localhost:4566

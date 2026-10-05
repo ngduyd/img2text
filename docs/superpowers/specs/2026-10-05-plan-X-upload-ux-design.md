@@ -19,7 +19,7 @@
 ## Requirements
 
 ### Server
-- CORS middleware (Starlette CORSMiddleware): allowed origins = regex list from env `ALLOWED_ORIGINS` (comma-separated regexes), default covers `http://localhost:*`, `http://127.0.0.1:*`, `.*vscode\.dev`; allow_credentials=True; safe methods/headers. Prod nginx same-origin unaffected.
+- CORS middleware (Starlette CORSMiddleware): allowed origins = regex list from env `ALLOWED_ORIGINS` (comma-separated regexes), default covers `http://localhost:*`, `http://127.0.0.1:*`, `https://[a-z0-9-]+\.vscode\.dev` (subdomain-anchored; `evilvscode.dev` rejected — R58 review); allow_credentials=True; safe methods/headers. Prod nginx same-origin unaffected.
 - `SCHEDULER_INTERVAL_SECONDS` env (int, default 60, floor 5) read into settings.
 - POST /jobs success → spawn background asyncio task that runs one scheduler claim attempt (same `_claim_lock` path; failure logged, never crashes request). Response unchanged (201 immediately).
 - Audit entries (jobs + auth routers + admin actions): ip = X-Forwarded-For RIGHTMOST (Ruling R5 anti-spoof, pinned test_net.py), fallback request.client.host; ua = header[:200] hoặc '' — stored in request_logs ip/ua columns.

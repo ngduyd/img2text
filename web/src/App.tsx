@@ -162,7 +162,13 @@ export default function App() {
             Bỏ qua điều hướng
           </a>
           <AppNav />
-          <Toaster theme="dark" position="top-right" richColors />
+          {/* Theme = html .dark class (ThemeToggle + localStorage; no shared React
+              context) — read once at mount; toggle flips CSS only. */}
+          <Toaster
+            theme={document.documentElement.classList.contains("dark") ? "dark" : "light"}
+            position="top-right"
+            richColors
+          />
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
