@@ -11,6 +11,7 @@ import Forgot from "./pages/Forgot";
 import Admin from "./pages/Admin";
 import JobDetail from "./pages/JobDetail";
 import Jobs from "./pages/Jobs";
+import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Profile from "./pages/Profile";
 import Register from "./pages/Register";
@@ -176,6 +177,7 @@ export default function App() {
             <Route path="/reset" element={<Reset />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/" element={<Jobs />} />
+            <Route path="/landing" element={<Landing />} />
             <Route path="/jobs/:id" element={<JobDetail />} />
             <Route path="/admin" element={<Admin />} />
           </Routes>
