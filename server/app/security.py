@@ -7,7 +7,6 @@ bcrypt used directly (not passlib): bcrypt 5.x + passlib 1.7.4 log a
 import warnings
 from datetime import datetime, timedelta, timezone
 from secrets import token_urlsafe
-from uuid import UUID, uuid4
 
 import bcrypt
 import jwt
