@@ -58,7 +58,7 @@
 
 **Files:** Create web/src/components/wizard/ImageCropWizard.tsx (+ test); Modify Dropzone.tsx (type=image → ImageCropWizard), client uploadJob filename param.
 
-- [ ] Step 1 failing tests: select image → wizard renders (testid wizard-image) with canvas + buttons btn-crop-apply (apply current rect), btn-crop-rotate (90° cw), btn-crop-reset, wizard-submit; draw rect via fireEvent on canvas (mock canvas getContext + dimensions) → submit → api.uploadJob called with a Blob (instanceof, size>0, type image/jpeg) NOT the original File; rotate twice → canvas transform state (assert via mocked ctx calls or re-rendered img); cancel returns to dropzone. Gated like dropzone (banner unchanged).
+- [ ] Step 1 failing tests: select image → wizard renders (testid wizard-image) with canvas + buttons btn-crop-rotate (90° cw), btn-crop-reset, wizard-submit — RULING R57 (2026-10-05): btn-crop-apply REMOVED from binding — live-rect (rect applies as dragged) supersedes manual apply click; ImageCropWizard ships without it; draw rect via fireEvent on canvas (mock canvas getContext + dimensions) → submit → api.uploadJob called with a Blob (instanceof, size>0, type image/jpeg) NOT the original File; rotate twice → canvas transform state (assert via mocked ctx calls or re-rendered img); cancel returns to dropzone. Gated like dropzone (banner unchanged).
 - [ ] Steps 2-4 TDD.
 - [ ] Step 5 commit `feat(web): image crop/rotate wizard before upload`.
 

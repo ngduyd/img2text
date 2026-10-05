@@ -85,6 +85,11 @@ Port 8000 is commonly taken on dev boxes (e.g. portainer) — the old manual gui
   Prod uses real R2 presigned hosts; `R2_PUBLIC_BASE` stays spec-reserved for
   a future CDN.
 
+**Upload wizard:** PDF uploads open a wizard — pick which pages to OCR and
+rotate individual pages 90°; image uploads open a crop/rotate step first.
+After a job is `done`, the job detail shows preview tabs (Markdown / PDF /
+DOCX render on demand).
+
 **Worker in dev:** uploads sit `queued` until the Colab notebook connects
 ([docs/colab-setup.md](docs/colab-setup.md)). For UI development WITHOUT Colab,
 inject a canned result — **DEV STUB ONLY**, bypasses the VLM:

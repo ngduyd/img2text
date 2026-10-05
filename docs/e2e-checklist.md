@@ -41,3 +41,11 @@ Prereqs: `deploy/.env` filled (see [docs/r2-setup.md](docs/r2-setup.md)),
 - [ ] **Admin stats row shows gpu_seconds.** Expected: Stats tab row for today includes the job in done count and `gpu_seconds` > 0.
 - [ ] **Logs show requests.** Expected: `request_logs` / Logs tab contains the register/upload/export/preview requests from this pass with correct status codes and IPs.
 - [ ] **Worker resilience (disconnect drill).** Expected: kill the Colab runtime mid-job → job stays `running` until lease expiry → lease reaper re-queues it (`queued`, `worker_token = NULL`) → re-running the loop cell claims and completes it (idempotent redo).
+
+## D. Upload wizard + preview tabs (Plan W)
+
+- [ ] **D1 — PDF wizard: page select + rotate.** Expected: upload PDF → wizard renders page thumbnails; uncheck 1 trang + xoay 1 trang 90° → gửi → job preprocess payload visible qua `GET /api/jobs/next` (curl) — expected: pages list + rotate map đúng.
+- [ ] **D2 — Worker processes only selected pages, original numbering.** Expected: worker chỉ xử lý trang chọn — result pages indices = số trang GỐC (R55); trang xoay có dims đảo.
+- [ ] **D3 — Image crop wizard uploads cropped file.** Expected: upload ảnh → crop wizard → kéo vùng + xoay → gửi → file trong R2 là bản crop (kiểm tra qua preview File gốc của job).
+- [ ] **D4 — Job detail tabs: Tài liệu render.** Expected: job done → tab Tài liệu: MD render; PDF tab lazy tạo export rồi iframe; DOCX tab render nội dung + note "mất định dạng font".
+- [ ] **D5 — DOCX preview strips scripts.** Expected: dán markdown chứa `<script>` vào editor → export docx → preview không chạy script (xem Section B — inert render).
