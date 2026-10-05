@@ -120,11 +120,15 @@ it("api tab aggregates paths client-side, collapsing numeric segments", async ()
   vi.mocked(api.me).mockResolvedValue(adminMe);
   vi.mocked(api.adminLogs).mockResolvedValue({
     items: [
-      { path: "/api/jobs/7", status: 200 },
-      { path: "/api/jobs/12", status: 200 },
-      { path: "/api/jobs/13/regions/r1", status: 500 },
-      { path: "/api/admin/users", status: 200 },
-      { path: "/api/auth/login", status: 401 },
+      // SAME path, different methods → must collapse into ONE /api/jobs/{id} row
+      { path: "/api/jobs/7", method: "GET", status: 200 },
+      { path: "/api/jobs/7", method: "POST", status: 201 },
+      { path: "/api/jobs/12", method: "PATCH", status: 200 },
+      { path: "/api/jobs/13/regions/r1", method: "GET", status: 500 },
+      { path: "/api/admin/users", method: "GET", status: 200 },
+      { path: "/api/auth/login", method: "POST", status: 401 },
+      // out-of-class status (1xx) → skipped, total stays honest
+      { path: "/api/ping", method: "GET", status: 102 },
     ],
   });
   renderWithRouter(<Admin />);
@@ -135,13 +139,17 @@ it("api tab aggregates paths client-side, collapsing numeric segments", async ()
     screen.getByText("Tổng hợp client-side từ request_logs (500 dòng gần nhất)"),
   ).toBeInTheDocument();
   const table = screen.getByTestId("api-activity-table");
-  // /api/jobs/7 + /api/jobs/12 + /api/jobs/13/regions/r1 → /api/jobs/{id}
+  // GET /api/jobs/7 + POST /api/jobs/7 + PATCH /api/jobs/12 + GET /api/jobs/13/regions/r1
+  // → ONE path-only row /api/jobs/{id}, classes merged
   const jobsRow = within(table).getByTestId("api-row--api-jobs--id-");
   expect(within(jobsRow).getByText("/api/jobs/{id}")).toBeInTheDocument();
-  expect(within(jobsRow).getByText("3")).toBeInTheDocument();
-  expect(within(jobsRow).getByText("2")).toBeInTheDocument(); // 2xx
+  expect(within(jobsRow).getByText("4")).toBeInTheDocument(); // total (merged across methods)
+  expect(within(jobsRow).getByText("3")).toBeInTheDocument(); // 2xx
   expect(within(jobsRow).getByText("1")).toBeInTheDocument(); // 5xx
   expect(within(jobsRow).getByText("0")).toBeInTheDocument(); // 4xx
+  // path-only grouping: no duplicate rows/testids for the same normalized path
+  expect(table.querySelectorAll("[data-testid='api-row--api-jobs--id-']")).toHaveLength(1);
+  expect(within(table).queryByTestId("api-row--api-ping")).not.toBeInTheDocument(); // 1xx skipped
   const usersRow = within(table).getByTestId("api-row--api-admin-users");
   // total=1, 2xx=1 → two "1"s
   expect(within(usersRow).getAllByText("1")).toHaveLength(2);
@@ -233,7 +241,6 @@ it("admin home has no jobs board, no dropzone (absence asserts)", async () => {
   renderWithRouter(<Admin />, { route: "/admin" });
   await screen.findByTestId("stat-users"); // admin content rendered
   expect(screen.queryAllByTestId((id: string) => id.startsWith("job-row"))).toHaveLength(0);
-  expect(screen.queryAllByTestId((id: string) => id.startsWith("job-row-"))).toHaveLength(0);
   expect(screen.queryByText(/Kéo thả file vào đây/)).not.toBeInTheDocument();
   expect(screen.queryByTestId("dropzone")).not.toBeInTheDocument();
 });
