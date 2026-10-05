@@ -49,3 +49,12 @@ Prereqs: `deploy/.env` filled (see [docs/r2-setup.md](docs/r2-setup.md)),
 - [ ] **D3 — Image crop wizard uploads cropped file.** Expected: upload ảnh → crop wizard → kéo vùng + xoay → gửi → file trong R2 là bản crop (kiểm tra qua preview File gốc của job).
 - [ ] **D4 — Job detail tabs: Tài liệu render.** Expected: job done → tab Tài liệu: MD render; PDF tab lazy tạo export rồi iframe; DOCX tab render nội dung + note "mất định dạng font".
 - [ ] **D5 — DOCX preview strips scripts.** Expected: dán markdown chứa `<script>` vào editor → export docx → preview không chạy script (xem Section B — inert render).
+
+## E. Plan X — upload UX + reliability
+
+- [ ] **E1 — Upload toast + navigation.** Expected: upload ảnh → toast "Đã tải lên — đang chờ xử lý." + tự nhảy trang Công việc, job mới hiển thị trạng thái "Chờ xử lý".
+- [ ] **E2 — Network-error toast.** Expected: tắt server → gọi API (vd upload/login) → toast "Không kết nối được máy chủ. Kiểm tra server đang chạy."; không crash.
+- [ ] **E3 — Wizard ảnh không chọn vùng.** Expected: upload ảnh → crop wizard không chọn vùng → gửi → toast "Không có vùng chọn — gửi ảnh gốc", file gốc (không crop) được dùng cho job.
+- [ ] **E4 — Toolbar tooltip.** Expected: hover icon toolbar crop: RotateCw → title "Xoay 90°", Eraser → "Xóa vùng chọn", Send → "Gửi lên"; toolbar phía trên canvas.
+- [ ] **E5 — VSCode port-forward CORS.** Expected: qua VSCode port-forward upload PDF → không còn CORS lỗi (dev origins regex covers vscode.dev).
+- [ ] **E6 — Admin Logs columns.** Expected: admin Logs hiển thị cột Người dùng (user_id), IP (X-Forwarded-For rightmost, fallback client host), User-Agent (cắt 200 ký tự).

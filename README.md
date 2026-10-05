@@ -64,13 +64,21 @@ curl -s localhost:8010/healthz               # → {"status":"ok","db":true}
 cd web && npm install && npm run dev
 ```
 
-Open http://localhost:5173 — Vite proxies `/api` to `:8010` (`web/vite.config.ts`; no CORS
-middleware on the server — prod nginx covers this instead; host port defaults to 8010
-via `DEV_PORT` in the compose file — keep the proxy in sync when overridden).
+Open http://localhost:5173 — Vite proxies `/api` to `:8010` (`web/vite.config.ts`; server CORS
+origin-regex (`ALLOWED_ORIGINS`, comma-separated) default covers `http://localhost:*`,
+`http://127.0.0.1:*` and `*vscode.dev` — VSCode port-forwarding works out of the box;
+other origins (LAN access from another host) → set `ALLOWED_ORIGINS` env regex;
+host port defaults to 8010 via `DEV_PORT` in the compose file — keep the proxy in
+sync when overridden).
 Port 8000 is commonly taken on dev boxes (e.g. portainer) — the old manual guide's
 `uvicorn --port 8000` was equally broken there; 8010 fixes both paths.
 
 - `ADMIN_EMAIL`/`ADMIN_PASSWORD` bootstraps the admin user on first server boot.
+- `ALLOWED_ORIGINS` — comma-separated origin regexes for CORS; default
+  `http://localhost:.*|http://127\.0\.0\.1:.*|.*vscode\.dev` (VSCode port-forward);
+  set for LAN access from other origins.
+- `SCHEDULER_INTERVAL_SECONDS` — server sweep interval (lease reaper + queue
+  claim loop), default 60, floor 5; admin-set env.
 - Bucket `img2text` auto-created by `s3-init` (official `amazon/aws-cli`
   image against LocalStack — MinIO's public images are gone, ruling R47).
 - LocalStack S3 API on http://localhost:4566
@@ -90,7 +98,10 @@ rotate individual pages 90°; image uploads open a crop/rotate step first.
 After a job is `done`, the job detail shows preview tabs (Markdown / PDF /
 DOCX render on demand).
 
-**Worker in dev:** uploads sit `queued` until the Colab notebook connects
+**Upload flow:** sau khi gửi, job vào hàng đợi — Colab worker poll `/api/jobs/next`
+(5–30s) tự xử lý khi đang bật (plan X).
+
+**Worker in dev:** if Colab is off, uploads sit `queued` until the Colab notebook connects
 ([docs/colab-setup.md](docs/colab-setup.md)). For UI development WITHOUT Colab,
 inject a canned result — **DEV STUB ONLY**, bypasses the VLM:
 
