@@ -1,7 +1,9 @@
 import DOMPurify from "dompurify";
 import * as mammoth from "mammoth";
 import { useState } from "react";
+import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
+import { mapApiError } from "../lib/errors";
 import MarkdownPreview from "./MarkdownPreview";
 import Button from "./ui/Button";
 import Card from "./ui/Card";
@@ -38,9 +40,11 @@ export default function PreviewTabs({
   const loadPdf = async () => {
     try {
       const { url } = await api.exportJob(jobId, "pdf");
+      toast.success("Đã tạo bản xuất.");
       setPdfUrl(url);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Xem trước thất bại.");
+      toast.error(mapApiError(err));
     }
   };
 
@@ -48,6 +52,7 @@ export default function PreviewTabs({
     try {
       await api.exportJob(jobId, "docx");
       const blob = await api.downloadExport(jobId, "docx");
+      toast.success("Đã tạo bản xuất.");
       const { value } = await mammoth.convertToHtml({
         arrayBuffer: await blob.arrayBuffer(),
       });
@@ -55,6 +60,7 @@ export default function PreviewTabs({
       setDocxHtml(DOMPurify.sanitize(value));
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Xem trước thất bại.");
+      toast.error(mapApiError(err));
     }
   };
 

@@ -3,7 +3,8 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
-import { api } from "../api/client";
+import { toast } from "sonner";
+import { ApiError, api } from "../api/client";
 import type { JobListItem } from "../api/types";
 import JobRow from "./JobRow";
 
@@ -18,6 +19,8 @@ vi.mock("../api/client", async (importOriginal) => {
     },
   };
 });
+
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const mockNavigate = vi.fn();
 
@@ -121,6 +124,24 @@ it("retry button calls retryJob and invalidates jobs", async () => {
   await userEvent.click(screen.getByTestId("btn-retry-7"));
   expect(api.retryJob).toHaveBeenCalledWith(7);
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
+  // R59a: retry success toasts.
+  expect(toast.success).toHaveBeenCalledWith("Đã chạy lại.");
+});
+
+it("retry failure toasts mapped error", async () => {
+  vi.mocked(api.retryJob).mockRejectedValue(new ApiError("Job đang chạy."));
+  renderRow(job({ status: "failed", error: "boom" }));
+  await userEvent.click(screen.getByTestId("btn-retry-7"));
+  expect(toast.error).toHaveBeenCalledWith("Job đang chạy.");
+});
+
+it("dl-original failure toasts mapped error (no success toast)", async () => {
+  vi.stubGlobal("open", vi.fn());
+  vi.mocked(api.getJobFile).mockRejectedValue(new ApiError("Không có file."));
+  renderRow(job({ status: "done" }));
+  await userEvent.click(screen.getByTestId("btn-dl-original-7"));
+  expect(toast.error).toHaveBeenCalledWith("Không có file.");
+  vi.unstubAllGlobals();
 });
 
 it("retry button rendered only when failed", () => {

@@ -2,12 +2,15 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import * as mammoth from "mammoth";
+import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import PreviewTabs from "./PreviewTabs";
 
 vi.mock("mammoth", () => ({
   convertToHtml: vi.fn(),
 }));
+
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
@@ -43,6 +46,8 @@ it("pdf tab lazy: exportJob called once, iframe src set; reactivation no re-call
   expect(frame).toHaveAttribute("src", "https://r2/exports/5/pdf");
   expect(api.exportJob).toHaveBeenCalledTimes(1);
   expect(api.exportJob).toHaveBeenCalledWith("5", "pdf");
+  // R59a: background export success toasts.
+  expect(toast.success).toHaveBeenCalledWith("Đã tạo bản xuất.");
   // reactivation (md → pdf) hits the state cache — no duplicate call
   await userEvent.click(screen.getByTestId("preview-md"));
   await userEvent.click(screen.getByTestId("preview-pdf"));
@@ -78,6 +83,8 @@ it("shows ApiError detail in docs-error when export fails", async () => {
   expect(await screen.findByTestId("docs-error")).toHaveTextContent(
     "Xuất file thất bại.",
   );
+  // R51: inline docs-error kept; toast mirrors it (R59a).
+  expect(toast.error).toHaveBeenCalledWith("Xuất file thất bại.");
   // failed pdf frame never appears
   await waitFor(() =>
     expect(screen.queryByTitle("Xem trước PDF")).not.toBeInTheDocument(),

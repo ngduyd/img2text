@@ -1,7 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { api } from "../api/client";
 import type { JobListItem, JobStatus } from "../api/types";
+import { mapApiError } from "../lib/errors";
 import Badge from "./ui/Badge";
 import type { BadgeTone } from "./ui/Badge";
 import Button from "./ui/Button";
@@ -34,7 +36,11 @@ export default function JobRow({ job }: { job: JobListItem }) {
   const queryClient = useQueryClient();
   const retry = useMutation({
     mutationFn: () => api.retryJob(job.id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["jobs"] }),
+    onSuccess: () => {
+      toast.success("Đã chạy lại.");
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (err) => toast.error(mapApiError(err)),
   });
   // Duration only when both timestamps present — server list omits them today (R52).
   const doneOrFailed = job.status === "done" || job.status === "failed";
@@ -75,8 +81,13 @@ export default function JobRow({ job }: { job: JobListItem }) {
             size="sm"
             variant="secondary"
             onClick={async () => {
-              const { url } = await api.getJobFile(job.id);
-              window.open(url, "_blank");
+              // R59a: download failure surfaces as toast (no inline slot here).
+              try {
+                const { url } = await api.getJobFile(job.id);
+                window.open(url, "_blank");
+              } catch (err) {
+                toast.error(mapApiError(err));
+              }
             }}
           >
             Tải bản gốc

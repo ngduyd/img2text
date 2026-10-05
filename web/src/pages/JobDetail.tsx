@@ -2,8 +2,10 @@ import type { Query } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useParams } from "react-router-dom";
+import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import type { Job } from "../api/types";
+import { mapApiError } from "../lib/errors";
 import InfoPanel from "../components/panels/InfoPanel";
 import OriginalFilePanel from "../components/panels/OriginalFilePanel";
 import ResultPanel from "../components/panels/ResultPanel";
@@ -35,9 +37,12 @@ export default function JobDetail() {
             setRetryError(null);
             try {
               await api.retryJob(id!);
+              toast.success("Đã chạy lại.");
               await queryClient.invalidateQueries({ queryKey: ["job", id] });
             } catch (err) {
+              // R51: inline retry-error kept; toast mirrors it (R59a).
               setRetryError(err instanceof ApiError ? err.detail : "Thử lại thất bại.");
+              toast.error(mapApiError(err));
             }
           }}
         >
