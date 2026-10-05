@@ -1,4 +1,4 @@
-import type { AdminStatsDay, Job, JobListItem, User } from "./types";
+import type { AdminStatsDay, Job, JobListItem, RegionPatchOut, User } from "./types";
 
 /** Thrown for any non-2xx response; `detail` mirrors FastAPI {detail} bodies. */
 export class ApiError extends Error {
@@ -78,6 +78,11 @@ export const api = {
     request<{ url: string }>(`/api/jobs/${id}/export`, { method: "POST", body: { fmt } }),
   getCropUrl: (jobId: number | string, rid: string) =>
     request<{ url: string }>(`/api/jobs/${jobId}/regions/${rid}/crop`),
+  patchRegion: (jobId: number | string, rid: string, text: string) =>
+    request<RegionPatchOut>(`/api/jobs/${jobId}/regions/${rid}`, {
+      method: "PATCH",
+      body: { text },
+    }),
   adminListUsers: (page: number) =>
     request<{ items: User[]; total: number }>(`/api/admin/users?page=${page}`),
   adminPatchUser: (id: number | string, body: { ocr_enabled: boolean }) =>

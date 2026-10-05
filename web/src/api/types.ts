@@ -35,6 +35,13 @@ export interface ResultBody {
   edited_markdown: string | null;
 }
 
+/** PATCH /api/jobs/{id}/regions/{rid} response (server contract pinned, Task 2). */
+export interface RegionPatchOut {
+  id: string;
+  text: string;
+  markdown_replaced: boolean;
+}
+
 export type JobStatus = "queued" | "running" | "done" | "failed";
 
 export interface Job {

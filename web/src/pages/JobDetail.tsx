@@ -4,18 +4,10 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import type { Job } from "../api/types";
-import MarkdownEditor from "../components/MarkdownEditor";
-import MarkdownPreview from "../components/MarkdownPreview";
-import IssuesPanel from "../components/IssuesPanel";
-import ExportBar from "../components/ExportBar";
+import InfoPanel from "../components/panels/InfoPanel";
+import OriginalFilePanel from "../components/panels/OriginalFilePanel";
+import ResultPanel from "../components/panels/ResultPanel";
 import Button from "../components/ui/Button";
-
-const STATUS_TEXT: Record<Job["status"], string> = {
-  queued: "Đang chờ worker Colab",
-  running: "Đang xử lý",
-  failed: "Xử lý thất bại",
-  done: "Hoàn tất",
-};
 
 /** Poll every 3s while queued/running; stop once done/failed (binding, Task 4). */
 const jobRefetchInterval = (q: Query<Job>): number | false =>
@@ -36,7 +28,6 @@ export default function JobDetail() {
   return (
     <main id="main" className="mx-auto max-w-3xl p-4">
       <h1 className="mb-4 text-xl font-bold">Chi tiết công việc #{job.id}</h1>
-      <p data-testid={`status-${id}`}>{STATUS_TEXT[job.status]}</p>
       {job.status === "failed" && (
         <Button
           testid="btn-retry"
@@ -58,21 +49,13 @@ export default function JobDetail() {
           {retryError}
         </p>
       )}
-      {job.status === "done" && job.result && (
-        <>
-          {/* Editor controls the source: edit first, then preview (Task 8). */}
-          <MarkdownEditor
-            jobId={id!}
-            initial={job.result.edited_markdown ?? job.result.markdown}
-          />
-          <MarkdownPreview markdown={job.result.edited_markdown ?? job.result.markdown} />
-          <IssuesPanel
-            jobId={id!}
-            regions={job.result.pages.flatMap((p) => p.regions)}
-          />
-          <ExportBar jobId={id!} />
-        </>
-      )}
+      <div className="mt-4 flex flex-col gap-4">
+        <OriginalFilePanel jobId={id!} fileType={job.file_type} />
+        {job.status === "done" && job.result && (
+          <ResultPanel jobId={id!} result={job.result} />
+        )}
+        <InfoPanel job={job} />
+      </div>
     </main>
   );
 }
