@@ -62,6 +62,8 @@ def create_app() -> FastAPI:
         ),
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+        # R58a review: explicit echo for credentialed JSON/API preflights
+        allow_headers=["Authorization", "Content-Type"],
     )
     return app
 

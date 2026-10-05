@@ -1,16 +1,13 @@
-"""Plan X Task 1: CORS regex origins + scheduler interval env floor + upload claim kick (R58)."""
+"""Plan X Task 1: CORS regex origins + scheduler interval env floor (R58/R58a).
+R58a: server-side upload kick deleted (reaper ≠ claim; worker poll ≤30s)."""
 
-from unittest.mock import AsyncMock
-
-import app.routers.jobs as jobs_router
 from app.config import Settings
-from tests.conftest import PNG_1PX
 
-async def _preflight(client, origin: str):
-    return await client.options(
-        "/api/jobs",
-        headers={"Origin": origin, "Access-Control-Request-Method": "POST"},
-    )
+async def _preflight(client, origin: str, request_headers: str | None = None):
+    headers = {"Origin": origin, "Access-Control-Request-Method": "POST"}
+    if request_headers is not None:
+        headers["Access-Control-Request-Headers"] = request_headers
+    return await client.options("/api/jobs", headers=headers)
 
 # ---- CORS (VSCode port-forwarding root cause) ----
 
@@ -21,6 +18,17 @@ async def test_cors_preflight_vscode_dev_allowed(client):
 async def test_cors_preflight_localhost_allowed(client):
     r = await _preflight(client, "http://localhost:5173")
     assert r.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
+async def test_cors_preflight_allow_headers_echo(client):
+    """R58a: authorization + content-type requested → 200 + allow-headers echo."""
+    r = await _preflight(
+        client,
+        "http://localhost:5173",
+        request_headers="authorization,content-type",
+    )
+    assert r.status_code == 200, r.text
+    echoed = r.headers.get("access-control-allow-headers", "").lower()
+    assert "authorization" in echoed and "content-type" in echoed
 
 async def test_cors_simple_get_allowed_origin_present(client):
     r = await client.get("/api/health", headers={"Origin": "http://localhost:5173"})
@@ -37,28 +45,3 @@ async def test_cors_evil_origin_absent(client):
 def test_scheduler_interval_env_floor():
     assert Settings(SCHEDULER_INTERVAL_SECONDS=1).scheduler_interval_seconds == 5
     assert Settings().scheduler_interval_seconds == 60
-
-# ---- upload claim kick (R58) ----
-
-async def test_upload_kicks_claim_once(auth_client, monkeypatch):
-    mock_run = AsyncMock()
-    monkeypatch.setattr(jobs_router.scheduler, "_run_jobs_once", mock_run)
-    r = await auth_client.post(
-        "/api/jobs", files={"file": ("t.png", PNG_1PX, "image/png")}
-    )
-    assert r.status_code == 201, r.text
-    assert r.json()["status"] == "queued"
-    # ASGITransport awaits background tasks before returning → kick ran after response
-    mock_run.assert_awaited_once()
-
-async def test_upload_kick_failure_still_201(auth_client, monkeypatch, caplog):
-    mock_run = AsyncMock(side_effect=RuntimeError("boom"))
-    monkeypatch.setattr(jobs_router.scheduler, "_run_jobs_once", mock_run)
-    r = await auth_client.post(
-        "/api/jobs", files={"file": ("t.png", PNG_1PX, "image/png")}
-    )
-    assert r.status_code == 201, r.text
-    assert set(r.json()) == {"id", "status", "page_count", "file_type"}
-    assert r.json()["status"] == "queued"
-    assert mock_run.await_count == 1
-    assert any("upload kick failed" in rec.message for rec in caplog.records)
