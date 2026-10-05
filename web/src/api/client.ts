@@ -1,4 +1,4 @@
-import type { AdminStatsDay, Job, JobListItem, User } from "./types";
+import type { AdminStatsDay, Job, JobListItem, RegionPatchOut, User } from "./types";
 
 /** Thrown for any non-2xx response; `detail` mirrors FastAPI {detail} bodies. */
 export class ApiError extends Error {
@@ -57,6 +57,8 @@ export const api = {
     request<User>("/api/auth/login", { method: "POST", body: { email, password } }),
   logout: () => request<unknown>("/api/auth/logout", { method: "POST" }),
   me: () => request<User>("/api/auth/me"),
+  updateProfile: (body: { current_password: string; email?: string; new_password?: string }) =>
+    request<User>("/api/auth/profile", { method: "PATCH", body }),
   refresh: () => request<unknown>("/api/auth/refresh", { method: "POST" }),
   forgotEmail: (email: string) =>
     request<unknown>("/api/auth/password/forgot", { method: "POST", body: { email } }),
@@ -71,12 +73,18 @@ export const api = {
   },
   retryJob: (id: number | string) =>
     request<{ id: number; status: string }>(`/api/jobs/${id}/retry`, { method: "POST" }),
+  getJobFile: (id: number | string) => request<{ url: string }>(`/api/jobs/${id}/file`),
   patchContent: (id: number | string, markdown: string) =>
     request<unknown>(`/api/jobs/${id}/content`, { method: "PATCH", body: { markdown } }),
   exportJob: (id: number | string, fmt: string) =>
     request<{ url: string }>(`/api/jobs/${id}/export`, { method: "POST", body: { fmt } }),
   getCropUrl: (jobId: number | string, rid: string) =>
     request<{ url: string }>(`/api/jobs/${jobId}/regions/${rid}/crop`),
+  patchRegion: (jobId: number | string, rid: string, text: string) =>
+    request<RegionPatchOut>(`/api/jobs/${jobId}/regions/${rid}`, {
+      method: "PATCH",
+      body: { text },
+    }),
   adminListUsers: (page: number) =>
     request<{ items: User[]; total: number }>(`/api/admin/users?page=${page}`),
   adminPatchUser: (id: number | string, body: { ocr_enabled: boolean }) =>

@@ -40,6 +40,17 @@ describe("api client", () => {
     expect(assign).toHaveBeenCalledWith("/login");
   });
 
+  it("getJobFile GETs /api/jobs/{id}/file and returns {url}", async () => {
+    const spy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ url: "https://signed.example/f" }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", spy);
+    await expect(api.getJobFile(9)).resolves.toEqual({ url: "https://signed.example/f" });
+    const [url, opts] = spy.mock.calls[0];
+    expect(url).toBe("/api/jobs/9/file");
+    expect(opts.method).toBe("GET");
+  });
+
   it("401 on /api/auth/login does NOT redirect", async () => {
     const assign = stubLocationAssign();
     vi.stubGlobal(

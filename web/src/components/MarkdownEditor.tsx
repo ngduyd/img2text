@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError, api } from "../api/client";
+import Button from "./ui/Button";
 
 export default function MarkdownEditor({ jobId, initial }: { jobId: string; initial: string }) {
   const [editing, setEditing] = useState(false);
@@ -26,7 +27,7 @@ export default function MarkdownEditor({ jobId, initial }: { jobId: string; init
       {error && (
         <div
           data-testid="editor-error"
-          className="mb-2 rounded border border-red-300 bg-red-50 px-3 py-2 text-red-700"
+          className="mb-2 rounded-lg border border-error/40 bg-error/10 px-3 py-2 text-error"
         >
           {error}
         </div>
@@ -36,32 +37,25 @@ export default function MarkdownEditor({ jobId, initial }: { jobId: string; init
           data-testid="textarea-markdown"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          className="mb-2 h-64 w-full rounded border p-2 font-mono text-sm"
+          className="mb-2 h-64 w-full rounded-lg border border-border bg-surface p-2 font-mono text-sm text-text"
         />
       )}
       <div className="flex gap-2">
         {editing ? (
-          <button
-            type="button"
-            data-testid="btn-save"
-            onClick={save}
-            className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-          >
+          <Button testid="btn-save" onClick={save}>
             Lưu
-          </button>
+          </Button>
         ) : (
-          <button
-            type="button"
-            data-testid="btn-edit"
+          <Button
+            testid="btn-edit"
             onClick={() => {
               setValue(initial);
               setError(null);
               setEditing(true);
             }}
-            className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
           >
             Chỉnh sửa
-          </button>
+          </Button>
         )}
       </div>
     </section>

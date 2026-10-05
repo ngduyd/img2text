@@ -105,3 +105,40 @@ it("job rows render status badge", async () => {
   expect(await screen.findByTestId("job-row-7")).toBeInTheDocument();
   expect(screen.getByTestId("badge-7")).toHaveTextContent("Chờ xử lý");
 });
+
+it("filter tabs show counts and click filters rows", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({
+    items: [
+      { id: 1, status: "queued", page_count: 1, file_type: "pdf", created_at: "2026-10-04T00:00:00Z", error: null },
+      { id: 2, status: "done", page_count: 2, file_type: "jpg", created_at: "2026-10-04T00:00:00Z", error: null },
+      { id: 3, status: "done", page_count: 3, file_type: "pdf", created_at: "2026-10-04T00:00:00Z", error: null },
+      { id: 4, status: "failed", page_count: 1, file_type: "jpg", created_at: "2026-10-04T00:00:00Z", error: "boom" },
+    ] as Job[],
+    total: 4,
+  });
+  renderWithRouter(<Jobs />);
+  await screen.findByTestId("job-row-4");
+  await waitFor(() => expect(screen.getByTestId("filter-all")).toHaveTextContent("Tất cả (4)"));
+  expect(screen.getByTestId("filter-queued")).toHaveTextContent("Chờ xử lý (1)");
+  expect(screen.getByTestId("filter-done")).toHaveTextContent("Hoàn tất (2)");
+  expect(screen.getByTestId("filter-failed")).toHaveTextContent("Thất bại (1)");
+  const user = userEvent.setup();
+  await user.click(screen.getByTestId("filter-done"));
+  expect(screen.getByTestId("job-row-2")).toBeInTheDocument();
+  expect(screen.getByTestId("job-row-3")).toBeInTheDocument();
+  expect(screen.queryByTestId("job-row-1")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("job-row-4")).not.toBeInTheDocument();
+  await user.click(screen.getByTestId("filter-failed"));
+  expect(screen.queryByTestId("job-row-2")).not.toBeInTheDocument();
+  expect(screen.getByTestId("job-row-4")).toBeInTheDocument();
+});
+
+it("empty state renders guidance with limits and Colab note", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  renderWithRouter(<Jobs />);
+  const empty = await screen.findByTestId("empty-state");
+  expect(empty).toHaveTextContent("tối đa 50 trang · 50MB");
+  expect(empty).toHaveTextContent("Job chờ worker Colab kết nối");
+});

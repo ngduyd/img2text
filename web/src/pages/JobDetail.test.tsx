@@ -122,3 +122,37 @@ it("done stops polling", async () => {
   expect(await screen.findByTestId("preview-markdown")).toBeInTheDocument();
   expect(pollSpyCalled()).toBe(false);
 });
+
+/** Task 2: 3-panel layout from mocked job (R51 testids preserved). */
+const DONE_JOB: Job = {
+  id: 5,
+  status: "done",
+  file_type: "pdf",
+  page_count: 2,
+  error: null,
+  created_at: "2026-01-02T03:04:05Z",
+  started_at: null,
+  finished_at: null,
+  result: EMPTY_RESULT,
+} as Job;
+
+it("done renders 3 panels: original + result + info with status badge", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
+  expect(screen.getByTestId("panel-result")).toBeInTheDocument();
+  expect(screen.getByTestId("panel-info")).toBeInTheDocument();
+  expect(screen.getByTestId("status-5")).toHaveTextContent("Hoàn tất");
+  expect(screen.getByTestId("result-stats")).toHaveTextContent(
+    "Tổng 0 vùng · 0 ok · 0 hình ảnh · 0 không trích xuất · 0 cần kiểm tra",
+  );
+});
+
+it("not done shows status-only panels, ResultPanel hidden until done", async () => {
+  mockJob({ ...DONE_JOB, status: "queued", result: null });
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
+  expect(screen.getByTestId("panel-info")).toBeInTheDocument();
+  expect(screen.queryByTestId("panel-result")).toBeNull();
+  expect(screen.getByTestId("status-5")).toHaveTextContent("Đang chờ worker Colab");
+});

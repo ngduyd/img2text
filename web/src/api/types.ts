@@ -7,6 +7,8 @@ export interface User {
   email: string;
   role: string;
   ocr_enabled: boolean;
+  /** Present on /api/admin/users items; /api/auth/me (UserOut) omits it. */
+  created_at?: string;
 }
 
 export interface RegionOut {
@@ -35,6 +37,13 @@ export interface ResultBody {
   edited_markdown: string | null;
 }
 
+/** PATCH /api/jobs/{id}/regions/{rid} response (server contract pinned, Task 2). */
+export interface RegionPatchOut {
+  id: string;
+  text: string;
+  markdown_replaced: boolean;
+}
+
 export type JobStatus = "queued" | "running" | "done" | "failed";
 
 export interface Job {
@@ -49,7 +58,8 @@ export interface Job {
   finished_at: string | null;
 }
 
-/** List endpoint subset: server /api/jobs items omit result/started_at/finished_at. */
+/** List endpoint subset: server /api/jobs items omit result; started_at/finished_at
+ *  optional — current list serializer omits them (no server change, R52). */
 export interface JobListItem {
   id: number;
   status: JobStatus;
@@ -57,6 +67,8 @@ export interface JobListItem {
   page_count: number;
   error: string | null;
   created_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
 }
 
 export interface AdminStatsDay {
