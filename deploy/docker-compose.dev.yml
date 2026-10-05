@@ -1,0 +1,101 @@
+# img2text dev stack — one command: Postgres + LocalStack S3 (+ bucket init) + hot-reload server.
+#   cp deploy/.env.dev.example deploy/.env.dev
+#   docker compose -f deploy/docker-compose.dev.yml up -d --build
+# Web dev server stays on the host: cd web && npm run dev (Vite :5173, proxies /api → :8000).
+#
+# Ruling R47: dev storage backend = localstack/localstack + amazon/aws-cli init.
+# MinIO's public Docker Hub images are gone (org pulled them) — not mirrored onto
+# third-party forks; LocalStack is official, S3 API, path-style native.
+#
+# NOTE: Postgres publishes host :5433 — the SAME port as deploy/docker-compose.test.yml.
+# Don't run test + dev compose simultaneously (port clash; one bind replaces the other).
+name: img2text-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: img2text
+      POSTGRES_PASSWORD: img2text
+      POSTGRES_DB: img2text_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U img2text -d img2text_dev"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  localstack:
+    # 2026.x builds quit at startup without LOCALSTACK_AUTH_TOKEN (exit 55,
+    # license gate); 4.13.0 runs unlicensed — pin here until a token exists.
+    image: localstack/localstack:4.13.0
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack-data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  # Bucket bootstrap on the compose network (replaces the old manual
+  # `docker run --network=host mc ...` path). Idempotent: head-bucket first,
+  # mb only when missing; retry loop + on-failure restart are the backstop.
+  s3-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      localstack:
+        condition: service_started
+    restart: on-failure
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        until aws --endpoint-url http://localstack:4566 s3api head-bucket --bucket img2text
+        || aws --endpoint-url http://localstack:4566 s3 mb s3://img2text; do sleep 1; done
+
+  server:
+    # host port defaults to 8010 — 8000 is commonly taken (e.g. portainer on
+    # dev boxes); see compose ports comment + DEV_PORT override.
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      # host port defaults to 8010 (8000 commonly taken, e.g. portainer);
+      # container listens :8000 internally. Override: DEV_PORT=8xxx up -d
+      # — keep web/vite.config.ts proxy in sync when overridden.
+      - "${DEV_PORT:-8010}:8000"
+    env_file: .env.dev
+    environment:
+      # Compose service name — NOT localhost (container-to-container DNS).
+      DATABASE_URL: postgresql+asyncpg://img2text:img2text@postgres:5432/img2text_dev
+    # R2_ENDPOINT=http://host.docker.internal:4566 (env file) resolves inside the
+    # container via host-gateway → host :4566 → LocalStack. Same URL the host
+    # browser fetches presigned object URLs from (Docker Desktop resolves it on
+    # the host natively; plain Linux hosts need a /etc/hosts line).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Hot reload: image has PYTHONPATH=/app/server, so `app` imports fresh
+      # source from the mount; third-party deps stay in site-packages
+      # (pip install /app/server baked at build time).
+      - ../server:/app/server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      s3-init:
+        condition: service_completed_successfully
+    # Single uvicorn worker by design — in-process rate limits assume it.
+    command: ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+
+volumes:
+  pgdata:
+  localstack-data:

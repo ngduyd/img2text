@@ -51,39 +51,97 @@ Server tests default to `postgresql+asyncpg://img2text:img2text@localhost:5433/i
 
 ## Run the app in development
 
-Run the full stack locally: MinIO for storage (no Cloudflare), Postgres, FastAPI,
-Vite dev server. Vite proxies `/api` to `:8000` (`web/vite.config.ts`) — no CORS
-middleware on the server; prod nginx covers this instead.
-
-**Storage — MinIO (dev stand-in for R2):**
+PRIMARY — one compose command: Postgres + LocalStack S3 (+ bucket init) +
+hot-reload server (prod image reused: pandoc/fonts/weasyprint baked → exports
+work in dev):
 
 ```bash
-docker run -d --name img2text-minio -p 9000:9000 -p 9001:9001 -v img2text-minio-data:/data minio/minio server /data --console-address :9001
+cp deploy/.env.dev.example deploy/.env.dev   # dev defaults work as-is
+docker compose -f deploy/docker-compose.dev.yml up -d --build
 
-docker run --rm --network=host minio/mc --alias local http://localhost:9000 mb local/img2text
+curl -s localhost:8010/healthz               # → {"status":"ok","db":true}
+
+cd web && npm install && npm run dev
 ```
 
-(Linux — on Docker Desktop use the web console at localhost:9001 instead)
+Open http://localhost:5173 — Vite proxies `/api` to `:8010` (`web/vite.config.ts`; no CORS
+middleware on the server — prod nginx covers this instead; host port defaults to 8010
+via `DEV_PORT` in the compose file — keep the proxy in sync when overridden).
+Port 8000 is commonly taken on dev boxes (e.g. portainer) — the old manual guide's
+`uvicorn --port 8000` was equally broken there; 8010 fixes both paths.
 
-(or open the console at http://localhost:9001 — login `minioadmin`/`minioadmin` — and create bucket `img2text`).
+- `ADMIN_EMAIL`/`ADMIN_PASSWORD` bootstraps the admin user on first server boot.
+- Bucket `img2text` auto-created by `s3-init` (official `amazon/aws-cli`
+  image against LocalStack — MinIO's public images are gone, ruling R47).
+- LocalStack S3 API on http://localhost:4566
+  (health: `/_localstack/health`).
+- Postgres publishes host `:5433` (`img2text_dev`) — **don't run
+  `deploy/docker-compose.test.yml` at the same time** (same host port).
+- Server code hot-reloads (`../server` mounted over `/app/server`, `uvicorn --reload`).
+- `R2_ENDPOINT=http://host.docker.internal:4566` — one URL for container,
+  host tools, and browser-fetched presigned object URLs (preview / export
+  download). Docker Desktop resolves it on the host natively; plain Linux
+  hosts need a `/etc/hosts` line for the browser side (see `.env.dev.example`).
+  Prod uses real R2 presigned hosts; `R2_PUBLIC_BASE` stays spec-reserved for
+  a future CDN.
+
+**Worker in dev:** uploads sit `queued` until the Colab notebook connects
+([docs/colab-setup.md](docs/colab-setup.md)). For UI development WITHOUT Colab,
+inject a canned result — **DEV STUB ONLY**, bypasses the VLM:
+
+```bash
+# 1. Claim a job (returns job_id, worker_token, page_count — stub below posts 1 page;
+#    NOTE: the server does not validate pages against page_count — a 1-page stub result
+#    marks even a multi-page job done (dev convenience, no guard))
+curl -X GET localhost:8010/api/jobs/next -H "Authorization: Bearer dev-runner-key"
+
+# 2. Post the stub result ({id} = job_id from step 1, {worker_token} likewise):
+curl -X POST localhost:8010/api/jobs/{id}/result -H "Authorization: Bearer {worker_token}" -H "Content-Type: application/json" -d '{"model_version":"dev-stub","gpu_seconds":0.1,"warnings":["DEV STUB — bypasses VLM"],"markdown":"# Stub\n\n## Part 2","edited_markdown":null,"pages":[{"index":0,"width":800,"height":600,"page_flag":"ok","markdown":"# Stub\n\n## Part 2","regions":[{"id":"p1r0","bbox":[10,10,300,80],"text":"Part 2","verdict":"ok","placeholder":false}]}]}'
+```
+
+Job flips to `done` → UI preview/issues/edit/export flows become testable.
+
+**What works without external services:**
+
+| One compose command up (Postgres + LocalStack + server) | SMTP empty | Colab absent |
+|---|---|---|
+| register/login/upload/preview/issues/edit/export all work — pandoc in the image for docx/pdf/html export; md export needs nothing | password-reset email no-op (logged, flow continues) | jobs stay `queued` — use the dev stub above |
+
+<details>
+<summary>Alternative: server on host (editor / pytest workflows)</summary>
+
+Run infra manually and uvicorn on the host. Takes host `:5433`, `:4566` and
+`:8010` — stop the dev compose stack first.
+
+**Storage — LocalStack S3 (dev stand-in for R2):**
+
+```bash
+docker run -d --name img2text-localstack -p 4566:4566 -v img2text-localstack-data:/var/lib/localstack localstack/localstack:latest
+
+docker run --rm --network=host amazon/aws-cli --endpoint-url http://localhost:4566 s3 mb s3://img2text --region us-east-1
+```
+
+(Any non-empty AWS creds work against LocalStack — the dev env file uses
+`test`/`test`.)
 
 **Dev env file:**
 
 ```bash
-cp deploy/.env.example deploy/.env.dev   # then fill with DEV values:
+cp deploy/.env.dev.example deploy/.env.dev   # then set HOST-side values:
 # APP_SECRET=dev-secret-change-me
 # BASE_URL=http://localhost:5173
 # RUNNER_KEY=dev-runner-key
 # ADMIN_EMAIL=<your email>            # bootstraps the admin on first server boot
 # ADMIN_PASSWORD=<dev password>
-# R2_ENDPOINT=http://localhost:9000
-# R2_ACCESS_KEY_ID=minioadmin
-# R2_SECRET_ACCESS_KEY=minioadmin
+# R2_ENDPOINT=http://localhost:4566   # host server + host browser both reach it
+# R2_ACCESS_KEY_ID=test
+# R2_SECRET_ACCESS_KEY=test
 # R2_BUCKET=img2text
-# R2_REGION=auto
+# R2_REGION=us-east-1
 # SMTP_* left empty — password-reset emails won't send in dev
 #   (the mailer logs the failure and continues; reset flow no-ops)
-# DATABASE_URL can stay unset — server defaults to Postgres on :5433 (see server/app/config.py)
+# DATABASE_URL can stay UNSET (delete the compose override) — server defaults
+#   to Postgres on :5433/img2text_test (see server/app/config.py)
 ```
 
 **Terminal 1 — Postgres:**
@@ -97,7 +155,7 @@ Dev reuses the test DB (`img2text_test`) — fine for dev; wipe it freely.
 **Terminal 2 — server:**
 
 ```bash
-set -a && source deploy/.env.dev && set +a && cd server && .venv/bin/uvicorn app.main:app --reload --port 8000
+set -a && source deploy/.env.dev && set +a && cd server && .venv/bin/uvicorn app.main:app --reload --port 8010
 ```
 
 `ADMIN_EMAIL`/`ADMIN_PASSWORD` bootstraps the admin user on first boot. Install
@@ -109,29 +167,10 @@ pandoc (see quickstart above) before testing exports.
 cd web && npm install && npm run dev
 ```
 
-Open http://localhost:5173 — Vite proxies `/api` to `:8000`.
+Open http://localhost:5173 — Vite proxies `/api` to `:8010` (same target as the
+compose path; if you port elsewhere, update `web/vite.config.ts` to match).
 
-**Worker in dev:** uploads sit `queued` until the Colab notebook connects
-([docs/colab-setup.md](docs/colab-setup.md)). For UI development WITHOUT Colab,
-inject a canned result — **DEV STUB ONLY**, bypasses the VLM:
-
-```bash
-# 1. Claim a job (returns job_id, worker_token, page_count — stub below posts 1 page;
-#    NOTE: the server does not validate pages against page_count — a 1-page stub result
-#    marks even a multi-page job done (dev convenience, no guard))
-curl -X GET localhost:8000/api/jobs/next -H "Authorization: Bearer dev-runner-key"
-
-# 2. Post the stub result ({id} = job_id from step 1, {worker_token} likewise):
-curl -X POST localhost:8000/api/jobs/{id}/result -H "Authorization: Bearer {worker_token}" -H "Content-Type: application/json" -d '{"model_version":"dev-stub","gpu_seconds":0.1,"warnings":["DEV STUB — bypasses VLM"],"markdown":"# Stub\n\n## Part 2","edited_markdown":null,"pages":[{"index":0,"width":800,"height":600,"page_flag":"ok","markdown":"# Stub\n\n## Part 2","regions":[{"id":"p1r0","bbox":[10,10,300,80],"text":"Part 2","verdict":"ok","placeholder":false}]}]}'
-```
-
-Job flips to `done` → UI preview/issues/edit/export flows become testable.
-
-**What works without external services:**
-
-| Postgres + MinIO up | SMTP empty | Colab absent |
-|---|---|---|
-| register/login/upload/preview/issues/edit/export all work — pandoc needed for docx/pdf/html export; md export needs nothing | password-reset email no-op (logged, flow continues) | jobs stay `queued` — use the dev stub above |
+</details>
 
 ## Quickstart — production
 

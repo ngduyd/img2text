@@ -1,5 +1,6 @@
 .worktrees/
 server/.tools/
 deploy/.env
+deploy/.env.dev
 __pycache__/
 .superpowers/
