@@ -71,6 +71,7 @@ export const api = {
   },
   retryJob: (id: number | string) =>
     request<{ id: number; status: string }>(`/api/jobs/${id}/retry`, { method: "POST" }),
+  getJobFile: (id: number | string) => request<{ url: string }>(`/api/jobs/${id}/file`),
   patchContent: (id: number | string, markdown: string) =>
     request<unknown>(`/api/jobs/${id}/content`, { method: "PATCH", body: { markdown } }),
   exportJob: (id: number | string, fmt: string) =>

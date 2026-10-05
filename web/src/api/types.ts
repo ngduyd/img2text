@@ -49,7 +49,8 @@ export interface Job {
   finished_at: string | null;
 }
 
-/** List endpoint subset: server /api/jobs items omit result/started_at/finished_at. */
+/** List endpoint subset: server /api/jobs items omit result; started_at/finished_at
+ *  optional — current list serializer omits them (no server change, R52). */
 export interface JobListItem {
   id: number;
   status: JobStatus;
@@ -57,6 +58,8 @@ export interface JobListItem {
   page_count: number;
   error: string | null;
   created_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
 }
 
 export interface AdminStatsDay {
