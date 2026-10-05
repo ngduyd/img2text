@@ -37,8 +37,13 @@ class S3Driver:
             aws_access_key_id=key_id or None,
             aws_secret_access_key=secret or None,
             region_name=region,
-            # R2 requires SigV4; botocore defaults us-east-1 S3 to legacy sigv2
-            config=Config(signature_version="s3v4"),
+            # R2 requires SigV4; botocore defaults us-east-1 S3 to legacy sigv2.
+            # path-style addressing: MinIO (dev storage, localhost endpoints)
+            # breaks with AWS-style virtual-host addressing; R2 accepts
+            # path-style too, so one config covers both dev and prod.
+            config=Config(
+                signature_version="s3v4", s3={"addressing_style": "path"}
+            ),
         )
 
     async def put(self, key: str, data: bytes) -> None:

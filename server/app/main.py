@@ -45,3 +45,6 @@ def create_app() -> FastAPI:
     app.add_middleware(PageViewsMiddleware)
     app.add_middleware(RequestLogsMiddleware)
     return app
+
+# uvicorn entrypoint (dev + deploy/Dockerfile CMD: uvicorn app.main:app)
+app = create_app()
