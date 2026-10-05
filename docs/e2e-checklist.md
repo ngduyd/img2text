@@ -58,3 +58,9 @@ Prereqs: `deploy/.env` filled (see [docs/r2-setup.md](docs/r2-setup.md)),
 - [ ] **E4 — Toolbar tooltip.** Expected: hover icon toolbar crop: RotateCw → title "Xoay 90°", Eraser → "Xóa vùng chọn", Send → "Gửi lên"; toolbar phía trên canvas.
 - [ ] **E5 — VSCode port-forward CORS.** Expected: qua VSCode port-forward upload PDF → không còn CORS lỗi (dev origins regex covers vscode.dev).
 - [ ] **E6 — Admin Logs columns.** Expected: admin Logs hiển thị cột Người dùng (user_id), IP (X-Forwarded-For rightmost, fallback client host), User-Agent (cắt 200 ký tự).
+
+## F. Plan Y — landing + app polish (manual visual gate)
+
+- [ ] **F1 — /landing render.** Expected: CTA "Bắt đầu" (hero + final CTA) điều hướng tới `/login`; hero (H1 + 1 dòng mô tả) ≤ 2 dòng trên desktop; bento "Tính năng" đúng 5 ô (2 ô ảnh, 1 ô tinted accent).
+- [ ] **F2 — /landing responsive + themes.** Expected: trang hiển thị đúng ở cả dark và light theme (toggle ThemeToggle, không vỡ màu/contrast); ở 320px không vỡ layout (không tràn ngang, chips/badges wrap); H1 hero ≤ 3 dòng trên mobile.
+- [ ] **F3 — App pages spot-check (Jobs / JobDetail / Login / Profile).** Expected: mọi control (tabs, chips, nút, input) nhận focus-visible khi tab-able (Tab key thấy outline rõ, không bị cắt); badge + filter chip đồng bộ MỘT chính tả trạng thái ("Đang chờ worker Colab", "Đang xử lý", "Hoàn tất", "Xử lý thất bại"); contrast spot-check: text muted trên surface vẫn đọc được ở cả 2 theme.

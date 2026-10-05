@@ -6,7 +6,6 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import type { JobListItem } from "../api/types";
-import { STATUS_TEXT } from "../lib/status";
 import JobRow from "./JobRow";
 
 vi.mock("../api/client", async (importOriginal) => {
@@ -67,8 +66,8 @@ it("renders name line, status badge and vi-VN date", () => {
   renderRow(job({ file_type: "pdf" }));
   expect(screen.getByTestId("job-row-7")).toHaveTextContent("#7 · PDF · 2 trang");
   // R51: badge-{id} testid assertion preserved from old Jobs.test.tsx;
-  // label = STATUS_TEXT (single spelling shared with detail panels).
-  expect(screen.getByTestId("badge-7")).toHaveTextContent(STATUS_TEXT.queued);
+  // P2: literal pins the shared STATUS_TEXT spelling ("Đang chờ worker Colab").
+  expect(screen.getByTestId("badge-7")).toHaveTextContent("Đang chờ worker Colab");
   const expected = new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(
     new Date("2026-10-04T00:00:00Z"),
   );

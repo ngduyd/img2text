@@ -6,7 +6,6 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ApiError, api } from "../api/client";
 import type { Job, User } from "../api/types";
-import { STATUS_TEXT } from "../lib/status";
 import { toast } from "sonner";
 import Jobs from "./Jobs";
 
@@ -113,8 +112,8 @@ it("job rows render status badge", async () => {
   });
   renderWithRouter(<Jobs />);
   expect(await screen.findByTestId("job-row-7")).toBeInTheDocument();
-  // Badge label = STATUS_TEXT (single spelling shared with detail panels).
-  expect(screen.getByTestId("badge-7")).toHaveTextContent(STATUS_TEXT.queued);
+  // P2: badge literal pins the shared STATUS_TEXT spelling ("Đang chờ worker Colab").
+  expect(screen.getByTestId("badge-7")).toHaveTextContent("Đang chờ worker Colab");
 });
 
 it("filter tabs show counts and click filters rows", async () => {
@@ -131,9 +130,10 @@ it("filter tabs show counts and click filters rows", async () => {
   renderWithRouter(<Jobs />);
   await screen.findByTestId("job-row-4");
   await waitFor(() => expect(screen.getByTestId("filter-all")).toHaveTextContent("Tất cả (4)"));
-  expect(screen.getByTestId("filter-queued")).toHaveTextContent("Chờ xử lý (1)");
+  // P2: chip labels share STATUS_TEXT spellings with badges (one spelling per status).
+  expect(screen.getByTestId("filter-queued")).toHaveTextContent("Đang chờ worker Colab (1)");
   expect(screen.getByTestId("filter-done")).toHaveTextContent("Hoàn tất (2)");
-  expect(screen.getByTestId("filter-failed")).toHaveTextContent("Thất bại (1)");
+  expect(screen.getByTestId("filter-failed")).toHaveTextContent("Xử lý thất bại (1)");
   const user = userEvent.setup();
   await user.click(screen.getByTestId("filter-done"));
   expect(screen.getByTestId("job-row-2")).toBeInTheDocument();

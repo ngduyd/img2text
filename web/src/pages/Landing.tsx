@@ -9,14 +9,18 @@ function Reveal({
   children,
   className,
   delay = 0,
+  as = "div",
 }: {
   children: React.ReactNode;
   className?: string;
   delay?: number;
+  /** "li" keeps <ol> → <li> semantics valid (P2: no div between list and items). */
+  as?: "div" | "li";
 }) {
   const reduce = useReducedMotion();
+  const MotionTag = as === "li" ? motion.li : motion.div;
   return (
-    <motion.div
+    <MotionTag
       className={className}
       initial={reduce ? false : { opacity: 0, y: 24 }}
       whileInView={{ opacity: 1, y: 0 }}
@@ -24,7 +28,7 @@ function Reveal({
       transition={{ duration: 0.6, delay, ease: [0.16, 1, 0.3, 1] }}
     >
       {children}
-    </motion.div>
+    </MotionTag>
   );
 }
 
@@ -158,16 +162,19 @@ export default function Landing() {
         <h2 className="text-2xl font-semibold md:text-3xl">Cách hoạt động</h2>
         <ol className="mt-8 divide-y divide-border">
           {HOW_STEPS.map((step, i) => (
-            <Reveal key={step.label} delay={i * 0.06}>
-              <li className="flex items-baseline gap-6 py-6">
-                <span aria-hidden="true" className="text-3xl font-bold text-muted">
-                  {i + 1}
-                </span>
-                <div>
-                  <h3 className="text-lg font-semibold">{step.label}</h3>
-                  <p className="mt-1 text-muted">{step.body}</p>
-                </div>
-              </li>
+            <Reveal
+              as="li"
+              key={step.label}
+              delay={i * 0.06}
+              className="flex items-baseline gap-6 py-6"
+            >
+              <span aria-hidden="true" className="text-3xl font-bold text-muted">
+                {i + 1}
+              </span>
+              <div>
+                <h3 className="text-lg font-semibold">{step.label}</h3>
+                <p className="mt-1 text-muted">{step.body}</p>
+              </div>
             </Reveal>
           ))}
         </ol>

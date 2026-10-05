@@ -58,6 +58,16 @@ it("#how shows verb-noun labels (no 'Bước')", () => {
   expect(how.textContent).not.toMatch(/Bước\s*\d/i);
 });
 
+it("reduced-motion path renders statically: no transform animation values", () => {
+  const { container } = renderLanding();
+  // useReducedMotion mocked true → initial={false}. framer-motion may still emit
+  // "transform: none" (identity, no motion) — pin that: no real transform values.
+  const styled = [...container.querySelectorAll("[style*='transform']")];
+  for (const el of styled) {
+    expect(el.getAttribute("style")).toMatch(/transform:\s*none/);
+  }
+});
+
 it("rendered text contains zero em-dashes", () => {
   const { container } = renderLanding();
   expect(container.textContent).not.toContain("—");

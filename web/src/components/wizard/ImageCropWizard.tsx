@@ -16,13 +16,14 @@ interface Rect {
 const MIN_RECT = 10;
 
 /** Crop-rect overlay from the --error token (theme-aware; ui-ux-dev: no hardcoded colors).
- * ponytail: fallback rgba only if the token is missing — canvas can't read CSS vars directly. */
+ * ponytail: fallback rgba only if the token is missing — canvas can't read CSS vars directly.
+ * P2: fallback = dark-theme --error #f85149 (tokens.css), not the old Tailwind red-600. */
 function errorOverlay(): { fill: string; stroke: string } {
   const hex = getComputedStyle(document.documentElement)
     .getPropertyValue("--error")
     .trim()
     .replace("#", "");
-  if (!/^[0-9a-f]{6}$/i.test(hex)) return { fill: "rgba(220,38,38,0.3)", stroke: "rgba(220,38,38,0.9)" };
+  if (!/^[0-9a-f]{6}$/i.test(hex)) return { fill: "rgba(248,81,73,0.3)", stroke: "rgba(248,81,73,0.9)" };
   const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
   return { fill: `rgba(${r},${g},${b},0.3)`, stroke: `rgba(${r},${g},${b},0.9)` };
 }

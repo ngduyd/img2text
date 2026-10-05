@@ -1,14 +1,17 @@
 import type { JobListItem, JobStatus } from "../api/types";
+import { STATUS_TEXT } from "../lib/status";
 import Button from "./ui/Button";
 
 export type StatusFilter = "all" | JobStatus;
 
+// P2: chips share STATUS_TEXT spellings with badges (one spelling per status).
+// "all" is a filter pseudo-status, not a job status — kept short.
 const TABS: { key: StatusFilter; label: string }[] = [
   { key: "all", label: "Tất cả" },
-  { key: "queued", label: "Chờ xử lý" },
-  { key: "running", label: "Đang xử lý" },
-  { key: "done", label: "Hoàn tất" },
-  { key: "failed", label: "Thất bại" },
+  { key: "queued", label: STATUS_TEXT.queued },
+  { key: "running", label: STATUS_TEXT.running },
+  { key: "done", label: STATUS_TEXT.done },
+  { key: "failed", label: STATUS_TEXT.failed },
 ];
 
 /** Counts computed client-side from the loaded list; default "all". */
