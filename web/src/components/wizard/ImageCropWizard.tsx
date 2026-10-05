@@ -15,6 +15,18 @@ interface Rect {
 /** Rects below this (image px) are ignored — accidental micro-drags. */
 const MIN_RECT = 10;
 
+/** Crop-rect overlay from the --error token (theme-aware; ui-ux-dev: no hardcoded colors).
+ * ponytail: fallback rgba only if the token is missing — canvas can't read CSS vars directly. */
+function errorOverlay(): { fill: string; stroke: string } {
+  const hex = getComputedStyle(document.documentElement)
+    .getPropertyValue("--error")
+    .trim()
+    .replace("#", "");
+  if (!/^[0-9a-f]{6}$/i.test(hex)) return { fill: "rgba(220,38,38,0.3)", stroke: "rgba(220,38,38,0.9)" };
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return { fill: `rgba(${r},${g},${b},0.3)`, stroke: `rgba(${r},${g},${b},0.9)` };
+}
+
 /** Canvas display scale cap — larger bitmaps draw downscaled; rect coords stay image px. */
 const MAX_DISPLAY = 720;
 
@@ -73,11 +85,12 @@ export default function ImageCropWizard({
     ctx.drawImage(img, -dims.w / 2, -dims.h / 2);
     ctx.restore();
     if (view.rect) {
+      const overlay = errorOverlay();
       ctx.save();
       ctx.scale(scale, scale);
-      ctx.fillStyle = "rgba(220, 38, 38, 0.3)";
+      ctx.fillStyle = overlay.fill;
       ctx.fillRect(view.rect.x, view.rect.y, view.rect.w, view.rect.h);
-      ctx.strokeStyle = "rgba(220, 38, 38, 0.9)";
+      ctx.strokeStyle = overlay.stroke;
       ctx.strokeRect(view.rect.x, view.rect.y, view.rect.w, view.rect.h);
       ctx.restore();
     }

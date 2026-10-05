@@ -2,26 +2,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "../api/client";
-import type { JobListItem, JobStatus } from "../api/types";
+import type { JobListItem } from "../api/types";
 import { mapApiError } from "../lib/errors";
+// Single spelling + tone per status (spec: shell, panels, badges share lib/status).
+import { STATUS_TEXT, STATUS_TONE } from "../lib/status";
 import Badge from "./ui/Badge";
-import type { BadgeTone } from "./ui/Badge";
 import Button from "./ui/Button";
-
-const STATUS_LABELS: Record<JobStatus, string> = {
-  queued: "Chờ xử lý",
-  running: "Đang xử lý",
-  done: "Hoàn tất",
-  failed: "Thất bại",
-};
-
-/** VERDICT-style tone map (lib/verdicts.ts pattern). */
-const STATUS_TONES: Record<JobStatus, BadgeTone> = {
-  queued: "neutral",
-  running: "info",
-  done: "success",
-  failed: "error",
-};
 
 const DATE_FORMAT = new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" });
 
@@ -55,7 +41,7 @@ export default function JobRow({ job }: { job: JobListItem }) {
       className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
     >
       <div>
-        <span>
+        <span className="font-medium text-text">
           #{job.id} · {job.file_type === "pdf" ? "PDF" : "Ảnh"} · {job.page_count} trang
         </span>
         <div className="text-xs text-muted">
@@ -64,8 +50,8 @@ export default function JobRow({ job }: { job: JobListItem }) {
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <Badge tone={STATUS_TONES[job.status]} testid={`badge-${job.id}`}>
-          {STATUS_LABELS[job.status]}
+        <Badge tone={STATUS_TONE[job.status]} testid={`badge-${job.id}`}>
+          {STATUS_TEXT[job.status]}
         </Badge>
         <Button
           testid={`btn-view-${job.id}`}

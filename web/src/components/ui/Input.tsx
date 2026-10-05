@@ -23,7 +23,7 @@ export default function Input({ label, testid, error, className, id, ...rest }: 
         />
       </label>
       {error && (
-        <span data-testid={errorId} className="text-sm text-error">
+        <span data-testid={errorId} role="alert" className="text-sm text-error">
           {error}
         </span>
       )}

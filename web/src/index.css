@@ -13,6 +13,7 @@
   --color-text: var(--text);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
   --color-border: var(--border);
   --color-success: var(--success);
   --color-warning: var(--warning);
@@ -25,6 +26,14 @@ body {
   color: var(--text);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   line-height: 1.5;
+}
+
+/* 320px overflow safety: media never wider than its container (ui-ux-dev 5). */
+img,
+video,
+canvas,
+iframe {
+  max-width: 100%;
 }
 
 /* Visible focus ring on every interactive element (a11y, ui-ux-dev). */

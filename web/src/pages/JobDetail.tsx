@@ -1,7 +1,7 @@
 import type { Query } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import type { Job } from "../api/types";
@@ -18,17 +18,35 @@ const jobRefetchInterval = (q: Query<Job>): number | false =>
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
-  const { data: job } = useQuery({
+  const { data: job, isPending } = useQuery({
     queryKey: ["job", id],
     queryFn: () => api.getJob(id!),
     refetchInterval: jobRefetchInterval,
   });
   const [retryError, setRetryError] = useState<string | null>(null);
 
-  if (!job) return null;
+  if (!job) {
+    // Loading state instead of blank page (ui-ux-dev empty/loading checklist).
+    return (
+      <main id="main" className="mx-auto max-w-3xl p-4">
+        {isPending ? (
+          <p data-testid="job-loading" className="text-sm text-muted">
+            Đang tải công việc…
+          </p>
+        ) : null}
+      </main>
+    );
+  }
 
   return (
     <main id="main" className="mx-auto max-w-3xl p-4">
+      <Link
+        to="/"
+        data-testid="link-back-jobs"
+        className="mb-2 inline-block text-sm text-accent-text hover:underline"
+      >
+        ← Về danh sách công việc
+      </Link>
       <h1 className="mb-4 text-xl font-bold">Chi tiết công việc #{job.id}</h1>
       {job.status === "failed" && (
         <Button
@@ -50,7 +68,7 @@ export default function JobDetail() {
         </Button>
       )}
       {retryError && (
-        <p data-testid="retry-error" className="text-sm text-error">
+        <p data-testid="retry-error" role="alert" className="text-sm text-error">
           {retryError}
         </p>
       )}

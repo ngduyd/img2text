@@ -27,7 +27,16 @@ export default function Profile() {
   const [emBusy, setEmBusy] = useState(false);
   const [emSuccess, setEmSuccess] = useState(false);
 
-  if (!me) return null;
+  if (!me) {
+    // Loading state instead of blank page while [me] resolves (ui-ux-dev checklist).
+    return (
+      <main id="main" className="mx-auto max-w-3xl p-4">
+        <p data-testid="profile-loading" className="text-sm text-muted">
+          Đang tải hồ sơ…
+        </p>
+      </main>
+    );
+  }
 
   async function savePassword(e: React.FormEvent) {
     e.preventDefault();
@@ -95,7 +104,9 @@ export default function Profile() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-muted">ID:</span>
-              <span data-testid="profile-id">{me.id}</span>
+              <span data-testid="profile-id" className="break-all">
+                {me.id}
+              </span>
             </div>
             <p className="text-muted">Ngày tham gia: cập nhật sau</p>
           </div>
@@ -128,7 +139,7 @@ export default function Profile() {
               onChange={(e) => setNewPw2(e.target.value)}
             />
             {pwError && (
-              <p data-testid="password-error" className="text-sm text-error">
+              <p data-testid="password-error" role="alert" className="text-sm text-error">
                 {pwError}
               </p>
             )}
@@ -164,7 +175,7 @@ export default function Profile() {
               onChange={(e) => setNewEmail(e.target.value)}
             />
             {emError && (
-              <p data-testid="email-error" className="text-sm text-error">
+              <p data-testid="email-error" role="alert" className="text-sm text-error">
                 {emError}
               </p>
             )}
