@@ -1,4 +1,8 @@
-"""Auth dependencies (Task 3)."""
+"""Auth dependencies (Task 3): current-user/admin/ocr gates + runner key.
+
+Rulings embedded: 401/403 detail strings are test-pinned contract;
+get_runner_key is R11's bearer capability-token check for worker endpoints.
+"""
 
 import hmac
 import warnings

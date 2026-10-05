@@ -1,4 +1,9 @@
-"""Plan H Task 2: PATCH /api/jobs/{id}/regions/{rid} — per-region edit."""
+"""Plan H Task 2: PATCH /api/jobs/{id}/regions/{rid} — per-region text edit.
+
+Ruling embedded: every edit invalidates cached exports (delete exports/{id}/
+prefix, Plan D binding); markdown auto-replace writes edited_markdown only
+when the old text occurs (first occurrence), else the flag stays false.
+"""
 
 import copy
 

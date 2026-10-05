@@ -1,4 +1,8 @@
-"""Pandoc invocation constants (Plan D Task 3, ruling R25: no-sudo install)."""
+"""Pandoc invocation constants (Plan D Task 3, ruling R25: no-sudo install).
+
+PANDOC_BIN: static binary under server/.tools/ (gitignored), env override;
+REFERENCE_DOCX: committed styles at deploy/reference.docx for docx exports.
+"""
 
 import os
 from pathlib import Path

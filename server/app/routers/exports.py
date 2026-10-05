@@ -1,8 +1,9 @@
-"""Plan D: PATCH /api/jobs/{id}/content + POST /api/jobs/{id}/export
-+ GET /api/jobs/{id}/regions/{rid}/crop (lazy region crops, Task 2)
-+ html/docx export via pandoc + deploy/reference.docx (Task 3)
-+ pdf export via pandoc html → bleach → weasyprint; crops embedded in
-  ALL md-family exports; html sanitized (Task 4).
+"""Exports router: content edit, export generation (md/html/docx/pdf), download, crops.
+
+Sections: render helpers (pandoc/bleach/weasyprint, R27 sanitized failures,
+R34 data-URI crop embedding) → content edit (PATCH /content, cache
+invalidation) → export + download → region crops (R26: image jobs only).
+Crops materialized into ALL md-family exports per Plan D Task 4.
 """
 
 import asyncio
@@ -58,6 +59,8 @@ _HTML_ATTRS = {
 }
 
 router = APIRouter(tags=["exports"])
+
+# --- Render helpers: sanitization, crops, pandoc, pdf ---
 
 def sanitize_pandoc_html(html: str) -> str:
     """bleach-clean pandoc html to a body fragment (script never executable).
@@ -262,6 +265,8 @@ def _render_pdf(html: str, base_url: str) -> bytes:
 
     return HTML(string=html, base_url=base_url).write_pdf()
 
+# --- Content edit: PATCH /api/jobs/{id}/content ---
+
 class ContentBody(BaseModel):
     markdown: str
 
@@ -295,6 +300,8 @@ async def patch_content(
     # cache invalidation: exported md must reflect the edit
     await storage.delete_prefix(f"exports/{id}/")
     return {}
+
+# --- Export generation + download: POST /export, GET /export/{fmt}/download ---
 
 @router.post("/api/jobs/{id}/export")
 async def export_job(
@@ -346,6 +353,8 @@ async def download_export(
     except KeyError:
         raise HTTPException(status_code=404, detail="Chưa xuất file.")
     return Response(content=data, media_type=EXPORT_CONTENT_TYPES[fmt])
+
+# --- Region crops: GET /api/jobs/{id}/regions/{rid}/crop ---
 
 @router.get("/api/jobs/{id}/regions/{rid}/crop")
 async def region_crop(

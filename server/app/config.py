@@ -1,4 +1,8 @@
-"""App settings, read from environment (env names are case-insensitive)."""
+"""App settings from environment (case-insensitive env names; pydantic-settings).
+
+Rulings embedded: R58 CORS regex origins incl. VSCode port-forward hosts;
+R58a scheduler_interval_seconds floor 5s (no busy-loop).
+"""
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings

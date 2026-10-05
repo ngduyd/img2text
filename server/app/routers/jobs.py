@@ -1,5 +1,9 @@
-"""Task 2: POST /api/jobs — upload validation, sha256 dedupe, job create.
-Task 3: GET /api/jobs, GET /api/jobs/{id}, GET /api/jobs/{id}/file.
+"""Jobs router: upload, owner reads, worker claim/protocol, owner retry.
+
+Sections: upload (Tasks 2) → owner reads (Task 3) → worker claim
+(GET /api/jobs/next; route MUST stay before /{id}) → owner retry (Plan E,
+Plan D binding: stale exports+crops deleted) → worker protocol (Task 4;
+R11 capability token, R16/R17 atomic conditional-UPDATE transitions).
 """
 
 import hashlib
@@ -39,6 +43,8 @@ def _ocr_user(user: User = Depends(get_current_user)) -> User:
 
 def _pdf_page_count(tmp) -> int:
     return len(PdfReader(tmp).pages)
+
+# --- Upload: POST /api/jobs (validation, sha256 dedupe, create) ---
 
 @router.post("/api/jobs", status_code=201)
 async def upload_job(
@@ -146,6 +152,8 @@ async def upload_job(
         "file_type": job.file_type,
     }
 
+# --- Owner reads: GET /api/jobs, /{id}, /{id}/file ---
+
 async def _job_or_403(
     session: AsyncSession, job_id: int, user: User
 ) -> Job:
@@ -181,6 +189,8 @@ async def list_jobs(
         for j in rows
     ]
     return {"items": items, "total": len(items)}
+
+# --- Worker claim: GET /api/jobs/next (route defined BEFORE /{id}) ---
 
 @router.get("/api/jobs/next")  # BEFORE /api/jobs/{id}: "next" must not match {id}
 async def next_job(
@@ -254,7 +264,7 @@ async def get_job_file(
     url = await storage.presign_get(job.storage_key, PRESIGN_EXPIRES_SECONDS)
     return {"url": url}
 
-# ---- Plan E Task 4: owner retry (Plan D binding: no stale artifacts) ----
+# --- Owner retry: POST /api/jobs/{id}/retry (Plan D: no stale artifacts) ---
 
 @router.post("/api/jobs/{id}/retry")
 async def retry_job(
@@ -300,7 +310,7 @@ async def retry_job(
     # ORM instance not expired (expire_on_commit=False): return known values
     return {"id": id, "status": "queued"}
 
-# ---- Task 4: worker protocol (next / heartbeat / result / fail) ----
+# --- Worker protocol: heartbeat / result / fail (Task 4) ---
 
 class FailBody(BaseModel):
     error: str

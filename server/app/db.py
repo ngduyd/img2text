@@ -1,4 +1,8 @@
-"""Async engine, session factory, and the `get_session` dependency."""
+"""Async engine, session factory, and the `get_session` dependency.
+
+Schema bootstrap (Base.metadata.create_all) lives in main.lifespan — R1:
+httpx ASGITransport skips lifespan, tests create schema from the same Base.
+"""
 
 from collections.abc import AsyncIterator
 
