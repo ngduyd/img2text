@@ -1,3 +1,4 @@
+import { RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../../api/client";
@@ -11,15 +12,18 @@ interface LogRow {
   method: string;
   path: string;
   status: number;
+  user_id: number | null;
   ip: string;
+  ua: string | null;
 }
 
-/** Request log list with IP filter (applied on refresh click) + raw tail. */
+/** Audit trail (request_logs): IP filter (refresh click) + raw log tail.
+ * Plan X R60: IP + User-Agent columns (UA truncated 160px, title = full). */
 export default function AdminLogs() {
   const [ipInput, setIpInput] = useState("");
   const [ip, setIp] = useState("");
 
-  const { data: logs } = useQuery({
+  const { data: logs, isLoading } = useQuery({
     queryKey: ["admin-logs", ip],
     queryFn: () => api.adminLogs(ip ? { ip } : {}),
   });
@@ -28,10 +32,12 @@ export default function AdminLogs() {
     queryFn: () => api.adminLogsTail(200),
   });
 
+  const rows = (logs?.items ?? []) as unknown as LogRow[];
+
   return (
-    <div>
-      <Card>
-        <div className="mb-4 flex items-end gap-4">
+    <div className="flex flex-col gap-4">
+      <Card title="Nhật ký truy cập">
+        <div className="mb-4 flex flex-wrap items-end gap-4">
           <Input
             label="Lọc theo IP"
             testid="input-log-ip"
@@ -39,35 +45,68 @@ export default function AdminLogs() {
             onChange={(e) => setIpInput(e.target.value)}
             placeholder="10.0.0.1"
           />
-          <Button testid="btn-logs-refresh" size="sm" onClick={() => setIp(ipInput)}>
-            Làm mới
+          <Button
+            testid="btn-logs-refresh"
+            variant="secondary"
+            size="sm"
+            className="p-2"
+            title="Làm mới danh sách nhật ký"
+            aria-label="Làm mới danh sách nhật ký"
+            onClick={() => setIp(ipInput)}
+          >
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
-        <table className="w-full border-collapse text-left text-sm">
-          <thead>
-            <tr className="border-b border-border text-muted">
-              <th className="px-3 py-2">Method</th>
-              <th className="px-3 py-2">Path</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">IP</th>
-              <th className="px-3 py-2">Thời gian</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(logs?.items ?? []).map((r, i) => {
-              const row = r as unknown as LogRow;
-              return (
-                <tr key={row.id ?? i} className="border-b border-border/40">
-                  <td className="px-3 py-2">{row.method}</td>
-                  <td className="px-3 py-2">{row.path}</td>
-                  <td className="px-3 py-2">{row.status}</td>
-                  <td className="px-3 py-2">{row.ip}</td>
-                  <td className="px-3 py-2">{row.ts}</td>
+        {isLoading ? (
+          <div data-testid="logs-loading" className="p-8 text-center text-muted">
+            Đang tải…
+          </div>
+        ) : rows.length === 0 ? (
+          <div data-testid="logs-empty" className="p-8 text-center text-muted">
+            Chưa có nhật ký
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+              <thead>
+                <tr className="border-b border-border text-muted">
+                  {["Method", "Path", "Status", "IP", "User-Agent", "Thời gian"].map((h) => (
+                    <th
+                      key={h}
+                      scope="col"
+                      className="sticky top-0 bg-surface px-4 py-3 font-medium"
+                    >
+                      {h}
+                    </th>
+                  ))}
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {rows.map((row, i) => (
+                  <tr
+                    key={row.id ?? i}
+                    className="border-b border-border/40 odd:bg-bg/60"
+                  >
+                    <td className="px-4 py-3">{row.method}</td>
+                    <td className="px-4 py-3">{row.path}</td>
+                    <td className="px-4 py-3">{row.status}</td>
+                    <td data-testid="audit-ip" className="px-4 py-3">
+                      <span className="block max-w-[160px] truncate" title={row.ip}>
+                        {row.ip}
+                      </span>
+                    </td>
+                    <td data-testid="audit-ua" className="px-4 py-3">
+                      <span className="block max-w-[160px] truncate" title={row.ua ?? ""}>
+                        {row.ua}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">{row.ts}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
       <Card testid="logs-tail-card" title="Log tail">
         <pre

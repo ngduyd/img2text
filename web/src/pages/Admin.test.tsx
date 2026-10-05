@@ -109,7 +109,8 @@ it("overview quick links navigate to other tabs", async () => {
   renderWithRouter(<Admin />);
   const user = userEvent.setup();
   await user.click(await screen.findByTestId("btn-goto-users"));
-  expect(await screen.findByText("Ngày tạo")).toBeInTheDocument();
+  // ui-ux redo: empty users list → empty state box (table hidden); tab mounted
+  expect(await screen.findByText("Chưa có người dùng")).toBeInTheDocument();
   expect(screen.queryByTestId("stat-users")).not.toBeInTheDocument();
   await user.click(screen.getByTestId("tab-overview"));
   await user.click(await screen.findByTestId("btn-goto-api"));
@@ -181,6 +182,9 @@ it("users tab shows created_at and toggles ocr", async () => {
   expect(screen.getByText("Ngày tạo")).toBeInTheDocument();
   expect(screen.getByText(/0?4\/10\/2026/)).toBeInTheDocument();
   const toggle = await screen.findByTestId("toggle-ocr-2");
+  // ui-ux redo: role badge tone + icon toggle exposes pressed state (a11y)
+  expect(screen.getByTestId("role-badge-2")).toHaveAttribute("data-tone", "neutral");
+  expect(toggle).toHaveAttribute("aria-pressed", "false");
   await user.click(toggle);
   expect(api.adminPatchUser).toHaveBeenCalledWith(2, { ocr_enabled: true });
 });
@@ -233,6 +237,14 @@ it("logs tab filters by ip", async () => {
   await user.type(screen.getByTestId("input-log-ip"), "10.0.0.1");
   await user.click(screen.getByTestId("btn-logs-refresh"));
   await waitFor(() => expect(api.adminLogs).toHaveBeenCalledWith(expect.objectContaining({ ip: "10.0.0.1" })));
+  // Plan X R60: audit rows expose IP + User-Agent cells (truncate, title = full)
+  const ipCell = await screen.findByTestId("audit-ip");
+  expect(ipCell).toHaveTextContent("10.0.0.1");
+  expect(ipCell.firstChild).toHaveAttribute("title", "10.0.0.1");
+  const uaCell = screen.getByTestId("audit-ua");
+  expect(uaCell).toHaveTextContent("x");
+  expect(uaCell.firstChild).toHaveAttribute("title", "x");
+  expect(screen.getByRole("columnheader", { name: "User-Agent" })).toBeInTheDocument();
 });
 
 it("admin home has no jobs board, no dropzone (absence asserts)", async () => {

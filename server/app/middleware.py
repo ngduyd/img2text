@@ -76,7 +76,8 @@ class RequestLogsMiddleware(_LoggingMiddleware):
             status=status,
             user_id=_user_id(request),
             ip=net.client_ip(request),
-            ua=request.headers.get("user-agent"),
+            # Plan X R60: UA capped at 200 chars; missing header → "" not None
+            ua=request.headers.get("user-agent", "")[:200],
         )
         session_factory = scope["app"].state.session_factory
         async with session_factory() as session:
