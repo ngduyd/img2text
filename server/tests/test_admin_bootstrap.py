@@ -12,6 +12,8 @@ async def test_bootstrap_admin_creates_admin_and_is_idempotent(db_session):
         await db_session.execute(select(User).where(User.email == "admin@x.io"))
     ).scalar_one()
     assert u.role == "admin"
+    # Task: first-run upload path — bootstrap admin is OCR-enabled.
+    assert u.ocr_enabled is True
 
     await bootstrap_admin(db_session, "admin@x.io", "adminpass1")
     rows = (

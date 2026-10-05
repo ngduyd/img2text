@@ -48,7 +48,10 @@ it("dragover preventDefault and drop triggers uploadJob", async () => {
 it("drop uploads nothing when ocr not enabled", async () => {
   vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: false } as User);
   renderDropzone();
-  await screen.findByTestId("banner-no-access");
+  const banner = await screen.findByTestId("banner-no-access");
+  expect(banner).toHaveTextContent("Chờ admin cấp quyền");
+  // Task: dev first-run hint — admin cannot self-grant via bootstrap; banner explains the path.
+  expect(banner).toHaveTextContent("đăng nhập tài khoản admin");
   const file = new File(["x"], "a.jpg", { type: "image/jpeg" });
   fireEvent.drop(screen.getByTestId("dropzone"), { dataTransfer: { files: [file] } });
   expect(api.uploadJob).not.toHaveBeenCalled();

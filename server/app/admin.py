@@ -15,5 +15,13 @@ async def bootstrap_admin(session: AsyncSession, email: str, password: str) -> N
     existing = await session.scalar(select(User).where(User.email == email))
     if existing is not None:
         return
-    session.add(User(email=email, password_hash=hash_password(password), role="admin"))
+    # First-run must work: bootstrap admin is the trusted identity, OCR always on.
+    session.add(
+        User(
+            email=email,
+            password_hash=hash_password(password),
+            role="admin",
+            ocr_enabled=True,
+        )
+    )
     await session.commit()

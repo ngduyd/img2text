@@ -56,6 +56,10 @@ export default function Dropzone({
           className="mb-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-warning"
         >
           Chờ admin cấp quyền
+          <p className="mt-1 text-xs">
+            Môi trường dev: đăng nhập tài khoản admin → mục Người dùng → bật OCR cho tài khoản
+            này.
+          </p>
         </div>
       )}
       {error && (

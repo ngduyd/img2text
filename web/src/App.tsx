@@ -58,7 +58,7 @@ function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () => void
   );
 }
 
-/** Left nav: brand + Công việc (non-admin) + Quản trị (admin only, Review Focus). */
+/** Left nav: brand + Công việc (everyone) + Quản trị (admin only, Review Focus). */
 function AppNav() {
   const navigate = useNavigate();
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
@@ -86,7 +86,6 @@ function AppNav() {
   }, [menuOpen]);
 
   const isAdmin = me?.role === "admin";
-  const showJobs = !isAdmin;
 
   return (
     <nav
@@ -98,11 +97,9 @@ function AppNav() {
         <Link to="/" data-testid="nav-brand" className="text-lg font-bold">
           img2text
         </Link>
-        {showJobs && (
-          <Link to="/" data-testid="nav-link-jobs" onClick={() => setMenuOpen(false)}>
-            Công việc
-          </Link>
-        )}
+        <Link to="/" data-testid="nav-link-jobs" onClick={() => setMenuOpen(false)}>
+          Công việc
+        </Link>
         {isAdmin && (
           <Link to="/admin" data-testid="nav-link-admin" onClick={() => setMenuOpen(false)}>
             Quản trị
@@ -130,11 +127,9 @@ function AppNav() {
           className="border-t border-border bg-bg px-4 py-3 md:hidden"
         >
           <div className="flex flex-col items-start gap-2">
-            {showJobs && (
-              <Link to="/" data-testid="nav-link-jobs" onClick={() => setMenuOpen(false)}>
-                Công việc
-              </Link>
-            )}
+            <Link to="/" data-testid="nav-link-jobs" onClick={() => setMenuOpen(false)}>
+              Công việc
+            </Link>
             {isAdmin && (
               <Link to="/admin" data-testid="nav-link-admin" onClick={() => setMenuOpen(false)}>
                 Quản trị

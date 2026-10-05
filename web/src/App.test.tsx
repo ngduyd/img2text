@@ -89,7 +89,7 @@ it("user without OCR sees badge-ocr warning in auth-zone", async () => {
   expect(await screen.findByTestId("badge-ocr")).toHaveTextContent("Chờ admin cấp quyền");
 });
 
-it("admin sees nav-link-admin, NOT nav-link-jobs", async () => {
+it("admin sees BOTH nav-link-jobs and nav-link-admin (first-run upload path)", async () => {
   vi.mocked(api.me).mockResolvedValue({
     id: 3,
     email: "admin@x.io",
@@ -98,8 +98,16 @@ it("admin sees nav-link-admin, NOT nav-link-jobs", async () => {
   } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   render(<App />);
-  await screen.findByTestId("nav-link-admin");
-  await waitFor(() => expect(screen.queryByTestId("nav-link-jobs")).not.toBeInTheDocument());
+  expect(await screen.findByTestId("nav-link-jobs")).toBeInTheDocument();
+  expect(await screen.findByTestId("nav-link-admin")).toBeInTheDocument();
+});
+
+it("logged-in user sees nav-link-jobs, NOT nav-link-admin", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  render(<App />);
+  expect(await screen.findByTestId("nav-link-jobs")).toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByTestId("nav-link-admin")).not.toBeInTheDocument());
 });
 
 it("logged-in user sees btn-logout; click calls api.logout and navigates to /login", async () => {
