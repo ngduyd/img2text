@@ -38,11 +38,20 @@ export default function Jobs() {
           <div className="mt-4">
             <StatusFilterTabs items={items} value={filter} onChange={setFilter} />
           </div>
-          <ul className="divide-y divide-border rounded-card border border-border bg-surface">
-            {visible.map((job) => (
-              <JobRow key={job.id} job={job} />
-            ))}
-          </ul>
+          {visible.length === 0 ? (
+            <p
+              data-testid="empty-filter"
+              className="mt-4 rounded-card border border-border bg-surface px-4 py-3 text-sm text-muted"
+            >
+              Không có công việc nào khớp bộ lọc.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border rounded-card border border-border bg-surface">
+              {visible.map((job) => (
+                <JobRow key={job.id} job={job} />
+              ))}
+            </ul>
+          )}
         </>
       )}
     </main>

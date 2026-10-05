@@ -83,7 +83,7 @@ export default function OriginalFilePanel({
                 href={url}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-2 inline-block text-sm text-accent"
+                className="mt-2 inline-block text-sm text-accent-text hover:underline"
               >
                 Mở tab mới
               </a>

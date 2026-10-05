@@ -1,3 +1,4 @@
+import { Moon, Sun } from "lucide-react";
 import { useState } from "react";
 
 export type Theme = "dark" | "light";
@@ -33,7 +34,9 @@ export default function ThemeToggle() {
       title={theme === "dark" ? "Giao diện tối" : "Giao diện sáng"}
       className="cursor-pointer rounded-lg border border-border px-2 py-1 text-sm text-muted hover:bg-surface"
     >
-      <span aria-hidden="true">{theme === "dark" ? "☾" : "☀"}</span>
+      <span className="inline-flex" aria-hidden="true">
+        {theme === "dark" ? <Moon size={16} /> : <Sun size={16} />}
+      </span>
     </button>
   );
 }

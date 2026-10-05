@@ -47,7 +47,7 @@ export default function ExportBar({ jobId }: { jobId: string }) {
           {error}
         </div>
       )}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {FORMATS.map(({ fmt, testid, label }) => (
           <Button
             key={fmt}

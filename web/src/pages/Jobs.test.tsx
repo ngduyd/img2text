@@ -6,6 +6,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ApiError, api } from "../api/client";
 import type { Job, User } from "../api/types";
+import { STATUS_TEXT } from "../lib/status";
 import { toast } from "sonner";
 import Jobs from "./Jobs";
 
@@ -112,7 +113,8 @@ it("job rows render status badge", async () => {
   });
   renderWithRouter(<Jobs />);
   expect(await screen.findByTestId("job-row-7")).toBeInTheDocument();
-  expect(screen.getByTestId("badge-7")).toHaveTextContent("Chờ xử lý");
+  // Badge label = STATUS_TEXT (single spelling shared with detail panels).
+  expect(screen.getByTestId("badge-7")).toHaveTextContent(STATUS_TEXT.queued);
 });
 
 it("filter tabs show counts and click filters rows", async () => {
@@ -150,4 +152,21 @@ it("empty state renders guidance with limits and Colab note", async () => {
   const empty = await screen.findByTestId("empty-state");
   expect(empty).toHaveTextContent("tối đa 50 trang · 50MB");
   expect(empty).toHaveTextContent("Job chờ worker Colab kết nối");
+});
+
+it("filter with no matches shows empty-filter message", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({
+    items: [
+      { id: 2, status: "done", page_count: 2, file_type: "pdf", created_at: "2026-10-04T00:00:00Z", error: null },
+    ] as Job[],
+    total: 1,
+  });
+  renderWithRouter(<Jobs />);
+  await screen.findByTestId("job-row-2");
+  await userEvent.click(screen.getByTestId("filter-failed"));
+  expect(await screen.findByTestId("empty-filter")).toHaveTextContent(
+    "Không có công việc nào khớp bộ lọc.",
+  );
+  expect(screen.queryByTestId("job-row-2")).not.toBeInTheDocument();
 });
