@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Kaggle batch mode (Plan K3): push input → run kernel → pull output.
+"""Kaggle batch mode (Plan K4): push input → run script kernel → pull output.
 
-No backend public / no secrets — client drives everything via
-KaggleApi. Production K2 polling-backend mode (push.py) is untouched.
+Standalone single-file kernel (kernel/img2text_batch.py, kernel_type
+"script") — no worker-files dataset. No backend public / no secrets —
+client drives everything via KaggleApi. Production K2 polling-backend mode
+(push.py) is untouched.
 
 ponytail ceilings: 1 input file per run (directory → error), single shared
 "img2text-input" dataset slug (parallel runs overwrite each other), output
@@ -23,12 +25,10 @@ import push  # noqa: F401  # sibling module: load_env + _sub_owner patterns
 
 DEPLOY_DIR = Path(__file__).resolve().parent
 REPO_ROOT = DEPLOY_DIR.parent.parent
-WORKER_DIR = REPO_ROOT / "worker"
-KERNEL_NB = DEPLOY_DIR / "kernel" / "img2text_batch.ipynb"
-KERNEL_META_TPL = DEPLOY_DIR / "kernel" / "kernel-metadata.json"
+KERNEL_SCRIPT = DEPLOY_DIR / "kernel" / "img2text_batch.py"
+KERNEL_META_TPL = DEPLOY_DIR / "kernel" / "kernel-batch-metadata.json"
 
 INPUT_SLUG = "img2text-input"
-WORKER_SLUG = "img2text-worker-files"
 DEFAULT_KERNEL_SLUG = "img2text-batch"
 DEFAULT_ACCELERATOR = "NvidiaTeslaT4"
 DEFAULT_TIMEOUT = 3600
@@ -58,17 +58,6 @@ def stage_input(src: Path, owner: str, stage: Path):
         stage / "dataset-metadata.json",
     )
 
-def stage_worker(owner: str, stage: Path):
-    """Worker files at dataset ROOT (K2 push.py layout) AND under worker/
-    (K3 batch sys.path mount) — both layouts in one dataset."""
-    stage.mkdir(parents=True, exist_ok=True)
-    (stage / "worker").mkdir(exist_ok=True)
-    for name in ("pipeline.py", "verdict.py"):
-        shutil.copyfile(WORKER_DIR / name, stage / name)
-        shutil.copyfile(WORKER_DIR / name, stage / "worker" / name)
-    # push.build_dataset_metadata: template + OWNER id + licenses shape
-    push.build_dataset_metadata(owner, stage / "dataset-metadata.json")
-
 def ensure_dataset(api, owner: str, slug: str, stage: Path, refresh: bool = False):
     """Dataset absent → kcompat create (kaggle 2.2.4 dataset_create_new).
 
@@ -80,8 +69,6 @@ def ensure_dataset(api, owner: str, slug: str, stage: Path, refresh: bool = Fals
     refresh=True (input dataset): exists → kcompat DELETE + recreate with
     the staged folder (both kcompat paths upload files; a bare version bump
     would serve the previous file — stale).
-    refresh=False (worker-files): exists → keep as-is (shared with K2;
-    notebook falls back to the root layout if worker/ is missing).
     """
     ref = f"{owner}/{slug}"
     try:
@@ -109,14 +96,17 @@ def ensure_dataset(api, owner: str, slug: str, stage: Path, refresh: bool = Fals
         sys.exit(f"error: dataset {ref}: create failed ({exc})")
 
 def build_kernel_stage(owner: str, accelerator: str, kernel_ref: str, stage: Path):
-    """Copy batch notebook + write kernel-metadata.json (OWNER substituted)."""
+    """Copy standalone script + write kernel-metadata.json (OWNER substituted).
+
+    Template = kernel-batch-metadata.json (kernel_type "script",
+    dataset_sources: input dataset ONLY — worker files live IN the script).
+    """
     stage.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(KERNEL_NB, stage / KERNEL_NB.name)
+    shutil.copyfile(KERNEL_SCRIPT, stage / KERNEL_SCRIPT.name)
     meta = push._sub_owner(json.loads(KERNEL_META_TPL.read_text(encoding="utf-8")), owner)
     meta["id"] = kernel_ref
     meta["title"] = kernel_ref.split("/")[-1]
-    meta["code_file"] = KERNEL_NB.name
-    meta["dataset_sources"] = [f"{owner}/{WORKER_SLUG}", f"{owner}/{INPUT_SLUG}"]
+    meta["code_file"] = KERNEL_SCRIPT.name
     meta["machine_shape"] = accelerator
     meta["accelerator"] = accelerator
     _write_meta(meta, stage / "kernel-metadata.json")
@@ -194,10 +184,6 @@ def main(argv=None):
 
     build = Path(tempfile.mkdtemp(prefix="kaggle-img2text-batch-"))
     try:
-        worker_stage = build / "worker-files"
-        stage_worker(owner, worker_stage)
-        ensure_dataset(api, owner, WORKER_SLUG, worker_stage)
-
         input_stage = build / "input"
         stage_input(src, owner, input_stage)
         ensure_dataset(api, owner, INPUT_SLUG, input_stage, refresh=True)

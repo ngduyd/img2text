@@ -52,7 +52,7 @@ Script làm gì: copy `worker/pipeline.py` + `worker/verdict.py` → `deploy/kag
 
 ## 6. Test nhanh (không cần backend public)
 
-Batch mode (Plan K3): client đẩy input → kernel chạy → client tự lấy output. **Không cần backend public, không cần Secrets (`BASE_URL`/`RUNNER_KEY`) mode này** — auth khuyên `KAGGLE_API_TOKEN` (kèm `KAGGLE_USERNAME` cho OWNER metadata; token path tự authenticate, username chỉ để đặt id trong metadata), hoặc legacy `KAGGLE_USERNAME`+`KAGGLE_KEY`.
+Batch mode (Plan K4): client đẩy input → **single-file script kernel** chạy → client tự lấy output. **Không cần backend public, không cần Secrets (`BASE_URL`/`RUNNER_KEY`) mode này** — auth khuyên `KAGGLE_API_TOKEN` (kèm `KAGGLE_USERNAME` cho OWNER metadata; token path tự authenticate, username chỉ để đặt id trong metadata), hoặc legacy `KAGGLE_USERNAME`+`KAGGLE_KEY`.
 
 ```bash
 export KAGGLE_USERNAME=<username>
@@ -64,9 +64,11 @@ python deploy/kaggle/run_one.py ./TA.jpg --kernel-ref alice/my-batch --accelerat
 ```
 
 Flow:
-1. **Input**: copy file vào temp stage + `dataset-metadata.json` (`img2text-input`) → check tồn tại qua `kcompat.api_dataset_exists` (`dataset_list` — method thật, không nuốt AttributeError); chưa có → `kcompat.api_create_dataset`; **đã có → `kcompat.api_delete_dataset` + create lại với staged folder** — **dataset input bị thay thế mỗi run** (đảm bảo re-run upload file mới nhất, không stale — version bump không upload files). Dataset `img2text-worker-files`: có thì giữ nguyên (dùng chung K2), chưa có → create.
-2. **Kernel**: copy `kernel/img2text_batch.ipynb` + `kernel-metadata.json` (`dataset_sources`: worker-files + img2text-input) → `kernels_push`.
+1. **Input**: copy file vào temp stage + `dataset-metadata.json` (`img2text-input`) → check tồn tại qua `kcompat.api_dataset_exists` (`dataset_list` — method thật, không nuốt AttributeError); chưa có → `kcompat.api_create_dataset`; **đã có → `kcompat.api_delete_dataset` + create lại với staged folder** — **dataset input bị thay thế mỗi run** (đảm bảo re-run upload file mới nhất, không stale — version bump không upload files). Không còn dataset `img2text-worker-files` — worker code nằm hẳn trong script.
+2. **Kernel (single file)**: copy `kernel/img2text_batch.py` + `kernel/kernel-batch-metadata.json` (`kernel_type: script`, `dataset_sources`: chỉ `img2text-input`) → `kernels_push`. Script tự cài deps + tự discover input (glob `/kaggle/input/**/*` — mount mới Kaggle đặt dataset dưới `/kaggle/input/<owner>/<slug>/`).
 3. **Poll** `kernels_status` mỗi `--poll` giây: `complete` → lấy output; `failed` → exit 1; timeout → exit 2.
-4. **Output**: `kernels_output` vào thư mục mới `./out/<timestamp>/` (không lẫn output cũ) — có `result.json` (regions/page/markdown) + `result.md`.
+4. **Output**: `kernels_output` vào thư mục mới `./out/<timestamp>/` (không lẫn output cũ) — có `result.json` (document shape: `pages[]`/`blocks[]` theo notebook, block `{id, order, type, bbox, text, empty}`) + `result.md`.
+
+Paddle trên Kaggle: kernel Kaggle mặc định Python 3.13 (không có paddle wheel) → script tạo venv py3.12 riêng bằng `uv` (`uv venv /tmp/paddle-venv --python 3.12` + `paddlepaddle-gpu==3.2.1` index cu126) rồi re-exec chính nó (`--ocr`) dưới venv đó. **Nếu `uv venv --python 3.12` fail**: kiểm tra kernel `internet=true` (Settings) + GPU quota; cài xong đã verify `import paddle, paddleocr` (fail → SystemExit rõ). Chạy CPU-only = chậm, chỉ để test.
 
 Giới hạn (ponytail): **1 file/lần** (thư mục → báo lỗi), **1 slug input dataset dùng chung** — mỗi run ghi đè (`delete+recreate`) input dataset, song song sẽ đè nhau; `--poll` tối thiểu 1s; output vào `./out/<timestamp-micros>/` riêng mỗi run; quota GPU free ~30h/tuần. K2 polling-backend mode (`push.py`) giữ nguyên cho production.

@@ -1,0 +1,14 @@
+{
+  "id": "OWNER/img2text-batch",
+  "title": "img2text-batch",
+  "code_file": "img2text_batch.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [
+    "OWNER/img2text-input"
+  ],
+  "machine_shape": "NvidiaTeslaT4"
+}
