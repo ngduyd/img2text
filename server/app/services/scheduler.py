@@ -12,10 +12,12 @@ import logging
 import os
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI
 
 from app.core.config import settings
 from app.services.kaggle_orchestrator import ensure_worker
+from app.services.runtime_settings import get_runtime_setting
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,23 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
     scheduler = AsyncIOScheduler()
 
     async def reap_all() -> None:
+        # Plan S: per-tick interval override — Setting row wins over env; also
+        # re-applies the DB value after a restart (add_job seeds from env only).
+        try:
+            seconds = max(
+                5,
+                await get_runtime_setting(
+                    app.state.session_factory,
+                    "scheduler_interval_seconds",
+                    settings.scheduler_interval_seconds,
+                ),
+            )
+            job = scheduler.get_job("reap-leases")
+            if job is not None and job.trigger.interval_length != seconds:
+                job.reschedule(IntervalTrigger(seconds=seconds))
+                logger.info("reap-leases: interval → %ds (runtime override)", seconds)
+        except Exception:  # one failing check must not kill the pass
+            logger.warning("scheduler interval override check failed", exc_info=True)
         try:
             await _run_jobs_once()
         except Exception:  # one failing pass must not kill the job

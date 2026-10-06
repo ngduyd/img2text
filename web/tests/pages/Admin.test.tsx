@@ -55,7 +55,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-it("renders 5 tabs, default overview with summed stat cards", async () => {
+it("renders 6 tabs, default overview with summed stat cards", async () => {
   vi.mocked(api.me).mockResolvedValue(adminMe);
   vi.mocked(api.adminStats).mockResolvedValue({
     days: [
@@ -87,6 +87,7 @@ it("renders 5 tabs, default overview with summed stat cards", async () => {
   expect(screen.getByTestId("tab-api")).toBeInTheDocument();
   expect(screen.getByTestId("tab-logs")).toBeInTheDocument();
   expect(screen.getByTestId("tab-stats")).toBeInTheDocument();
+  expect(screen.getByTestId("tab-settings")).toBeInTheDocument(); // Plan S rail item
   // Default tab = overview; sums across days[] exact.
   const statUsers = await screen.findByTestId("stat-users");
   await waitFor(() => expect(within(statUsers).getByText("3")).toBeInTheDocument());
@@ -281,14 +282,14 @@ it("admin home has no jobs board, no dropzone (absence asserts)", async () => {
   expect(screen.queryByTestId("dropzone")).not.toBeInTheDocument();
 });
 
-it("admin sub-rail renders 5 items; active item has aria-current=page", async () => {
+it("admin sub-rail renders 6 items; active item has aria-current=page", async () => {
   vi.mocked(api.me).mockResolvedValue(adminMe);
   vi.mocked(api.adminStats).mockResolvedValue({ days: [] });
   renderWithRouter(<Admin />, { route: "/admin" });
   await screen.findByTestId("stat-users"); // admin content rendered
   const rail = screen.getByTestId("admin-rail");
-  // V3: one responsive nav (mobile scroll / desktop vertical), 5 items with icons
-  expect(within(rail).getAllByRole("button")).toHaveLength(5);
+  // V3: one responsive nav (mobile scroll / desktop vertical), 6 items with icons
+  expect(within(rail).getAllByRole("button")).toHaveLength(6);
   expect(within(rail).getByTestId("tab-overview")).toHaveAttribute("aria-current", "page");
   expect(within(rail).getByTestId("tab-users")).not.toHaveAttribute("aria-current");
 });

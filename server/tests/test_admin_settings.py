@@ -1,0 +1,161 @@
+"""Plan S: admin runtime settings — GET/PUT, floors, live reschedule, audit.
+
+Runtime override store = Setting rows (key/value String). Sources: "db" when a
+row exists, "env" (pydantic Settings) otherwise. Audit trail = the
+RequestLogsMiddleware row for the PUT (every-request audit, Plan X R6).
+"""
+
+from datetime import timedelta
+
+from sqlalchemy import select
+
+from app.core.config import settings
+from app.core.models import Job, RequestLog, Setting, User
+from app.core.db import SessionLocal
+from app.services import kaggle_orchestrator as orch
+from app.services.runtime_settings import get_runtime_setting
+from app.services.scheduler import init_scheduler
+
+KEYS = (
+    "scheduler_interval_seconds",
+    "kaggle_min_queue",
+    "kaggle_min_gap_seconds",
+    "kaggle_mode",
+)
+
+# --- GET ---
+
+async def test_get_settings_shape_default_source_env(admin_client):
+    r = await admin_client.get("/api/admin/settings")
+    assert r.status_code == 200
+    data = r.json()
+    assert set(data) == set(KEYS)
+    for key in KEYS:
+        # no rows (db_truncate) → env default, source "env"
+        assert data[key] == {"value": getattr(settings, key), "source": "env"}
+
+async def test_get_settings_non_admin_403(auth_client):
+    assert (await auth_client.get("/api/admin/settings")).status_code == 403
+
+async def test_get_settings_anon_401(client):
+    assert (await client.get("/api/admin/settings")).status_code == 401
+
+# --- PUT validation ---
+
+async def test_put_interval_floor_422(admin_client):
+    r = await admin_client.put(
+        "/api/admin/settings", json={"scheduler_interval_seconds": 4}
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"] == "scheduler_interval_seconds phải từ 5 giây trở lên."
+
+async def test_put_other_floors_and_mode_readonly(admin_client):
+    r = await admin_client.put("/api/admin/settings", json={"kaggle_min_queue": 0})
+    assert r.status_code == 422
+    assert r.json()["detail"] == "kaggle_min_queue phải từ 1 trở lên."
+    r = await admin_client.put("/api/admin/settings", json={"kaggle_min_gap_seconds": 59})
+    assert r.status_code == 422
+    assert r.json()["detail"] == "kaggle_min_gap_seconds phải từ 60 giây trở lên."
+    # kaggle_mode: read-only in the API (mode flip needs a restart)
+    r = await admin_client.put("/api/admin/settings", json={"kaggle_mode": "loop"})
+    assert r.status_code == 422
+    assert "read-only" in r.json()["detail"]
+
+# --- PUT upsert + live reschedule ---
+
+async def test_put_upserts_setting_rows_and_reschedules(admin_client, app):
+    init_scheduler(app)  # registers reap-leases (start skipped under pytest)
+    r = await admin_client.put(
+        "/api/admin/settings",
+        json={"scheduler_interval_seconds": 30, "kaggle_min_queue": 3},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["scheduler_interval_seconds"] == {"value": 30, "source": "db"}
+    assert body["kaggle_min_queue"] == {"value": 3, "source": "db"}
+    assert body["kaggle_min_gap_seconds"]["source"] == "env"  # untouched
+    # live apply: reap-leases trigger retargeted without a restart
+    job = app.state.scheduler.get_job("reap-leases")
+    assert job.trigger.interval == timedelta(seconds=30)
+    # upsert: second PUT rewrites the row (no duplicates), trigger follows
+    r = await admin_client.put(
+        "/api/admin/settings", json={"scheduler_interval_seconds": 45}
+    )
+    assert r.status_code == 200
+    assert r.json()["scheduler_interval_seconds"] == {"value": 45, "source": "db"}
+    job = app.state.scheduler.get_job("reap-leases")
+    assert job.trigger.interval == timedelta(seconds=45)
+
+async def test_put_without_scheduler_registered_still_succeeds(app, admin_client):
+    # no lifespan under ASGITransport → app.state.scheduler missing: no live
+    # apply, but the DB write must stand (next boot picks it up)
+    r = await admin_client.put(
+        "/api/admin/settings", json={"scheduler_interval_seconds": 30}
+    )
+    assert r.status_code == 200
+    assert r.json()["scheduler_interval_seconds"] == {"value": 30, "source": "db"}
+
+async def test_put_writes_audit_request_log(admin_client, db_session):
+    r = await admin_client.put("/api/admin/settings", json={"kaggle_min_queue": 2})
+    assert r.status_code == 200
+    row = (
+        await db_session.execute(
+            select(RequestLog).where(RequestLog.path == "/api/admin/settings")
+        )
+    ).scalars().one()
+    assert row.method == "PUT"
+    assert row.status == 200
+    assert row.user_id is not None  # attributed to the admin actor (R60a)
+
+# --- runtime override in the orchestrator ---
+
+async def test_runtime_setting_db_row_wins_else_env(db_session, monkeypatch):
+    monkeypatch.setattr(settings, "kaggle_min_queue", 7)
+    assert await get_runtime_setting(SessionLocal, "kaggle_min_queue") == 7
+    db_session.add(Setting(key="kaggle_min_queue", value="5"))
+    await db_session.commit()
+    assert await get_runtime_setting(SessionLocal, "kaggle_min_queue") == 5
+    # unparseable row → env default (never crash a tick)
+    monkeypatch.setattr(settings, "scheduler_interval_seconds", 50)
+    db_session.add(Setting(key="scheduler_interval_seconds", value="abc"))
+    await db_session.commit()
+    assert await get_runtime_setting(SessionLocal, "scheduler_interval_seconds") == 50
+
+class _LoopStubApi:
+    """Loop-branch stub: status complete; records pushes (skip = none)."""
+
+    def __init__(self) -> None:
+        self.status_calls: list = []
+        self.pushed: list = []
+
+    def kernels_status(self, ref):
+        self.status_calls.append(ref)
+        return {"status": "complete"}
+
+    def kernels_push(self, path, **kwargs):
+        self.pushed.append(path)
+        return {"ref": path}
+
+async def test_ensure_worker_reads_db_min_queue_override(db_session, monkeypatch):
+    """DB min_queue=5 with 2 queued → skip, even though env says 1 (spawn)."""
+    monkeypatch.setattr(settings, "kaggle_mode", "loop")
+    monkeypatch.setattr(settings, "kaggle_username", "testuser")
+    monkeypatch.setattr(settings, "kaggle_key", "testkey")
+    monkeypatch.setattr(settings, "kaggle_kernel_ref", "testuser/img2text-worker")
+    monkeypatch.setattr(settings, "kaggle_min_queue", 1)  # env floor: would spawn
+    monkeypatch.setattr(orch, "_last_spawn", 0.0)
+    stub = _LoopStubApi()
+    monkeypatch.setattr(orch, "_api", lambda: stub)
+    user = User(email="seed@test.io", password_hash="x", role="user")
+    db_session.add(user)
+    await db_session.flush()  # id BEFORE the jobs (FK)
+    for i in range(2):
+        db_session.add(
+            Job(user_id=user.id, storage_key=f"{i}.png", file_type="png", page_count=1)
+        )
+    db_session.add(Setting(key="kaggle_min_queue", value="5"))
+    await db_session.commit()
+    assert await orch.ensure_worker(SessionLocal) is False
+    # reached the queue gate (status probed) but never pushed
+    assert len(stub.status_calls) == 1
+    assert stub.pushed == []

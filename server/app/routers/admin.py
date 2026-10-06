@@ -6,7 +6,8 @@ import asyncio
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from apscheduler.triggers.interval import IntervalTrigger
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, StrictBool
 from sqlalchemy import Date, Float, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,10 @@ from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import get_current_user, require_admin
 from app.core.models import Job, PageView, RequestLog, Setting, User
+from app.services.runtime_settings import (
+    RUNTIME_SETTING_KEYS,
+    get_runtime_setting_entry,
+)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -204,3 +209,84 @@ async def stats(
         })
         cur += timedelta(days=1)
     return {"days": days}
+
+# --- Plan S: runtime settings (admin live tuning, scheduler/kaggle) ---
+
+# Floors: R58a (no busy-loop) + minimum queue/gap sanity.
+_SETTING_FLOORS: dict[str, tuple[int, str]] = {
+    "scheduler_interval_seconds": (
+        5, "scheduler_interval_seconds phải từ 5 giây trở lên.",
+    ),
+    "kaggle_min_queue": (1, "kaggle_min_queue phải từ 1 trở lên."),
+    "kaggle_min_gap_seconds": (
+        60, "kaggle_min_gap_seconds phải từ 60 giây trở lên.",
+    ),
+}
+
+class RuntimeSettingsPut(BaseModel):
+    scheduler_interval_seconds: int | None = None
+    kaggle_min_queue: int | None = None
+    kaggle_min_gap_seconds: int | None = None
+    # read-only in the API — mode flip needs a restart (half-applied state)
+    kaggle_mode: str | None = None
+
+async def _runtime_settings(session_factory) -> dict:
+    return {
+        key: await get_runtime_setting_entry(session_factory, key)
+        for key in RUNTIME_SETTING_KEYS
+    }
+
+def _reschedule_reap(app, seconds: int) -> bool:
+    """Live apply: retarget the reap-leases interval trigger (no restart)."""
+    scheduler = getattr(app.state, "scheduler", None)
+    if scheduler is None:  # lifespan not run (tests) — DB row stands for next boot
+        return False
+    job = scheduler.get_job("reap-leases")
+    if job is None:
+        return False
+    job.reschedule(IntervalTrigger(seconds=seconds))
+    return True
+
+@router.get("/settings")
+async def get_settings(
+    request: Request,
+    _: User = Depends(_admin_user),
+) -> dict:
+    """Effective runtime values per key: {key: {value, source: "db"|"env"}}."""
+    return await _runtime_settings(request.app.state.session_factory)
+
+@router.put("/settings")
+async def put_settings(
+    body: RuntimeSettingsPut,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    _: User = Depends(_admin_user),
+) -> dict:
+    """Upsert Setting overrides + live reschedule; returns effective values.
+
+    kaggle_mode is read-only here (đổi mode cần restart container — a mid-run
+    flip would half-apply batch/loop state). Audit = RequestLog row written by
+    RequestLogsMiddleware for this request.
+    """
+    if body.kaggle_mode is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="kaggle_mode là read-only — thay đổi mode cần restart container.",
+        )
+    for key, (floor, message) in _SETTING_FLOORS.items():
+        value = getattr(body, key)
+        if value is not None and value < floor:
+            raise HTTPException(status_code=422, detail=message)
+    for key in _SETTING_FLOORS:
+        value = getattr(body, key)
+        if value is None:
+            continue
+        row = await session.get(Setting, key)
+        if row is None:
+            session.add(Setting(key=key, value=str(value)))
+        else:
+            row.value = str(value)
+    await session.commit()
+    if body.scheduler_interval_seconds is not None:
+        _reschedule_reap(request.app, body.scheduler_interval_seconds)
+    return await _runtime_settings(request.app.state.session_factory)
