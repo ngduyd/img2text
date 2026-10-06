@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     # standalone script kernel (no public URL needed); "loop" = Plan K2
     # worker kernel polling the backend (needs public BASE_URL + Secrets).
     kaggle_mode: str = "batch"
+    # Plan D2: LLM layout plan for the docx-layout export (local
+    # OpenAI-compatible server, e.g. llm.cpp at localhost:20128).
+    llm_base_url: str = "http://localhost:20128/v1"
+    llm_model: str = "oc/muse-spark-1.3-contributor-free"
+    llm_timeout: int = 120
 
     @property
     def kaggle_enabled(self) -> bool:
