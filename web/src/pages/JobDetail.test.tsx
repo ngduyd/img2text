@@ -94,6 +94,8 @@ it("queued shows waiting message and polls", async () => {
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   // Task 2: header badge duplicates status text — scope to InfoPanel's status badge.
   expect(await screen.findByTestId("status-5")).toHaveTextContent("Đang chờ worker Colab");
+  // Back link points at the /jobs list route (root is public landing now).
+  expect(screen.getByTestId("link-back-jobs")).toHaveAttribute("href", "/jobs");
   expect(pollSpyCalled()).toBe(true);
 });
 

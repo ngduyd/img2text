@@ -73,9 +73,9 @@ it("upload button enabled and calls api when granted", async () => {
   const user = userEvent.setup({ applyAccept: false });
   await user.upload(screen.getByTestId("input-file"), file);
   expect(api.uploadJob).toHaveBeenCalledWith(file);
-  // R59: upload success → toast + stay on "/" (file list = Jobs page at "/").
+  // R59: upload success → toast + navigate to /jobs (the list route now).
   expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý.");
-  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/"));
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs"));
 });
 
 it("upload error surfaces server detail", async () => {

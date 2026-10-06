@@ -31,7 +31,7 @@ export default function Admin() {
   }, [isError, navigate]);
 
   useEffect(() => {
-    if (me && me.role !== "admin") navigate("/");
+    if (me && me.role !== "admin") navigate("/jobs");
   }, [me, navigate]);
 
   if (isError || (me && me.role !== "admin")) return null;

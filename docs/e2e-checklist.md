@@ -52,7 +52,7 @@ Prereqs: `deploy/.env` filled (see [docs/r2-setup.md](docs/r2-setup.md)),
 
 ## E. Plan X — upload UX + reliability
 
-- [ ] **E1 — Upload toast + navigation.** Expected: upload ảnh → toast "Đã tải lên — đang chờ xử lý." + tự nhảy trang Công việc, job mới hiển thị trạng thái "Chờ xử lý".
+- [ ] **E1 — Upload toast + navigation.** Expected: upload ảnh → toast "Đã tải lên — đang chờ xử lý." + tự nhảy trang Công việc, job mới hiển thị trạng thái "Chờ xử lý". Ghi chú routing: `/` = landing; đã đăng nhập → tự vào `/jobs`; sau upload tự nhảy `/jobs`.
 - [ ] **E2 — Network-error toast.** Expected: tắt server → gọi API (vd upload/login) → toast "Không kết nối được máy chủ. Kiểm tra server đang chạy."; không crash.
 - [ ] **E3 — Wizard ảnh không chọn vùng.** Expected: upload ảnh → crop wizard không chọn vùng → gửi → toast "Không có vùng chọn — gửi ảnh gốc", file gốc (không crop) được dùng cho job.
 - [ ] **E4 — Toolbar tooltip.** Expected: hover icon toolbar crop: RotateCw → title "Xoay 90°", Eraser → "Xóa vùng chọn", Send → "Gửi lên"; toolbar phía trên canvas.
@@ -61,7 +61,7 @@ Prereqs: `deploy/.env` filled (see [docs/r2-setup.md](docs/r2-setup.md)),
 
 ## F. Plan Y — landing + app polish (manual visual gate)
 
-- [ ] **F1 — /landing render.** Expected: CTA "Bắt đầu" (hero + final CTA) điều hướng tới `/login`; hero (H1 + 1 dòng mô tả) ≤ 2 dòng trên desktop; bento "Tính năng" đúng 5 ô (2 ô ảnh, 1 ô tinted accent).
+- [ ] **F1 — /landing render.** Expected: CTA "Bắt đầu" (hero + final CTA) điều hướng tới `/login`; hero (H1 + 1 dòng mô tả) ≤ 2 dòng trên desktop; bento "Tính năng" đúng 5 ô (2 ô ảnh, 1 ô tinted accent). Ghi chú routing: `/` = landing (đã đăng nhập → tự vào `/jobs`); `/landing` là alias redirect về `/`.
 - [ ] **F2 — /landing responsive + themes.** Expected: trang hiển thị đúng ở cả dark và light theme (toggle ThemeToggle, không vỡ màu/contrast); ở 320px không vỡ layout (không tràn ngang, chips/badges wrap); H1 hero ≤ 3 dòng trên mobile.
 - [ ] **F3 — App pages spot-check (Jobs / JobDetail / Login / Profile).** Expected: mọi control (tabs, chips, nút, input) nhận focus-visible khi tab-able (Tab key thấy outline rõ, không bị cắt); badge + filter chip đồng bộ MỘT chính tả trạng thái ("Đang chờ worker Colab", "Đang xử lý", "Hoàn tất", "Xử lý thất bại"); contrast spot-check: text muted trên surface vẫn đọc được ở cả 2 theme.
 

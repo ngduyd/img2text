@@ -44,7 +44,7 @@ export default function JobDetail() {
   return (
     <main id="main" className="mx-auto max-w-3xl p-4 sm:p-6">
       <Link
-        to="/"
+        to="/jobs"
         data-testid="link-back-jobs"
         className="mb-3 inline-flex items-center gap-1 text-sm text-accent-text transition duration-150 ease-out hover:underline"
       >

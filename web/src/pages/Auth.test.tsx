@@ -11,6 +11,16 @@ import Login from "./Login";
 import Register from "./Register";
 import Reset from "./Reset";
 
+export const mockNavigate = vi.fn();
+
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
+
 vi.mock("../api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../api/client")>();
   return {
@@ -48,6 +58,8 @@ it("login button exists and submits credentials", async () => {
   await userEvent.click(screen.getByTestId("btn-login"));
   expect(screen.getByTestId("btn-login")).toBeInTheDocument();
   expect(api.login).toHaveBeenCalledWith("u@x.io", "secret123");
+  // Post-login destination: jobs list route (landing is public root now).
+  expect(mockNavigate).toHaveBeenCalledWith("/jobs");
 });
 
 it("login shows server detail error", async () => {

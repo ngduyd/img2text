@@ -21,7 +21,7 @@ export default function Login() {
     try {
       await api.login(email, password);
       toast.success("Đã đăng nhập.");
-      navigate("/");
+      navigate("/jobs");
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Đã xảy ra lỗi.");
       toast.error(mapApiError(err));

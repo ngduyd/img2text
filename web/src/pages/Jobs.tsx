@@ -21,11 +21,11 @@ export default function Jobs() {
   return (
     <main id="main" className="mx-auto max-w-3xl p-4 sm:p-6">
       <h1 className="mb-6 text-2xl font-bold tracking-tight">Công việc</h1>
-      {/* R59: file list lives at "/" — invalidate so the new job shows without a remount. */}
+      {/* R59: invalidate so the new job shows; navigate to the /jobs list route. */}
       <Dropzone
         onUploaded={() => {
           queryClient.invalidateQueries({ queryKey: ["jobs"] });
-          navigate("/");
+          navigate("/jobs");
         }}
       />
       {isLoading ? (

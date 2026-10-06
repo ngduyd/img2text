@@ -22,11 +22,30 @@ vi.mock("./api/client", async (importOriginal) => {
 
 export const mockNavigate = vi.fn();
 
+// jsdom has no IntersectionObserver; Landing's Reveal (whileInView) mounts one.
+class MockIntersectionObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
   return {
     ...actual,
-    useNavigate: () => mockNavigate,
+    // Wrap the real navigate: <Navigate/> redirects must still change the route
+    // ("/" → "/jobs" tests assert rendered content), while mockNavigate keeps
+    // call-target assertions working. Trailing-undefined args dropped so
+    // toHaveBeenCalledWith("/login") keeps matching single-arg calls.
+    useNavigate: () => {
+      const navigate = actual.useNavigate() as (to: unknown, opts?: unknown) => unknown;
+      return ((to: unknown, opts?: unknown) => {
+        if (opts === undefined) mockNavigate(to);
+        else mockNavigate(to, opts);
+        return navigate(to, opts);
+      }) as typeof actual.useNavigate;
+    },
   };
 });
 
@@ -41,9 +60,53 @@ beforeEach(() => {
 it("renders app shell with brand and left nav links for logged-out", () => {
   render(<App />);
   expect(screen.getByTestId("nav-brand")).toHaveTextContent("img2text");
-  expect(screen.getByTestId("nav-link-jobs")).toBeInTheDocument();
+  const jobsLink = screen.getByTestId("nav-link-jobs");
+  expect(jobsLink).toBeInTheDocument();
+  // Root is landing now; the jobs nav-link points at the /jobs list route.
+  expect(jobsLink).toHaveAttribute("href", "/jobs");
   // R51: admin link is role-gated (binding nav contract) — asserted in admin test.
   expect(screen.queryByTestId("nav-link-admin")).not.toBeInTheDocument();
+});
+
+it("/ renders Landing publicly (hero H1 + CTA to /login)", async () => {
+  vi.mocked(api.me).mockRejectedValue(new ApiError("Unauthorized."));
+  render(<App />);
+  expect(await screen.findByTestId("landing-hero")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+    "Biến ảnh và PDF thành văn bản sửa được",
+  );
+  expect(screen.getByTestId("landing-cta")).toHaveAttribute("href", "/login");
+});
+
+it("/jobs renders the Jobs list (empty-state)", async () => {
+  vi.mocked(api.me).mockRejectedValue(new ApiError("Unauthorized."));
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  window.history.pushState({}, "", "/jobs");
+  render(<App />);
+  expect(await screen.findByTestId("empty-state")).toBeInTheDocument();
+});
+
+it("/landing is an alias: lands on Landing content", async () => {
+  vi.mocked(api.me).mockRejectedValue(new ApiError("Unauthorized."));
+  window.history.pushState({}, "", "/landing");
+  render(<App />);
+  expect(await screen.findByTestId("landing-hero")).toBeInTheDocument();
+  // Navigate/ alias uses the router's internal navigate (bypasses useNavigate mock).
+  expect(window.location.pathname).toBe("/");
+});
+
+it("logged-in user at / is redirected to /jobs (skips marketing)", async () => {
+  vi.mocked(api.me).mockResolvedValue({
+    id: 1,
+    email: "user@x.io",
+    role: "user",
+    ocr_enabled: true,
+  } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  render(<App />);
+  expect(await screen.findByTestId("empty-state")).toBeInTheDocument();
+  expect(screen.queryByTestId("landing-hero")).not.toBeInTheDocument();
+  expect(window.location.pathname).toBe("/jobs");
 });
 
 it("logged-out auth-zone (RIGHT) has btn-login + btn-register; NO left nav-link-login", async () => {

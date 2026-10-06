@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Briefcase, IdCard, LogOut, Menu, ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Toaster, toast } from "sonner";
 import { api } from "./api/client";
 import type { User } from "./api/types";
@@ -208,7 +208,7 @@ function AppNav() {
         </Link>
         <div className="hidden items-center gap-1 md:flex">
           <NavAnchor
-            to="/"
+            to="/jobs"
             testid="nav-link-jobs"
             icon={Briefcase}
             active={jobsActive}
@@ -252,7 +252,7 @@ function AppNav() {
         >
           <div className="flex flex-col items-stretch gap-1">
             <NavAnchor
-              to="/"
+              to="/jobs"
               testid="nav-link-jobs"
               icon={Briefcase}
               active={jobsActive}
@@ -287,6 +287,15 @@ function AppNav() {
   );
 }
 
+/**
+ * Public root: logged-out → Landing (marketing); logged-in skips it → /jobs.
+ * Reuses the shared ["me"] query (AppNav fetches; same cache entry, no extra call).
+ */
+function PublicRoot() {
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
+  return me ? <Navigate to="/jobs" replace /> : <Landing />;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -309,8 +318,9 @@ export default function App() {
             <Route path="/forgot" element={<Forgot />} />
             <Route path="/reset" element={<Reset />} />
             <Route path="/profile" element={<Profile />} />
-            <Route path="/" element={<Jobs />} />
-            <Route path="/landing" element={<Landing />} />
+            <Route path="/" element={<PublicRoot />} />
+            <Route path="/landing" element={<Navigate to="/" replace />} />
+            <Route path="/jobs" element={<Jobs />} />
             <Route path="/jobs/:id" element={<JobDetail />} />
             <Route path="/admin" element={<Admin />} />
           </Routes>
