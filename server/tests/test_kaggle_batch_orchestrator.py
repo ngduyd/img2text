@@ -10,6 +10,7 @@ from the conftest app fixture, injected through the orch._get_storage seam.
 import json
 import hashlib
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -22,6 +23,7 @@ from app.core.db import SessionLocal
 from app.core.models import Job, User
 from app.core.schemas import ResultBody
 from app.services import kaggle_orchestrator as orch
+from app.services.job_results import store_batch_result
 from tests.conftest import PNG_1PX
 
 DEPLOY_KAGGLE = Path(__file__).parents[2] / "deploy" / "kaggle"
@@ -166,6 +168,11 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
     assert meta["enable_gpu"] is True
     assert "img2text_batch.py" in files and "kernel-metadata.json" in files
     assert seed_job in orch._batch_runs
+    # D1: push OK → job visibly running with a full-run lease (UI "Đang xử lý")
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.status == "running" and job.started_at is not None
+    assert job.lease_expires_at is not None and job.worker_token is None
     # tick 2: enum-shaped status → complete → output pulled → ingest
     assert await orch.ensure_worker(SessionLocal) is False
     assert any(
@@ -222,6 +229,22 @@ async def test_batch_preprocess_ceiling_warns_and_ingests_whole_file(
     assert job.status == "done"
     assert len(job.result["pages"]) == 2  # whole file, selection ignored
 
+async def test_batch_spawn_marks_job_running_with_lease(
+    kaggle_batch_env, api, storage_env, seed_job, db_session
+):
+    """D1: kernels_push OK → status=running, started_at=now,
+    lease_expires_at=now+kaggle_timeout (reaper must not requeue mid-run)."""
+    assert await orch.ensure_worker(SessionLocal) is True
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.status == "running"
+    assert job.started_at is not None and job.worker_token is None
+    expected = datetime.now(timezone.utc) + timedelta(
+        seconds=settings.kaggle_timeout
+    )
+    assert abs((job.lease_expires_at - expected).total_seconds()) < 60
+    assert job.lease_expires_at > datetime.now(timezone.utc)
+
 async def test_batch_failed_drops_ref_and_respawns_after_gap(
     kaggle_batch_env, api, storage_env, seed_job, db_session, caplog, monkeypatch
 ):
@@ -233,7 +256,8 @@ async def test_batch_failed_drops_ref_and_respawns_after_gap(
     assert any("stays queued" in r.getMessage() for r in caplog.records)
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
-    assert job.status == "queued"  # job untouched → respawn candidate
+    # D1: revert → queued + lease cleared → respawn candidate
+    assert job.status == "queued" and job.lease_expires_at is None
     # gap guard still blocks (default 600s since first spawn)
     assert await orch.ensure_worker(SessionLocal) is False
     assert len(_pushes(api)) == 1
@@ -256,7 +280,8 @@ async def test_batch_timeout_drops_ref_with_warning(
     assert any("kaggle_timeout" in r.getMessage() for r in caplog.records)
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
-    assert job.status == "queued"
+    # D1: timeout path reverts running → queued, lease cleared
+    assert job.status == "queued" and job.lease_expires_at is None
 
 async def _extra_queued_job(auth_client) -> int:
     """Second real upload — different bytes → different sha256 storage key."""
@@ -335,8 +360,56 @@ async def test_batch_ingest_failure_ceiling_drops_ref(
     assert any("times — ref dropped" in r.getMessage() for r in caplog.records)
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
-    assert job.status == "queued"  # dropped ref → respawn path, gap-guarded
+    # D1: ingest give-up reverts running → queued (respawn path, gap-guarded)
+    assert job.status == "queued" and job.lease_expires_at is None
     assert len(_pushes(api)) == 1  # gap still blocks a re-spawn this tick
+
+async def test_reaper_does_not_requeue_batch_running_job(
+    kaggle_batch_env, api, storage_env, seed_job, db_session
+):
+    """D1: spawn lease = now+kaggle_timeout → reap_leases sees an active
+    lease and must leave the batch-running job alone (reaper wiring pattern)."""
+    from app.services.jobs_requeue import reap_leases
+
+    assert await orch.ensure_worker(SessionLocal) is True
+    assert await reap_leases(db_session) == 0
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.status == "running"
+    assert job.lease_expires_at > datetime.now(timezone.utc)
+
+async def test_store_batch_result_guard_cases(
+    db_session, seed_job, VALID_RESULT_JSONB
+):
+    """D1 guard: queued+unclaimed OR running+unclaimed+active lease → done;
+    running+worker-token (claimed) or running+expired lease → reject."""
+    body = ResultBody.model_validate(VALID_RESULT_JSONB)
+    now = datetime.now(timezone.utc)
+    job = await db_session.get(Job, seed_job)
+
+    # running + token set → worker-claimed: reject, nothing written
+    job.status = "running"
+    job.worker_token = "claimed-tok"
+    job.lease_expires_at = now + timedelta(seconds=60)
+    await db_session.commit()
+    assert await store_batch_result(db_session, seed_job, body, now=now) is False
+    await db_session.refresh(job)
+    assert job.status == "running" and job.result is None
+
+    # running + lease expired → reject (reaper owns it now)
+    job.worker_token = None
+    job.lease_expires_at = now - timedelta(seconds=1)
+    await db_session.commit()
+    assert await store_batch_result(db_session, seed_job, body, now=now) is False
+    await db_session.refresh(job)
+    assert job.status == "running" and job.result is None
+
+    # running + unclaimed + active lease → accepted (D1 batch path)
+    job.lease_expires_at = now + timedelta(seconds=60)
+    await db_session.commit()
+    assert await store_batch_result(db_session, seed_job, body, now=now) is True
+    await db_session.refresh(job)
+    assert job.status == "done" and job.lease_expires_at is None
 
 async def test_mode_loop_dispatches_to_k2_branch(
     kaggle_batch_env, api, storage_env, seed_job, monkeypatch
