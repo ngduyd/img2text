@@ -6,7 +6,7 @@ import json
 from pypdf import PdfWriter
 from sqlalchemy import select
 
-from app.models import Job
+from app.core.models import Job
 from tests.conftest import PNG_1PX
 
 def _pdf_bytes(pages: int) -> bytes:

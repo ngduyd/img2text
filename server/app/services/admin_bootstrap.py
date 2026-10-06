@@ -8,8 +8,8 @@ bootstrap admin is created with ocr_enabled=True unconditionally.
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import User
-from app.security import hash_password
+from app.core.models import User
+from app.core.security import hash_password
 
 
 async def bootstrap_admin(session: AsyncSession, email: str, password: str) -> None:

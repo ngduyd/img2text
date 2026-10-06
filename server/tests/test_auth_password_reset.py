@@ -34,7 +34,7 @@ def _token_from(sent) -> str:
 async def test_forgot_unknown_email_202_no_send(client, monkeypatch):
     """(a) unknown email → 202 identical body, nothing enqueued."""
     sent, fake = _capture()
-    monkeypatch.setattr("app.mailer.send_email", fake)
+    monkeypatch.setattr("app.services.mailer.send_email", fake)
     r = await client.post("/api/auth/password/forgot", json={"email": "ghost@x.io"})
     assert r.status_code == 202 and r.json() == {}
     assert sent == []
@@ -44,7 +44,7 @@ async def test_forgot_known_email_202_send_called(client, monkeypatch):
     """(b) known email → 202 AND send_email eventually called (recorder;
     ASGITransport awaits background tasks in-call, so poll briefly)."""
     sent, fake = _capture()
-    monkeypatch.setattr("app.mailer.send_email", fake)
+    monkeypatch.setattr("app.services.mailer.send_email", fake)
     await client.post(
         "/api/auth/register", json={"email": "Known@X.io", "password": "secret123"}
     )
@@ -65,7 +65,7 @@ async def test_forgot_smtp_failure_still_202(client, monkeypatch):
     def boom(*args, **kwargs):
         raise RuntimeError("smtp down")
 
-    monkeypatch.setattr("app.mailer._send_sync", boom)
+    monkeypatch.setattr("app.services.mailer._send_sync", boom)
     await client.post(
         "/api/auth/register", json={"email": "f@x.io", "password": "secret123"}
     )
@@ -75,7 +75,7 @@ async def test_forgot_smtp_failure_still_202(client, monkeypatch):
 
 async def test_forgot_identical_response(client, monkeypatch):
     sent, fake = _capture()
-    monkeypatch.setattr("app.mailer.send_email", fake)
+    monkeypatch.setattr("app.services.mailer.send_email", fake)
     await client.post("/api/auth/register", json={"email": "p@x.io", "password": "secret123"})
     r1 = await client.post("/api/auth/password/forgot", json={"email": "p@x.io"})
     r2 = await client.post("/api/auth/password/forgot", json={"email": "nobody@x.io"})
@@ -85,7 +85,7 @@ async def test_forgot_identical_response(client, monkeypatch):
 
 async def test_reset_changes_password_and_revokes(client, monkeypatch):
     sent, fake = _capture()
-    monkeypatch.setattr("app.mailer.send_email", fake)
+    monkeypatch.setattr("app.services.mailer.send_email", fake)
     await client.post("/api/auth/register", json={"email": "q@x.io", "password": "secret123"})
     await client.post("/api/auth/login", json={"email": "q@x.io", "password": "secret123"})
     assert client.cookies.get("refresh")  # session has a refresh token to revoke
@@ -105,7 +105,7 @@ async def test_reset_invalid_token_422(client):
 
 async def test_used_token_cannot_be_reused(client, monkeypatch):
     sent, fake = _capture()
-    monkeypatch.setattr("app.mailer.send_email", fake)
+    monkeypatch.setattr("app.services.mailer.send_email", fake)
     await client.post("/api/auth/register", json={"email": "s@x.io", "password": "secret123"})
     await client.post("/api/auth/password/forgot", json={"email": "s@x.io"})
     token = _token_from(sent)

@@ -33,7 +33,7 @@ async def test_register_validation_422(client):
 
 
 async def test_login_malformed_stored_hash_401_not_500(client, db_session):
-    from app.models import User
+    from app.core.models import User
 
     db_session.add(User(email="m@x.io", password_hash="not-a-bcrypt-hash"))
     await db_session.commit()

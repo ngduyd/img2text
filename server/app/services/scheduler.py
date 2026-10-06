@@ -14,15 +14,15 @@ import os
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 
-from app.config import settings
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 async def _run_jobs_once() -> None:
     """One claim pass: requeue expired leases (only server-side job advance;
     fresh queued jobs are claimed by workers polling GET /api/jobs/next)."""
-    from app.db import SessionLocal
-    from app.jobs_requeue import reap_leases
+    from app.core.db import SessionLocal
+    from app.services.jobs_requeue import reap_leases
 
     async with SessionLocal() as session:
         n = await reap_leases(session)
@@ -49,7 +49,7 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
     )
 
     async def prune_all() -> None:
-        from app.middleware import (
+        from app.core.middleware import (
             prune_page_views,
             prune_refresh_tokens,
             prune_request_logs,

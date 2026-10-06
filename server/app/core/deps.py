@@ -11,9 +11,9 @@ import jwt
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
-from app.db import get_session
-from app.models import User
+from app.core.config import settings
+from app.core.db import get_session
+from app.core.models import User
 
 ACCESS_COOKIE = "access"
 REFRESH_COOKIE = "refresh"

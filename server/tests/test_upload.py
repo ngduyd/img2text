@@ -5,7 +5,7 @@ import io
 from PIL import Image
 from pypdf import PdfWriter
 
-from app.models import Job
+from app.core.models import Job
 
 def _jpeg_bytes() -> bytes:
     buf = io.BytesIO()

@@ -19,12 +19,12 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_session
-from app.deps import get_current_user, get_runner_key, require_ocr
-from app.limiter import DailyCounter
-from app.models import Job, User
-from app.schemas import PreprocessIn, ResultBody
-from app.storage import StorageDriver, get_storage
+from app.core.db import get_session
+from app.core.deps import get_current_user, get_runner_key, require_ocr
+from app.core.limiter import DailyCounter
+from app.core.models import Job, User
+from app.core.schemas import PreprocessIn, ResultBody
+from app.services.storage import StorageDriver, get_storage
 
 UPLOAD_DAILY_LIMIT = 20
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024

@@ -7,8 +7,8 @@ must be signed with the PUBLIC endpoint (host-reachable localhost:4566).
 
 from urllib.parse import urlparse
 
-from app.config import settings
-from app.storage import S3Driver, build_storage
+from app.core.config import settings
+from app.services.storage import S3Driver, build_storage
 
 def _driver(**kw):
     base = dict(

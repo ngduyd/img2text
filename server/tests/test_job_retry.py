@@ -9,7 +9,7 @@ from uuid import uuid4
 import httpx
 import pytest_asyncio
 
-from app.models import Job
+from app.core.models import Job
 
 FAILED_ERROR = "boom"
 

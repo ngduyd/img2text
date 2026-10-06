@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest_asyncio
 
-from app.models import Job, PageView, Setting, User
+from app.core.models import Job, PageView, Setting, User
 
 
 def today() -> str:

@@ -7,7 +7,7 @@ import pytest_asyncio
 from PIL import Image
 from sqlalchemy import select
 
-from app.models import Job, User
+from app.core.models import Job, User
 
 
 async def _done_job(db_session, storage, markdown: str, regions: list) -> int:

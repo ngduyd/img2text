@@ -1,6 +1,6 @@
 """Plan D Task 1: PATCH /api/jobs/{id}/content tests (brief exact)."""
 
-from app.models import Job
+from app.core.models import Job
 
 async def test_patch_content_done(auth_client, done_job_with_result, db_session):
     r = await auth_client.patch(f"/api/jobs/{done_job_with_result}/content",

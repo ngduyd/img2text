@@ -8,7 +8,7 @@ leftmost is client-controlled and forgeable.
 
 from sqlalchemy import select
 
-from app.models import RequestLog, User
+from app.core.models import RequestLog, User
 
 async def _health_log(db_session) -> RequestLog:
     rows = (

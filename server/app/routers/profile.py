@@ -10,12 +10,12 @@ from pydantic import Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_session
-from app.deps import get_current_user
-from app.limiter import rate_limit_auth
-from app.models import User
+from app.core.db import get_session
+from app.core.deps import get_current_user
+from app.core.limiter import rate_limit_auth
+from app.core.models import User
 from app.routers.auth import UserOut, _EmailIn, _user_out, revoke_all_refresh
-from app.security import hash_password, verify_password
+from app.core.security import hash_password, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["profile"])
 

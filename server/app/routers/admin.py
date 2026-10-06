@@ -11,10 +11,10 @@ from pydantic import BaseModel, StrictBool
 from sqlalchemy import Date, Float, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
-from app.db import get_session
-from app.deps import get_current_user, require_admin
-from app.models import Job, PageView, RequestLog, Setting, User
+from app.core.config import settings
+from app.core.db import get_session
+from app.core.deps import get_current_user, require_admin
+from app.core.models import Job, PageView, RequestLog, Setting, User
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 

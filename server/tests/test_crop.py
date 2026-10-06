@@ -6,7 +6,7 @@ import pytest_asyncio
 from PIL import Image
 from sqlalchemy import select
 
-from app.models import Job, User
+from app.core.models import Job, User
 from tests.test_jobs_read import other_client  # noqa: F401
 
 ORIGINAL_KEY = "uploads/test.jpg"
