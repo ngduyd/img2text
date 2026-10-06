@@ -40,3 +40,25 @@ it("dark theme --accent vs white ≥ 4.5:1 (primary button labels)", () => {
 it("light theme --accent vs white ≥ 4.5:1 (primary button labels)", () => {
   expect(contrastOnWhite(accentIn("html:not(.dark)"))).toBeGreaterThanOrEqual(4.5);
 });
+
+const indexCss = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
+
+it("semantic role tokens present in tokens.css (DESIGN.md §2 map)", () => {
+  for (const tok of [
+    "--surface-2",
+    "--text-muted",
+    "--accent-contrast",
+    "--radius-sm",
+    "--radius-md",
+    "--focus-ring",
+    "--shadow-card",
+  ]) {
+    expect(css, `tokens.css missing ${tok}`).toContain(tok);
+  }
+});
+
+it("skeleton shimmer keyframes + reduced-motion gate exist in index.css", () => {
+  expect(indexCss).toContain("@keyframes skeleton");
+  expect(indexCss).toContain(".skeleton");
+  expect(indexCss).toContain("prefers-reduced-motion");
+});

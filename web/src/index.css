@@ -5,20 +5,27 @@
    Token values flip via html:not(.dark) in tokens.css — no dark: variants needed. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Semantic token utilities: bg-bg, bg-surface, text-text, text-muted,
-   bg-accent, border-border, text-success/warning/error, rounded-card. */
+/* Semantic token utilities: bg-bg, bg-surface, bg-surface-2, text-text,
+   text-muted, text-accent-text, text-accent-contrast, bg-accent,
+   border-border, text-success/warning/error, shadow-card,
+   rounded-sm/rounded-md/rounded-card (radius lock, tokens.css). */
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-text: var(--text);
   --color-muted: var(--muted);
   --color-accent: var(--accent);
   --color-accent-text: var(--accent-text);
+  --color-accent-contrast: var(--accent-contrast);
   --color-border: var(--border);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-error: var(--error);
-  --radius-card: 10px;
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-card: var(--radius-md);
+  --shadow-card: var(--shadow-card);
 }
 
 body {
@@ -36,9 +43,10 @@ iframe {
   max-width: 100%;
 }
 
-/* Visible focus ring on every interactive element (a11y, ui-ux-dev). */
+/* Visible focus ring on every interactive element (a11y, ui-ux-dev):
+   accent hue, 2px, 2px offset — token-driven via --focus-ring. */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -57,6 +65,31 @@ iframe {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 16px;
+}
+
+/* Skeleton shimmer (Motion 4 exception: the ONE sanctioned loop in tool UI —
+   loading feedback only). Size via className; shimmer here only.
+   prefers-reduced-motion: global rule below clamps duration → static block. */
+.skeleton {
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-2);
+  background-image: linear-gradient(
+    90deg,
+    var(--surface-2) 0%,
+    var(--border) 50%,
+    var(--surface-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

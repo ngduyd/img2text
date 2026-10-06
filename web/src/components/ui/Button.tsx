@@ -4,12 +4,13 @@ export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md";
 
 const BASE =
-  "inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex cursor-pointer items-center justify-center gap-2 rounded-md font-medium transition duration-150 ease-out active:-translate-y-px active:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
 
+/* secondary = outline role (bordered, non-accent). No glow, no ring on rest. */
 const VARIANTS: Record<ButtonVariant, string> = {
-  primary: "bg-accent text-white hover:opacity-90",
-  secondary: "border border-border bg-surface text-text hover:bg-border/30",
-  ghost: "text-text hover:bg-surface",
+  primary: "bg-accent text-accent-contrast hover:opacity-90",
+  secondary: "border border-border bg-surface text-text hover:bg-surface-2",
+  ghost: "text-text hover:bg-surface-2",
   danger: "text-error hover:bg-error/10",
 };
 
