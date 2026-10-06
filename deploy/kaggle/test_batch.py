@@ -117,6 +117,24 @@ def input_file(tmp_path, monkeypatch):
     return f
 
 
+def test_dataset_meta_shape_kaggle_224(tmp_path):
+    # kaggle 2.2.4: {title, id owner/slug, licenses:[{name}]} — old string
+    # licenses → create fails "Key name not found in data"
+    src = tmp_path / "a.jpg"
+    src.write_bytes(b"\xff\xd8fakejpg")
+    run_one.stage_input(src, OWNER, tmp_path / "in")
+    in_meta = json.loads((tmp_path / "in" / "dataset-metadata.json").read_text())
+    assert in_meta == {
+        "id": INPUT_REF,
+        "title": "img2text-input",
+        "licenses": [{"name": "CC0-1.0"}],
+    }
+    run_one.stage_worker(OWNER, tmp_path / "wk")
+    wk_meta = json.loads((tmp_path / "wk" / "dataset-metadata.json").read_text())
+    assert wk_meta["id"] == WORKER_REF
+    assert wk_meta["title"] == "img2text-worker-files"
+    assert wk_meta["licenses"] == [{"name": "CC0-1.0"}]
+
 def test_missing_env(monkeypatch, input_file):
     monkeypatch.delenv("KAGGLE_USERNAME", raising=False)
     monkeypatch.delenv("KAGGLE_KEY", raising=False)

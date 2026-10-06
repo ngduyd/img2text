@@ -241,12 +241,22 @@ async def test_stage_kernel_substitutes_owner_ref_accelerator(
     # staged dataset-metadata.json carries the id the version bump needs (kaggle 2.2.4)
     ds_meta = json.loads((stage_dir / "dataset-metadata.json").read_text())
     assert ds_meta["id"] == "testuser/img2text-worker-files"
+    # kaggle 2.2.4 metadata shape: title + id + licenses as dicts
+    assert ds_meta["title"] == "img2text-worker-files"
+    assert ds_meta["licenses"] == [{"name": "CC0-1.0"}]
     # source templates untouched (deploy/kaggle not modified)
     template = (DEPLOY_KAGGLE / "kernel" / "kernel-metadata.json").read_text(
         encoding="utf-8"
     )
     assert "OWNER" in template and "testuser" not in template
 
+
+def test_normalize_licenses_old_string_shape():
+    # defensive: old-shape ["CC0-1.0"] → [{"name": "CC0-1.0"}] (kaggle 2.2.4)
+    assert orch._normalize_licenses(["CC0-1.0"]) == [{"name": "CC0-1.0"}]
+    assert orch._normalize_licenses([{"name": "CC0-1.0"}]) == [
+        {"name": "CC0-1.0"}
+    ]
 
 async def test_scheduler_reap_job_calls_ensure_worker(app, monkeypatch):
     from app.services.scheduler import init_scheduler

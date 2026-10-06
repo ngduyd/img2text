@@ -94,9 +94,26 @@ def test_dataset_metadata_owner_substitution(tmp_path):
     meta = json.loads(out.read_text())
     assert meta["id"] == "alice/img2text-worker-files"
     assert meta["title"] == "img2text-worker-files"
+    # kaggle 2.2.4 shape: title + id (owner/slug) + licenses as dicts
+    assert meta["licenses"] == [{"name": "CC0-1.0"}]
     tpl = json.loads((DEPLOY_DIR / "files" / "dataset-metadata.json").read_text())
-    assert "id" not in tpl
+    assert tpl["id"] == "OWNER/img2text-worker-files"
     assert tpl["title"] == "img2text-worker-files"
+    assert tpl["licenses"] == [{"name": "CC0-1.0"}]
+
+def test_build_dataset_metadata_coerces_string_licenses(tmp_path, monkeypatch):
+    # old-shape template ("licenses": ["CC0-1.0"]) → coerced to dicts
+    old = tmp_path / "files"
+    old.mkdir()
+    (old / "dataset-metadata.json").write_text(
+        json.dumps({"title": "t", "licenses": ["CC0-1.0"]})
+    )
+    monkeypatch.setattr(push, "FILES_DIR", old)
+    out = tmp_path / "out.json"
+    push.build_dataset_metadata("alice", out)
+    meta = json.loads(out.read_text())
+    assert meta["id"] == "alice/img2text-worker-files"
+    assert meta["licenses"] == [{"name": "CC0-1.0"}]
 
 def test_missing_env(monkeypatch):
     monkeypatch.delenv("KAGGLE_USERNAME", raising=False)

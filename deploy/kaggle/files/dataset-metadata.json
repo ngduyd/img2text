@@ -1,6 +1,9 @@
 {
   "title": "img2text-worker-files",
+  "id": "OWNER/img2text-worker-files",
   "licenses": [
-    "CC0-1.0"
+    {
+      "name": "CC0-1.0"
+    }
   ]
 }

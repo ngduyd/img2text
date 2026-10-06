@@ -58,6 +58,13 @@ def _api():
     return api
 
 
+def _normalize_licenses(licenses):
+    """kaggle 2.2.4 dataset-metadata needs [{"name": ...}] dicts (old
+    shape was plain strings — create fails: 'Key name not found in data')."""
+    return [
+        lic if isinstance(lic, dict) else {"name": lic} for lic in licenses
+    ]
+
 def _stage_src() -> Path:
     p = Path(settings.kaggle_stage_src)
     if not p.is_absolute():
@@ -116,6 +123,7 @@ def _stage_kernel() -> Path:
         (src / "files" / "dataset-metadata.json").read_text(encoding="utf-8")
     )
     ds_meta["id"] = f"{owner}/{DATASET_SLUG}"
+    ds_meta["licenses"] = _normalize_licenses(ds_meta.get("licenses", []))
     (dest / "dataset-metadata.json").write_text(
         json.dumps(ds_meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )

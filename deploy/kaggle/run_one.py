@@ -26,7 +26,6 @@ REPO_ROOT = DEPLOY_DIR.parent.parent
 WORKER_DIR = REPO_ROOT / "worker"
 KERNEL_NB = DEPLOY_DIR / "kernel" / "img2text_batch.ipynb"
 KERNEL_META_TPL = DEPLOY_DIR / "kernel" / "kernel-metadata.json"
-WORKER_META_TPL = DEPLOY_DIR / "files" / "dataset-metadata.json"
 
 INPUT_SLUG = "img2text-input"
 WORKER_SLUG = "img2text-worker-files"
@@ -51,7 +50,11 @@ def stage_input(src: Path, owner: str, stage: Path):
     stage.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(src, stage / src.name)
     _write_meta(
-        {"id": f"{owner}/{INPUT_SLUG}", "title": INPUT_SLUG, "licenses": ["CC0-1.0"]},
+        {
+            "id": f"{owner}/{INPUT_SLUG}",
+            "title": INPUT_SLUG,
+            "licenses": [{"name": "CC0-1.0"}],
+        },
         stage / "dataset-metadata.json",
     )
 
@@ -63,9 +66,8 @@ def stage_worker(owner: str, stage: Path):
     for name in ("pipeline.py", "verdict.py"):
         shutil.copyfile(WORKER_DIR / name, stage / name)
         shutil.copyfile(WORKER_DIR / name, stage / "worker" / name)
-    meta = json.loads(WORKER_META_TPL.read_text(encoding="utf-8"))
-    meta["id"] = f"{owner}/{WORKER_SLUG}"
-    _write_meta(meta, stage / "dataset-metadata.json")
+    # push.build_dataset_metadata: template + OWNER id + licenses shape
+    push.build_dataset_metadata(owner, stage / "dataset-metadata.json")
 
 def ensure_dataset(api, owner: str, slug: str, stage: Path, refresh: bool = False):
     """Dataset absent → kcompat create (kaggle 2.2.4 dataset_create_new).

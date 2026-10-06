@@ -91,6 +91,11 @@ def build_kernel_metadata(owner, accelerator, dest):
 def build_dataset_metadata(owner, dest):
     meta = json.loads((FILES_DIR / "dataset-metadata.json").read_text(encoding="utf-8"))
     meta["id"] = f"{owner}/{DATASET_SLUG}"
+    # kaggle 2.2.4 requires [{"name": ...}] dicts; coerce old string shape
+    meta["licenses"] = [
+        lic if isinstance(lic, dict) else {"name": lic}
+        for lic in meta.get("licenses", [])
+    ]
     dest = Path(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
