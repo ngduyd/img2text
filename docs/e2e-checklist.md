@@ -64,3 +64,10 @@ Prereqs: `deploy/.env` filled (see [docs/r2-setup.md](docs/r2-setup.md)),
 - [ ] **F1 — /landing render.** Expected: CTA "Bắt đầu" (hero + final CTA) điều hướng tới `/login`; hero (H1 + 1 dòng mô tả) ≤ 2 dòng trên desktop; bento "Tính năng" đúng 5 ô (2 ô ảnh, 1 ô tinted accent).
 - [ ] **F2 — /landing responsive + themes.** Expected: trang hiển thị đúng ở cả dark và light theme (toggle ThemeToggle, không vỡ màu/contrast); ở 320px không vỡ layout (không tràn ngang, chips/badges wrap); H1 hero ≤ 3 dòng trên mobile.
 - [ ] **F3 — App pages spot-check (Jobs / JobDetail / Login / Profile).** Expected: mọi control (tabs, chips, nút, input) nhận focus-visible khi tab-able (Tab key thấy outline rõ, không bị cắt); badge + filter chip đồng bộ MỘT chính tả trạng thái ("Đang chờ worker Colab", "Đang xử lý", "Hoàn tất", "Xử lý thất bại"); contrast spot-check: text muted trên surface vẫn đọc được ở cả 2 theme.
+
+## G. Plan UI2 — system restyle gate (DESIGN.md)
+
+- [ ] **G1 — Nav active + mobile menu.** Expected: link đang active có indicator accent (thanh dọc `after:bg-accent` bên trái + nền surface-2) và `aria-current="page"`; dưới 768px hamburger (`nav-menu-toggle`) mở panel nav, mọi testid `nav-*` (`nav-brand`, `nav-link-jobs`, `nav-link-admin`, `nav-avatar`) còn nguyên, không đổi tên.
+- [ ] **G2 — Jobs loading + filter + empty.** Expected: khi danh sách đang load hiển thị skeleton rows khớp chiều cao JobRow (testid `skeleton`, không có spinner tròn); filter chip active có state rõ (nền/border accent); empty state composed (icon + tiêu đề + 1 dòng hướng dẫn + action tuỳ chọn), không chỉ "No data".
+- [ ] **G3 — Admin Users/Logs density.** Expected: sticky thead (header dính khi cuộn, nền surface-2 + border-b); số/IP dùng mono (`font-mono`); badge status Logs theo class: 2xx success / 4xx warning / 5xx error; IP/User-Agent truncate trong ô + `title` hiện giá trị đầy đủ khi hover.
+- [ ] **G4 — Themes + 320px.** Expected: cả dark và light không vỡ contrast (spot-check: `accent-text` trên surface, `muted` text vẫn đọc được); tại 320px không tràn ngang (table cuộn trong container, chips/badges wrap).

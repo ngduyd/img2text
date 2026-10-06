@@ -1,4 +1,4 @@
-import { ScanText } from "lucide-react";
+import { ScanText, Users } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "../../api/client";
@@ -6,9 +6,11 @@ import { mapApiError } from "../../lib/errors";
 import type { User } from "../../api/types";
 import Badge from "../../components/ui/Badge";
 import Card from "../../components/ui/Card";
+import Skeleton from "../../components/ui/Skeleton";
 
-/** Admin user list: role badge + per-user OCR grant toggle (icon button,
- * ui-ux skill: tokens, sticky thead, title tooltips, 320px overflow-x). */
+/** Admin user list — DESIGN.md §5 density 6: sticky thead (surface-2 + border-b),
+ * divider rows (no zebra), mono IDs/dates, role badge, icon OCR toggle (44px,
+ * title + aria). Testids R51: users-loading/empty, user-row-*, role-badge-*, toggle-ocr-*. */
 export default function AdminUsers() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["admin-users"], queryFn: () => api.adminListUsers(1) });
@@ -28,35 +30,56 @@ export default function AdminUsers() {
   return (
     <Card title="Người dùng">
       {isLoading ? (
-        <div data-testid="users-loading" className="p-8 text-center text-muted">
-          Đang tải…
+        <div data-testid="users-loading" aria-busy="true" className="overflow-x-auto">
+          <div className="min-w-[560px] divide-y divide-border">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex items-center gap-4 px-4 py-3">
+                <Skeleton className="h-4 w-8" />
+                <Skeleton className="h-4 w-48" />
+                <Skeleton className="h-5 w-16" />
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-11 w-11" />
+              </div>
+            ))}
+          </div>
         </div>
       ) : items.length === 0 ? (
-        <div data-testid="users-empty" className="p-8 text-center text-muted">
-          Chưa có người dùng
+        <div
+          data-testid="users-empty"
+          className="flex flex-col items-center gap-2 px-4 py-8 text-center"
+        >
+          <Users className="h-8 w-8 text-muted" aria-hidden="true" />
+          <p className="text-base font-semibold">Chưa có người dùng</p>
+          <p className="text-sm text-muted">
+            Người dùng mới sẽ xuất hiện tại đây sau khi đăng ký.
+          </p>
         </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[560px] border-collapse text-left text-sm">
             <thead>
-              <tr className="border-b border-border text-muted">
+              <tr>
                 {["ID", "Email", "Vai trò", "Ngày tạo", "OCR"].map((h) => (
                   <th
                     key={h}
                     scope="col"
-                    className="sticky top-0 bg-surface px-4 py-3 font-medium"
+                    className="sticky top-0 z-10 border-b border-border bg-surface-2 px-4 py-3 font-medium text-muted"
                   >
                     {h}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-border">
               {items.map((u: User) => {
                 const on = u.ocr_enabled;
                 return (
-                  <tr key={u.id} data-testid={`user-row-${u.id}`} className="border-b border-border/40 odd:bg-bg/60">
-                    <td className="px-4 py-3">{u.id}</td>
+                  <tr
+                    key={u.id}
+                    data-testid={`user-row-${u.id}`}
+                    className="transition-colors duration-150 ease-out hover:bg-surface-2"
+                  >
+                    <td className="px-4 py-3 font-mono">{u.id}</td>
                     <td className="px-4 py-3">{u.email}</td>
                     <td className="px-4 py-3">
                       <Badge
@@ -66,7 +89,7 @@ export default function AdminUsers() {
                         {u.role}
                       </Badge>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 font-mono">
                       {u.created_at ? new Date(u.created_at).toLocaleDateString("vi-VN") : ""}
                     </td>
                     <td className="px-4 py-3">
@@ -77,9 +100,9 @@ export default function AdminUsers() {
                         aria-label={`OCR ${u.email}`}
                         title={`${on ? "Tắt" : "Bật"} OCR cho ${u.email}`}
                         onClick={() => patchUser.mutate({ id: u.id, ocr_enabled: !on })}
-                        className={`inline-flex min-h-10 min-w-10 cursor-pointer items-center justify-center rounded-lg border transition-opacity hover:opacity-90 ${
+                        className={`inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md border transition duration-150 ease-out active:-translate-y-px ${
                           on
-                            ? "border-accent/40 bg-accent/10 text-accent"
+                            ? "border-accent/40 bg-accent/10 text-accent-text"
                             : "border-border bg-surface text-muted"
                         }`}
                       >

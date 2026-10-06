@@ -30,7 +30,7 @@ export default function Profile() {
   if (!me) {
     // Loading state instead of blank page while [me] resolves (ui-ux-dev checklist).
     return (
-      <main id="main" className="mx-auto max-w-3xl p-4">
+      <main id="main" className="mx-auto max-w-md p-4 sm:p-6">
         <p data-testid="profile-loading" className="text-sm text-muted">
           Đang tải hồ sơ…
         </p>
@@ -83,8 +83,8 @@ export default function Profile() {
   }
 
   return (
-    <main id="main" className="mx-auto max-w-3xl p-4">
-      <h1 className="mb-4 text-xl font-bold">Hồ sơ</h1>
+    <main id="main" className="mx-auto max-w-md p-4 sm:p-6">
+      <h1 className="mb-6 text-2xl font-bold tracking-tight">Hồ sơ</h1>
       <div className="flex flex-col gap-4">
         <Card title="Thông tin" testid="card-profile-info">
           <div className="flex flex-col gap-2 text-sm">
@@ -104,7 +104,7 @@ export default function Profile() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-muted">ID:</span>
-              <span data-testid="profile-id" className="break-all">
+              <span data-testid="profile-id" className="break-all font-mono">
                 {me.id}
               </span>
             </div>

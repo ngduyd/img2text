@@ -170,3 +170,11 @@ it("filter with no matches shows empty-filter message", async () => {
   );
   expect(screen.queryByTestId("job-row-2")).not.toBeInTheDocument();
 });
+
+// Task 2: loading state = Skeleton rows (testid "skeleton"), never a spinner/blank.
+it("loading state renders skeleton rows while the jobs list is pending", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockReturnValue(new Promise<never>(() => {})); // never resolves
+  renderWithRouter(<Jobs />);
+  expect((await screen.findAllByTestId("skeleton")).length).toBeGreaterThan(0);
+});

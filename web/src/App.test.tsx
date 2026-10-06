@@ -148,3 +148,11 @@ it("hamburger toggle: aria-expanded/controls/label, opens mobile menu, closes on
   await userEvent.click(within(menu).getByTestId("nav-link-jobs"));
   await waitFor(() => expect(screen.queryByTestId("mobile-menu")).not.toBeInTheDocument());
 });
+
+// Task 2: active nav link carries aria-current="page" (DESIGN.md §7 a11y).
+it("active nav link has aria-current=page", async () => {
+  vi.mocked(api.me).mockRejectedValue(new ApiError("Unauthorized."));
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  render(<App />);
+  expect(await screen.findByTestId("nav-link-jobs")).toHaveAttribute("aria-current", "page");
+});

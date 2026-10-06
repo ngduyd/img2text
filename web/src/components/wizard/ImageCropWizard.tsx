@@ -245,7 +245,7 @@ export default function ImageCropWizard({
       {error && (
         <div
           data-testid="wizard-error"
-          className="mb-2 rounded-lg border border-error/40 bg-error/10 px-3 py-2 text-error"
+          className="mb-2 rounded-md border border-error/40 bg-error/10 px-3 py-2 text-error"
         >
           {error}
         </div>

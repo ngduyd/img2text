@@ -19,10 +19,25 @@ it("spreads input props (type, value, onChange)", async () => {
   expect(onChange).toHaveBeenCalled();
 });
 
-it("error state: message shown, aria-invalid set, aria-describedby wired", () => {
+it("error state: message shown, aria-invalid set, aria-describedby wired, error border", () => {
   render(<Input label="Email" testid="input-email" error="Trường này bắt buộc." />);
   expect(screen.getByTestId("input-email-error")).toHaveTextContent("Trường này bắt buộc.");
   const input = screen.getByLabelText("Email");
   expect(input).toHaveAttribute("aria-invalid", "true");
   expect(input).toHaveAttribute("aria-describedby", "input-email-error");
+  expect(input.className).toContain("border-error");
+});
+
+it("helper slot below input; height rhythm 40px", () => {
+  render(<Input label="Ghi chú" testid="input-note" helper="Tùy chọn" />);
+  expect(screen.getByTestId("input-note-helper")).toHaveTextContent("Tùy chọn");
+  const input = screen.getByLabelText("Ghi chú");
+  expect(input.className).toContain("h-10");
+  expect(input).toHaveAttribute("aria-describedby", "input-note-helper");
+});
+
+it("error wins over helper when both set", () => {
+  render(<Input label="Mã" testid="input-code" helper="Gợi ý" error="Sai mã." />);
+  expect(screen.getByTestId("input-code-error")).toBeInTheDocument();
+  expect(screen.queryByTestId("input-code-helper")).not.toBeInTheDocument();
 });

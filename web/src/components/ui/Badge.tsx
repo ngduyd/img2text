@@ -7,7 +7,7 @@ const TONES: Record<BadgeTone, string> = {
   success: "border-success/40 bg-success/10 text-success",
   warning: "border-warning/40 bg-warning/10 text-warning",
   error: "border-error/40 bg-error/10 text-error",
-  info: "border-accent/40 bg-accent/10 text-accent",
+  info: "border-accent/40 bg-accent/10 text-accent-text",
 };
 
 export default function Badge({

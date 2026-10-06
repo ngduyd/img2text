@@ -1,28 +1,44 @@
 /* Semantic design tokens — dark theme is DEFAULT (plan UI Global Constraints).
-   Light theme: ThemeToggle removes .dark from <html> (key: img2text-theme). */
+   Light theme: ThemeToggle removes .dark from <html> (key: img2text-theme).
+   Role map + hex source of truth: web/DESIGN.md. */
 :root {
-  --bg: #0d1117;
-  --surface: #161b22;
-  --text: #e6edf3;
-  --muted: #8b949e;
-  --accent: #1c64e4;
+  --bg: #0d1117; /* Canvas — page background */
+  --surface: #161b22; /* Surface — card/container fill */
+  --surface-2: #1c2128; /* Raised surface — hover fills, skeleton base */
+  --text: #e6edf3; /* Primary text */
+  --muted: #8b949e; /* Secondary text */
+  --accent: #1c64e4; /* Accent fill — primary buttons, active states */
   /* Lighter accent for TEXT on dark surfaces (contrast ≥4.5: #1c64e4 = 3.3 on --surface). */
-  --accent-text: #58a6ff;
-  --border: #30363d;
+  --accent-text: #58a6ff; /* Accent — links, text accents */
+  --border: #30363d; /* Whisper border — 1px structural lines */
   --success: #3fb950;
   --warning: #d29922;
   --error: #f85149;
+  /* Shape lock (ONE radius scale): 6px controls / 8px cards / full badges. */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  /* Focus ring: accent hue, 2px offset (consumed by :focus-visible in index.css). */
+  --focus-ring: var(--accent);
+  /* Tinted card shadow — matches canvas hue, no neon, no outer glow. */
+  --shadow-card: 0 1px 2px rgba(1, 4, 9, 0.6);
+  /* Semantic aliases — lazy naming (existing --muted/--accent-text keep working). */
+  --text-muted: var(--muted);
+  /* Label text on --accent fill (≥4.5:1, gated by tokens.test.ts). */
+  --accent-contrast: #ffffff;
 }
 
 html:not(.dark) {
   --bg: #ffffff;
   --surface: #f6f8fa;
+  --surface-2: #eaeef2;
   --text: #1f2328;
   --muted: #59636e;
   --accent: #0969da;
-  --accent-text: #0969da;
+  --accent-text: #0861cf; /* Accent text — contrast-safe on surface AND accent/10 tint (tokens.test.ts) */
   --border: #d0d7de;
   --success: #1a7f37;
   --warning: #9a6700;
   --error: #cf222e;
+  --shadow-card: 0 1px 2px rgba(31, 35, 40, 0.08), 0 1px 3px rgba(31, 35, 40, 0.06);
+  --accent-contrast: #ffffff;
 }

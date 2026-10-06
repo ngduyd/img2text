@@ -64,14 +64,16 @@ export default function Dropzone({
         setDragging(false);
         handleFile(e.dataTransfer?.files?.[0]);
       }}
-      className={`rounded-card border-2 border-dashed p-4 text-center ${
-        dragging ? "border-accent bg-accent/5" : "border-border"
+      className={`rounded-card border-2 border-dashed p-4 text-center transition duration-150 ease-out md:p-6 ${
+        dragging
+          ? "border-accent bg-accent/10"
+          : "border-border bg-surface/50 hover:border-accent/50 hover:bg-surface-2/40"
       }`}
     >
       {denied && (
         <div
           data-testid="banner-no-access"
-          className="mb-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-warning"
+          className="mb-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-warning"
         >
           Chờ admin cấp quyền
           <p className="mt-1 text-xs">
@@ -83,7 +85,7 @@ export default function Dropzone({
       {error && !wizardFile && (
         <div
           data-testid="upload-error"
-          className="mb-2 rounded-lg border border-error/40 bg-error/10 px-3 py-2 text-error"
+          className="mb-2 rounded-md border border-error/40 bg-error/10 px-3 py-2 text-error"
         >
           {error}
         </div>

@@ -52,7 +52,7 @@ export default function RegionEditor({
         aria-label={`Văn bản vùng ${region.id}`}
         value={value}
         onChange={(e) => setValue(e.target.value)}
-        className="mb-2 w-full rounded-lg border border-border bg-surface p-2 text-sm text-text"
+        className="mb-2 w-full rounded-md border border-border bg-surface p-2 text-sm text-text"
       />
       <div className="flex gap-2">
         <Button

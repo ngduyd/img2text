@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import { mapApiError } from "../lib/errors";
 import Button from "../components/ui/Button";
+import Card from "../components/ui/Card";
 import Input from "../components/ui/Input";
 
 export default function Login() {
@@ -30,32 +31,34 @@ export default function Login() {
   }
 
   return (
-    <main id="main" className="mx-auto max-w-sm p-6">
-      <h1 className="mb-4 text-xl font-bold">Đăng nhập</h1>
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
-        <Input
-          label="Email"
-          testid="input-email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <Input
-          label="Mật khẩu"
-          testid="input-password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        {error && (
-          <p data-testid="error-detail" role="alert" className="text-sm text-error">
-            {error}
-          </p>
-        )}
-        <Button testid="btn-login" type="submit" loading={loading}>
-          Đăng nhập
-        </Button>
-      </form>
+    <main id="main" className="mx-auto max-w-sm p-4 sm:p-6">
+      <h1 className="mb-6 text-2xl font-bold tracking-tight">Đăng nhập</h1>
+      <Card>
+        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+          <Input
+            label="Email"
+            testid="input-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <Input
+            label="Mật khẩu"
+            testid="input-password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          {error && (
+            <p data-testid="error-detail" role="alert" className="text-sm text-error">
+              {error}
+            </p>
+          )}
+          <Button testid="btn-login" type="submit" loading={loading} className="w-full">
+            Đăng nhập
+          </Button>
+        </form>
+      </Card>
     </main>
   );
 }

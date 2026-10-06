@@ -31,7 +31,7 @@ export default function MarkdownEditor({ jobId, initial }: { jobId: string; init
       {error && (
         <div
           data-testid="editor-error"
-          className="mb-2 rounded-lg border border-error/40 bg-error/10 px-3 py-2 text-error"
+          className="mb-2 rounded-md border border-error/40 bg-error/10 px-3 py-2 text-error"
         >
           {error}
         </div>
@@ -41,7 +41,7 @@ export default function MarkdownEditor({ jobId, initial }: { jobId: string; init
           data-testid="textarea-markdown"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          className="mb-2 h-64 w-full rounded-lg border border-border bg-surface p-2 font-mono text-sm text-text"
+          className="mb-2 h-64 w-full rounded-md border border-border bg-surface p-2 font-mono text-sm text-text"
         />
       )}
       <div className="flex gap-2">

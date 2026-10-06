@@ -31,6 +31,16 @@ it("loading sets aria-busy and disables; disabled disables", () => {
   expect(screen.getByTestId("btn-x")).toBeDisabled();
 });
 
+it("restyle classes: tactile active, no glow, accent-contrast label", () => {
+  render(<Button testid="btn-x">X</Button>);
+  const btn = screen.getByTestId("btn-x");
+  expect(btn.className).toContain("active:-translate-y-px");
+  expect(btn.className).toContain("active:brightness-110");
+  expect(btn.className).toContain("rounded-md");
+  expect(btn.className).toContain("text-accent-contrast");
+  expect(btn.className).not.toMatch(/shadow|glow|ring/);
+});
+
 it("onClick fires and passes through handler args", async () => {
   const onClick = vi.fn();
   render(
