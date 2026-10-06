@@ -1,4 +1,4 @@
-import type { AdminStatsDay, Job, JobListItem, RegionPatchOut, User } from "./types";
+import type { AdminStatsDay, Job, JobListItem, RegionPatchOut, User, AdminSettings, AdminSettingsPut } from "./types";
 
 /** Thrown for any non-2xx response; `detail` mirrors FastAPI {detail} bodies. */
 export class ApiError extends Error {
@@ -139,4 +139,8 @@ export const api = {
   },
   adminLogsTail: (lines: number) =>
     request<{ lines: string[] }>(`/api/admin/logs/tail?lines=${lines}`),
+  // Plan S: runtime settings (scheduler/kaggle live override, no restart)
+  getAdminSettings: () => request<AdminSettings>("/api/admin/settings"),
+  putAdminSettings: (body: AdminSettingsPut) =>
+    request<AdminSettings>("/api/admin/settings", { method: "PUT", body }),
 };

@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { BarChart3, LayoutDashboard, ScrollText, Terminal, Users } from "lucide-react";
+import { BarChart3, LayoutDashboard, ScrollText, Settings, Terminal, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import AdminApi from "./admin/AdminApi";
 import AdminLogs from "./admin/AdminLogs";
 import AdminOverview from "./admin/AdminOverview";
 import type { AdminTabId } from "./admin/AdminOverview";
+import AdminSettings from "./admin/AdminSettings";
 import AdminStats from "./admin/AdminStats";
 import AdminUsers from "./admin/AdminUsers";
 
@@ -17,6 +18,7 @@ const TABS = [
   { id: "api", label: "API", icon: Terminal },
   { id: "logs", label: "Logs", icon: ScrollText },
   { id: "stats", label: "Thống kê", icon: BarChart3 },
+  { id: "settings", label: "Hệ thống", icon: Settings },
 ] as const;
 
 /** Admin-only page; tabs are in-page state (not routes). Non-admins go home. No jobs board. */
@@ -81,6 +83,7 @@ export default function Admin() {
               {tab === "api" && <AdminApi />}
               {tab === "logs" && <AdminLogs />}
               {tab === "stats" && <AdminStats />}
+              {tab === "settings" && <AdminSettings />}
             </>
           )}
         </div>

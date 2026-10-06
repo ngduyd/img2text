@@ -5,7 +5,7 @@ import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import { last7Days } from "./dateRange";
 
-export type AdminTabId = "overview" | "users" | "api" | "logs" | "stats";
+export type AdminTabId = "overview" | "users" | "api" | "logs" | "stats" | "settings";
 
 const CARDS = [
   { id: "users", label: "User mới (7 ngày)", sum: (d: AdminStatsDay) => d.users_registered },

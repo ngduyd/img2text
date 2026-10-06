@@ -81,3 +81,16 @@ export interface AdminStatsDay {
   gpu_seconds: number;
   estimated_cost_usd: number;
 }
+
+/** Plan S: admin runtime settings — effective value + source (Setting row vs env). */
+export type AdminSettingSource = "db" | "env";
+export interface AdminSettingEntry {
+  value: number | string;
+  source: AdminSettingSource;
+}
+export type AdminSettings = Record<string, AdminSettingEntry>;
+export interface AdminSettingsPut {
+  scheduler_interval_seconds?: number;
+  kaggle_min_queue?: number;
+  kaggle_min_gap_seconds?: number;
+}
