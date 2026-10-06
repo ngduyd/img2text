@@ -60,9 +60,9 @@ python deploy/kaggle/run_one.py ./TA.jpg --kernel-ref alice/my-batch --accelerat
 ```
 
 Flow:
-1. **Input**: copy file vào temp stage + `dataset-metadata.json` (`img2text-input`) → dataset chưa có → `datasets_create_with_files`, đã có → version mới (dataset worker-files cũng ensure song song).
+1. **Input**: copy file vào temp stage + `dataset-metadata.json` (`img2text-input`) → dataset chưa có → `datasets_create_with_files`; **đã có → `datasets_delete` + create lại với staged folder** (đảm bảo re-run upload file mới nhất, không stale — version bump không upload files). Dataset `img2text-worker-files`: có thì giữ nguyên (dùng chung K2), chưa có → create.
 2. **Kernel**: copy `kernel/img2text_batch.ipynb` + `kernel-metadata.json` (`dataset_sources`: worker-files + img2text-input) → `kernels_push`.
 3. **Poll** `kernels_status` mỗi `--poll` giây: `complete` → lấy output; `failed` → exit 1; timeout → exit 2.
 4. **Output**: `kernels_output` vào thư mục mới `./out/<timestamp>/` (không lẫn output cũ) — có `result.json` (regions/page/markdown) + `result.md`.
 
-Giới hạn (ponytail): **1 file/lần** (thư mục → báo lỗi), **1 slug input dataset dùng chung** (song song sẽ đè nhau), quota GPU free ~30h/tuần. K2 polling-backend mode (`push.py`) giữ nguyên cho production.
+Giới hạn (ponytail): **1 file/lần** (thư mục → báo lỗi), **1 slug input dataset dùng chung** — mỗi run ghi đè (`delete+recreate`) input dataset, song song sẽ đè nhau; `--poll` tối thiểu 1s; output vào `./out/<timestamp-micros>/` riêng mỗi run; quota GPU free ~30h/tuần. K2 polling-backend mode (`push.py`) giữ nguyên cho production.

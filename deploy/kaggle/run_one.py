@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Kaggle batch mode (Plan K3): push input → run kernel → pull output.
 
-No backend public / BASE_URL / RUNNER_KEY — client drives everything via
+No backend public / no secrets — client drives everything via
 KaggleApi. Production K2 polling-backend mode (push.py) is untouched.
 
 ponytail ceilings: 1 input file per run (directory → error), single shared
 "img2text-input" dataset slug (parallel runs overwrite each other), output
-fetched into a fresh ./out/<timestamp>/ subdir.
+fetched into a fresh ./out/<timestamp-micros>/ subdir.
 """
 import argparse
 import json
@@ -15,6 +15,7 @@ import shutil
 import sys
 import tempfile
 import time
+from datetime import datetime
 from pathlib import Path
 
 import push  # noqa: F401  # sibling module: load_env + _sub_owner patterns
@@ -65,21 +66,37 @@ def stage_worker(owner: str, stage: Path):
     meta["id"] = f"{owner}/{WORKER_SLUG}"
     _write_meta(meta, stage / "dataset-metadata.json")
 
-def ensure_dataset(api, owner: str, slug: str, stage: Path):
-    """Dataset absent → datasets_create_with_files; exists → version bump."""
+def ensure_dataset(api, owner: str, slug: str, stage: Path, refresh: bool = False):
+    """Dataset absent → datasets_create_with_files.
+
+    refresh=True (input dataset): exists → DELETE + recreate with the staged
+    folder. ponytail: push.py's version-bump path calls datasets_create_version
+    with NO files (re-run would serve the previous file — stale), and the
+    kaggle package's signature can't be verified offline — delete+recreate is
+    the unambiguous upload path.
+    refresh=False (worker-files): exists → keep as-is (shared with K2;
+    notebook falls back to the root layout if worker/ is missing).
+    """
     ref = f"{owner}/{slug}"
     try:
         api.datasets_create_with_files(upload_folder=str(stage))
         print(f"dataset created: {ref}")
+        return
     except Exception as exc:
-        print(f"dataset exists ({exc}); bumping version: {ref}")
-        try:
-            api.datasets_create_version(ref, version_note="run_one.py batch")
-        except Exception as exc2:
-            sys.exit(
-                f"error: dataset {ref}: create failed ({exc}); "
-                f"version bump failed ({exc2})"
-            )
+        if not refresh:
+            print(f"dataset exists ({exc}); keeping: {ref}")
+            return
+        print(f"dataset exists ({exc}); delete+recreate: {ref}")
+        first_exc = exc
+    try:
+        api.datasets_delete(ref)
+        api.datasets_create_with_files(upload_folder=str(stage))
+        print(f"dataset recreated with fresh files: {ref}")
+    except Exception as exc2:
+        sys.exit(
+            f"error: dataset {ref}: initial create failed ({first_exc}); "
+            f"delete+recreate failed ({exc2})"
+        )
 
 def build_kernel_stage(owner: str, accelerator: str, kernel_ref: str, stage: Path):
     """Copy batch notebook + write kernel-metadata.json (OWNER substituted)."""
@@ -122,8 +139,9 @@ def wait_complete(api, ref: str, poll: int, timeout: int):
         elapsed += poll
 
 def pull_output(api, ref: str, out_root: str):
-    """Fresh ./out/<timestamp>/ subdir per run — old output never mixes in."""
-    out_dir = Path(out_root) / time.strftime("%Y%m%d-%H%M%S")
+    """Fresh ./out/<timestamp-micros>/ subdir per run — old output never
+    mixes in, even for back-to-back runs within the same second."""
+    out_dir = Path(out_root) / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     out_dir.mkdir(parents=True, exist_ok=True)
     api.kernels_output(ref, path=str(out_dir), quiet=False)
     files = sorted(p.name for p in out_dir.rglob("*") if p.is_file())
@@ -143,6 +161,7 @@ def main(argv=None):
     parser.add_argument("--out", default="./out", help="output root dir (fresh subdir per run)")
     parser.add_argument("--kernel-ref", default=None, help="owner/slug (default OWNER/img2text-batch)")
     args = parser.parse_args(argv)
+    args.poll = max(1, args.poll)  # ponytail: poll<=0 would busy-loop the status poll
 
     owner, _key = load_env()
 
@@ -171,7 +190,7 @@ def main(argv=None):
 
         input_stage = build / "input"
         stage_input(src, owner, input_stage)
-        ensure_dataset(api, owner, INPUT_SLUG, input_stage)
+        ensure_dataset(api, owner, INPUT_SLUG, input_stage, refresh=True)
 
         kernel_stage = build / "kernel"
         build_kernel_stage(owner, args.accelerator, kernel_ref, kernel_stage)

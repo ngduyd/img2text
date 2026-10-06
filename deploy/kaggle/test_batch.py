@@ -1,5 +1,6 @@
 """Batch mode tests (Plan K3) — mock kaggle via sys.modules, NO network."""
 import json
+import re
 import sys
 import types
 from pathlib import Path
@@ -21,8 +22,8 @@ BATCH_NB = DEPLOY_DIR / "kernel" / "img2text_batch.ipynb"
 class FakeApi:
     def __init__(self):
         self.created = set()
-        self.create_calls = []
-        self.version_calls = []
+        self.create_calls = []   # (ref, {filename: bytes}) snapshot at call time
+        self.delete_calls = []
         self.kernel_push_calls = []
         self.status_calls = []
         self.output_calls = []
@@ -32,15 +33,22 @@ class FakeApi:
         pass
 
     def datasets_create_with_files(self, upload_folder=None, **kwargs):
-        meta = json.loads((Path(upload_folder) / "dataset-metadata.json").read_text())
+        stage = Path(upload_folder)
+        meta = json.loads((stage / "dataset-metadata.json").read_text())
         ref = meta["id"]
-        self.create_calls.append(ref)
+        files = {
+            p.name: p.read_bytes()
+            for p in stage.iterdir()
+            if p.is_file() and p.name != "dataset-metadata.json"
+        }
+        self.create_calls.append((ref, files))
         if ref in self.created:
             raise RuntimeError("dataset already exists")
         self.created.add(ref)
 
-    def datasets_create_version(self, ref, version_note="", **kwargs):
-        self.version_calls.append(ref)
+    def datasets_delete(self, ref):
+        self.delete_calls.append(ref)
+        self.created.discard(ref)
 
     def kernels_push(self, folder, **kwargs):
         stage = Path(folder)
@@ -91,16 +99,33 @@ def test_directory_input_rejected(fake_api, tmp_path):
     assert "1 file" in str(exc.value)
 
 
-def test_dataset_create_then_version(fake_api, input_file):
-    # run 1: both datasets new → create
+def test_dataset_create_then_delete_recreate(fake_api, input_file):
+    # run 1: both datasets new → create (no delete)
     run_one.main([str(input_file)])
-    assert fake_api.create_calls == [WORKER_REF, INPUT_REF]
-    assert fake_api.version_calls == []
-    # run 2: both exist → version bump, input ref exact
+    assert [ref for ref, _ in fake_api.create_calls] == [WORKER_REF, INPUT_REF]
+    assert fake_api.delete_calls == []
+    # run 2: input exists → delete+recreate (worker kept — shared with K2)
     run_one.main([str(input_file)])
-    assert fake_api.version_calls == [WORKER_REF, INPUT_REF]
-    # staged input dataset metadata: title img2text-input (via create ref/id)
-    assert INPUT_REF in fake_api.create_calls
+    assert fake_api.delete_calls == [INPUT_REF]
+    assert [ref for ref, _ in fake_api.create_calls] == [
+        WORKER_REF, INPUT_REF,          # run 1
+        WORKER_REF, INPUT_REF, INPUT_REF,  # run 2: worker skip-attempt, input attempt + recreate
+    ]
+
+
+def test_second_run_uploads_fresh_input(fake_api, input_file):
+    run_one.main([str(input_file)])
+    file_b = input_file.parent / "b.jpg"
+    file_b.write_bytes(b"CONTENT-B")
+    file_b.replace(input_file)          # run 2 serves a different file
+    run_one.main([str(input_file)])
+    input_creates = [files for ref, files in fake_api.create_calls if ref == INPUT_REF]
+    # 2nd run: first attempt (stale-ref guard) + post-delete recreate, both staged with B
+    assert len(input_creates) == 3
+    assert input_creates[0]["a.jpg"] != b"CONTENT-B"   # run 1: file A
+    assert input_creates[1]["a.jpg"] == b"CONTENT-B"   # run 2 attempt: file B staged
+    assert input_creates[2]["a.jpg"] == b"CONTENT-B"   # run 2 recreate: file B staged
+    assert INPUT_REF in fake_api.delete_calls
 
 
 def test_kernel_metadata_contents(fake_api, input_file):
@@ -151,6 +176,18 @@ def test_kernels_output_called_with_out_path(fake_api, input_file):
     assert quiet is False
     out = Path(path)
     assert out.parent == Path("out") and out.is_dir()
+    # microsecond suffix → back-to-back runs never share an output dir
+    assert re.fullmatch(r"\d{8}-\d{6}-\d{6}", out.name)
+
+
+def test_poll_clamped_to_min_1(fake_api, input_file, monkeypatch):
+    fake_api.statuses = ["running"]
+    sleeps = []
+    monkeypatch.setattr(run_one, "SLEEP", sleeps.append)
+    with pytest.raises(SystemExit) as exc:
+        run_one.main([str(input_file), "--poll", "0", "--timeout", "4"])
+    assert exc.value.code == 2          # bounded loop, no busy-spin
+    assert sleeps == [1, 1, 1, 1]       # clamped to 1s
 
 
 def test_batch_notebook_contract():
