@@ -42,10 +42,14 @@ class Settings(BaseSettings):
     # Scheduler claim/reap interval (R58); floor 5s — no busy-loop.
     scheduler_interval_seconds: int = 60
     # Plan K2: Kaggle worker orchestration (backend auto-spawn kernel run).
-    # Enabled iff username + key + kernel_ref all set — feature self-disables
-    # and the server never imports the kaggle package otherwise.
+    # Enabled iff username + (key OR api_token) + kernel_ref all set — feature
+    # self-disables and the server never imports the kaggle package otherwise.
     kaggle_username: str = ""
     kaggle_key: str = ""
+    # kaggle 2.x primary auth (Bearer KGAT_): kaggle's authenticate() reads
+    # env KAGGLE_API_TOKEN directly; config == process env (compose passes it
+    # through), so no credential wiring in the orchestrator. Empty → legacy key.
+    kaggle_api_token: str = ""
     kaggle_kernel_ref: str = ""  # e.g. "user/img2text-worker"
     kaggle_accelerator: str = "NvidiaTeslaT4"
     # Ceiling note only (P2): kaggle kernels_push has no reliable timeout kw —
@@ -58,7 +62,13 @@ class Settings(BaseSettings):
 
     @property
     def kaggle_enabled(self) -> bool:
-        return bool(self.kaggle_username and self.kaggle_key and self.kaggle_kernel_ref)
+        # kaggle 2.x: token replaces the legacy key; username stays required
+        # (OWNER id in metadata) + kernel_ref (the kernel to spawn).
+        return bool(
+            self.kaggle_username
+            and (self.kaggle_key or self.kaggle_api_token)
+            and self.kaggle_kernel_ref
+        )
 
     @field_validator("scheduler_interval_seconds")
     @classmethod

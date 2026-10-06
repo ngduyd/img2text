@@ -138,6 +138,7 @@ def test_dataset_meta_shape_kaggle_224(tmp_path):
 def test_missing_env(monkeypatch, input_file):
     monkeypatch.delenv("KAGGLE_USERNAME", raising=False)
     monkeypatch.delenv("KAGGLE_KEY", raising=False)
+    monkeypatch.delenv("KAGGLE_API_TOKEN", raising=False)
     with pytest.raises(SystemExit) as exc:
         run_one.main([str(input_file)])
     assert "KAGGLE_USERNAME" in str(exc.value)

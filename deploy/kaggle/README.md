@@ -4,10 +4,12 @@ Push thủ công worker img2text lên Kaggle: kernel GPU (notebook) + dataset ch
 
 ## 1. Lấy API key
 
-kaggle.com → Profile → Settings → API → Create New Token → tải `kaggle.json`.
+**Khuyến nghị (kaggle 2.x)**: kaggle.com → `kaggle.com/settings/api` → Generate New Token → dùng `KAGGLE_API_TOKEN` (kaggle package tự authenticate từ env — blob upload legacy username+key bị 401).
 
 ```bash
-export KAGGLE_USERNAME=<username>
+export KAGGLE_USERNAME=<username>          # OWNER id trong metadata (bắt buộc)
+export KAGGLE_API_TOKEN=<token>            # khuyến nghị — kaggle 2.x primary
+# hoặc legacy:
 export KAGGLE_KEY=<key>
 ```
 
@@ -50,11 +52,12 @@ Script làm gì: copy `worker/pipeline.py` + `worker/verdict.py` → `deploy/kag
 
 ## 6. Test nhanh (không cần backend public)
 
-Batch mode (Plan K3): client đẩy input → kernel chạy → client tự lấy output. **Không cần backend public, không cần Secrets (`BASE_URL`/`RUNNER_KEY`) mode này** — chỉ cần env `KAGGLE_USERNAME`/`KAGGLE_KEY`.
+Batch mode (Plan K3): client đẩy input → kernel chạy → client tự lấy output. **Không cần backend public, không cần Secrets (`BASE_URL`/`RUNNER_KEY`) mode này** — auth khuyên `KAGGLE_API_TOKEN` (kèm `KAGGLE_USERNAME` cho OWNER metadata; token path tự authenticate, username chỉ để đặt id trong metadata), hoặc legacy `KAGGLE_USERNAME`+`KAGGLE_KEY`.
 
 ```bash
 export KAGGLE_USERNAME=<username>
-export KAGGLE_KEY=<key>
+export KAGGLE_API_TOKEN=<token>            # khuyến nghị (kaggle 2.x)
+# hoặc legacy: export KAGGLE_KEY=<key>
 python deploy/kaggle/run_one.py ./TA.jpg                    # đẩy input → run kernel → lấy output
 python deploy/kaggle/run_one.py ./TA.pdf --timeout 3600 --poll 20 --out ./out
 python deploy/kaggle/run_one.py ./TA.jpg --kernel-ref alice/my-batch --accelerator NvidiaTeslaT4

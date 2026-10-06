@@ -118,9 +118,33 @@ def test_build_dataset_metadata_coerces_string_licenses(tmp_path, monkeypatch):
 def test_missing_env(monkeypatch):
     monkeypatch.delenv("KAGGLE_USERNAME", raising=False)
     monkeypatch.delenv("KAGGLE_KEY", raising=False)
+    monkeypatch.delenv("KAGGLE_API_TOKEN", raising=False)
     with pytest.raises(SystemExit) as exc:
         push.main(["--skip-dataset"])
     assert "KAGGLE_USERNAME" in str(exc.value)
+
+def test_load_env_token_only_ok(monkeypatch):
+    # kaggle 2.x primary: username + KAGGLE_API_TOKEN (no legacy key)
+    monkeypatch.setenv("KAGGLE_USERNAME", "alice")
+    monkeypatch.delenv("KAGGLE_KEY", raising=False)
+    monkeypatch.setenv("KAGGLE_API_TOKEN", "KGAT_abc123")
+    assert push.load_env() == ("alice", "")
+
+def test_load_env_username_plus_legacy_key_ok(monkeypatch):
+    monkeypatch.setenv("KAGGLE_USERNAME", "alice")
+    monkeypatch.setenv("KAGGLE_KEY", "k123")
+    monkeypatch.delenv("KAGGLE_API_TOKEN", raising=False)
+    assert push.load_env() == ("alice", "k123")
+
+def test_load_env_username_alone_exits_naming_token(monkeypatch):
+    monkeypatch.setenv("KAGGLE_USERNAME", "alice")
+    monkeypatch.delenv("KAGGLE_KEY", raising=False)
+    monkeypatch.delenv("KAGGLE_API_TOKEN", raising=False)
+    with pytest.raises(SystemExit) as exc:
+        push.load_env()
+    msg = str(exc.value)
+    assert "KAGGLE_API_TOKEN" in msg
+    assert "KAGGLE_USERNAME" in msg
 
 def test_skip_dataset(fake_api):
     push.main(["--skip-dataset"])

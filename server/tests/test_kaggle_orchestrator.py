@@ -201,6 +201,20 @@ async def test_disabled_skips_without_kaggle_import(monkeypatch):
     assert imported == []
     assert StubKaggleApi.instances == []
 
+def test_enabled_credential_matrix(monkeypatch):
+    # kaggle 2.x: KAGGLE_API_TOKEN replaces legacy KAGGLE_KEY; username
+    # (OWNER metadata id) + kernel_ref stay required either way.
+    monkeypatch.setattr(settings, "kaggle_username", "testuser")
+    monkeypatch.setattr(settings, "kaggle_kernel_ref", "testuser/img2text-worker")
+    monkeypatch.setattr(settings, "kaggle_api_token", "")
+    monkeypatch.setattr(settings, "kaggle_key", "testkey")
+    assert settings.kaggle_enabled is True  # legacy key only
+    monkeypatch.setattr(settings, "kaggle_key", "")
+    monkeypatch.setattr(settings, "kaggle_api_token", "KGAT_x")
+    assert settings.kaggle_enabled is True  # token only (kaggle 2.x primary)
+    monkeypatch.setattr(settings, "kaggle_api_token", "")
+    assert settings.kaggle_enabled is False  # no creds → feature off
+
 
 async def test_push_error_returns_false_logs_warning(
     kaggle_env, seed_job, caplog

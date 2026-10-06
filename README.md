@@ -229,12 +229,13 @@ rồi thoát (platform cap ~12h); server tái kích khi queue còn job.
 `deploy/.env.dev.example`):
 
 ```bash
-KAGGLE_USERNAME=<kaggle username>        # kaggle.com → Settings → API
-KAGGLE_KEY=<api key>
+KAGGLE_USERNAME=<kaggle username>        # OWNER id trong metadata (bắt buộc)
+KAGGLE_API_TOKEN=<token>                 # khuyên — kaggle 2.x primary (kaggle.com/settings/api)
+KAGGLE_KEY=<api key>                     # legacy fallback khi không có token
 KAGGLE_KERNEL_REF=<user>/img2text-worker # ref kernel đã tạo 1 lần
 ```
 
-Không set đủ 3 key = feature tự tắt, server **không import** `kaggle`
+Không set đủ `KAGGLE_USERNAME` + (`KAGGLE_KEY` **hoặc** `KAGGLE_API_TOKEN`) + `KAGGLE_KERNEL_REF` = feature tự tắt, server **không import** `kaggle`
 (thiếu package cũng không crash — orchestrator disabled + warning).
 
 **Secrets 1 lần** (trước khi kernel chạy): kaggle.com → Add-ons → Secrets:

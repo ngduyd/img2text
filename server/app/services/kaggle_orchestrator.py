@@ -44,7 +44,12 @@ _last_spawn = 0.0
 
 
 def _api():
-    """Lazy kaggle import; missing package → None (disabled, no crash)."""
+    """Lazy kaggle import; missing package → None (disabled, no crash).
+
+    Auth is the kaggle package's own: authenticate() reads env directly
+    (KAGGLE_API_TOKEN first, legacy KAGGLE_USERNAME/KAGGLE_KEY fallback)
+    — config comes from the same process env, so nothing to wire here.
+    """
     try:
         from kaggle.api.kaggle_api_extended import KaggleApi
     except ImportError:

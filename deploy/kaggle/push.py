@@ -52,12 +52,19 @@ MOUNT_PATH = f"/kaggle/input/{DATASET_SLUG}"
 
 
 def load_env():
+    """Kaggle 2.x: KAGGLE_API_TOKEN (Bearer KGAT_, kaggle.com/settings/api)
+    is the primary auth — kaggle's authenticate() reads the env var itself;
+    legacy KAGGLE_USERNAME+KAGGLE_KEY still accepted. Username is always
+    required (OWNER id in dataset/kernel metadata). Returns (user, key_or_empty)."""
     user = os.environ.get("KAGGLE_USERNAME", "").strip()
     key = os.environ.get("KAGGLE_KEY", "").strip()
-    if not user or not key:
+    token = os.environ.get("KAGGLE_API_TOKEN", "").strip()
+    if not user or not (key or token):
         sys.exit(
-            "error: set KAGGLE_USERNAME and KAGGLE_KEY env vars "
-            "(kaggle.com Settings → API). See deploy/kaggle/README.md."
+            "error: set KAGGLE_USERNAME + KAGGLE_API_TOKEN "
+            "(khuyến nghị, kaggle.com/settings/api) hoặc "
+            "KAGGLE_USERNAME+KAGGLE_KEY legacy. "
+            "See deploy/kaggle/README.md."
         )
     return user, key
 
