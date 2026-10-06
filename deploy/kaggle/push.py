@@ -12,6 +12,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import kcompat
+
 DEPLOY_DIR = Path(__file__).resolve().parent
 REPO_ROOT = DEPLOY_DIR.parent.parent
 FILES_DIR = DEPLOY_DIR / "files"
@@ -128,12 +130,14 @@ def push_dataset(api, owner, files_stage):
     ref = f"{owner}/{DATASET_SLUG}"
     print(f"dataset: create {ref}")
     try:
-        api.datasets_create_with_files(upload_folder=str(files_stage))
+        kcompat.api_create_dataset(api, str(files_stage))
         print(f"dataset created: {ref}")
     except Exception as exc:
         print(f"dataset create failed or already exists ({exc}); bumping version")
         try:
-            api.datasets_create_version(ref, version_note="push.py manual")
+            # new API versions FROM the staged folder (uploads files); legacy
+            # takes (owner, slug) — kcompat splits the ref
+            kcompat.api_version_dataset(api, files_stage, ref, "push.py manual")
             print(f"dataset version bumped: {ref}")
         except Exception as exc2:
             sys.exit(

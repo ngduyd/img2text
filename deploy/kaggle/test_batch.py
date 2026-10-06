@@ -19,11 +19,15 @@ WORKER_REF = "alice/img2text-worker-files"
 BATCH_NB = DEPLOY_DIR / "kernel" / "img2text_batch.ipynb"
 
 
-class FakeApi:
+class _CoreApi:
+    """Shared bookkeeping — subclasses expose ONE API generation of names;
+    the parametrized fake_api fixture runs every test on both shapes."""
+
     def __init__(self):
         self.created = set()
         self.create_calls = []   # (ref, {filename: bytes}) snapshot at call time
         self.delete_calls = []
+        self.list_calls = []     # search= args: the exists check, real method
         self.kernel_push_calls = []
         self.status_calls = []
         self.output_calls = []
@@ -32,7 +36,11 @@ class FakeApi:
     def authenticate(self):
         pass
 
-    def datasets_create_with_files(self, upload_folder=None, **kwargs):
+    def _list(self, search=None):
+        self.list_calls.append(search)
+        return [{"ref": ref} for ref in sorted(self.created)]
+
+    def _create(self, upload_folder):
         stage = Path(upload_folder)
         meta = json.loads((stage / "dataset-metadata.json").read_text())
         ref = meta["id"]
@@ -46,9 +54,10 @@ class FakeApi:
             raise RuntimeError("dataset already exists")
         self.created.add(ref)
 
-    def datasets_delete(self, ref):
+    def _delete(self, ref):
         self.delete_calls.append(ref)
         self.created.discard(ref)
+        return True
 
     def kernels_push(self, folder, **kwargs):
         stage = Path(folder)
@@ -64,10 +73,33 @@ class FakeApi:
     def kernels_output(self, ref, path=None, quiet=None, **kwargs):
         self.output_calls.append((ref, path, quiet))
 
+class FakeApi(_CoreApi):
+    """kaggle 2.2.4 method names (the real package installed)."""
 
-@pytest.fixture
-def fake_api(monkeypatch):
-    api = FakeApi()
+    def dataset_create_new(self, folder, **kwargs):
+        self._create(folder)
+
+    def dataset_delete(self, owner_slug, dataset_slug, no_confirm=False):
+        return self._delete(f"{owner_slug}/{dataset_slug}")
+
+    def dataset_list(self, search=None, **kwargs):
+        return self._list(search)
+
+class LegacyFakeApi(_CoreApi):
+    """Pre-rename datasets_* names — kcompat legacy fallback branch."""
+
+    def datasets_create_with_files(self, upload_folder=None, **kwargs):
+        self._create(upload_folder)
+
+    def datasets_delete(self, ref):
+        return self._delete(ref)
+
+    def dataset_list(self, search=None, **kwargs):
+        return self._list(search)
+
+@pytest.fixture(params=[FakeApi, LegacyFakeApi])
+def fake_api(monkeypatch, request):
+    api = request.param()
     module = types.ModuleType("kaggle")
     module.KaggleApi = lambda: api
     monkeypatch.setitem(sys.modules, "kaggle", module)
@@ -100,7 +132,7 @@ def test_directory_input_rejected(fake_api, tmp_path):
 
 
 def test_dataset_create_then_delete_recreate(fake_api, input_file):
-    # run 1: both datasets new → create (no delete)
+    # run 1: both datasets new → exists check False → create (no delete)
     run_one.main([str(input_file)])
     assert [ref for ref, _ in fake_api.create_calls] == [WORKER_REF, INPUT_REF]
     assert fake_api.delete_calls == []
@@ -108,9 +140,27 @@ def test_dataset_create_then_delete_recreate(fake_api, input_file):
     run_one.main([str(input_file)])
     assert fake_api.delete_calls == [INPUT_REF]
     assert [ref for ref, _ in fake_api.create_calls] == [
-        WORKER_REF, INPUT_REF,          # run 1
-        WORKER_REF, INPUT_REF, INPUT_REF,  # run 2: worker skip-attempt, input attempt + recreate
+        WORKER_REF, INPUT_REF,   # run 1
+        INPUT_REF,               # run 2: worker exists → kept, input recreated
     ]
+
+def test_exists_check_uses_dataset_list_method(fake_api, input_file):
+    # the exists path must call a REAL list method — never a swallowed
+    # AttributeError from the renamed create API
+    run_one.main([str(input_file)])
+    # dataset_list(search=slug) — real method, no owner prefix in search
+    assert fake_api.list_calls == [
+        "img2text-worker-files",
+        "img2text-input",
+    ]
+
+def test_exists_check_missing_method_fails_clearly(fake_api, input_file, monkeypatch):
+    # hasattr check must fail → clear RuntimeError → SystemExit, no create
+    monkeypatch.delattr(type(fake_api), "dataset_list")
+    with pytest.raises(SystemExit) as exc:
+        run_one.main([str(input_file)])
+    assert "dataset_list" in str(exc.value)
+    assert fake_api.create_calls == []
 
 
 def test_second_run_uploads_fresh_input(fake_api, input_file):
@@ -120,11 +170,10 @@ def test_second_run_uploads_fresh_input(fake_api, input_file):
     file_b.replace(input_file)          # run 2 serves a different file
     run_one.main([str(input_file)])
     input_creates = [files for ref, files in fake_api.create_calls if ref == INPUT_REF]
-    # 2nd run: first attempt (stale-ref guard) + post-delete recreate, both staged with B
-    assert len(input_creates) == 3
+    # 1st run: create with A; 2nd run: exists → delete + recreate with B
+    assert len(input_creates) == 2
     assert input_creates[0]["a.jpg"] != b"CONTENT-B"   # run 1: file A
-    assert input_creates[1]["a.jpg"] == b"CONTENT-B"   # run 2 attempt: file B staged
-    assert input_creates[2]["a.jpg"] == b"CONTENT-B"   # run 2 recreate: file B staged
+    assert input_creates[1]["a.jpg"] == b"CONTENT-B"   # run 2 recreate: file B
     assert INPUT_REF in fake_api.delete_calls
 
 

@@ -18,6 +18,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import kcompat
 import push  # noqa: F401  # sibling module: load_env + _sub_owner patterns
 
 DEPLOY_DIR = Path(__file__).resolve().parent
@@ -67,36 +68,43 @@ def stage_worker(owner: str, stage: Path):
     _write_meta(meta, stage / "dataset-metadata.json")
 
 def ensure_dataset(api, owner: str, slug: str, stage: Path, refresh: bool = False):
-    """Dataset absent → datasets_create_with_files.
+    """Dataset absent → kcompat create (kaggle 2.2.4 dataset_create_new).
 
-    refresh=True (input dataset): exists → DELETE + recreate with the staged
-    folder. ponytail: push.py's version-bump path calls datasets_create_version
-    with NO files (re-run would serve the previous file — stale), and the
-    kaggle package's signature can't be verified offline — delete+recreate is
-    the unambiguous upload path.
+    Exists check uses a REAL list method (kcompat.api_dataset_exists,
+    hasattr-verified) — the old code try/except-ed the CREATE call and
+    swallowed any exception (incl. AttributeError from the renamed API)
+    as "dataset exists".
+
+    refresh=True (input dataset): exists → kcompat DELETE + recreate with
+    the staged folder (both kcompat paths upload files; a bare version bump
+    would serve the previous file — stale).
     refresh=False (worker-files): exists → keep as-is (shared with K2;
     notebook falls back to the root layout if worker/ is missing).
     """
     ref = f"{owner}/{slug}"
     try:
-        api.datasets_create_with_files(upload_folder=str(stage))
-        print(f"dataset created: {ref}")
-        return
+        exists = kcompat.api_dataset_exists(api, ref)
     except Exception as exc:
-        if not refresh:
-            print(f"dataset exists ({exc}); keeping: {ref}")
-            return
-        print(f"dataset exists ({exc}); delete+recreate: {ref}")
-        first_exc = exc
+        sys.exit(f"error: dataset {ref}: exists check failed ({exc})")
+    if exists and not refresh:
+        print(f"dataset exists; keeping: {ref}")
+        return
+    if exists:
+        print(f"dataset exists; delete+recreate: {ref}")
+        try:
+            deleted = kcompat.api_delete_dataset(api, ref)
+        except Exception as exc:
+            sys.exit(f"error: dataset {ref}: delete failed ({exc})")
+        if not deleted:
+            sys.exit(
+                f"error: dataset {ref}: delete unavailable "
+                "(kaggle package has no delete API) — cannot replace"
+            )
     try:
-        api.datasets_delete(ref)
-        api.datasets_create_with_files(upload_folder=str(stage))
-        print(f"dataset recreated with fresh files: {ref}")
-    except Exception as exc2:
-        sys.exit(
-            f"error: dataset {ref}: initial create failed ({first_exc}); "
-            f"delete+recreate failed ({exc2})"
-        )
+        kcompat.api_create_dataset(api, str(stage))
+        print(f"dataset created: {ref}")
+    except Exception as exc:
+        sys.exit(f"error: dataset {ref}: create failed ({exc})")
 
 def build_kernel_stage(owner: str, accelerator: str, kernel_ref: str, stage: Path):
     """Copy batch notebook + write kernel-metadata.json (OWNER substituted)."""

@@ -46,11 +46,13 @@ class StubKaggleApi:
     def kernels_status(self, ref):
         return {"status": StubKaggleApi.status_result}
 
-    def datasets_create_version(self, ref, version_note=None):
-        self.calls.append(("datasets_create_version", ref))
+    def dataset_create_version(self, folder, version_notes=None):
+        # kaggle 2.2.4: bump uploads FROM the folder — verify metadata at call time
+        meta = json.loads((Path(folder) / "dataset-metadata.json").read_text())
+        self.calls.append(("dataset_create_version", folder, meta["id"]))
         if StubKaggleApi.bump_error is not None:
             raise StubKaggleApi.bump_error
-        return {"ref": ref}
+        return {"folder": folder}
 
     def kernels_push(self, path, **kwargs):
         self.calls.append(("kernels_push", path))
@@ -114,11 +116,54 @@ async def test_spawn_when_kernel_complete_and_queue_has_jobs(kaggle_env, seed_jo
     # P2: plain push — metadata carries accelerator; timeout kw inert (ceiling = platform)
     assert kwargs == {}
     assert (Path(stage_dir) / "kernel-metadata.json").is_file()
-    # P2: dataset version bump BEFORE push (kernel runs dataset code, not kernel dir)
+    # P2: dataset version bump BEFORE push (kernel runs dataset code, not kernel dir);
+    # the bump receives the STAGED FOLDER (worker files + dataset-metadata w/ id)
     assert api.calls == [
-        ("datasets_create_version", "testuser/img2text-worker-files"),
+        (
+            "dataset_create_version",
+            str(settings.kaggle_stage_dir),
+            "testuser/img2text-worker-files",
+        ),
         ("kernels_push", str(settings.kaggle_stage_dir)),
     ]
+
+class LegacyStubKaggleApi:
+    """Old-name API shape: datasets_create_version(owner, slug, version_note)."""
+
+    def __init__(self) -> None:
+        self.calls: list = []
+        self.pushed: list = []
+
+    def authenticate(self) -> None:
+        pass
+
+    def kernels_status(self, ref):
+        return {"status": "complete"}
+
+    def datasets_create_version(self, owner, slug, version_note=None):
+        self.calls.append(("datasets_create_version", owner, slug, version_note))
+        return {"ref": f"{owner}/{slug}"}
+
+    def kernels_push(self, path, **kwargs):
+        self.calls.append(("kernels_push", path))
+        self.pushed.append((path, kwargs))
+        return {"ref": path}
+
+async def test_legacy_bump_api_branch(kaggle_env, seed_job, monkeypatch):
+    # hasattr dispatch: no dataset_create_version → datasets_create_version(owner, slug)
+    legacy = LegacyStubKaggleApi()
+    monkeypatch.setattr(orch, "_api", lambda: legacy)
+    assert await orch.ensure_worker(SessionLocal) is True
+    assert legacy.calls[0][:3] == (
+        "datasets_create_version",
+        "testuser",
+        "img2text-worker-files",
+    )
+    assert legacy.calls[0][3].startswith("orchestrator spawn ")
+    assert legacy.calls[1] == (
+        "kernels_push",
+        str(settings.kaggle_stage_dir),
+    )  # order bump → push kept
 
 
 async def test_datasets_bump_failure_blocks_spawn(kaggle_env, seed_job):
@@ -126,7 +171,7 @@ async def test_datasets_bump_failure_blocks_spawn(kaggle_env, seed_job):
     StubKaggleApi.bump_error = RuntimeError("dataset missing")
     assert await orch.ensure_worker(SessionLocal) is False
     assert _api().pushed == []
-    assert [c[0] for c in _api().calls] == ["datasets_create_version"]
+    assert [c[0] for c in _api().calls] == ["dataset_create_version"]
 
 
 async def test_skip_when_kernel_running(kaggle_env, seed_job):
@@ -193,6 +238,9 @@ async def test_stage_kernel_substitutes_owner_ref_accelerator(
         "img2text_worker.ipynb",
     ):
         assert (stage_dir / name).is_file(), name
+    # staged dataset-metadata.json carries the id the version bump needs (kaggle 2.2.4)
+    ds_meta = json.loads((stage_dir / "dataset-metadata.json").read_text())
+    assert ds_meta["id"] == "testuser/img2text-worker-files"
     # source templates untouched (deploy/kaggle not modified)
     template = (DEPLOY_KAGGLE / "kernel" / "kernel-metadata.json").read_text(
         encoding="utf-8"

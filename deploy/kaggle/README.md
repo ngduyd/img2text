@@ -34,7 +34,7 @@ python deploy/kaggle/push.py --skip-dataset  # bỏ qua dataset (chỉ khi datas
 python deploy/kaggle/push.py --timeout 10800 --accelerator NvidiaTeslaT4
 ```
 
-Script làm gì: copy `worker/pipeline.py` + `worker/verdict.py` → `deploy/kaggle/files/`; điền `OWNER` = `KAGGLE_USERNAME` vào 2 metadata (build vào thư mục tạm, không đè template); `datasets_create_with_files` (dataset đã tồn tại → version mới); `kernels_push`; poll `kernels_status` mỗi 30s tới `complete`/`failed`.
+Script làm gì: copy `worker/pipeline.py` + `worker/verdict.py` → `deploy/kaggle/files/`; điền `OWNER` = `KAGGLE_USERNAME` vào 2 metadata (build vào thư mục tạm, không đè template); `kcompat.api_create_dataset` (`dataset_create_new`, dataset đã tồn tại → version mới từ folder staged); `kernels_push`; poll `kernels_status` mỗi 30s tới `complete`/`failed`.
 
 ## 4. Status / output
 
@@ -43,6 +43,7 @@ Script làm gì: copy `worker/pipeline.py` + `worker/verdict.py` → `deploy/kag
 
 ## 5. Lưu ý
 
+- **kaggle package**: `kaggle>=1.6` — mọi call dataset đi qua `deploy/kaggle/kcompat.py` (hasattr dispatch, hỗ trợ cả 2 thế hệ API: `dataset_create_new`/`dataset_create_version`/`dataset_delete` mới và `datasets_*` cũ); thiếu method → lỗi rõ `kaggle package: <name> not found — cần kaggle>=1.6`.
 - **Internet phải bật** (`enable_internet: true`) và `BASE_URL` phải **public** — Kaggle không tới được localhost.
 - Quota GPU free ~**30h/tuần**. Accelerator ids: `NvidiaTeslaT4` (mặc định), `NvidiaTeslaP100`, `NvidiaTeslaK80`; CPU dùng `--accelerator CPU`.
 - Kaggle↔cloud storage sync để production sau (non-goal Plan K).
@@ -60,7 +61,7 @@ python deploy/kaggle/run_one.py ./TA.jpg --kernel-ref alice/my-batch --accelerat
 ```
 
 Flow:
-1. **Input**: copy file vào temp stage + `dataset-metadata.json` (`img2text-input`) → dataset chưa có → `datasets_create_with_files`; **đã có → `datasets_delete` + create lại với staged folder** (đảm bảo re-run upload file mới nhất, không stale — version bump không upload files). Dataset `img2text-worker-files`: có thì giữ nguyên (dùng chung K2), chưa có → create.
+1. **Input**: copy file vào temp stage + `dataset-metadata.json` (`img2text-input`) → check tồn tại qua `kcompat.api_dataset_exists` (`dataset_list` — method thật, không nuốt AttributeError); chưa có → `kcompat.api_create_dataset`; **đã có → `kcompat.api_delete_dataset` + create lại với staged folder** — **dataset input bị thay thế mỗi run** (đảm bảo re-run upload file mới nhất, không stale — version bump không upload files). Dataset `img2text-worker-files`: có thì giữ nguyên (dùng chung K2), chưa có → create.
 2. **Kernel**: copy `kernel/img2text_batch.ipynb` + `kernel-metadata.json` (`dataset_sources`: worker-files + img2text-input) → `kernels_push`.
 3. **Poll** `kernels_status` mỗi `--poll` giây: `complete` → lấy output; `failed` → exit 1; timeout → exit 2.
 4. **Output**: `kernels_output` vào thư mục mới `./out/<timestamp>/` (không lẫn output cũ) — có `result.json` (regions/page/markdown) + `result.md`.

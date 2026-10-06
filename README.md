@@ -251,7 +251,10 @@ ceiling note (kernels_push timeout kw không đáng tin; session cap do platform
 
 **Production note**: server cần egress internet + package `kaggle`
 (Dockerfile đã `pip install "/app/server[kaggle]"`; server thường thì
-`pip install -e 'server[kaggle]'`). Kernel Secrets đã set 1 lần như trên.
+`pip install -e 'server[kaggle]'`). `kaggle>=1.6` — kaggle 2.2.x đổi tên
+dataset API: deploy đi qua `deploy/kaggle/kcompat.py`, server orchestrator
+dùng hasattr dispatch inline (`_bump_dataset_version`), cả 2 thế hệ API
+đều chạy. Kernel Secrets đã set 1 lần như trên.
 Sync Kaggle↔cloud-storage cho production là follow-up riêng.
 
 ## Docs

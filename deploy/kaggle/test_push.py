@@ -13,22 +13,26 @@ import push  # noqa: E402
 KERNEL_REF = "alice/img2text-worker"
 MOUNT_PATH = 'sys.path.insert(0, "/kaggle/input/img2text-worker-files")'
 
+class _CoreApi:
+    """Shared bookkeeping — subclasses expose ONE API generation of names
+    so kcompat dispatch (new vs legacy) is exercised end-to-end."""
 
-class FakeApi:
     def __init__(self):
-        self.dataset_create_calls = []
-        self.dataset_version_calls = []
+        self.dataset_create_calls = []   # dataset id read from staged metadata
+        self.dataset_version_calls = []  # (dataset id, version notes)
         self.kernel_push_calls = []
         self.kernel_status_calls = []
 
     def authenticate(self):
         pass
 
-    def datasets_create_with_files(self, upload_folder=None, quiet=None, convert=None):
-        self.dataset_create_calls.append(upload_folder)
+    def _create(self, folder):
+        meta = json.loads((Path(folder) / "dataset-metadata.json").read_text())
+        self.dataset_create_calls.append(meta["id"])
 
-    def datasets_create_version(self, ref, version_note="", quiet=None, force=False):
-        self.dataset_version_calls.append(ref)
+    def _bump(self, folder, notes):
+        meta = json.loads((Path(folder) / "dataset-metadata.json").read_text())
+        self.dataset_version_calls.append((meta["id"], notes))
 
     def kernels_push(self, kernel_path, **kwargs):
         built_meta = (Path(kernel_path) / "kernel-metadata.json").read_text()
@@ -38,10 +42,26 @@ class FakeApi:
         self.kernel_status_calls.append(ref)
         return {"status": "complete"}
 
+class FakeApi(_CoreApi):
+    """kaggle 2.2.4 method names (the real package installed)."""
 
-@pytest.fixture
-def fake_api(monkeypatch):
-    api = FakeApi()
+    def dataset_create_new(self, folder, **kwargs):
+        self._create(folder)
+
+    def dataset_create_version(self, folder, version_notes=""):
+        self._bump(folder, version_notes)
+
+class LegacyFakeApi(_CoreApi):
+    """Pre-rename datasets_* names — kcompat legacy fallback branch."""
+
+    def datasets_create_with_files(self, upload_folder=None, **kwargs):
+        self._create(upload_folder)
+
+    def datasets_create_version(self, owner, slug, version_note=""):
+        # legacy call gets NO folder — record the ref kcompat split
+        self.dataset_version_calls.append((f"{owner}/{slug}", version_note))
+
+def _install(monkeypatch, api):
     module = types.ModuleType("kaggle")
     module.KaggleApi = lambda: api
     monkeypatch.setitem(sys.modules, "kaggle", module)
@@ -49,6 +69,9 @@ def fake_api(monkeypatch):
     monkeypatch.setenv("KAGGLE_KEY", "k123")
     return api
 
+@pytest.fixture(params=[FakeApi, LegacyFakeApi])
+def fake_api(monkeypatch, request):
+    return _install(monkeypatch, request.param())
 
 def test_kernel_metadata_owner_substitution(tmp_path):
     out = tmp_path / "kernel-metadata.json"
@@ -65,7 +88,6 @@ def test_kernel_metadata_owner_substitution(tmp_path):
     assert tpl["id"] == "OWNER/img2text-worker"
     assert tpl["dataset_sources"] == ["OWNER/img2text-worker-files"]
 
-
 def test_dataset_metadata_owner_substitution(tmp_path):
     out = tmp_path / "dataset-metadata.json"
     push.build_dataset_metadata("alice", out)
@@ -76,14 +98,12 @@ def test_dataset_metadata_owner_substitution(tmp_path):
     assert "id" not in tpl
     assert tpl["title"] == "img2text-worker-files"
 
-
 def test_missing_env(monkeypatch):
     monkeypatch.delenv("KAGGLE_USERNAME", raising=False)
     monkeypatch.delenv("KAGGLE_KEY", raising=False)
     with pytest.raises(SystemExit) as exc:
         push.main(["--skip-dataset"])
     assert "KAGGLE_USERNAME" in str(exc.value)
-
 
 def test_skip_dataset(fake_api):
     push.main(["--skip-dataset"])
@@ -95,16 +115,23 @@ def test_skip_dataset(fake_api):
     assert KERNEL_REF in built
     assert fake_api.kernel_status_calls == [KERNEL_REF]
 
-
 def test_dataset_create_then_version_bump(fake_api):
-    def boom(upload_folder=None, quiet=None, convert=None):
+    def boom(*args, **kwargs):
         raise RuntimeError("dataset already exists")
 
-    fake_api.datasets_create_with_files = boom
+    # patch the create method OF THE ACTIVE API GENERATION
+    name = (
+        "dataset_create_new"
+        if isinstance(fake_api, FakeApi)
+        else "datasets_create_with_files"
+    )
+    setattr(fake_api, name, boom)
     push.main([])
     assert fake_api.dataset_create_calls == []
-    assert fake_api.dataset_version_calls == ["alice/img2text-worker-files"]
-
+    # version bump receives the STAGED FOLDER (files + dataset-metadata.json)
+    assert fake_api.dataset_version_calls == [
+        ("alice/img2text-worker-files", "push.py manual")
+    ]
 
 def test_notebook_builder(tmp_path):
     out = tmp_path / "img2text_worker.ipynb"

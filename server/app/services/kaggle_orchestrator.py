@@ -7,9 +7,13 @@ next spawn is a new run of the same kernel. Manual push (deploy/kaggle/
 push.py, Plan K) only initialises dataset + kernel + Secrets once.
 
 Flow per pass: disabled → skip; kernel active → skip; queued < min_queue
-→ skip; spawn-gap → skip; stage kernel dir → datasets_create_version (kernel
+→ skip; spawn-gap → skip; stage kernel dir → dataset version bump (kernel
 executes DATASET code, not kernel-dir code — bump BEFORE push, fail → skip,
-never spawn stale code) → kernels_push → record spawn time.
+never spawn stale code) → kernels_push → record spawn time. The bump sends
+the STAGED FOLDER (worker files + dataset-metadata.json) so kaggle 2.2.4's
+folder-based dataset_create_version uploads fresh files — kaggle>=2 renamed
+the API, dispatch is hasattr-based inline in _bump_dataset_version (server
+cannot import deploy/kaggle/kcompat).
 
 ponytail: async design — kaggle package is sync/blocking, so its calls run
 via asyncio.to_thread; DB count uses the injected async session_factory
@@ -106,7 +110,31 @@ def _stage_kernel() -> Path:
     (dest / "kernel-metadata.json").write_text(
         json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
+    # dataset-metadata.json: the staged dir doubles as the dataset-upload
+    # folder for the pre-push version bump — kaggle 2.2.4 requires "id" there
+    ds_meta = json.loads(
+        (src / "files" / "dataset-metadata.json").read_text(encoding="utf-8")
+    )
+    ds_meta["id"] = f"{owner}/{DATASET_SLUG}"
+    (dest / "dataset-metadata.json").write_text(
+        json.dumps(ds_meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     return dest
+
+def _bump_dataset_version(api, owner, folder, notes):
+    """Dataset version bump — kaggle 2.2.4 renamed the API (hasattr dispatch).
+
+    new: dataset_create_version(folder, version_notes) uploads from the
+    staged folder; legacy: datasets_create_version(owner, slug, version_note).
+    """
+    if hasattr(api, "dataset_create_version"):
+        return api.dataset_create_version(str(folder), notes)
+    if hasattr(api, "datasets_create_version"):
+        slug = DATASET_SLUG
+        return api.datasets_create_version(owner, slug, version_note=notes)
+    raise RuntimeError(
+        "kaggle package: dataset_create_version not found — cần kaggle>=1.6"
+    )
 
 
 async def _count_queued(session_factory) -> int:
@@ -157,11 +185,14 @@ async def ensure_worker(session_factory) -> bool:
         owner = settings.kaggle_username
         # P2 stale-code guard: kernel imports pipeline from the DATASET mount,
         # so bump the dataset version BEFORE pushing the kernel; bump failure
-        # skips the spawn (pushing would run stale code).
+        # skips the spawn (pushing would run stale code). The staged folder
+        # carries worker files + dataset-metadata.json (id set in _stage_kernel).
         await asyncio.to_thread(
-            api.datasets_create_version,
-            f"{owner}/{DATASET_SLUG}",
-            version_note=f"orchestrator spawn {int(time.time())}",
+            _bump_dataset_version,
+            api,
+            owner,
+            stage_dir,
+            f"orchestrator spawn {int(time.time())}",
         )
         # P2: plain push — kernel-metadata.json carries the accelerator;
         # kernels_push timeout kw is unreliable (old packages lack push kwargs)
