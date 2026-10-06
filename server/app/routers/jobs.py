@@ -264,6 +264,46 @@ async def get_job_file(
     url = await storage.presign_get(job.storage_key, PRESIGN_EXPIRES_SECONDS)
     return {"url": url}
 
+# --- Plan V (V2): same-origin original-file download (presign unreachable) ---
+
+DOWNLOAD_CONTENT_TYPES = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "webp": "image/webp",
+    "pdf": "application/pdf",
+}
+
+@router.get("/api/jobs/{id}/file/download")
+async def download_job_file(
+    id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> Response:
+    """Stream original bytes same-origin (Plan V V2; binding spec).
+
+    Presigned localhost:4566 URLs unreachable via VSCode port-forward.
+    storage_key already carries the "uploads/" prefix (upload_job builds
+    the full key). Keys are hash.ext (ASCII-only) → job-{id}.{ext} filename;
+    non-ascii never occurs, so no RFC 5987 filename* needed.
+    """
+    job = await _job_or_403(session, id, user)
+    if not job.storage_key:  # pre-upload job row
+        raise HTTPException(status_code=404, detail="Chưa có file.")
+    try:
+        data = await storage.get(job.storage_key)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Không tìm thấy file.")
+    ext = job.storage_key.rsplit(".", 1)[-1].lower() if "." in job.storage_key else ""
+    media_type = DOWNLOAD_CONTENT_TYPES.get(ext, "application/octet-stream")
+    filename = f"job-{id}.{ext}" if ext else f"job-{id}"
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
 # --- Owner retry: POST /api/jobs/{id}/retry (Plan D: no stale artifacts) ---
 
 @router.post("/api/jobs/{id}/retry")
