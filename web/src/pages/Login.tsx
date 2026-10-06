@@ -21,7 +21,7 @@ export default function Login() {
     try {
       await api.login(email, password);
       toast.success("Đã đăng nhập.");
-      navigate("/"); // trang chủ (landing) — user intent: sau đăng nhập về "/"
+      navigate("/jobs"); // vào app list sau đăng nhập; trang chủ "/" vẫn truy cập được tự do qua nav
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Đã xảy ra lỗi.");
       toast.error(mapApiError(err));

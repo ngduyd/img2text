@@ -58,8 +58,8 @@ it("login button exists and submits credentials", async () => {
   await userEvent.click(screen.getByTestId("btn-login"));
   expect(screen.getByTestId("btn-login")).toBeInTheDocument();
   expect(api.login).toHaveBeenCalledWith("u@x.io", "secret123");
-  // Post-login destination: trang chủ ("/") — landing is the home page for every state.
-  expect(mockNavigate).toHaveBeenCalledWith("/");
+  // Post-login destination: /jobs (app list). Trang chủ "/" luôn truy cập được (nav brand).
+  expect(mockNavigate).toHaveBeenCalledWith("/jobs");
 });
 
 it("login shows server detail error", async () => {
