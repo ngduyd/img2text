@@ -1,7 +1,7 @@
 import DOMPurify from "dompurify";
 import { BarChart3, FileDown, FileOutput, FileText, Link } from "lucide-react";
 import * as mammoth from "mammoth";
-import { useState, type ChangeEvent } from "react";
+import { useMemo, useState, type ChangeEvent } from "react";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import Input from "../components/ui/Input";
@@ -85,7 +85,7 @@ export default function WordTool() {
       }
     } catch {
       // ponytail: CORS chặn fetch từ trình duyệt với URL ngoài — server-side fetch để sau (MVP: thử fetch thật, fail → hướng dẫn upload).
-      setUrlError("Không tải được URL từ trình duyệt (CORS) — dùng Tải file .docx");
+      setUrlError("Không tải được URL từ trình duyệt (CORS): dùng Tải file .docx");
     } finally {
       setLoading(false);
     }
@@ -110,7 +110,7 @@ export default function WordTool() {
     }
   }
 
-  const stats = countStats(html);
+  const stats = useMemo(() => countStats(html), [html]);
   const statItems: Array<[string, number]> = [
     ["H1", stats.h1],
     ["H2", stats.h2],
@@ -138,7 +138,7 @@ export default function WordTool() {
               placeholder="https://…/tai-lieu.docx"
               className="min-w-[min(320px,100%)] flex-1"
               onKeyDown={(e) => {
-                if (e.key === "Enter") void loadUrl();
+                if (e.key === "Enter" && !loading) void loadUrl();
               }}
             />
             <Button testid="btn-word-load" loading={loading} onClick={() => void loadUrl()}>

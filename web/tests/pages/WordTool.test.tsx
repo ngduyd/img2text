@@ -42,7 +42,7 @@ it("URL fetch fail → word-url-error CORS message", async () => {
   await userEvent.type(screen.getByTestId("input-word-url"), "https://vi.example/tai-lieu.docx");
   await userEvent.click(screen.getByTestId("btn-word-load"));
   expect(await screen.findByTestId("word-url-error")).toHaveTextContent(
-    "Không tải được URL từ trình duyệt (CORS) — dùng Tải file .docx",
+    "Không tải được URL từ trình duyệt (CORS): dùng Tải file .docx",
   );
   // preview stays in empty state (no doc loaded)
   expect(screen.queryByTestId("word-preview")).not.toBeInTheDocument();
@@ -52,6 +52,7 @@ it("upload docx → mammoth → sanitized iframe srcdoc", async () => {
   await uploadDocx("<h1>Chào</h1><script>alert(1)</script>");
   expect(mammoth.convertToHtml).toHaveBeenCalledTimes(1);
   const srcdoc = screen.getByTestId("word-preview").getAttribute("srcdoc") ?? "";
+  expect(screen.getByTestId("word-preview")).toHaveAttribute("sandbox", "");
   expect(srcdoc).toContain("Chào");
   expect(srcdoc).not.toContain("script");
 });
