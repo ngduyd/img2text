@@ -1,10 +1,12 @@
-import { RefreshCw } from "lucide-react";
+import { FileText, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../../api/client";
+import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import Input from "../../components/ui/Input";
+import Skeleton from "../../components/ui/Skeleton";
 
 interface LogRow {
   id: number;
@@ -17,9 +19,15 @@ interface LogRow {
   ua: string | null;
 }
 
-/** Audit trail (request_logs): actor + IP filter (refresh click) + raw log tail.
- * Plan X R60: actor (user_id) + IP + User-Agent columns, truncated 160px,
- * title = full value; missing user_id renders "—". */
+/** Status badge tone by class (DESIGN.md §2): 2xx success / 4xx warning / 5xx error. */
+function statusTone(status: number): "success" | "warning" | "error" {
+  return status >= 500 ? "error" : status >= 400 ? "warning" : "success";
+}
+
+/** Audit trail (request_logs): IP filter + raw log tail. Density 6 table
+ * (DESIGN.md §5): sticky thead, divider rows, mono numbers (ID/IP/time), IP/UA
+ * truncate + title. Testids R60/R51 kept: input-log-ip, btn-logs-refresh,
+ * logs-loading/empty, audit-actor/ip/ua, logs-tail(-card). */
 export default function AdminLogs() {
   const [ipInput, setIpInput] = useState("");
   const [ip, setIp] = useState("");
@@ -50,7 +58,7 @@ export default function AdminLogs() {
             testid="btn-logs-refresh"
             variant="secondary"
             size="sm"
-            className="p-2"
+            className="min-h-11 min-w-11 p-0"
             title="Làm mới danh sách nhật ký"
             aria-label="Làm mới danh sách nhật ký"
             onClick={() => setIp(ipInput)}
@@ -59,48 +67,64 @@ export default function AdminLogs() {
           </Button>
         </div>
         {isLoading ? (
-          <div data-testid="logs-loading" className="p-8 text-center text-muted">
-            Đang tải…
+          <div data-testid="logs-loading" aria-busy="true" className="overflow-x-auto">
+            <div className="min-w-[720px] divide-y divide-border">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="flex items-center gap-4 px-4 py-3">
+                  <Skeleton className="h-5 w-20" />
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-16" />
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-5 w-12" />
+                  <Skeleton className="h-4 w-28" />
+                </div>
+              ))}
+            </div>
           </div>
         ) : rows.length === 0 ? (
-          <div data-testid="logs-empty" className="p-8 text-center text-muted">
-            Chưa có nhật ký
+          <div
+            data-testid="logs-empty"
+            className="flex flex-col items-center gap-2 px-4 py-8 text-center"
+          >
+            <FileText className="h-8 w-8 text-muted" aria-hidden="true" />
+            <p className="text-base font-semibold">Chưa có nhật ký</p>
+            <p className="text-sm text-muted">Nhật ký truy cập sẽ xuất hiện tại đây.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] border-collapse text-left text-sm">
               <thead>
-                <tr className="border-b border-border text-muted">
-                  {["Method", "Người dùng", "Path", "Status", "IP", "User-Agent", "Thời gian"].map((h) => (
-                    <th
-                      key={h}
-                      scope="col"
-                      className="sticky top-0 bg-surface px-4 py-3 font-medium"
-                    >
-                      {h}
-                    </th>
-                  ))}
+                <tr>
+                  {["Người dùng", "IP", "User-Agent", "Method", "Path", "Status", "Thời gian"].map(
+                    (h) => (
+                      <th
+                        key={h}
+                        scope="col"
+                        className="sticky top-0 z-10 border-b border-border bg-surface-2 px-4 py-3 font-medium text-muted"
+                      >
+                        {h}
+                      </th>
+                    ),
+                  )}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-border">
                 {rows.map((row, i) => (
                   <tr
                     key={row.id ?? i}
-                    className="border-b border-border/40 odd:bg-bg/60"
+                    className="transition-colors duration-150 ease-out hover:bg-surface-2"
                   >
-                    <td className="px-4 py-3">{row.method}</td>
                     <td data-testid="audit-actor" className="px-4 py-3">
                       <span
-                        className="block max-w-[160px] truncate"
+                        className="block max-w-[160px] truncate font-mono"
                         title={String(row.user_id ?? "")}
                       >
                         {row.user_id ?? "—"}
                       </span>
                     </td>
-                    <td className="px-4 py-3">{row.path}</td>
-                    <td className="px-4 py-3">{row.status}</td>
                     <td data-testid="audit-ip" className="px-4 py-3">
-                      <span className="block max-w-[160px] truncate" title={row.ip}>
+                      <span className="block max-w-[160px] truncate font-mono" title={row.ip}>
                         {row.ip}
                       </span>
                     </td>
@@ -109,7 +133,16 @@ export default function AdminLogs() {
                         {row.ua}
                       </span>
                     </td>
-                    <td className="px-4 py-3">{row.ts}</td>
+                    <td className="px-4 py-3 font-mono">
+                      <Badge tone="neutral">{row.method}</Badge>
+                    </td>
+                    <td className="px-4 py-3 font-mono">{row.path}</td>
+                    <td className="px-4 py-3 font-mono">
+                      <Badge tone={statusTone(row.status)}>{row.status}</Badge>
+                    </td>
+                    <td className="px-4 py-3 font-mono">
+                      {new Date(row.ts).toLocaleString("vi-VN")}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -120,7 +153,7 @@ export default function AdminLogs() {
       <Card testid="logs-tail-card" title="Log tail">
         <pre
           data-testid="logs-tail"
-          className="overflow-x-auto rounded-card border border-border bg-surface p-3 text-xs text-muted"
+          className="overflow-x-auto rounded-sm border border-border bg-surface-2/60 p-3 font-mono text-xs text-muted"
         >
           {(tail?.lines ?? []).join("\n")}
         </pre>

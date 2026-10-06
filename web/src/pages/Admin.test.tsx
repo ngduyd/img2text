@@ -184,6 +184,8 @@ it("users tab shows created_at and toggles ocr", async () => {
   const toggle = await screen.findByTestId("toggle-ocr-2");
   // ui-ux redo: role badge tone + icon toggle exposes pressed state (a11y)
   expect(screen.getByTestId("role-badge-2")).toHaveAttribute("data-tone", "neutral");
+  // Task 3: high-density rule — numeric ID column rendered mono (DESIGN.md §3)
+  expect(screen.getByText("2")).toHaveClass("font-mono");
   expect(toggle).toHaveAttribute("aria-pressed", "false");
   await user.click(toggle);
   expect(api.adminPatchUser).toHaveBeenCalledWith(2, { ocr_enabled: true });
@@ -262,6 +264,11 @@ it("logs tab filters by ip", async () => {
   expect(actorCells[0].firstChild).toHaveAttribute("title", "");
   expect(actorCells[1]).toHaveTextContent("5");
   expect(actorCells[1].firstChild).toHaveAttribute("title", "5");
+  // Task 3 (DESIGN.md density 6): IP/actor IDs mono + status badge tone by class
+  expect(ipCells[0].firstChild).toHaveClass("font-mono");
+  expect(actorCells[1].firstChild).toHaveClass("font-mono");
+  expect(screen.getByText("401")).toHaveAttribute("data-tone", "warning");
+  expect(screen.getByText("200")).toHaveAttribute("data-tone", "success");
 });
 
 it("admin home has no jobs board, no dropzone (absence asserts)", async () => {
