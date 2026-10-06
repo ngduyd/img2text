@@ -1,0 +1,15 @@
+{
+  "id": "OWNER/img2text-worker",
+  "title": "img2text-worker",
+  "code_file": "img2text_worker.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [
+    "OWNER/img2text-worker-files"
+  ],
+  "machine_shape": "NvidiaTeslaT4",
+  "accelerator": "NvidiaTeslaT4"
+}
