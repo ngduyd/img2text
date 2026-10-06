@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { Briefcase, Menu, ShieldCheck } from "lucide-react";
+import { Briefcase, IdCard, LogOut, Menu, ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Toaster, toast } from "sonner";
@@ -25,28 +25,75 @@ import { mapApiError } from "./lib/errors";
 // per test (fresh mount must not inherit another test's ["me"] resolution).
 export const queryClient = new QueryClient();
 
-/** RIGHT auth zone: logged-out btn-login+btn-register; logged-in badge+avatar+profile+logout. */
+/** RIGHT auth zone: logged-out btn-login+btn-register; logged-in badge+avatar-menu (profile+logout). */
 function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () => void }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const userRef = useRef<HTMLDivElement>(null);
+  const name = me?.email || me?.role || "";
+
+  // User dropdown: close on outside click (same pattern as AppNav navRef).
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onDocClick(e: MouseEvent) {
+      if (userRef.current && !userRef.current.contains(e.target as Node)) setMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [menuOpen]);
+
   return (
     <div data-testid="auth-zone" className="flex items-center gap-2">
       <ThemeToggle />
       {me ? (
         <>
           <OcrBadge enabled={me.ocr_enabled} />
-          <span
-            data-testid="nav-avatar"
-            title={me.role}
-            aria-label={me.role}
-            className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-xs font-semibold"
-          >
-            {(me.email ?? "").slice(0, 2).toUpperCase() || "?"}
-          </span>
-          <Link to="/profile" data-testid="btn-profile" className={buttonClasses("ghost", "sm")}>
-            Hồ sơ
-          </Link>
-          <Button variant="danger" size="sm" testid="btn-logout" onClick={onLogout}>
-            Đăng xuất
-          </Button>
+          <div ref={userRef} className="relative flex items-center">
+            <button
+              type="button"
+              data-testid="nav-avatar"
+              title={name}
+              aria-label={name}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((o) => !o)}
+              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-border bg-surface text-xs font-semibold"
+            >
+              {(me.email ?? "").slice(0, 2).toUpperCase() || "?"}
+            </button>
+            {menuOpen && (
+              <div
+                data-testid="nav-user-menu"
+                role="menu"
+                className="absolute right-0 top-full z-30 mt-2 min-w-fit rounded-card border border-border bg-surface p-2 text-right shadow-card"
+              >
+                <div className="px-2 py-1">
+                  <div className="font-medium text-text">{me.email}</div>
+                  <div className="text-muted">{me.role}</div>
+                </div>
+                <div className="my-1 border-t border-border" />
+                <Link
+                  to="/profile"
+                  data-testid="btn-profile"
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                  className={`${buttonClasses("ghost", "sm")} w-full justify-end`}
+                >
+                  <IdCard className="h-4 w-4" aria-hidden="true" />
+                  Hồ sơ
+                </Link>
+                <Button
+                  variant="danger"
+                  size="sm"
+                  testid="btn-logout"
+                  onClick={onLogout}
+                  className="w-full justify-end"
+                >
+                  <LogOut className="h-4 w-4" aria-hidden="true" />
+                  Đăng xuất
+                </Button>
+              </div>
+            )}
+          </div>
         </>
       ) : (
         <>
