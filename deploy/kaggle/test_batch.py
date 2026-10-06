@@ -25,6 +25,11 @@ INPUT_REF = "alice/img2text-input"
 BATCH_SCRIPT = DEPLOY_DIR / "kernel" / "img2text_batch.py"
 BATCH_META_TPL = DEPLOY_DIR / "kernel" / "kernel-batch-metadata.json"
 
+# kaggle 2.2.4 LIVE status shape: enum-repr strings (was: circular lowercase mock)
+_RUNNING = "KernelWorkerStatus.RUNNING"
+_COMPLETE = "KernelWorkerStatus.COMPLETE"
+_FAILED = "KernelWorkerStatus.FAILED"
+
 class _CoreApi:
     """Shared bookkeeping — subclasses expose ONE API generation of names;
     the parametrized fake_api fixture runs every test on both shapes."""
@@ -37,7 +42,7 @@ class _CoreApi:
         self.kernel_push_calls = []
         self.status_calls = []
         self.output_calls = []
-        self.statuses = ["complete"]
+        self.statuses = [_COMPLETE]
 
     def authenticate(self):
         pass
@@ -218,7 +223,7 @@ def test_batch_metadata_template_shape():
     assert tpl["dataset_sources"] == ["OWNER/img2text-input"]
 
 def test_status_loop_running_then_complete(fake_api, input_file, monkeypatch):
-    fake_api.statuses = ["running", "running", "complete"]
+    fake_api.statuses = [_RUNNING, _RUNNING, _COMPLETE]
     sleeps = []
     monkeypatch.setattr(run_one, "SLEEP", sleeps.append)
     run_one.main([str(input_file), "--poll", "20"])
@@ -226,17 +231,24 @@ def test_status_loop_running_then_complete(fake_api, input_file, monkeypatch):
     assert sleeps == [20, 20]
 
 def test_failed_exits_1(fake_api, input_file):
-    fake_api.statuses = ["failed"]
+    fake_api.statuses = [_FAILED]
     with pytest.raises(SystemExit) as exc:
         run_one.main([str(input_file)])
     assert exc.value.code == 1
 
 def test_timeout_exits_2(fake_api, input_file):
-    fake_api.statuses = ["running"]
+    fake_api.statuses = [_RUNNING]
     with pytest.raises(SystemExit) as exc:
         run_one.main([str(input_file), "--poll", "20", "--timeout", "40"])
     assert exc.value.code == 2
     assert fake_api.status_calls == [KERNEL_REF] * 3  # elapsed 0, 20, 40
+
+def test_enum_object_status_stops_loop(fake_api, input_file):
+    # status value as enum-name OBJECT (SimpleNamespace with .name) → 'complete'
+    fake_api.statuses = [types.SimpleNamespace(name="COMPLETE")]
+    run_one.main([str(input_file)])  # returns (no SystemExit) on FIRST poll
+    assert fake_api.status_calls == [KERNEL_REF]
+    assert len(fake_api.output_calls) == 1  # pull_output ran next in flow
 
 def test_kernels_output_called_with_out_path(fake_api, input_file):
     run_one.main([str(input_file), "--out", "./out"])
@@ -250,7 +262,7 @@ def test_kernels_output_called_with_out_path(fake_api, input_file):
     assert re.fullmatch(r"\d{8}-\d{6}-\d{6}", out.name)
 
 def test_poll_clamped_to_min_1(fake_api, input_file, monkeypatch):
-    fake_api.statuses = ["running"]
+    fake_api.statuses = [_RUNNING]
     sleeps = []
     monkeypatch.setattr(run_one, "SLEEP", sleeps.append)
     with pytest.raises(SystemExit) as exc:

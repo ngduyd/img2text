@@ -112,19 +112,19 @@ def build_kernel_stage(owner: str, accelerator: str, kernel_ref: str, stage: Pat
     _write_meta(meta, stage / "kernel-metadata.json")
     return stage
 
-def _status_of(resp):
-    return resp.get("status") if isinstance(resp, dict) else getattr(resp, "status", None)
+_norm_status = push._norm_status  # shared: kaggle 2.2.4 enum-repr → 'complete'
 
 def wait_complete(api, ref: str, poll: int, timeout: int):
-    """Poll kernels_status every `poll` s. complete → return; failed → exit 1;
-    timeout → exit 2. Elapsed counted in poll units (deterministic, testable)."""
+    """Poll kernels_status every `poll` s. complete → return; failed/error → exit 1;
+    timeout → exit 2. Elapsed counted in poll units (deterministic, testable).
+    Status normalized: live kaggle returns KernelWorkerStatus.COMPLETE reprs."""
     elapsed = 0
     while True:
-        status = _status_of(api.kernels_status(ref))
+        status = _norm_status(api.kernels_status(ref))
         print(f"kernel {ref}: status={status} (elapsed {elapsed}s / {timeout}s)")
         if status == "complete":
             return
-        if status == "failed":
+        if status in ("failed", "error"):
             print(f"error: kernel {ref} failed — check kaggle kernels log {ref}", file=sys.stderr)
             sys.exit(1)
         if elapsed >= timeout:

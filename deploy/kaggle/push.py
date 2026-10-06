@@ -178,10 +178,22 @@ def push_kernel(api, owner, kernel_dir, args):
     print(f"hint: kaggle kernels output {ref}")
 
 
+def _norm_status(resp):
+    """kaggle 2.2.4 status → lowercase value. Enum-like forms:
+    KernelWorkerStatus.COMPLETE / object with .name → 'complete'."""
+    value = resp.get("status") if isinstance(resp, dict) else getattr(resp, "status", None)
+    if value is None:
+        return None
+    name = getattr(value, "name", None)
+    if name:
+        return str(name).lower()
+    s = str(value)
+    return s.rsplit(".", 1)[-1].strip().lower() if "." in s else s.strip().lower()
+
 def wait_for_kernel(api, ref):
     while True:
         resp = api.kernels_status(ref)
-        status = resp.get("status") if isinstance(resp, dict) else getattr(resp, "status", None)
+        status = _norm_status(resp)
         if status in ("complete", "failed"):
             return status
         print(f"kernel {ref}: status={status} — polling every {POLL_INTERVAL}s")
