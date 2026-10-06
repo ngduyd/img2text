@@ -281,6 +281,27 @@ it("admin home has no jobs board, no dropzone (absence asserts)", async () => {
   expect(screen.queryByTestId("dropzone")).not.toBeInTheDocument();
 });
 
+it("admin sub-rail renders 5 items; active item has aria-current=page", async () => {
+  vi.mocked(api.me).mockResolvedValue(adminMe);
+  vi.mocked(api.adminStats).mockResolvedValue({ days: [] });
+  renderWithRouter(<Admin />, { route: "/admin" });
+  await screen.findByTestId("stat-users"); // admin content rendered
+  const rail = screen.getByTestId("admin-rail");
+  // V3: one responsive nav (mobile scroll / desktop vertical), 5 items with icons
+  expect(within(rail).getAllByRole("button")).toHaveLength(5);
+  expect(within(rail).getByTestId("tab-overview")).toHaveAttribute("aria-current", "page");
+  expect(within(rail).getByTestId("tab-users")).not.toHaveAttribute("aria-current");
+});
+
+it("clicking rail users item mounts AdminUsers", async () => {
+  vi.mocked(api.me).mockResolvedValue(adminMe);
+  vi.mocked(api.adminListUsers).mockResolvedValue({ items: [], total: 0 });
+  renderWithRouter(<Admin />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByTestId("tab-users"));
+  expect(await screen.findByText("Chưa có người dùng")).toBeInTheDocument();
+});
+
 it("non-admin is redirected away", async () => {
   vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
   renderWithRouter(<Admin />, { route: "/admin" });
