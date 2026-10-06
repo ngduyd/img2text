@@ -83,6 +83,15 @@ services:
       # by the USER'S BROWSER on the host → public endpoint stays localhost.
       R2_ENDPOINT: http://localstack:4566
       STORAGE_PUBLIC_ENDPOINT: http://localhost:4566
+      # Plan K2: Kaggle worker orchestration — empty = disabled (no kaggle import).
+      # Interpolated from deploy/.env or shell env (compose `environment` beats
+      # env_file; see .env.dev.example comment).
+      KAGGLE_USERNAME: ${KAGGLE_USERNAME:-}
+      KAGGLE_KEY: ${KAGGLE_KEY:-}
+      KAGGLE_KERNEL_REF: ${KAGGLE_KERNEL_REF:-}
+      # In-container absolute path (mounted ro below); host default
+      # deploy/kaggle resolves via server source layout.
+      KAGGLE_STAGE_SRC: /app/deploy/kaggle
     # host.docker.internal/extra_hosts dropped: nothing in the container uses
     # it anymore (presigned URLs the browser fetches use
     # STORAGE_PUBLIC_ENDPOINT http://localhost:4566 — forward port 4566 in
@@ -92,6 +101,9 @@ services:
       # source from the mount; third-party deps stay in site-packages
       # (pip install /app/server baked at build time).
       - ../server:/app/server
+      # Plan K2: Kaggle kernel source templates (read-only — orchestrator
+      # stages into KAGGLE_STAGE_DIR, never writes here).
+      - ../deploy/kaggle:/app/deploy/kaggle:ro
     depends_on:
       postgres:
         condition: service_healthy

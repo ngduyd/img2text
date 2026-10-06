@@ -29,6 +29,11 @@ test = [
     "httpx",
     "moto[server]",
 ]
+# Plan K2: Kaggle worker orchestration — server imports kaggle LAZILY and
+# self-disables without it; install this extra to activate auto-spawn.
+kaggle = [
+    "kaggle>=1.6",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

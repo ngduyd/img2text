@@ -15,6 +15,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 
 from app.core.config import settings
+from app.services.kaggle_orchestrator import ensure_worker
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,15 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
             await _run_jobs_once()
         except Exception:  # one failing pass must not kill the job
             logger.warning("scheduler claim pass failed", exc_info=True)
+        try:
+            # Plan K2: auto-spawn Kaggle worker kernel when queue needs it;
+            # ensure_worker is disabled-by-default + never raises, this wrap
+            # is belt-and-braces for the scheduler job.
+            spawned = await ensure_worker(app.state.session_factory)
+            if spawned:
+                logger.info("kaggle: worker kernel spawned")
+        except Exception:  # one failing pass must not kill the job
+            logger.warning("kaggle ensure_worker pass failed", exc_info=True)
 
     scheduler.add_job(
         reap_all,

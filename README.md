@@ -218,6 +218,42 @@ SMTP (password reset). Keys must match `Settings` fields —
 Run the notebook against a deployed server: [docs/colab-setup.md](docs/colab-setup.md).
 Smoke-check the notebook before each release: [docs/colab-smoke-checklist.md](docs/colab-smoke-checklist.md).
 
+## Kaggle orchestration (worker tự động)
+
+Server tự điều phối Kaggle worker (Plan K2): scheduler mỗi interval thấy
+`queued` job ≥ `KAGGLE_MIN_QUEUE` + kernel Kaggle không chạy → tự bump dataset
+version + `kernels push` (upload + run) kernel mới. Kernel xử lý theo session
+rồi thoát (platform cap ~12h); server tái kích khi queue còn job.
+
+**Bật env** (deploy/.env hoặc shell — compose dev pass-through, xem
+`deploy/.env.dev.example`):
+
+```bash
+KAGGLE_USERNAME=<kaggle username>        # kaggle.com → Settings → API
+KAGGLE_KEY=<api key>
+KAGGLE_KERNEL_REF=<user>/img2text-worker # ref kernel đã tạo 1 lần
+```
+
+Không set đủ 3 key = feature tự tắt, server **không import** `kaggle`
+(thiếu package cũng không crash — orchestrator disabled + warning).
+
+**Secrets 1 lần** (trước khi kernel chạy): kaggle.com → Add-ons → Secrets:
+`BASE_URL` (URL **public** của API worker — không localhost) + `RUNNER_KEY`.
+Chi tiết: [deploy/kaggle/README.md](deploy/kaggle/README.md).
+
+**Khởi tạo 1 lần**: dataset `OWNER/img2text-worker-files` + kernel ref phải
+tồn tại trên Kaggle — chạy `python deploy/kaggle/push.py` (Plan K manual
+push) trước khi bật orchestration.
+
+Quota GPU free ~**30h/tuần** — `KAGGLE_MIN_GAP_SECONDS` (mặc định 600s)
++ `KAGGLE_MIN_QUEUE` (mặc định 1) chống spam spawn. `KAGGLE_TIMEOUT` chỉ là
+ceiling note (kernels_push timeout kw không đáng tin; session cap do platform).
+
+**Production note**: server cần egress internet + package `kaggle`
+(Dockerfile đã `pip install "/app/server[kaggle]"`; server thường thì
+`pip install -e 'server[kaggle]'`). Kernel Secrets đã set 1 lần như trên.
+Sync Kaggle↔cloud-storage cho production là follow-up riêng.
+
 ## Docs
 
 - [docs/r2-setup.md](docs/r2-setup.md) — R2 bucket, API token, lifecycle rules, `.env` fill
