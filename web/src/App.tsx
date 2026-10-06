@@ -188,7 +188,7 @@ function AppNav() {
   }, [menuOpen]);
 
   const isAdmin = me?.role === "admin";
-  const jobsActive = pathname === "/" || pathname.startsWith("/jobs");
+  const jobsActive = pathname === "/jobs";
   const adminActive = pathname.startsWith("/admin");
 
   return (
@@ -288,13 +288,10 @@ function AppNav() {
 }
 
 /**
- * Public root: logged-out → Landing (marketing); logged-in skips it → /jobs.
- * Reuses the shared ["me"] query (AppNav fetches; same cache entry, no extra call).
+ * Root route: Landing ALWAYS — the trang chủ (home page) for every auth state
+ * (user report: "đăng nhập rồi không nhảy về trang chủ được nữa"). No
+ * logged-in redirect; AppNav fetches ["me"] for the auth zone + admin link.
  */
-function PublicRoot() {
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
-  return me ? <Navigate to="/jobs" replace /> : <Landing />;
-}
 
 export default function App() {
   return (
@@ -318,7 +315,7 @@ export default function App() {
             <Route path="/forgot" element={<Forgot />} />
             <Route path="/reset" element={<Reset />} />
             <Route path="/profile" element={<Profile />} />
-            <Route path="/" element={<PublicRoot />} />
+            <Route path="/" element={<Landing />} />
             <Route path="/landing" element={<Navigate to="/" replace />} />
             <Route path="/jobs" element={<Jobs />} />
             <Route path="/jobs/:id" element={<JobDetail />} />

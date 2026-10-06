@@ -31,7 +31,8 @@ export default function Admin() {
   }, [isError, navigate]);
 
   useEffect(() => {
-    if (me && me.role !== "admin") navigate("/jobs");
+    // Non-admin authed → trang chủ "/" (Landing), consistent with root-as-home.
+    if (me && me.role !== "admin") navigate("/");
   }, [me, navigate]);
 
   if (isError || (me && me.role !== "admin")) return null;

@@ -34,10 +34,10 @@ vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
   return {
     ...actual,
-    // Wrap the real navigate: <Navigate/> redirects must still change the route
-    // ("/" → "/jobs" tests assert rendered content), while mockNavigate keeps
-    // call-target assertions working. Trailing-undefined args dropped so
-    // toHaveBeenCalledWith("/login") keeps matching single-arg calls.
+    // Wrap the real navigate: <Navigate/> redirects (e.g. /landing → /) must
+    // still change the route, while mockNavigate keeps call-target assertions
+    // working. Trailing-undefined args dropped so toHaveBeenCalledWith("/login")
+    // keeps matching single-arg calls.
     useNavigate: () => {
       const navigate = actual.useNavigate() as (to: unknown, opts?: unknown) => unknown;
       return ((to: unknown, opts?: unknown) => {
@@ -95,18 +95,22 @@ it("/landing is an alias: lands on Landing content", async () => {
   expect(window.location.pathname).toBe("/");
 });
 
-it("logged-in user at / is redirected to /jobs (skips marketing)", async () => {
+it("logged-in user at / still sees the Landing (trang chủ)", async () => {
+  // Root is ALWAYS Landing, even logged in (user report: "đăng nhập rồi không
+  // nhảy về trang chủ được nữa").
   vi.mocked(api.me).mockResolvedValue({
     id: 1,
     email: "user@x.io",
     role: "user",
     ocr_enabled: true,
   } as User);
-  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   render(<App />);
-  expect(await screen.findByTestId("empty-state")).toBeInTheDocument();
-  expect(screen.queryByTestId("landing-hero")).not.toBeInTheDocument();
-  expect(window.location.pathname).toBe("/jobs");
+  // Settle authed first: badge-ocr only renders once me resolves.
+  // (Old code redirects in the same commit → landing-hero gone → this fails.)
+  expect(await screen.findByTestId("badge-ocr")).toHaveTextContent("OCR đã cấp");
+  expect(screen.getByTestId("landing-hero")).toBeInTheDocument();
+  expect(screen.queryByTestId("empty-state")).not.toBeInTheDocument();
+  expect(window.location.pathname).toBe("/");
 });
 
 it("logged-out auth-zone (RIGHT) has btn-login + btn-register; NO left nav-link-login", async () => {
@@ -298,10 +302,18 @@ it("hamburger toggle: aria-expanded/controls/label, opens mobile menu, closes on
   await waitFor(() => expect(screen.queryByTestId("mobile-menu")).not.toBeInTheDocument());
 });
 
-// Task 2: active nav link carries aria-current="page" (DESIGN.md §7 a11y).
-it("active nav link has aria-current=page", async () => {
+// Task 2 + root fix: "Công việc" active ONLY at /jobs — never on the / landing.
+it("nav-link-jobs has aria-current=page ONLY at /jobs, not at /", async () => {
   vi.mocked(api.me).mockRejectedValue(new ApiError("Unauthorized."));
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  render(<App />);
+  expect(await screen.findByTestId("nav-link-jobs")).not.toHaveAttribute("aria-current");
+});
+
+it("nav-link-jobs carries aria-current=page at /jobs", async () => {
+  vi.mocked(api.me).mockRejectedValue(new ApiError("Unauthorized."));
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  window.history.pushState({}, "", "/jobs");
   render(<App />);
   expect(await screen.findByTestId("nav-link-jobs")).toHaveAttribute("aria-current", "page");
 });

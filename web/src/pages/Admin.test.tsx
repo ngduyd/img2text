@@ -302,10 +302,10 @@ it("clicking rail users item mounts AdminUsers", async () => {
   expect(await screen.findByText("Chưa có người dùng")).toBeInTheDocument();
 });
 
-it("non-admin is redirected away", async () => {
+it("non-admin is redirected to trang chủ '/'", async () => {
   vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
   renderWithRouter(<Admin />, { route: "/admin" });
-  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs"));
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/"));
   expect(screen.queryByTestId("tab-users")).not.toBeInTheDocument();
 });
 

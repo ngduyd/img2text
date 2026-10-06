@@ -30,7 +30,7 @@ export default function Dropzone({
       setBusy(true);
     },
     onSuccess: (job) => {
-      // R59: toast + parent stays on "/" and invalidates the jobs list.
+      // R59: toast + parent navigates to the /jobs list route (see Jobs.tsx onUploaded).
       toast.success("Đã tải lên — đang chờ xử lý.");
       onUploaded(job);
     },
