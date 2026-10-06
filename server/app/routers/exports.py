@@ -27,6 +27,7 @@ from app.core.db import get_session
 from app.core.deps import get_current_user
 from app.core.models import Job, User
 from app.routers.jobs import _job_or_403
+from app.services.llm_docx import LLMLayoutError, build_layout_docx
 from app.services.storage import StorageDriver, get_storage
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,8 @@ EXPORT_PRESIGN_EXPIRES_SECONDS = 86400
 # GET download Content-Type per fmt (Task 5 brief, verbatim)
 EXPORT_CONTENT_TYPES = {
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    # Plan D2: same OOXML container, LLM layout plan instead of pandoc
+    "docx-layout": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "pdf": "application/pdf",
     "html": "text/html; charset=utf-8",
     "md": "text/markdown; charset=utf-8",
@@ -280,7 +283,7 @@ class ContentBody(BaseModel):
         return v
 
 class ExportBody(BaseModel):
-    fmt: Literal["md", "html", "docx", "pdf"]
+    fmt: Literal["md", "html", "docx", "pdf", "docx-layout"]
 
 @router.patch("/api/jobs/{id}/content")
 async def patch_content(
@@ -303,6 +306,27 @@ async def patch_content(
 
 # --- Export generation + download: POST /export, GET /export/{fmt}/download ---
 
+async def _llm_docx_export(job_id: int, job: Job) -> bytes:
+    """Plan D2: result → LLM layout plan → docx bytes (never caches errors).
+
+    Missing result → 409 "Chưa có kết quả OCR."; LLM unreachable/timeout
+    → 502 "Không kết nối LLM máy chủ." (raised before storage.put).
+    """
+    result = dict(job.result or {})
+    if not result.get("pages"):
+        raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
+    page_dims = [
+        (page.get("width") or 0, page.get("height") or 0)
+        for page in result["pages"]
+    ]
+    try:
+        return await build_layout_docx(result, page_dims)
+    except LLMLayoutError as exc:
+        logger.warning("docx-layout LLM failure job=%s: %s", job_id, exc)
+        raise HTTPException(
+            status_code=502, detail="Không kết nối LLM máy chủ."
+        ) from exc
+
 @router.post("/api/jobs/{id}/export")
 async def export_job(
     id: int,
@@ -316,18 +340,21 @@ async def export_job(
         raise HTTPException(status_code=409, detail="job not done")
     key = f"exports/{id}/{body.fmt}"
     if not await storage.exists(key):  # cache hit → presign only, no re-generate
-        markdown = current_markdown(job.result or {})
-        if body.fmt == "pdf":
-            data = await _pdf_export(id, markdown, job, storage)
-        elif body.fmt == "md":
-            # Task 4: crops embedded in ALL md-family exports
-            with tempfile.TemporaryDirectory() as td:
-                markdown = await _materialize_crops(
-                    id, markdown, job, storage, Path(td)
-                )
-            data = markdown.encode()
-        else:  # html (bleach-sanitized) / docx via pandoc
-            data = await _pandoc_export(body.fmt, id, markdown, job, storage)
+        if body.fmt == "docx-layout":
+            data = await _llm_docx_export(id, job)
+        else:
+            markdown = current_markdown(job.result or {})
+            if body.fmt == "pdf":
+                data = await _pdf_export(id, markdown, job, storage)
+            elif body.fmt == "md":
+                # Task 4: crops embedded in ALL md-family exports
+                with tempfile.TemporaryDirectory() as td:
+                    markdown = await _materialize_crops(
+                        id, markdown, job, storage, Path(td)
+                    )
+                data = markdown.encode()
+            else:  # html (bleach-sanitized) / docx via pandoc
+                data = await _pandoc_export(body.fmt, id, markdown, job, storage)
         await storage.put(key, data)
     url = await storage.presign_get(key, EXPORT_PRESIGN_EXPIRES_SECONDS)
     return {"url": url}
@@ -335,7 +362,7 @@ async def export_job(
 @router.get("/api/jobs/{id}/export/{fmt}/download")
 async def download_export(
     id: int,
-    fmt: Literal["md", "html", "docx", "pdf"],
+    fmt: Literal["md", "html", "docx", "pdf", "docx-layout"],
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     storage: StorageDriver = Depends(get_storage),
