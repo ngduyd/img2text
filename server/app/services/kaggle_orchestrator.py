@@ -125,11 +125,11 @@ async def ensure_worker(session_factory) -> bool:
     global _last_spawn
     if not settings.kaggle_enabled:
         return False
-    api = _api()
-    if api is None:
-        return False
     ref = settings.kaggle_kernel_ref.strip()
     try:
+        api = _api()  # inside try: constructor/auth errors must also return False (never-raise contract)
+        if api is None:
+            return False
         resp = await asyncio.to_thread(api.kernels_status, ref)
         status = (
             resp.get("status") if isinstance(resp, dict) else getattr(resp, "status", None)
