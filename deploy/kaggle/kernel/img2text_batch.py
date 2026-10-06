@@ -8,7 +8,8 @@ from VLM_OCR_pipeline(2).ipynb (cells 5/12/14).
 Two phases, ONE file:
 - parent phase (kernel Python, light deps): locate input → rasterize
   (pdftoppm) → preprocess → precheck gate → re-exec self under the py3.12
-  venv for OCR → normalize raw JSON → /kaggle/outputs/result.{json,md}.
+  venv for OCR → normalize raw JSON → result.{json,md} into /kaggle/working
+  (script-kernel output capture) + copy to /kaggle/outputs (notebook compat).
 - OCR phase: `img2text_batch.py --ocr <img_dir> <raw_dir>` runs under
   /tmp/paddle-venv/bin/python (PaddleOCR-VL loaded ONCE, resumable per-page).
 
@@ -370,12 +371,35 @@ def preprocess(path, out_path):
 
 # ===========================================================================
 # Parent-phase flow: locate → rasterize → precheck gate → preprocess →
-# OCR (venv subprocess) → normalize (cell 14 shape) → /kaggle/outputs.
+# OCR (venv subprocess) → normalize (cell 14 shape) → write outputs.
 # ===========================================================================
 
 INPUT_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".pdf"}
 WORK_DIR = "/tmp/img2text-batch"
-OUT_DIR = "/kaggle/outputs"
+# kernel_type "script" captures output from /kaggle/working (NOT
+# /kaggle/outputs — that dir is only captured for notebook kernels).
+# /kaggle/outputs kept as a harmless notebook-compat copy when creatable.
+OUT_DIRS = ["/kaggle/working", "/kaggle/outputs"]
+
+
+def _write_outputs(json_str: str, md_str: str) -> None:
+    """Write result.json/result.md to every existing/creatable capture dir."""
+    written = []
+    for d in OUT_DIRS:
+        try:
+            os.makedirs(d, exist_ok=True)
+        except OSError as exc:
+            print(f"bỏ qua output dir {d}: {exc}")
+            continue
+        with open(os.path.join(d, "result.json"), "w", encoding="utf-8") as f:
+            f.write(json_str)
+        with open(os.path.join(d, "result.md"), "w", encoding="utf-8") as f:
+            f.write(md_str)
+        written.append(d)
+    if not written:
+        raise SystemExit("không ghi được output vào /kaggle/working hay /kaggle/outputs")
+    for d in written:
+        print(f"files ({d}): {sorted(f for f in os.listdir(d) if f.startswith('result.'))}")
 
 
 def find_input() -> str:
@@ -539,18 +563,17 @@ def main() -> None:
                                     ocr_raw_dir, pre_dir)
     document = {"source_pdf": input_path, "dpi": DPI, "pages": pages_out,
                 "problems": problems}  # → server batch adapter maps to result warnings
-    os.makedirs(OUT_DIR, exist_ok=True)
-    with open(os.path.join(OUT_DIR, "result.json"), "w", encoding="utf-8") as f:
-        json.dump(document, f, ensure_ascii=False, indent=2)
     md_pages = []
     for pg in pages_out:
         texts = [b["text"] for b in pg["blocks"] if not b["empty"]]
         md_pages.append("\n".join(texts))
-    with open(os.path.join(OUT_DIR, "result.md"), "w", encoding="utf-8") as f:
-        f.write("\n\n---\n\n".join(md_pages))
+    _write_outputs(
+        json.dumps(document, ensure_ascii=False, indent=2),
+        "\n\n---\n\n".join(md_pages),
+    )
     for m in problems:
         print("LƯU Ý:", m)
-    print(f"pages: {len(pages_out)}  files: {sorted(os.listdir(OUT_DIR))}")
+    print(f"pages: {len(pages_out)}")
     print("done")
 
 
