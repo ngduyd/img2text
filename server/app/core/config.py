@@ -41,6 +41,24 @@ class Settings(BaseSettings):
     )
     # Scheduler claim/reap interval (R58); floor 5s — no busy-loop.
     scheduler_interval_seconds: int = 60
+    # Plan K2: Kaggle worker orchestration (backend auto-spawn kernel run).
+    # Enabled iff username + key + kernel_ref all set — feature self-disables
+    # and the server never imports the kaggle package otherwise.
+    kaggle_username: str = ""
+    kaggle_key: str = ""
+    kaggle_kernel_ref: str = ""  # e.g. "user/img2text-worker"
+    kaggle_accelerator: str = "NvidiaTeslaT4"
+    # Ceiling note only (P2): kaggle kernels_push has no reliable timeout kw —
+    # real session cap = Kaggle platform; our control is the re-push gap guard.
+    kaggle_timeout: int = 10800
+    kaggle_min_queue: int = 1
+    kaggle_min_gap_seconds: int = 600
+    kaggle_stage_src: str = "deploy/kaggle"
+    kaggle_stage_dir: str = "/tmp/img2text-kaggle-kernel"
+
+    @property
+    def kaggle_enabled(self) -> bool:
+        return bool(self.kaggle_username and self.kaggle_key and self.kaggle_kernel_ref)
 
     @field_validator("scheduler_interval_seconds")
     @classmethod

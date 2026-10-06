@@ -19,7 +19,9 @@ COPY server/ /app/server/
 # REFERENCE_DOCX in convert.py resolves <repo-root>/deploy/reference.docx.
 COPY deploy/reference.docx /app/deploy/reference.docx
 
-RUN pip install --no-cache-dir /app/server
+# Plan K2: [kaggle] extra installs the Kaggle API client — the server imports
+# it lazily and orchestration self-disables without it (no hard dependency).
+RUN pip install --no-cache-dir "/app/server[kaggle]"
 
 # convert.py default PANDOC_BIN points at gitignored server/.tools; image uses /usr/local/bin.
 ENV PANDOC_BIN=/usr/local/bin/pandoc
