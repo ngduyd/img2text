@@ -11,7 +11,7 @@ sys.path.insert(0, str(DEPLOY_DIR))
 import push  # noqa: E402
 
 KERNEL_REF = "alice/img2text-worker"
-MOUNT_PATH = 'sys.path.insert(0, "/kaggle/input/img2text-worker-files/worker")'
+MOUNT_PATH = 'sys.path.insert(0, "/kaggle/input/img2text-worker-files")'
 
 
 class FakeApi:
@@ -27,8 +27,8 @@ class FakeApi:
     def datasets_create_with_files(self, upload_folder=None, quiet=None, convert=None):
         self.dataset_create_calls.append(upload_folder)
 
-    def datasets_create_version(self, owner_slug, dataset_slug, version_note="", quiet=None, force=False):
-        self.dataset_version_calls.append((owner_slug, dataset_slug))
+    def datasets_create_version(self, ref, version_note="", quiet=None, force=False):
+        self.dataset_version_calls.append(ref)
 
     def kernels_push(self, kernel_path, **kwargs):
         built_meta = (Path(kernel_path) / "kernel-metadata.json").read_text()
@@ -103,7 +103,7 @@ def test_dataset_create_then_version_bump(fake_api):
     fake_api.datasets_create_with_files = boom
     push.main([])
     assert fake_api.dataset_create_calls == []
-    assert fake_api.dataset_version_calls == [("alice", "img2text-worker-files")]
+    assert fake_api.dataset_version_calls == ["alice/img2text-worker-files"]
 
 
 def test_notebook_builder(tmp_path):
@@ -114,9 +114,12 @@ def test_notebook_builder(tmp_path):
     src = "\n".join("".join(c["source"]) for c in nb["cells"])
     assert "UserSecretsClient" in src
     assert MOUNT_PATH in src
+    assert "/kaggle/input/img2text-worker-files/worker" not in src
     assert 'sys.path.insert(0, "worker")' not in src
     assert "google.colab" not in src
     assert "Kaggle Secrets (Add-ons" in src
+    assert "img2text worker — Kaggle GPU runner" in src
+    assert "Colab GPU runner" not in src
     # smoke / init / loop logic identical to colab notebook
     orig = json.loads((push.WORKER_DIR / "colab_notebook.ipynb").read_text())
     orig_src = "\n".join("".join(c["source"]) for c in orig["cells"])

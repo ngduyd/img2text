@@ -46,7 +46,7 @@ print("BASE_URL:", BASE_URL)
 print("RUNNER_KEY: set (", len(RUNNER_KEY), "chars )")
 '''
 
-MOUNT_PATH = f"/kaggle/input/{DATASET_SLUG}/worker"
+MOUNT_PATH = f"/kaggle/input/{DATASET_SLUG}"
 
 
 def load_env():
@@ -98,14 +98,19 @@ def build_dataset_metadata(owner, dest):
 def build_kernel_notebook(dest):
     """Build the Kaggle kernel notebook from worker/colab_notebook.ipynb.
 
-    Adaptations (exactly two): secrets cell google.colab -> kaggle_secrets
-    UserSecretsClient retry loop; loop cell sys.path mount of the files dataset.
+    Adaptations: secrets cell google.colab -> kaggle_secrets UserSecretsClient
+    retry loop; loop cell sys.path mount of the files dataset; markdown header
+    Colab -> Kaggle.
     """
     nb = json.loads((WORKER_DIR / "colab_notebook.ipynb").read_text(encoding="utf-8"))
     for cell in nb["cells"]:
-        if cell.get("cell_type") != "code":
-            continue
         src = "".join(cell["source"])
+        if cell.get("cell_type") == "markdown":
+            if "Colab GPU runner" in src:
+                cell["source"] = src.replace(
+                    "Colab GPU runner (Plan C)", "Kaggle GPU runner"
+                ).splitlines(keepends=True)
+            continue
         if "google.colab" in src:
             cell["source"] = SECRETS_CELL.splitlines(keepends=True)
         elif 'sys.path.insert(0, "worker")' in src:
@@ -128,11 +133,12 @@ def push_dataset(api, owner, files_stage):
     except Exception as exc:
         print(f"dataset create failed or already exists ({exc}); bumping version")
         try:
-            api.datasets_create_version(owner, DATASET_SLUG, version_note="push.py manual")
+            api.datasets_create_version(ref, version_note="push.py manual")
             print(f"dataset version bumped: {ref}")
         except Exception as exc2:
             sys.exit(
                 f"error: dataset version bump failed for {ref}: {exc2}\n"
+                f"original create error: {exc}\n"
                 f"hint: check dataset owner/slug on kaggle.com (slug must be {DATASET_SLUG})"
             )
 
