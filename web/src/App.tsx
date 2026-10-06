@@ -236,7 +236,7 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <div className="min-h-screen">
+        <div className="min-h-dvh">
           <a href="#main" className="skip-link">
             Bỏ qua điều hướng
           </a>
