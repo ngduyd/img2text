@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ApiError, api } from "./api/client";
@@ -71,9 +71,19 @@ it("logged-in user sees badge-ocr success + avatar + profile + logout in auth-zo
   expect(await screen.findByTestId("badge-ocr")).toHaveTextContent("OCR đã cấp");
   const avatar = await screen.findByTestId("nav-avatar");
   expect(avatar).toHaveTextContent("US");
-  expect(avatar).toHaveAttribute("title", "user");
-  expect(await screen.findByTestId("btn-profile")).toHaveTextContent("Hồ sơ");
-  expect(await screen.findByTestId("btn-logout")).toHaveTextContent("Đăng xuất");
+  expect(avatar).toHaveAttribute("title", "user@x.io");
+  expect(avatar).toHaveAttribute("aria-expanded", "false");
+  expect(avatar).toHaveAttribute("aria-haspopup", "menu");
+  // Profile/logout live inside the dropdown — hidden until nav-avatar opens it.
+  expect(zone.queryByTestId("btn-profile")).not.toBeInTheDocument();
+  expect(zone.queryByTestId("btn-logout")).not.toBeInTheDocument();
+  await userEvent.click(avatar);
+  expect(avatar).toHaveAttribute("aria-expanded", "true");
+  const menu = screen.getByTestId("nav-user-menu");
+  expect(menu).toHaveTextContent("user@x.io");
+  expect(menu).toHaveTextContent("user");
+  expect(within(menu).getByTestId("btn-profile")).toHaveTextContent("Hồ sơ");
+  expect(within(menu).getByTestId("btn-logout")).toHaveTextContent("Đăng xuất");
   expect(zone.queryByTestId("btn-login")).not.toBeInTheDocument();
 });
 
@@ -110,18 +120,19 @@ it("logged-in user sees nav-link-jobs, NOT nav-link-admin", async () => {
   await waitFor(() => expect(screen.queryByTestId("nav-link-admin")).not.toBeInTheDocument());
 });
 
-it("logged-in user sees btn-logout; click calls api.logout and navigates to /login", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+it("logged-in user sees btn-logout in dropdown; click calls api.logout and navigates to /login", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, email: "user@x.io", role: "user", ocr_enabled: true } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   vi.mocked(api.logout).mockResolvedValue({});
   render(<App />);
-  expect(await screen.findByTestId("btn-logout")).toBeInTheDocument();
+  await userEvent.click(await screen.findByTestId("nav-avatar"));
+  expect(screen.getByTestId("btn-logout")).toBeInTheDocument();
   await userEvent.click(screen.getByTestId("btn-logout"));
   await waitFor(() => expect(api.logout).toHaveBeenCalled());
   expect(mockNavigate).toHaveBeenCalledWith("/login");
 });
 
-it("btn-profile links to /profile placeholder route", async () => {
+it("btn-profile inside dropdown links to /profile placeholder route", async () => {
   vi.mocked(api.me).mockResolvedValue({
     id: 1,
     email: "user@x.io",
@@ -130,8 +141,56 @@ it("btn-profile links to /profile placeholder route", async () => {
   } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   render(<App />);
-  await userEvent.click(await screen.findByTestId("btn-profile"));
+  await userEvent.click(await screen.findByTestId("nav-avatar"));
+  await userEvent.click(screen.getByTestId("btn-profile"));
   expect(await screen.findByRole("heading", { name: "Hồ sơ" })).toBeInTheDocument();
+});
+
+it("user dropdown: nav-avatar opens nav-user-menu containing email + role", async () => {
+  vi.mocked(api.me).mockResolvedValue({
+    id: 7,
+    email: "menu@x.io",
+    role: "user",
+    ocr_enabled: true,
+  } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  render(<App />);
+  const avatar = await screen.findByTestId("nav-avatar");
+  await userEvent.click(avatar);
+  const menu = screen.getByTestId("nav-user-menu");
+  expect(menu).toHaveTextContent("menu@x.io");
+  expect(menu).toHaveTextContent("user");
+});
+
+it("outside click closes the user dropdown menu (mousedown outside wrapper)", async () => {
+  vi.mocked(api.me).mockResolvedValue({
+    id: 7,
+    email: "menu@x.io",
+    role: "user",
+    ocr_enabled: true,
+  } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  render(<App />);
+  await userEvent.click(await screen.findByTestId("nav-avatar"));
+  expect(screen.getByTestId("nav-user-menu")).toBeInTheDocument();
+  fireEvent.mouseDown(document);
+  expect(screen.queryByTestId("nav-user-menu")).not.toBeInTheDocument();
+});
+
+it("clicking nav-avatar again closes the dropdown (toggle)", async () => {
+  vi.mocked(api.me).mockResolvedValue({
+    id: 7,
+    email: "menu@x.io",
+    role: "user",
+    ocr_enabled: true,
+  } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  render(<App />);
+  const avatar = await screen.findByTestId("nav-avatar");
+  await userEvent.click(avatar);
+  expect(screen.getByTestId("nav-user-menu")).toBeInTheDocument();
+  await userEvent.click(avatar);
+  expect(screen.queryByTestId("nav-user-menu")).not.toBeInTheDocument();
 });
 
 it("hamburger toggle: aria-expanded/controls/label, opens mobile menu, closes on link click", async () => {
