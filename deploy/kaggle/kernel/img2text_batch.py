@@ -19,7 +19,8 @@ Ceilings (ponytail):
 - 1 input file per run (first match under /kaggle/input/**).
 - result.json = notebook document shape (pages[]/blocks[]), NOT prod spec §4;
   page `image` paths point at the kernel tmp dir (not pulled back);
-  sync production backend mode (K2 push.py) sau.
+- result.md = plain join block-text mỗi trang — batch-grade, khác worker prod
+  (bỏ image-block, không Cảnh-báo marker/page_flag). sync production sau.
 """
 import glob
 import io
@@ -162,6 +163,13 @@ if not os.path.exists(VENV_PY):
         ],
     ):
         subprocess.run(cmd, check=False)
+
+if not os.path.exists(VENV_PY):
+    # uv venv failed (no network/quota/python) — hint thay vì FileNotFoundError thô
+    raise SystemExit(
+        "venv py3.12/paddle không cài được — kiểm tra GPU/quota Kaggle + "
+        "internet=true trong kernel Settings"
+    )
 
 _paddle_check = subprocess.run(
     [VENV_PY, "-c", "import paddle, paddleocr; print(paddle.__version__, paddle.device.is_compiled_with_cuda())"],
