@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { Briefcase, IdCard, LogOut, Menu, ShieldCheck } from "lucide-react";
+import { Briefcase, FileText, IdCard, LogOut, Menu, ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Toaster, toast } from "sonner";
@@ -17,6 +17,7 @@ import Login from "./pages/Login";
 import Profile from "./pages/Profile";
 import Register from "./pages/Register";
 import Reset from "./pages/Reset";
+import WordTool from "./pages/WordTool";
 import { mapApiError } from "./lib/errors";
 
 // BrowserRouter + QueryClientProvider live here (not main.tsx): App.test.tsx
@@ -189,6 +190,7 @@ function AppNav() {
 
   const isAdmin = me?.role === "admin";
   const jobsActive = pathname === "/jobs";
+  const wordActive = pathname === "/word";
   const adminActive = pathname.startsWith("/admin");
 
   return (
@@ -215,6 +217,15 @@ function AppNav() {
             onClick={() => setMenuOpen(false)}
           >
             Công việc
+          </NavAnchor>
+          <NavAnchor
+            to="/word"
+            testid="nav-link-word"
+            icon={FileText}
+            active={wordActive}
+            onClick={() => setMenuOpen(false)}
+          >
+            Word
           </NavAnchor>
           {isAdmin && (
             <NavAnchor
@@ -259,6 +270,15 @@ function AppNav() {
               onClick={() => setMenuOpen(false)}
             >
               Công việc
+            </NavAnchor>
+            <NavAnchor
+              to="/word"
+              testid="nav-link-word"
+              icon={FileText}
+              active={wordActive}
+              onClick={() => setMenuOpen(false)}
+            >
+              Word
             </NavAnchor>
             {isAdmin && (
               <NavAnchor
@@ -319,6 +339,7 @@ export default function App() {
             <Route path="/landing" element={<Navigate to="/" replace />} />
             <Route path="/jobs" element={<Jobs />} />
             <Route path="/jobs/:id" element={<JobDetail />} />
+            <Route path="/word" element={<WordTool />} />
             <Route path="/admin" element={<Admin />} />
           </Routes>
         </div>

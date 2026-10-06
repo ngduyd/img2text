@@ -64,6 +64,8 @@ it("renders app shell with brand and left nav links for logged-out", () => {
   expect(jobsLink).toBeInTheDocument();
   // Root is landing now; the jobs nav-link points at the /jobs list route.
   expect(jobsLink).toHaveAttribute("href", "/jobs");
+  // D3: Word tool link — everyone, after "Công việc".
+  expect(screen.getByTestId("nav-link-word")).toHaveAttribute("href", "/word");
   // R51: admin link is role-gated (binding nav contract) — asserted in admin test.
   expect(screen.queryByTestId("nav-link-admin")).not.toBeInTheDocument();
 });
