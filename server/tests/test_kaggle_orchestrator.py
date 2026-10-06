@@ -88,6 +88,10 @@ def _reset_orch_state(monkeypatch):
 
 @pytest.fixture
 def kaggle_env(monkeypatch, tmp_path):
+    # Plan K5: mode default is "batch" — these K2 tests pin "loop" to keep
+    # exercising the legacy worker-kernel branch (dispatch covered here +
+    # test_kaggle_batch_orchestrator.py).
+    monkeypatch.setattr(settings, "kaggle_mode", "loop")
     monkeypatch.setattr(settings, "kaggle_username", "testuser")
     monkeypatch.setattr(settings, "kaggle_key", "testkey")
     monkeypatch.setattr(settings, "kaggle_kernel_ref", "testuser/img2text-worker")

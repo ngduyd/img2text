@@ -24,6 +24,7 @@ from app.core.deps import get_current_user, get_runner_key, require_ocr
 from app.core.limiter import DailyCounter
 from app.core.models import Job, User
 from app.core.schemas import PreprocessIn, ResultBody
+from app.services.job_results import store_worker_result
 from app.services.storage import StorageDriver, get_storage
 
 UPLOAD_DAILY_LIMIT = 20
@@ -451,33 +452,14 @@ async def submit_result(
         or not hmac.compare_digest(token, job.worker_token)
     ):
         raise HTTPException(status_code=401, detail="bad worker token")
-    # Atomic transition (fix round 1): ONE conditional UPDATE re-checks the
-    # claim at commit time — closes the read-guard-commit TOCTOU (Task 5
-    # reaper requeue between guard and commit; concurrent double-submit).
-    # Token in WHERE too: a reaper requeue + reclaim by another worker
-    # flips rowcount to 0 → 409 instead of marking their claim done and
-    # clearing their fresh token.
-    rowcount = (
-        await session.execute(
-            update(Job)
-            .where(
-                Job.id == id,
-                Job.status == "running",
-                Job.lease_expires_at > now,
-                Job.worker_token == token,
-            )
-            .values(
-                result=body.model_dump(),
-                status="done",
-                finished_at=now,
-                worker_token=None,
-                lease_expires_at=None,
-            )
-        )
-    ).rowcount
-    if rowcount == 0:
+    # Atomic transition (ruling R16/R17): ONE conditional UPDATE re-checks the
+    # claim at commit time — service extracted in Plan K5 (shared with the
+    # Kaggle batch orchestrator); behavior unchanged, guard identical.
+    ok = await store_worker_result(
+        session, id, body, token=token, now=now
+    )
+    if not ok:
         raise HTTPException(status_code=409, detail="job not runnable")
-    await session.commit()
     return {}
 
 @router.post("/api/jobs/{id}/fail")

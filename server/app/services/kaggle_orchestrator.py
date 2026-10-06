@@ -20,27 +20,49 @@ via asyncio.to_thread; DB count uses the injected async session_factory
 (middleware pattern). _last_spawn is per-process (single uvicorn worker by
 design, same assumption as in-process rate limits); multi-worker deploy needs
 a DB-backed spawn record.
+
+Plan K5 (kaggle_mode=batch, default): ensure_worker dispatches — batch mode
+stages the queued job's upload as the img2text-input dataset (delete+create),
+pushes the standalone script kernel (deploy/kaggle/img2text_batch.py), polls
+status, pulls result.json and ingests it into the job. No public URL needed.
+Runs live in the in-memory _batch_runs map (restart = orphan kernel ceiling —
+no DB column); "loop" keeps the Plan K2 branch above untouched.
 """
 
 import asyncio
 import json
 import logging
 import shutil
+import tempfile
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import func, select
 
 from app.core.config import settings
 from app.core.models import Job
+from app.core.schemas import ResultBody
+from app.services.job_results import store_batch_result
 
 logger = logging.getLogger(__name__)
 
 DATASET_SLUG = "img2text-worker-files"
+INPUT_SLUG = "img2text-input"  # batch input dataset (run_one.py K4, shared slug)
 # kernel statuses meaning "run in progress" (case-insensitive match)
 _ACTIVE_STATUSES = frozenset({"running", "pending", "queued"})
+# batch statuses meaning "terminal" (normalized lowercase)
+_FAILED_STATUSES = frozenset({"failed", "error"})
+# mirrors kernel VL_MODEL / worker build_result default (result.json has no version)
+BATCH_MODEL_VERSION = "PaddleOCR-VL-1.5-0.9B"
+# per-block markdown prefixes (batch doc_title → H1, paragraph_title → H2;
+# table/text → raw — block.text is already HTML for tables)
+_MD_PREFIX = {"doc_title": "# ", "paragraph_title": "## "}
 
 _last_spawn = 0.0
+# Plan K5 batch runs: {job_id: {"ref": str, "pushed_at": monotonic}}.
+# In-memory only (non-goal: no DB column) — restart orphans a running kernel.
+_batch_runs: dict[int, dict] = {}
 
 
 def _api():
@@ -157,6 +179,281 @@ async def _count_queued(session_factory) -> int:
         )
         return int(result.scalar_one())
 
+# --- Plan K5: batch mode (kaggle_mode="batch") ---
+
+def _get_storage():
+    """Storage driver for staging uploads (seam: tests inject the moto driver)."""
+    from app.services.storage import build_storage
+
+    return build_storage()
+
+def _norm_status(resp) -> str | None:
+    """kaggle 2.2.4 status → lowercase (enum repr KernelWorkerStatus.COMPLETE
+    → 'complete'). Mirrors deploy/kaggle/push.py _norm_status — server cannot
+    import deploy scripts, so the small helper is replicated here."""
+    value = resp.get("status") if isinstance(resp, dict) else getattr(resp, "status", None)
+    if value is None:
+        return None
+    name = getattr(value, "name", None)
+    if name:
+        return str(name).lower()
+    s = str(value)
+    return s.rsplit(".", 1)[-1].strip().lower() if "." in s else s.strip().lower()
+
+def adapt_batch_document(doc: dict) -> dict:
+    """result.json (K4 notebook document shape) → ResultBody payload (spec §4,
+    validated by schemas.ResultBody before ingest).
+
+    Batch-grade ceilings: whole file → pages 1..N (preprocess ignored — caller
+    logs the KAGGLE_MODE=loop hint); no dual-branch verdicts → verdict "ok" /
+    page_flag "ok"; image blocks dropped (pixels never leave the kernel) as are
+    empty-text blocks; table block text is already HTML, kept verbatim.
+    gpu_seconds 0 — kernel log elapsed is wall time, not GPU seconds."""
+    md_pages: list[str] = []
+    pages_out: list[dict] = []
+    for i, pg in enumerate(doc.get("pages") or [], 1):
+        regions: list[dict] = []
+        md_parts: list[str] = []
+        for b in pg.get("blocks") or []:
+            text = b.get("text") or ""
+            if b.get("type") == "image" or not text.strip():
+                continue
+            regions.append({
+                "id": str(b.get("id") or f"p{i}_b{len(regions)}"),
+                "bbox": b.get("bbox"),
+                "text": text,
+                "verdict": "ok",
+                "placeholder": False,
+            })
+            md_parts.append(_MD_PREFIX.get(b.get("type"), "") + text)
+        page_md = "\n\n".join(md_parts)
+        pages_out.append({
+            "index": int(pg.get("page") or i),
+            "width": int(pg.get("width") or 0),
+            "height": int(pg.get("height") or 0),
+            "page_flag": "ok",
+            "markdown": page_md,
+            "regions": regions,
+        })
+        md_pages.append(page_md)
+    return {
+        "model_version": BATCH_MODEL_VERSION,
+        "gpu_seconds": 0.0,
+        "warnings": [],
+        "markdown": "\n\n---\n\n".join(md_pages),
+        "edited_markdown": None,
+        "pages": pages_out,
+    }
+
+def _api_dataset_exists(api, ref: str) -> bool:
+    """Hasattr-verified exists check via dataset_list (both API generations).
+    Mirrors deploy/kaggle/kcompat.api_dataset_exists (server cannot import it)."""
+    _owner, slug = ref.split("/", 1)
+    list_fn = getattr(api, "dataset_list", None)
+    with_resp_fn = getattr(api, "dataset_list_with_response", None)
+    if list_fn is None and with_resp_fn is None:
+        raise RuntimeError("kaggle package: dataset_list not found — cần kaggle>=1.6")
+    if list_fn is not None:
+        items = list_fn(search=slug)
+    else:
+        resp = with_resp_fn(search=slug)
+        items = getattr(resp, "datasets", None)
+    for item in items or []:
+        if isinstance(item, dict):
+            raw = str(item.get("ref") or "")
+            item_owner = str(item.get("owner") or item.get("owner_ref") or "")
+        else:
+            raw = str(getattr(item, "ref", "") or "")
+            item_owner = str(getattr(item, "owner_ref", "") or "")
+        if not raw:
+            continue
+        if "/" not in raw:
+            raw = f"{item_owner}/{raw}" if item_owner else raw
+        if raw.casefold() == ref.casefold() or ("/" not in raw and raw.casefold() == slug.casefold()):
+            return True
+    return False
+
+def _api_delete_dataset(api, ref: str) -> bool:
+    """Delete ref; True = deleted (1.8-era returns None on success).
+    Mirrors kcompat.api_delete_dataset — no delete API → False (caller errors)."""
+    owner, slug = ref.split("/", 1)
+    if hasattr(api, "dataset_delete"):
+        return api.dataset_delete(owner, slug, no_confirm=True) is not False
+    if hasattr(api, "datasets_delete"):
+        return api.datasets_delete(ref) is not False
+    return False
+
+def _api_create_dataset(api, folder):
+    """Upload-create from folder (dataset-metadata.json).
+    Mirrors kcompat.api_create_dataset — kaggle 2.2.x renamed the API."""
+    if hasattr(api, "dataset_create_new"):
+        return api.dataset_create_new(str(folder))
+    if hasattr(api, "datasets_create_with_files"):
+        return api.datasets_create_with_files(upload_folder=str(folder))
+    raise RuntimeError("kaggle package: dataset_create_new not found — cần kaggle>=1.6")
+
+def _ensure_input_dataset(api, owner: str, folder: Path) -> None:
+    """img2text-input: exists → DELETE + recreate with the staged folder
+    (run_one.ensure_dataset refresh pattern — a version bump would serve the
+    PREVIOUS input). Delete unavailable → raise, spawn skipped, retried next tick."""
+    ref = f"{owner}/{INPUT_SLUG}"
+    if _api_dataset_exists(api, ref) and not _api_delete_dataset(api, ref):
+        raise RuntimeError(
+            f"kaggle package has no dataset delete API — cannot replace {ref}"
+        )
+    _api_create_dataset(api, folder)
+
+def _stage_batch_kernel(dest: Path) -> str:
+    """Stage the batch script kernel from read-only templates: img2text_batch.py
+    + kernel-batch-metadata.json (OWNER substituted; dataset_sources = the
+    img2text-input dataset ONLY — the script carries all code). Returns the
+    kernel ref (metadata id) the run is tracked under."""
+    src = _stage_src()
+    dest.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src / "kernel" / "img2text_batch.py", dest / "img2text_batch.py")
+    meta = _sub_owner(
+        json.loads(
+            (src / "kernel" / "kernel-batch-metadata.json").read_text(encoding="utf-8")
+        ),
+        settings.kaggle_username,
+    )
+    meta["machine_shape"] = settings.kaggle_accelerator
+    meta["accelerator"] = settings.kaggle_accelerator
+    (dest / "kernel-metadata.json").write_text(
+        json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    return str(meta["id"])
+
+async def _spawn_batch_run(api, job: Job) -> None:
+    """queued job → stage input + dataset delete/create + kernels_push.
+
+    Staging (input + kernel) lives in a fresh tmp dir, deleted after push —
+    the run lives on Kaggle, not locally. Shared img2text-input slug: spawns
+    are sequential (max 1/tick + gap guard), so runs never overwrite."""
+    global _last_spawn
+    owner = settings.kaggle_username
+    data = await _get_storage().get(job.storage_key)
+    build = Path(tempfile.mkdtemp(prefix="kaggle-img2text-batch-"))
+    try:
+        input_stage = build / "input"
+        input_stage.mkdir()
+        (input_stage / Path(job.storage_key).name).write_bytes(data)  # sha.<ext> keeps the ext
+        (input_stage / "dataset-metadata.json").write_text(
+            json.dumps(
+                {
+                    "id": f"{owner}/{INPUT_SLUG}",
+                    "title": INPUT_SLUG,
+                    "licenses": [{"name": "CC0-1.0"}],
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        kernel_stage = build / "kernel"
+        ref = _stage_batch_kernel(kernel_stage)
+        # stale-input guard: refresh the dataset BEFORE push (the kernel
+        # executes against the mounted dataset, never the staged folder)
+        await asyncio.to_thread(_ensure_input_dataset, api, owner, input_stage)
+        await asyncio.to_thread(api.kernels_push, str(kernel_stage))
+    finally:
+        shutil.rmtree(build, ignore_errors=True)
+    _batch_runs[job.id] = {"ref": ref, "pushed_at": time.monotonic()}
+    _last_spawn = time.monotonic()
+
+async def _ingest_batch_result(api, session_factory, job_id: int, ref: str) -> None:
+    """kernels_output → result.json → spec §4 ResultBody → job done."""
+    out_dir = Path(tempfile.mkdtemp(prefix="kaggle-img2text-out-"))
+    try:
+        await asyncio.to_thread(
+            api.kernels_output, ref, path=str(out_dir), quiet=False
+        )
+        doc = json.loads((out_dir / "result.json").read_text(encoding="utf-8"))
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
+    async with session_factory() as session:
+        job = await session.get(Job, job_id)
+        if job is None:
+            logger.warning("kaggle batch: job %s gone before ingest — drop", job_id)
+            return
+        if job.preprocess:
+            logger.warning(
+                "kaggle batch bỏ qua preprocess — dùng worker loop "
+                "(KAGGLE_MODE=loop) khi cần"
+            )
+        body = ResultBody.model_validate(adapt_batch_document(doc))
+        stored = await store_batch_result(
+            session, job_id, body, now=datetime.now(timezone.utc)
+        )
+        if not stored:
+            logger.warning(
+                "kaggle batch: job %s no longer queued unclaimed — skip ingest",
+                job_id,
+            )
+            return
+    logger.info("kaggle batch: job %s done (%d pages)", job_id, len(body.pages))
+
+async def _poll_batch_run(api, session_factory, job_id: int, run: dict) -> None:
+    """One poll of a tracked run. complete → ingest; failed/error → drop ref
+    (job stays queued → respawn next tick, gap-guarded); ref older than
+    kaggle_timeout → drop ref + warning (same respawn path)."""
+    ref = str(run["ref"])
+    status = _norm_status(await asyncio.to_thread(api.kernels_status, ref))
+    if status == "complete":
+        _batch_runs.pop(job_id, None)
+        try:
+            await _ingest_batch_result(api, session_factory, job_id, ref)
+        except Exception:
+            logger.warning("kaggle batch: ingest job %s failed", job_id, exc_info=True)
+        return
+    if status in _FAILED_STATUSES:
+        _batch_runs.pop(job_id, None)
+        logger.warning(
+            "kaggle batch: kernel %s %s — ref dropped, job %s stays queued "
+            "(respawn next tick after gap)",
+            ref, status, job_id,
+        )
+        return
+    if time.monotonic() - run["pushed_at"] > settings.kaggle_timeout:
+        _batch_runs.pop(job_id, None)
+        logger.warning(
+            "kaggle batch: ref %s older than kaggle_timeout=%ds — ref dropped, "
+            "job %s stays queued",
+            ref, settings.kaggle_timeout, job_id,
+        )
+
+async def _ensure_batch_runs(api, session_factory) -> bool:
+    """Plan K5 batch tick: poll every tracked run, then spawn at most 1 new
+    run (oldest queued job without a run). True = spawned.
+
+    Never raises contract is enforced by the ensure_worker caller."""
+    for job_id, run in list(_batch_runs.items()):
+        await _poll_batch_run(api, session_factory, job_id, run)
+    now = time.monotonic()
+    if now - _last_spawn < settings.kaggle_min_gap_seconds:
+        logger.info(
+            "kaggle batch: last spawn %.0fs ago < gap %ds — skip",
+            now - _last_spawn,
+            settings.kaggle_min_gap_seconds,
+        )
+        return False
+    async with session_factory() as session:
+        queued = (
+            await session.execute(
+                select(Job).where(Job.status == "queued").order_by(Job.id)
+            )
+        ).scalars().all()
+    job = next((j for j in queued if j.id not in _batch_runs), None)
+    if job is None:
+        return False
+    await _spawn_batch_run(api, job)
+    logger.info(
+        "kaggle batch: pushed job %s → kernel %s",
+        job.id, _batch_runs[job.id]["ref"],
+    )
+    return True
+
 
 async def ensure_worker(session_factory) -> bool:
     """Spawn a Kaggle kernel run when the queue needs it. True = pushed.
@@ -166,11 +463,14 @@ async def ensure_worker(session_factory) -> bool:
     global _last_spawn
     if not settings.kaggle_enabled:
         return False
-    ref = settings.kaggle_kernel_ref.strip()
     try:
         api = _api()  # inside try: constructor/auth errors must also return False (never-raise contract)
         if api is None:
             return False
+        if settings.kaggle_mode != "loop":
+            # Plan K5 default (batch): drive the standalone script kernel per job
+            return await _ensure_batch_runs(api, session_factory)
+        ref = settings.kaggle_kernel_ref.strip()
         resp = await asyncio.to_thread(api.kernels_status, ref)
         status = (
             resp.get("status") if isinstance(resp, dict) else getattr(resp, "status", None)

@@ -220,10 +220,23 @@ Smoke-check the notebook before each release: [docs/colab-smoke-checklist.md](do
 
 ## Kaggle orchestration (worker tự động)
 
-Server tự điều phối Kaggle worker (Plan K2): scheduler mỗi interval thấy
-`queued` job ≥ `KAGGLE_MIN_QUEUE` + kernel Kaggle không chạy → tự bump dataset
-version + `kernels push` (upload + run) kernel mới. Kernel xử lý theo session
-rồi thoát (platform cap ~12h); server tái kích khi queue còn job.
+Server tự điều phối Kaggle worker (Plan K2 + K5), chọn bằng `KAGGLE_MODE`
+(mặc định `batch`):
+
+- **`batch` (mặc định, Plan K5)**: scheduler thấy `queued` job → backend tự
+  stage file upload vào dataset `img2text-input` (delete + create — luôn
+  chạy trên file mới nhất), push script kernel `img2text_batch.py` (từ
+  `deploy/kaggle`), poll status → `kernels_output` → `result.json` → ingest
+  vào job (`done` + payload spec §4). **Không cần public URL, không cần
+  Secrets.** Ceiling: max 1 job mới mỗi tick + gap `KAGGLE_MIN_GAP_SECONDS`;
+  `preprocess` bị bỏ qua (log warning — dùng `loop` khi cần chọn trang/xoay);
+  map run giữ trong RAM (restart = kernel mồ côi).
+- **`loop` (Plan K2)**: bump dataset `img2text-worker-files` + push kernel
+  worker (`img2text_worker.ipynb`); kernel xử lý theo session rồi poll backend
+  qua `/api/jobs/next` — production mode khi có URL public + Secrets.
+
+Kernel xử lý theo session rồi thoát (platform cap ~12h); server tái kích
+khi queue còn job.
 
 **Bật env** (deploy/.env hoặc shell — compose dev pass-through, xem
 `deploy/.env.dev.example`):
@@ -232,23 +245,27 @@ rồi thoát (platform cap ~12h); server tái kích khi queue còn job.
 KAGGLE_USERNAME=<kaggle username>        # OWNER id trong metadata (bắt buộc)
 KAGGLE_API_TOKEN=<token>                 # khuyên — kaggle 2.x primary (kaggle.com/settings/api)
 KAGGLE_KEY=<api key>                     # legacy fallback khi không có token
-KAGGLE_KERNEL_REF=<user>/img2text-worker # ref kernel đã tạo 1 lần
+KAGGLE_KERNEL_REF=<user>/img2text-worker # ref kernel đã tạo 1 lần (bắt buộc cho mode loop)
+KAGGLE_MODE=batch                        # batch (mặc định) | loop (Plan K2)
 ```
 
 Không set đủ `KAGGLE_USERNAME` + (`KAGGLE_KEY` **hoặc** `KAGGLE_API_TOKEN`) + `KAGGLE_KERNEL_REF` = feature tự tắt, server **không import** `kaggle`
 (thiếu package cũng không crash — orchestrator disabled + warning).
 
-**Secrets 1 lần** (trước khi kernel chạy): kaggle.com → Add-ons → Secrets:
+**Secrets 1 lần** (chỉ mode `loop` — batch không gọi lại backend): kaggle.com → Add-ons → Secrets:
 `BASE_URL` (URL **public** của API worker — không localhost) + `RUNNER_KEY`.
 Chi tiết: [deploy/kaggle/README.md](deploy/kaggle/README.md).
 
-**Khởi tạo 1 lần**: dataset `OWNER/img2text-worker-files` + kernel ref phải
-tồn tại trên Kaggle — chạy `python deploy/kaggle/push.py` (Plan K manual
-push) trước khi bật orchestration.
+**Khởi tạo 1 lần** (chỉ mode `loop`): dataset `OWNER/img2text-worker-files` +
+kernel ref phải tồn tại trên Kaggle — chạy `python deploy/kaggle/push.py`
+(Plan K manual push) trước khi bật orchestration. Mode `batch` tự push kernel
+`img2text-batch` + tự tạo dataset `img2text-input` khi spawn.
 
 Quota GPU free ~**30h/tuần** — `KAGGLE_MIN_GAP_SECONDS` (mặc định 600s)
-+ `KAGGLE_MIN_QUEUE` (mặc định 1) chống spam spawn. `KAGGLE_TIMEOUT` chỉ là
-ceiling note (kernels_push timeout kw không đáng tin; session cap do platform).
+chống spam spawn ở cả 2 mode; `KAGGLE_MIN_QUEUE` (mặc định 1) chỉ tính ở mode
+`loop`. `KAGGLE_TIMEOUT` ở mode `batch` là trần poll thật (ref quá hạn bị xóa,
+job vẫn `queued` → spawn lại sau gap); ở mode `loop` chỉ là ceiling note
+(kernels_push timeout kw không đáng tin; session cap do platform).
 
 **Production note**: server cần egress internet + package `kaggle`
 (Dockerfile đã `pip install "/app/server[kaggle]"`; server thường thì

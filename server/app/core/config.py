@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     kaggle_min_gap_seconds: int = 600
     kaggle_stage_src: str = "deploy/kaggle"
     kaggle_stage_dir: str = "/tmp/img2text-kaggle-kernel"
+    # Plan K5: orchestration mode. "batch" (default) = backend drives the
+    # standalone script kernel (no public URL needed); "loop" = Plan K2
+    # worker kernel polling the backend (needs public BASE_URL + Secrets).
+    kaggle_mode: str = "batch"
 
     @property
     def kaggle_enabled(self) -> bool:
@@ -74,6 +78,13 @@ class Settings(BaseSettings):
     @classmethod
     def _floor_scheduler_interval(cls, v: int) -> int:
         return max(5, v)
+
+    @field_validator("kaggle_mode")
+    @classmethod
+    def _kaggle_mode_values(cls, v: str) -> str:
+        if v not in ("batch", "loop"):
+            raise ValueError("kaggle_mode phải là batch hoặc loop")
+        return v
 
 
 settings = Settings()

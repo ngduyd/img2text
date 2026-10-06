@@ -91,6 +91,9 @@ services:
       # kaggle 2.x primary auth (kaggle.com/settings/api); empty → legacy key
       KAGGLE_API_TOKEN: ${KAGGLE_API_TOKEN:-}
       KAGGLE_KERNEL_REF: ${KAGGLE_KERNEL_REF:-}
+      # Plan K5: batch (default — backend drives the script kernel, no public
+      # URL) | loop (Plan K2 worker kernel polling the backend).
+      KAGGLE_MODE: ${KAGGLE_MODE:-batch}
       # In-container absolute path (mounted ro below); host default
       # deploy/kaggle resolves via server source layout.
       KAGGLE_STAGE_SRC: /app/deploy/kaggle
