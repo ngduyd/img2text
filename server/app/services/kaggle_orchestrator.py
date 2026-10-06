@@ -35,10 +35,10 @@ import logging
 import shutil
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.core.config import settings
 from app.core.models import Job
@@ -328,7 +328,7 @@ def _stage_batch_kernel(dest: Path) -> str:
     )
     return str(meta["id"])
 
-async def _spawn_batch_run(api, job: Job) -> None:
+async def _spawn_batch_run(api, session_factory, job: Job) -> None:
     """queued job → stage input + dataset delete/create + kernels_push.
 
     Staging (input + kernel) lives in a fresh tmp dir, deleted after push —
@@ -362,10 +362,44 @@ async def _spawn_batch_run(api, job: Job) -> None:
         # executes against the mounted dataset, never the staged folder)
         await asyncio.to_thread(_ensure_input_dataset, api, owner, input_stage)
         await asyncio.to_thread(api.kernels_push, str(kernel_stage))
+        # D1: push OK → job visibly running (UI "Đang xử lý" instead of
+        # "Chờ xử lý" for the whole run); lease = now + kaggle_timeout so
+        # the reaper never requeues mid-run. started_at kept if already set.
+        now = datetime.now(timezone.utc)
+        async with session_factory() as session:
+            await session.execute(
+                update(Job)
+                .where(Job.id == job.id, Job.status == "queued")
+                .values(
+                    status="running",
+                    started_at=func.coalesce(Job.started_at, now),
+                    lease_expires_at=now
+                    + timedelta(seconds=settings.kaggle_timeout),
+                )
+            )
+            await session.commit()
+        logger.info(
+            "kaggle batch: job %s → running (lease +%ds)",
+            job.id,
+            settings.kaggle_timeout,
+        )
     finally:
         shutil.rmtree(build, ignore_errors=True)
     _batch_runs[job.id] = {"ref": ref, "pushed_at": time.monotonic()}
     _last_spawn = time.monotonic()
+
+async def _revert_job_queued(session_factory, job_id: int, why: str) -> None:
+    """D1 failure path: kernel failed/error/timeout or ingest give-up →
+    job back to queued with the lease cleared so the gap-guarded respawn
+    picks it up next round (reaper must not also touch it)."""
+    async with session_factory() as session:
+        await session.execute(
+            update(Job)
+            .where(Job.id == job_id, Job.status == "running")
+            .values(status="queued", lease_expires_at=None)
+        )
+        await session.commit()
+    logger.info("kaggle batch: job %s reverted to queued (%s)", job_id, why)
 
 async def _ingest_batch_result(api, session_factory, job_id: int, ref: str) -> None:
     """kernels_output → result.json → spec §4 ResultBody → job done."""
@@ -393,7 +427,8 @@ async def _ingest_batch_result(api, session_factory, job_id: int, ref: str) -> N
         )
         if not stored:
             logger.warning(
-                "kaggle batch: job %s no longer queued unclaimed — skip ingest",
+                "kaggle batch: job %s not ingestable (claimed or lease "
+                "expired) — skip ingest",
                 job_id,
             )
             return
@@ -404,8 +439,9 @@ async def _poll_batch_run(api, session_factory, job_id: int, run: dict) -> None:
     a successful pull+validate — a transient kernels_output/ValidationError
     failure retries next tick; _INGEST_MAX_FAILURES persistent failures drop
     the ref so a deterministic poison result can't loop forever);
-    failed/error → drop ref (job stays queued → respawn next tick,
-    gap-guarded); ref older than kaggle_timeout → drop ref + warning."""
+    failed/error → drop ref + revert job to queued (respawn next tick,
+    gap-guarded); ref older than kaggle_timeout → drop ref + revert +
+    warning."""
     ref = str(run["ref"])
     status = _norm_status(await asyncio.to_thread(api.kernels_status, ref))
     if status == "complete":
@@ -418,6 +454,9 @@ async def _poll_batch_run(api, session_factory, job_id: int, run: dict) -> None:
                 logger.error(
                     "kaggle batch: ingest job %s failed %d times — ref dropped",
                     job_id, run["ingest_failures"], exc_info=True,
+                )
+                await _revert_job_queued(
+                    session_factory, job_id, "ingest give-up"
                 )
             else:
                 logger.warning(
@@ -434,6 +473,7 @@ async def _poll_batch_run(api, session_factory, job_id: int, run: dict) -> None:
             "(respawn next tick after gap)",
             ref, status, job_id,
         )
+        await _revert_job_queued(session_factory, job_id, f"kernel {status}")
         return
     if time.monotonic() - run["pushed_at"] > settings.kaggle_timeout:
         _batch_runs.pop(job_id, None)
@@ -442,6 +482,7 @@ async def _poll_batch_run(api, session_factory, job_id: int, run: dict) -> None:
             "job %s stays queued",
             ref, settings.kaggle_timeout, job_id,
         )
+        await _revert_job_queued(session_factory, job_id, "kaggle_timeout")
 
 async def _ensure_batch_runs(api, session_factory) -> bool:
     """Plan K5 batch tick: poll every tracked run, then spawn at most 1 new
@@ -476,7 +517,7 @@ async def _ensure_batch_runs(api, session_factory) -> bool:
         ).scalars().all()
     for job in (j for j in queued if j.id not in _batch_runs):
         try:
-            await _spawn_batch_run(api, job)
+            await _spawn_batch_run(api, session_factory, job)
         except Exception:
             _last_spawn = time.monotonic()  # anti-hammer on persistent errors
             logger.warning(

@@ -9,7 +9,7 @@ rowcount 0 = caller maps to 409 / skip; never raises on conflict.
 
 from datetime import datetime
 
-from sqlalchemy import update
+from sqlalchemy import and_, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.models import Job
@@ -66,15 +66,25 @@ async def store_batch_result(
     *,
     now: datetime,
 ) -> bool:
-    """Kaggle batch run finished: job still queued + unclaimed → done.
+    """Kaggle batch run finished → done. D1 guard (K5 review nới):
+    (queued + unclaimed) OR (running + unclaimed + active lease).
 
-    queued jobs never got a worker_token; a job claimed by a worker between
-    poll and ingest flips rowcount to 0 (caller logs and drops the run)."""
+    Batch spawn marks the job running (D1), so the old queued-only guard
+    would reject the normal path; running is accepted only while the spawn
+    lease is still valid. queued/running jobs never carry a worker_token;
+    a worker claim or an expired lease (reaper's turn) flips rowcount to 0
+    (caller logs and drops the run)."""
     return await _store(
         session,
         job_id,
         body,
-        Job.status == "queued",
-        Job.worker_token.is_(None),
+        or_(
+            and_(Job.status == "queued", Job.worker_token.is_(None)),
+            and_(
+                Job.status == "running",
+                Job.worker_token.is_(None),
+                Job.lease_expires_at > now,
+            ),
+        ),
         now=now,
     )
