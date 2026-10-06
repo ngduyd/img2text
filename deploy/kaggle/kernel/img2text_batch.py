@@ -537,7 +537,8 @@ def main() -> None:
 
     pages_out, problems = normalize(raw_paths, pre_info,
                                     ocr_raw_dir, pre_dir)
-    document = {"source_pdf": input_path, "dpi": DPI, "pages": pages_out}
+    document = {"source_pdf": input_path, "dpi": DPI, "pages": pages_out,
+                "problems": problems}  # → server batch adapter maps to result warnings
     os.makedirs(OUT_DIR, exist_ok=True)
     with open(os.path.join(OUT_DIR, "result.json"), "w", encoding="utf-8") as f:
         json.dump(document, f, ensure_ascii=False, indent=2)

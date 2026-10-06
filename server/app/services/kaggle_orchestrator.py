@@ -60,6 +60,8 @@ BATCH_MODEL_VERSION = "PaddleOCR-VL-1.5-0.9B"
 _MD_PREFIX = {"doc_title": "# ", "paragraph_title": "## "}
 
 _last_spawn = 0.0
+# ceiling: persistent ingest failures for one ref → drop instead of looping
+_INGEST_MAX_FAILURES = 3
 # Plan K5 batch runs: {job_id: {"ref": str, "pushed_at": monotonic}}.
 # In-memory only (non-goal: no DB column) — restart orphans a running kernel.
 _batch_runs: dict[int, dict] = {}
@@ -239,7 +241,8 @@ def adapt_batch_document(doc: dict) -> dict:
     return {
         "model_version": BATCH_MODEL_VERSION,
         "gpu_seconds": 0.0,
-        "warnings": [],
+        # kernel "problems" (precheck-gated / missing-OCR pages) → operator warnings
+        "warnings": [str(p) for p in doc.get("problems") or []],
         "markdown": "\n\n---\n\n".join(md_pages),
         "edited_markdown": None,
         "pages": pages_out,
@@ -328,8 +331,9 @@ async def _spawn_batch_run(api, job: Job) -> None:
     """queued job → stage input + dataset delete/create + kernels_push.
 
     Staging (input + kernel) lives in a fresh tmp dir, deleted after push —
-    the run lives on Kaggle, not locally. Shared img2text-input slug: spawns
-    are sequential (max 1/tick + gap guard), so runs never overwrite."""
+    the run lives on Kaggle, not locally. Shared img2text-input slug means
+    concurrent runs would overwrite each other's input: _ensure_batch_runs
+    enforces a single-active-run guard before every spawn."""
     global _last_spawn
     owner = settings.kaggle_username
     data = await _get_storage().get(job.storage_key)
@@ -395,17 +399,32 @@ async def _ingest_batch_result(api, session_factory, job_id: int, ref: str) -> N
     logger.info("kaggle batch: job %s done (%d pages)", job_id, len(body.pages))
 
 async def _poll_batch_run(api, session_factory, job_id: int, run: dict) -> None:
-    """One poll of a tracked run. complete → ingest; failed/error → drop ref
-    (job stays queued → respawn next tick, gap-guarded); ref older than
-    kaggle_timeout → drop ref + warning (same respawn path)."""
+    """One poll of a tracked run. complete → ingest (ref dropped only AFTER
+    a successful pull+validate — a transient kernels_output/ValidationError
+    failure retries next tick; _INGEST_MAX_FAILURES persistent failures drop
+    the ref so a deterministic poison result can't loop forever);
+    failed/error → drop ref (job stays queued → respawn next tick,
+    gap-guarded); ref older than kaggle_timeout → drop ref + warning."""
     ref = str(run["ref"])
     status = _norm_status(await asyncio.to_thread(api.kernels_status, ref))
     if status == "complete":
-        _batch_runs.pop(job_id, None)
         try:
             await _ingest_batch_result(api, session_factory, job_id, ref)
         except Exception:
-            logger.warning("kaggle batch: ingest job %s failed", job_id, exc_info=True)
+            run["ingest_failures"] = run.get("ingest_failures", 0) + 1
+            if run["ingest_failures"] >= _INGEST_MAX_FAILURES:
+                _batch_runs.pop(job_id, None)
+                logger.error(
+                    "kaggle batch: ingest job %s failed %d times — ref dropped",
+                    job_id, run["ingest_failures"], exc_info=True,
+                )
+            else:
+                logger.warning(
+                    "kaggle batch: ingest job %s failed — retry next tick",
+                    job_id, exc_info=True,
+                )
+            return
+        _batch_runs.pop(job_id, None)  # success only — retry pull on failure
         return
     if status in _FAILED_STATUSES:
         _batch_runs.pop(job_id, None)
@@ -425,11 +444,18 @@ async def _poll_batch_run(api, session_factory, job_id: int, run: dict) -> None:
 
 async def _ensure_batch_runs(api, session_factory) -> bool:
     """Plan K5 batch tick: poll every tracked run, then spawn at most 1 new
-    run (oldest queued job without a run). True = spawned.
+    run. True = spawned.
 
-    Never raises contract is enforced by the ensure_worker caller."""
+    Single-active-run guard: the img2text-input slug is shared, so no new
+    spawn while ANY run is tracked (a 320s run + queue wait can exceed the
+    600s gap — gap alone doesn't prevent overlap). Poison-job guard: a spawn
+    failure logs + moves to the NEXT queued candidate this tick instead of
+    head-of-line blocking the queue. Never raises (ensure_worker caller)."""
+    global _last_spawn
     for job_id, run in list(_batch_runs.items()):
         await _poll_batch_run(api, session_factory, job_id, run)
+    if _batch_runs:  # active run(s) — shared input slug: never overlap
+        return False
     now = time.monotonic()
     if now - _last_spawn < settings.kaggle_min_gap_seconds:
         logger.info(
@@ -444,15 +470,21 @@ async def _ensure_batch_runs(api, session_factory) -> bool:
                 select(Job).where(Job.status == "queued").order_by(Job.id)
             )
         ).scalars().all()
-    job = next((j for j in queued if j.id not in _batch_runs), None)
-    if job is None:
-        return False
-    await _spawn_batch_run(api, job)
-    logger.info(
-        "kaggle batch: pushed job %s → kernel %s",
-        job.id, _batch_runs[job.id]["ref"],
-    )
-    return True
+    for job in (j for j in queued if j.id not in _batch_runs):
+        try:
+            await _spawn_batch_run(api, job)
+        except Exception:
+            _last_spawn = time.monotonic()  # anti-hammer on persistent errors
+            logger.warning(
+                "batch spawn failed job=%s", job.id, exc_info=True
+            )
+            continue  # next candidate — a poison job must not block the queue
+        logger.info(
+            "kaggle batch: pushed job %s → kernel %s",
+            job.id, _batch_runs[job.id]["ref"],
+        )
+        return True
+    return False
 
 
 async def ensure_worker(session_factory) -> bool:

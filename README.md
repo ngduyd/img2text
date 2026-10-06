@@ -228,7 +228,10 @@ Server tự điều phối Kaggle worker (Plan K2 + K5), chọn bằng `KAGGLE_M
   chạy trên file mới nhất), push script kernel `img2text_batch.py` (từ
   `deploy/kaggle`), poll status → `kernels_output` → `result.json` → ingest
   vào job (`done` + payload spec §4). **Không cần public URL, không cần
-  Secrets.** Ceiling: max 1 job mới mỗi tick + gap `KAGGLE_MIN_GAP_SECONDS`;
+  Secrets.** Ceiling: single-active-run (1 run tại một thời điểm — slug
+  input `img2text-input` dùng chung, chống overlap) + gap
+  `KAGGLE_MIN_GAP_SECONDS`; block `image` bị bỏ khỏi regions/markdown
+  (batch không có regions ảnh — chỉ worker `loop` mới có placeholder);
   `preprocess` bị bỏ qua (log warning — dùng `loop` khi cần chọn trang/xoay);
   map run giữ trong RAM (restart = kernel mồ côi).
 - **`loop` (Plan K2)**: bump dataset `img2text-worker-files` + push kernel
@@ -245,7 +248,7 @@ khi queue còn job.
 KAGGLE_USERNAME=<kaggle username>        # OWNER id trong metadata (bắt buộc)
 KAGGLE_API_TOKEN=<token>                 # khuyên — kaggle 2.x primary (kaggle.com/settings/api)
 KAGGLE_KEY=<api key>                     # legacy fallback khi không có token
-KAGGLE_KERNEL_REF=<user>/img2text-worker # ref kernel đã tạo 1 lần (bắt buộc cho mode loop)
+KAGGLE_KERNEL_REF=<user>/img2text-worker # ref kernel đã tạo 1 lần (bắt buộc mọi mode — feature gate; loop dùng ref này)
 KAGGLE_MODE=batch                        # batch (mặc định) | loop (Plan K2)
 ```
 

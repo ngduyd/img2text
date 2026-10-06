@@ -8,18 +8,21 @@ from the conftest app fixture, injected through the orch._get_storage seam.
 """
 
 import json
+import hashlib
 import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.db import SessionLocal
-from app.core.models import Job
+from app.core.models import Job, User
 from app.core.schemas import ResultBody
 from app.services import kaggle_orchestrator as orch
+from tests.conftest import PNG_1PX
 
 DEPLOY_KAGGLE = Path(__file__).parents[2] / "deploy" / "kaggle"
 
@@ -69,6 +72,7 @@ class BatchStubKaggleApi:
         self.status = {"status": SimpleNamespace(name="COMPLETE")}
         self.dataset_items: list = []
         self.result_doc: dict | None = None
+        self.output_error: Exception | None = None
 
     def dataset_list(self, search=None):
         self.calls.append(("dataset_list", search))
@@ -96,6 +100,8 @@ class BatchStubKaggleApi:
 
     def kernels_output(self, ref, path=None, quiet=False):
         self.calls.append(("kernels_output", ref, path))
+        if self.output_error is not None:
+            raise self.output_error  # transient pull failure (test knob)
         assert self.result_doc is not None, "kernels_output before test set result_doc"
         (Path(path) / "result.json").write_text(
             json.dumps(self.result_doc, ensure_ascii=False), encoding="utf-8"
@@ -252,6 +258,86 @@ async def test_batch_timeout_drops_ref_with_warning(
     job = await db_session.get(Job, seed_job)
     assert job.status == "queued"
 
+async def _extra_queued_job(auth_client) -> int:
+    """Second real upload — different bytes → different sha256 storage key."""
+    r = await auth_client.post(
+        "/api/jobs", files={"file": ("t2.png", PNG_1PX + b"seed2", "image/png")}
+    )
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+async def test_batch_single_active_run_blocks_new_spawn(
+    kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session, monkeypatch
+):
+    """P1-1: shared img2text-input slug — no new spawn while a run is active,
+    even when the gap has already elapsed (320s run + queue wait > 600s gap)."""
+    monkeypatch.setattr(settings, "kaggle_min_gap_seconds", 0)
+    assert await orch.ensure_worker(SessionLocal) is True  # job1 spawned
+    job2 = await _extra_queued_job(auth_client)
+    api.status = {"status": SimpleNamespace(name="RUNNING")}
+    assert await orch.ensure_worker(SessionLocal) is False  # poll → still active
+    assert len(_pushes(api)) == 1  # NO new kernels_push
+    assert list(orch._batch_runs) == [seed_job]
+    assert seed_job != job2  # job2 waited, not pushed
+
+async def test_batch_poison_job_does_not_block_queue(
+    kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session, caplog
+):
+    """P1-1/P1-2: first candidate's upload missing → spawn failure logs +
+    moves to the NEXT queued candidate in the same tick."""
+    job2 = await _extra_queued_job(auth_client)
+    job1_key = (await db_session.get(Job, seed_job)).storage_key
+    await storage_env.delete_prefix(job1_key)  # storage.get → KeyError
+    with caplog.at_level("WARNING", logger=orch.logger.name):
+        assert await orch.ensure_worker(SessionLocal) is True
+    assert any(
+        "batch spawn failed job=" in r.getMessage() for r in caplog.records
+    )
+    assert list(orch._batch_runs) == [job2]  # job2 spawned, job1 skipped
+    creates = [c for c in api.calls if c[0] == "dataset_create_new"]
+    assert len(creates) == 1
+    staged_name = hashlib.sha256(PNG_1PX + b"seed2").hexdigest() + ".png"
+    assert staged_name in creates[0][2]  # job2's file, not job1's
+    assert len(_pushes(api)) == 1
+
+async def test_batch_output_failure_keeps_ref_and_retries(
+    kaggle_batch_env, api, storage_env, seed_job, db_session, caplog
+):
+    """P2-5: transient kernels_output failure → ref kept (no GPU re-run),
+    pull retried next tick, success ingests."""
+    api.result_doc = RESULT_DOC
+    assert await orch.ensure_worker(SessionLocal) is True  # spawn
+    api.output_error = RuntimeError("kernels_output transient")
+    with caplog.at_level("WARNING", logger=orch.logger.name):
+        assert await orch.ensure_worker(SessionLocal) is False
+    assert seed_job in orch._batch_runs  # ref KEPT
+    assert any("retry next tick" in r.getMessage() for r in caplog.records)
+    api.output_error = None
+    assert await orch.ensure_worker(SessionLocal) is False  # pull succeeds
+    assert orch._batch_runs == {}
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.status == "done"
+    assert len(_pushes(api)) == 1  # kernel NOT re-spawned for a pull retry
+
+async def test_batch_ingest_failure_ceiling_drops_ref(
+    kaggle_batch_env, api, storage_env, seed_job, db_session, caplog
+):
+    """P2-5: deterministic poison result → after _INGEST_MAX_FAILURES pulls
+    the ref is dropped + error log (no infinite respawn loop)."""
+    api.result_doc = RESULT_DOC
+    assert await orch.ensure_worker(SessionLocal) is True
+    api.output_error = RuntimeError("broken output")
+    with caplog.at_level("WARNING", logger=orch.logger.name):
+        for _ in range(orch._INGEST_MAX_FAILURES):
+            assert await orch.ensure_worker(SessionLocal) is False
+    assert orch._batch_runs == {}
+    assert any("times — ref dropped" in r.getMessage() for r in caplog.records)
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.status == "queued"  # dropped ref → respawn path, gap-guarded
+    assert len(_pushes(api)) == 1  # gap still blocks a re-spawn this tick
+
 async def test_mode_loop_dispatches_to_k2_branch(
     kaggle_batch_env, api, storage_env, seed_job, monkeypatch
 ):
@@ -302,6 +388,18 @@ def test_adapter_missing_dimensions_default_zero():
     page = orch.adapt_batch_document(doc)["pages"][0]
     assert page["width"] == 0 and page["height"] == 0
     assert page["index"] == 1 and page["regions"][0]["bbox"] is None
+
+def test_adapter_maps_kernel_problems_to_warnings():
+    # P2-7: batch script writes "problems" (gated/missing-OCR pages) →
+    # ResultBody.warnings so the UI shows what the kernel skipped.
+    doc = {
+        "problems": ["page_0002.png: precheck unreadable — không OCR"],
+        "pages": [{"page": 1, "blocks": [
+            {"id": "b", "type": "text", "bbox": None, "text": "x"}]}],
+    }
+    out = orch.adapt_batch_document(doc)
+    assert out["warnings"] == ["page_0002.png: precheck unreadable — không OCR"]
+    ResultBody.model_validate(out)
 
 def test_norm_status_enum_and_string_forms():
     assert orch._norm_status({"status": SimpleNamespace(name="COMPLETE")}) == "complete"
