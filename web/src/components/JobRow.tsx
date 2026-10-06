@@ -38,15 +38,16 @@ export default function JobRow({ job }: { job: JobListItem }) {
   return (
     <li
       data-testid={`job-row-${job.id}`}
-      className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
     >
       <div>
         <span className="font-medium text-text">
-          #{job.id} · {job.file_type === "pdf" ? "PDF" : "Ảnh"} · {job.page_count} trang
+          <span className="font-mono">#{job.id}</span> · {job.file_type === "pdf" ? "PDF" : "Ảnh"} ·{" "}
+          <span className="font-mono">{job.page_count}</span> trang
         </span>
-        <div className="text-xs text-muted">
-          {DATE_FORMAT.format(new Date(job.created_at))}
-          {duration && <span className="ml-2">{duration}</span>}
+        <div className="mt-0.5 text-xs text-muted">
+          <span className="font-mono">{DATE_FORMAT.format(new Date(job.created_at))}</span>
+          {duration && <span className="ml-2 font-mono">{duration}</span>}
         </div>
       </div>
       <div className="flex items-center gap-2">

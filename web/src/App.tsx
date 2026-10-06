@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
-import { BrowserRouter, Link, Route, Routes, useNavigate } from "react-router-dom";
+import { Briefcase, Menu, ShieldCheck } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Toaster, toast } from "sonner";
 import { api } from "./api/client";
 import type { User } from "./api/types";
@@ -61,9 +62,50 @@ function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () => void
   );
 }
 
+/** Active nav link: accent left-bar + surface-2 tint (DESIGN.md §4/§7). */
+function navLinkClass(active: boolean): string {
+  return [
+    "relative flex items-center gap-2 rounded-sm px-3 py-2 text-sm transition duration-150 ease-out",
+    active
+      ? "bg-surface-2 font-semibold text-text after:absolute after:inset-y-1.5 after:left-0 after:w-0.5 after:rounded-full after:bg-accent"
+      : "text-muted hover:bg-surface-2 hover:text-text",
+  ].join(" ");
+}
+
+/** Nav link: lucide icon + label; active adds aria-current="page". */
+function NavAnchor({
+  to,
+  testid,
+  icon: Icon,
+  active,
+  onClick,
+  children,
+}: {
+  to: string;
+  testid: string;
+  icon: typeof Briefcase;
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      to={to}
+      data-testid={testid}
+      aria-current={active ? "page" : undefined}
+      className={navLinkClass(active)}
+      onClick={onClick}
+    >
+      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+      {children}
+    </Link>
+  );
+}
+
 /** Left nav: brand + Công việc (everyone) + Quản trị (admin only, Review Focus). */
 function AppNav() {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
   const [menuOpen, setMenuOpen] = useState(false);
   const navRef = useRef<HTMLElement>(null);
@@ -91,6 +133,8 @@ function AppNav() {
   }, [menuOpen]);
 
   const isAdmin = me?.role === "admin";
+  const jobsActive = pathname === "/" || pathname.startsWith("/jobs");
+  const adminActive = pathname.startsWith("/admin");
 
   return (
     <nav
@@ -98,31 +142,51 @@ function AppNav() {
       aria-label="Điều hướng chính"
       className="sticky top-0 z-20 border-b border-border bg-bg/80 backdrop-blur"
     >
-      <div className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-3">
-        <Link to="/" data-testid="nav-brand" className="text-lg font-bold">
+      {/* Single-line bar: ~56px mobile / 64px desktop (DESIGN.md §7). */}
+      <div className="mx-auto flex h-14 max-w-5xl items-center gap-1 px-4 md:h-16">
+        <Link
+          to="/"
+          data-testid="nav-brand"
+          className="mr-2 shrink-0 text-lg font-bold tracking-tight"
+        >
           img2text
         </Link>
-        <Link to="/" data-testid="nav-link-jobs" onClick={() => setMenuOpen(false)}>
-          Công việc
-        </Link>
-        {isAdmin && (
-          <Link to="/admin" data-testid="nav-link-admin" onClick={() => setMenuOpen(false)}>
-            Quản trị
-          </Link>
-        )}
+        <div className="hidden items-center gap-1 md:flex">
+          <NavAnchor
+            to="/"
+            testid="nav-link-jobs"
+            icon={Briefcase}
+            active={jobsActive}
+            onClick={() => setMenuOpen(false)}
+          >
+            Công việc
+          </NavAnchor>
+          {isAdmin && (
+            <NavAnchor
+              to="/admin"
+              testid="nav-link-admin"
+              icon={ShieldCheck}
+              active={adminActive}
+              onClick={() => setMenuOpen(false)}
+            >
+              Quản trị
+            </NavAnchor>
+          )}
+        </div>
         <div className="ml-auto hidden items-center gap-2 md:flex">
           <AuthZone me={me} onLogout={onLogout} />
         </div>
         <button
           type="button"
           data-testid="nav-menu-toggle"
-          className="ml-auto cursor-pointer rounded-lg border border-border px-2 py-1 md:hidden"
+          className="ml-auto inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-border text-text transition duration-150 ease-out hover:bg-surface-2 md:hidden"
           aria-expanded={menuOpen}
           aria-controls="mobile-menu"
           aria-label="Menu"
+          title="Menu"
           onClick={() => setMenuOpen((o) => !o)}
         >
-          <span aria-hidden="true">☰</span>
+          <Menu className="h-5 w-5" aria-hidden="true" />
         </button>
       </div>
       {menuOpen && (
@@ -131,22 +195,36 @@ function AppNav() {
           data-testid="mobile-menu"
           className="border-t border-border bg-bg px-4 py-3 md:hidden"
         >
-          <div className="flex flex-col items-start gap-2">
-            <Link to="/" data-testid="nav-link-jobs" onClick={() => setMenuOpen(false)}>
+          <div className="flex flex-col items-stretch gap-1">
+            <NavAnchor
+              to="/"
+              testid="nav-link-jobs"
+              icon={Briefcase}
+              active={jobsActive}
+              onClick={() => setMenuOpen(false)}
+            >
               Công việc
-            </Link>
+            </NavAnchor>
             {isAdmin && (
-              <Link to="/admin" data-testid="nav-link-admin" onClick={() => setMenuOpen(false)}>
+              <NavAnchor
+                to="/admin"
+                testid="nav-link-admin"
+                icon={ShieldCheck}
+                active={adminActive}
+                onClick={() => setMenuOpen(false)}
+              >
                 Quản trị
-              </Link>
+              </NavAnchor>
             )}
-            <AuthZone
-              me={me}
-              onLogout={() => {
-                setMenuOpen(false);
-                onLogout();
-              }}
-            />
+            <div className="mt-2 border-t border-border pt-3">
+              <AuthZone
+                me={me}
+                onLogout={() => {
+                  setMenuOpen(false);
+                  onLogout();
+                }}
+              />
+            </div>
           </div>
         </div>
       )}

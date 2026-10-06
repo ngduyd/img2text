@@ -92,7 +92,8 @@ beforeEach(() => {
 it("queued shows waiting message and polls", async () => {
   mockJob({ id: 5, status: "queued", page_count: 1, result: null } as Job);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  expect(await screen.findByText("Đang chờ worker Colab")).toBeInTheDocument();
+  // Task 2: header badge duplicates status text — scope to InfoPanel's status badge.
+  expect(await screen.findByTestId("status-5")).toHaveTextContent("Đang chờ worker Colab");
   expect(pollSpyCalled()).toBe(true);
 });
 
@@ -100,7 +101,7 @@ it("failed shows retry button and calls api", async () => {
   mockJob({ id: 5, status: "failed", error: "boom", result: null } as Job);
   vi.mocked(api.retryJob).mockResolvedValue({ id: 5, status: "queued" });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  expect(await screen.findByText("Xử lý thất bại")).toBeInTheDocument();
+  expect(await screen.findByTestId("status-5")).toHaveTextContent("Xử lý thất bại");
   const user = userEvent.setup();
   await user.click(screen.getByTestId("btn-retry"));
   expect(api.retryJob).toHaveBeenCalledWith("5");
@@ -110,7 +111,7 @@ it("retry failure shows retry-error with server detail", async () => {
   mockJob({ id: 5, status: "failed", error: "boom", result: null } as Job);
   vi.mocked(api.retryJob).mockRejectedValue(new ApiError("Forbidden."));
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  expect(await screen.findByText("Xử lý thất bại")).toBeInTheDocument();
+  expect(await screen.findByTestId("status-5")).toHaveTextContent("Xử lý thất bại");
   const user = userEvent.setup();
   await user.click(screen.getByTestId("btn-retry"));
   expect(await screen.findByTestId("retry-error")).toHaveTextContent("Forbidden.");

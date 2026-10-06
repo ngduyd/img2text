@@ -64,8 +64,10 @@ export default function Dropzone({
         setDragging(false);
         handleFile(e.dataTransfer?.files?.[0]);
       }}
-      className={`rounded-card border-2 border-dashed p-4 text-center ${
-        dragging ? "border-accent bg-accent/5" : "border-border"
+      className={`rounded-card border-2 border-dashed p-4 text-center transition duration-150 ease-out md:p-6 ${
+        dragging
+          ? "border-accent bg-accent/10"
+          : "border-border bg-surface/50 hover:border-accent/50 hover:bg-surface-2/40"
       }`}
     >
       {denied && (

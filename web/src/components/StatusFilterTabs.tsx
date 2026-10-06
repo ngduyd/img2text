@@ -42,7 +42,11 @@ export default function StatusFilterTabs({
           variant="ghost"
           size="sm"
           aria-pressed={value === key}
-          className={value === key ? "bg-surface font-semibold" : undefined}
+          className={
+            value === key
+              ? "rounded-full border border-accent/40 bg-accent/10 font-semibold text-accent-text"
+              : "rounded-full border border-transparent text-muted hover:bg-surface-2 hover:text-text"
+          }
           onClick={() => onChange(key)}
         >
           {label} ({counts[key]})
