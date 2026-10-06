@@ -99,6 +99,24 @@ export const api = {
     }
     return await res.blob();
   },
+  // Plan V (V2): same-origin blob download of the ORIGINAL file (presigned
+  // localhost:4566 unreachable via VSCode port-forward). Pattern: downloadExport.
+  downloadJobFile: async (id: number | string): Promise<Blob> => {
+    const path = `/api/jobs/${id}/file/download`;
+    const res = await fetch(path, { credentials: "include" });
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const data = (await res.json()) as { detail?: string } | null;
+        if (data && typeof data.detail === "string") detail = data.detail;
+      } catch {
+        // non-JSON error body → keep generic detail
+      }
+      if (res.status === 401) window.location.assign("/login");
+      throw new ApiError(detail);
+    }
+    return await res.blob();
+  },
   getCropUrl: (jobId: number | string, rid: string) =>
     request<{ url: string }>(`/api/jobs/${jobId}/regions/${rid}/crop`),
   patchRegion: (jobId: number | string, rid: string, text: string) =>
