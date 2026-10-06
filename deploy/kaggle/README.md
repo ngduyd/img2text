@@ -69,6 +69,8 @@ Flow:
 3. **Poll** `kernels_status` mỗi `--poll` giây: `complete` → lấy output; `failed` → exit 1; timeout → exit 2.
 4. **Output**: `kernels_output` vào thư mục mới `./out/<timestamp>/` (không lẫn output cũ) — có `result.json` (document shape: `pages[]`/`blocks[]` theo notebook, block `{id, order, type, bbox, text, empty}`) + `result.md`.
 
+Lưu ý capture: `kernel_type: script` chỉ capture output từ **`/kaggle/working`** (`/kaggle/outputs` chỉ được capture với notebook kernel) — script ghi `result.{json,md}` vào `/kaggle/working` (capture chính) + copy sang `/kaggle/outputs` (compat, hại nếu thiếu).
+
 Paddle trên Kaggle: kernel Kaggle mặc định Python 3.13 (không có paddle wheel) → script tạo venv py3.12 riêng bằng `uv` (`uv venv /tmp/paddle-venv --python 3.12` + `paddlepaddle-gpu==3.2.1` index cu126) rồi re-exec chính nó (`--ocr`) dưới venv đó. **Nếu `uv venv --python 3.12` fail**: kiểm tra kernel `internet=true` (Settings) + GPU quota; cài xong đã verify `import paddle, paddleocr` (fail → SystemExit rõ). Chạy CPU-only = chậm, chỉ để test.
 
 Giới hạn (ponytail): **1 file/lần** (thư mục → báo lỗi), **1 slug input dataset dùng chung** — mỗi run ghi đè (`delete+recreate`) input dataset, song song sẽ đè nhau; `--poll` tối thiểu 1s; output vào `./out/<timestamp-micros>/` riêng mỗi run; quota GPU free ~30h/tuần. K2 polling-backend mode (`push.py`) giữ nguyên cho production.

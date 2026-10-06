@@ -307,7 +307,11 @@ def test_script_contract():
     # cell-14 normalize shape → result.json, result.md output
     assert "block_bbox" in src and "block_content" in src and "block_label" in src
     assert 'f"p{page_no}_b{i}"' in src
+    # output capture: /kaggle/working = script-kernel capture (platform),
+    # /kaggle/outputs = notebook-compat copy — both via _write_outputs
+    assert '"/kaggle/working"' in src
     assert '"/kaggle/outputs"' in src
+    assert "def _write_outputs" in src
     assert '"result.json"' in src and '"result.md"' in src
     # pinned PaddleOCRVL init (notebook user-proven flags)
     assert 'pipeline_version=PIPELINE_VERSION' in src

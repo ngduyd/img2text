@@ -233,7 +233,9 @@ Server tự điều phối Kaggle worker (Plan K2 + K5), chọn bằng `KAGGLE_M
   `KAGGLE_MIN_GAP_SECONDS`; block `image` bị bỏ khỏi regions/markdown
   (batch không có regions ảnh — chỉ worker `loop` mới có placeholder);
   `preprocess` bị bỏ qua (log warning — dùng `loop` khi cần chọn trang/xoay);
-  map run giữ trong RAM (restart = kernel mồ côi).
+  map run giữ trong RAM (restart = kernel mồ côi). Output script ghi vào
+  `/kaggle/working` (capture của `kernel_type: script`) + copy
+  `/kaggle/outputs` (compat notebook — chỉ notebook kernel mới capture).
 - **`loop` (Plan K2)**: bump dataset `img2text-worker-files` + push kernel
   worker (`img2text_worker.ipynb`); kernel xử lý theo session rồi poll backend
   qua `/api/jobs/next` — production mode khi có URL public + Secrets.
