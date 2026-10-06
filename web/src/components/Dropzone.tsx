@@ -73,7 +73,7 @@ export default function Dropzone({
       {denied && (
         <div
           data-testid="banner-no-access"
-          className="mb-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-warning"
+          className="mb-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-warning"
         >
           Chờ admin cấp quyền
           <p className="mt-1 text-xs">
@@ -85,7 +85,7 @@ export default function Dropzone({
       {error && !wizardFile && (
         <div
           data-testid="upload-error"
-          className="mb-2 rounded-lg border border-error/40 bg-error/10 px-3 py-2 text-error"
+          className="mb-2 rounded-md border border-error/40 bg-error/10 px-3 py-2 text-error"
         >
           {error}
         </div>

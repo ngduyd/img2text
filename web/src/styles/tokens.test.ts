@@ -41,6 +41,40 @@ it("light theme --accent vs white ≥ 4.5:1 (primary button labels)", () => {
   expect(contrastOnWhite(accentIn("html:not(.dark)"))).toBeGreaterThanOrEqual(4.5);
 });
 
+/** First hex of --name inside the given selector block. */
+function tokenIn(selector: string, name: string): string {
+  const block = css.slice(css.indexOf(selector));
+  const end = block.indexOf("}");
+  const m = block.slice(0, end).match(new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})`));
+  expect(m, `no --${name} in ${selector}`).toBeTruthy();
+  return m![1];
+}
+
+/** sRGB blend: fg over bg at alpha (8-bit per channel, like browsers). */
+function tint(fg: string, bg: string, alpha: number): string {
+  const ch = (h: string, i: number) => parseInt(h.slice(1 + i, 3 + i), 16);
+  const mix = (i: number) =>
+    Math.round(alpha * ch(fg, i) + (1 - alpha) * ch(bg, i));
+  return `#${[0, 2, 4].map((i) => mix(i).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** WCAG contrast ratio between two hex colors. */
+function contrast(a: string, b: string): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+it("--accent-text ≥ 4.5:1 on bg-accent/10 tint over surface in BOTH themes", () => {
+  for (const sel of [":root", "html:not(.dark)"]) {
+    const at = tokenIn(sel, "accent-text");
+    const bg = tint(tokenIn(sel, "accent"), tokenIn(sel, "surface"), 0.1);
+    expect(
+      contrast(at, bg),
+      `${sel} --accent-text (${at}) on accent/10 tint over surface (${bg})`,
+    ).toBeGreaterThanOrEqual(4.5);
+  }
+});
+
 const indexCss = readFileSync(resolve(process.cwd(), "src/index.css"), "utf8");
 
 it("semantic role tokens present in tokens.css (DESIGN.md §2 map)", () => {

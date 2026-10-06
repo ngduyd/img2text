@@ -38,7 +38,9 @@ Dark (`:root`) — Light (`html:not(.dark)`):
 Rules: single accent (blue `#58a6ff` family, saturation ≤80%); semantic tokens
 only for status; no new hues outside this set. `--accent` (#1c64e4) is the FILL;
 use `--accent-text` (#58a6ff) for accent-colored text on dark surfaces
-(#1c64e4 = 3.3:1 on --surface — too low for text). No pure black; canvas is
+(#1c64e4 = 3.3:1 on --surface — too low for text). `--accent-text` is contrast-safe
+on surface AND on accent/10 tinted fills in BOTH themes — locked ≥4.5:1 by
+`tokens.test.ts` (light = #0861cf: #0969da was only ~4.24:1 on the tint). No pure black; canvas is
 never `#000000`. `--muted` remains the shipped token; `--text-muted` is a
 semantic alias — both stay valid (lazy aliasing, no rename).
 

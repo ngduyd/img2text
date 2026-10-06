@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ApiError, api } from "../../api/client";
 import Button from "../ui/Button";
 import Card from "../ui/Card";
+import Skeleton from "../ui/Skeleton";
 
 /**
  * Task 2: lazy file viewer — signed URL fetched only on first expand
@@ -52,11 +53,7 @@ export default function OriginalFilePanel({
       {expanded && (
         <div className="mt-3">
           {loading && (
-            <div
-              data-testid="original-loading"
-              aria-busy="true"
-              className="h-40 animate-pulse rounded-lg bg-border/40"
-            />
+            <Skeleton testid="original-loading" className="h-40" />
           )}
           {error && (
             <p data-testid="original-error" className="text-sm text-error">
@@ -69,14 +66,14 @@ export default function OriginalFilePanel({
                 <img
                   src={url}
                   alt="File gốc"
-                  className="max-w-full rounded-lg"
+                  className="max-w-full rounded-md"
                 />
               )}
               {fileType === "pdf" && (
                 <iframe
                   src={url}
                   title="File gốc PDF"
-                  className="h-96 w-full rounded-lg border border-border"
+                  className="h-96 w-full rounded-md border border-border"
                 />
               )}
               <a

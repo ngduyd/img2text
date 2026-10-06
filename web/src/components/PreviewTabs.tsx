@@ -83,7 +83,7 @@ export default function PreviewTabs({
       {error && (
         <div
           data-testid="docs-error"
-          className="mb-2 rounded-lg border border-error/40 bg-error/10 px-3 py-2 text-error"
+          className="mb-2 rounded-md border border-error/40 bg-error/10 px-3 py-2 text-error"
         >
           {error}
         </div>
@@ -94,7 +94,7 @@ export default function PreviewTabs({
           data-testid="preview-pdf-frame"
           src={pdfUrl}
           title="Xem trước PDF"
-          className="h-96 w-full rounded-lg border border-border"
+          className="h-96 w-full rounded-md border border-border"
         />
       )}
       {tab === "docx" && (
@@ -108,7 +108,7 @@ export default function PreviewTabs({
               sandbox=""
               title="Xem trước DOCX"
               srcDoc={docxHtml}
-              className="h-96 w-full rounded-lg border border-border"
+              className="h-96 w-full rounded-md border border-border"
             />
           )}
         </>

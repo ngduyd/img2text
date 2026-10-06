@@ -34,7 +34,7 @@ html:not(.dark) {
   --text: #1f2328;
   --muted: #59636e;
   --accent: #0969da;
-  --accent-text: #0969da;
+  --accent-text: #0861cf; /* Accent text — contrast-safe on surface AND accent/10 tint (tokens.test.ts) */
   --border: #d0d7de;
   --success: #1a7f37;
   --warning: #9a6700;

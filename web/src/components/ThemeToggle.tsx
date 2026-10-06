@@ -32,7 +32,7 @@ export default function ThemeToggle() {
       onClick={toggle}
       aria-label={theme === "dark" ? "Chuyển sang giao diện sáng" : "Chuyển sang giao diện tối"}
       title={theme === "dark" ? "Giao diện tối" : "Giao diện sáng"}
-      className="cursor-pointer rounded-lg border border-border px-2 py-1 text-sm text-muted hover:bg-surface"
+      className="cursor-pointer rounded-md border border-border px-2 py-1 text-sm text-muted hover:bg-surface"
     >
       <span className="inline-flex" aria-hidden="true">
         {theme === "dark" ? <Moon size={16} /> : <Sun size={16} />}
