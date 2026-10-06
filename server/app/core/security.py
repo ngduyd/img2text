@@ -12,8 +12,8 @@ import bcrypt
 import jwt
 from fastapi import Response
 
-from app.config import settings
-from app.deps import ACCESS_COOKIE, REFRESH_COOKIE
+from app.core.config import settings
+from app.core.deps import ACCESS_COOKIE, REFRESH_COOKIE
 
 _BCRYPT_ROUNDS = 12
 JWT_ISSUER = "img2text"

@@ -7,7 +7,7 @@ import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Job, User
+from app.core.models import Job, User
 
 
 @pytest_asyncio.fixture

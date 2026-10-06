@@ -2,7 +2,7 @@
 
 from starlette.requests import Request
 
-from app.net import client_ip
+from app.core.net import client_ip
 
 
 def _request(xff: str | None) -> Request:

@@ -5,7 +5,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from app.models import Job, User
+from app.core.models import Job, User
 from tests.conftest import PNG_1PX, grant_ocr
 
 

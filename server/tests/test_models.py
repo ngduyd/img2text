@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from app.models import Job, RefreshToken, Setting, User
+from app.core.models import Job, RefreshToken, Setting, User
 
 
 async def test_create_user_and_refresh(db_session):

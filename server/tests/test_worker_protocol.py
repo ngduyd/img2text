@@ -4,7 +4,7 @@ import asyncio
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 
-from app.models import Job
+from app.core.models import Job
 
 async def test_next_claims_and_returns_payload(worker_client, seed_job):
     r = await worker_client.get("/api/jobs/next")

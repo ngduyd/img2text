@@ -6,7 +6,7 @@ in either direction — missing keys break deploy, stale keys lie to operators.
 
 from pathlib import Path
 
-from app.config import Settings
+from app.core.config import Settings
 
 
 def test_env_example_matches_settings_fields():

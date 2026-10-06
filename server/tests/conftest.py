@@ -25,12 +25,12 @@ from moto import mock_aws
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.admin_bootstrap import bootstrap_admin
-from app.config import settings
-from app.db import Base, SessionLocal, engine
+from app.services.admin_bootstrap import bootstrap_admin
+from app.core.config import settings
+from app.core.db import Base, SessionLocal, engine
 from app.main import create_app
-from app.models import Job, User
-from app.storage import S3Driver
+from app.core.models import Job, User
+from app.services.storage import S3Driver
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)

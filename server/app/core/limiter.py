@@ -10,7 +10,7 @@ from datetime import date
 
 from fastapi import HTTPException, Request
 
-from app.net import client_ip
+from app.core.net import client_ip
 
 AUTH_LIMIT = 10
 AUTH_WINDOW_SECONDS = 3600

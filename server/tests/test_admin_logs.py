@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest_asyncio
 
-from app.config import settings
-from app.models import RequestLog
+from app.core.config import settings
+from app.core.models import RequestLog
 
 @pytest_asyncio.fixture
 async def seeded_logs(db_session):

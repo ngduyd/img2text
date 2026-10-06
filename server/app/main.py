@@ -13,13 +13,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.admin_bootstrap import bootstrap_admin
-from app.config import settings
-from app.db import Base, SessionLocal, engine
-from app.middleware import PageViewsMiddleware, RequestLogsMiddleware
+from app.services.admin_bootstrap import bootstrap_admin
+from app.core.config import settings
+from app.core.db import Base, SessionLocal, engine
+from app.core.middleware import PageViewsMiddleware, RequestLogsMiddleware
 from app.routers import admin, auth, exports, health, jobs, profile, region_edit
-from app.scheduler import init_scheduler
-from app.storage import build_storage
+from app.services.scheduler import init_scheduler
+from app.services.storage import build_storage
 
 
 @asynccontextmanager

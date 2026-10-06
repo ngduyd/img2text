@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
-from app.models import PageView, RequestLog
-from app.middleware import prune_request_logs
+from app.core.models import PageView, RequestLog
+from app.core.middleware import prune_request_logs
 
 
 async def test_request_logged(client, db_session):

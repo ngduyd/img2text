@@ -6,7 +6,7 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from app.storage import S3Driver
+from app.services.storage import S3Driver
 
 @pytest.fixture
 def storage():

@@ -8,7 +8,7 @@ import logging
 
 from sqlalchemy import func, update
 
-from app.models import Job
+from app.core.models import Job
 
 logger = logging.getLogger(__name__)
 

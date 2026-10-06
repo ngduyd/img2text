@@ -22,12 +22,12 @@ from PIL import Image
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.convert import PANDOC_BIN, REFERENCE_DOCX
-from app.db import get_session
-from app.deps import get_current_user
-from app.models import Job, User
+from app.services.convert import PANDOC_BIN, REFERENCE_DOCX
+from app.core.db import get_session
+from app.core.deps import get_current_user
+from app.core.models import Job, User
 from app.routers.jobs import _job_or_403
-from app.storage import StorageDriver, get_storage
+from app.services.storage import StorageDriver, get_storage
 
 logger = logging.getLogger(__name__)
 

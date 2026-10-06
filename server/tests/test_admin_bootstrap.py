@@ -2,8 +2,8 @@
 
 from sqlalchemy import select
 
-from app.admin_bootstrap import bootstrap_admin
-from app.models import User
+from app.services.admin_bootstrap import bootstrap_admin
+from app.core.models import User
 
 
 async def test_bootstrap_admin_creates_admin_and_is_idempotent(db_session):

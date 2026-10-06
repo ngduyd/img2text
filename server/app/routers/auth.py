@@ -18,13 +18,13 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import mailer
-from app.config import settings
-from app.db import get_session
-from app.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user
-from app.limiter import rate_limit_auth
-from app.models import PasswordResetToken, RefreshToken, User
-from app.security import (
+from app.services import mailer
+from app.core.config import settings
+from app.core.db import get_session
+from app.core.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user
+from app.core.limiter import rate_limit_auth
+from app.core.models import PasswordResetToken, RefreshToken, User
+from app.core.security import (
     JWT_ISSUER,
     create_access_token,
     generate_reset_token,

@@ -1,7 +1,7 @@
 """Plan X Task 1: CORS regex origins + scheduler interval env floor (R58/R58a).
 R58a: server-side upload kick deleted (reaper ≠ claim; worker poll ≤30s)."""
 
-from app.config import Settings
+from app.core.config import Settings
 
 async def _preflight(client, origin: str, request_headers: str | None = None):
     headers = {"Origin": origin, "Access-Control-Request-Method": "POST"}

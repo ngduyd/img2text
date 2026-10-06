@@ -14,7 +14,7 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 from fastapi import Request
 
-from app.config import settings
+from app.core.config import settings
 
 class StorageDriver(Protocol):
     async def put(self, key: str, data: bytes) -> None: ...

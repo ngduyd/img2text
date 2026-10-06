@@ -7,7 +7,7 @@ import pytest_asyncio
 from PIL import Image
 from sqlalchemy import select
 
-from app.models import Job, User
+from app.core.models import Job, User
 
 async def test_export_docx_bytes_valid(auth_client, done_job_with_result, storage):
     await auth_client.post(f"/api/jobs/{done_job_with_result}/export", json={"fmt": "docx"})

@@ -8,7 +8,7 @@ import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Job, User
+from app.core.models import Job, User
 
 # r0 text appears TWICE in markdown → replace-once asserted below
 _MD_WITH_TEXT = "# tài liệu\n\nXin chào thế giới\n\n## Phần 2\n\nXin chào thế giới"

@@ -2,10 +2,10 @@
 
 from datetime import datetime, timedelta, timezone
 
-from app.models import Job
+from app.core.models import Job
 
 async def test_scheduler_job_registered(app):
-    from app.scheduler import init_scheduler
+    from app.services.scheduler import init_scheduler
 
     scheduler = init_scheduler(app)  # lifespan skipped under ASGITransport
     jobs = [j for j in scheduler.get_jobs() if j.id == "reap-leases"]
@@ -14,7 +14,7 @@ async def test_scheduler_job_registered(app):
 async def test_reap_leases_requeues_expired_and_reclaimable(
     worker_client, db_session, seed_job
 ):
-    from app.jobs_requeue import reap_leases
+    from app.services.jobs_requeue import reap_leases
 
     claim = await worker_client.get("/api/jobs/next")
     assert claim.status_code == 200
