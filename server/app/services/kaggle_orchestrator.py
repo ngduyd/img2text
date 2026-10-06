@@ -44,6 +44,7 @@ from app.core.config import settings
 from app.core.models import Job
 from app.core.schemas import ResultBody
 from app.services.job_results import store_batch_result
+from app.services.runtime_settings import get_runtime_setting
 
 logger = logging.getLogger(__name__)
 
@@ -457,11 +458,14 @@ async def _ensure_batch_runs(api, session_factory) -> bool:
     if _batch_runs:  # active run(s) — shared input slug: never overlap
         return False
     now = time.monotonic()
-    if now - _last_spawn < settings.kaggle_min_gap_seconds:
+    min_gap = await get_runtime_setting(
+        session_factory, "kaggle_min_gap_seconds", settings.kaggle_min_gap_seconds
+    )
+    if now - _last_spawn < min_gap:
         logger.info(
             "kaggle batch: last spawn %.0fs ago < gap %ds — skip",
             now - _last_spawn,
-            settings.kaggle_min_gap_seconds,
+            min_gap,
         )
         return False
     async with session_factory() as session:
@@ -499,7 +503,10 @@ async def ensure_worker(session_factory) -> bool:
         api = _api()  # inside try: constructor/auth errors must also return False (never-raise contract)
         if api is None:
             return False
-        if settings.kaggle_mode != "loop":
+        mode = await get_runtime_setting(
+            session_factory, "kaggle_mode", settings.kaggle_mode
+        )
+        if mode != "loop":
             # Plan K5 default (batch): drive the standalone script kernel per job
             return await _ensure_batch_runs(api, session_factory)
         ref = settings.kaggle_kernel_ref.strip()
@@ -511,19 +518,25 @@ async def ensure_worker(session_factory) -> bool:
             logger.info("kaggle: kernel %s active (%s) — skip", ref, status)
             return False
         queued = await _count_queued(session_factory)
-        if queued < settings.kaggle_min_queue:
+        min_queue = await get_runtime_setting(
+            session_factory, "kaggle_min_queue", settings.kaggle_min_queue
+        )
+        if queued < min_queue:
             logger.info(
                 "kaggle: queued=%d < min_queue=%d — skip",
                 queued,
-                settings.kaggle_min_queue,
+                min_queue,
             )
             return False
         now = time.monotonic()
-        if now - _last_spawn < settings.kaggle_min_gap_seconds:
+        min_gap = await get_runtime_setting(
+            session_factory, "kaggle_min_gap_seconds", settings.kaggle_min_gap_seconds
+        )
+        if now - _last_spawn < min_gap:
             logger.info(
                 "kaggle: last spawn %.0fs ago < gap %ds — skip",
                 now - _last_spawn,
-                settings.kaggle_min_gap_seconds,
+                min_gap,
             )
             return False
         stage_dir = _stage_kernel()

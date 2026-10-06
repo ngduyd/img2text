@@ -80,6 +80,7 @@ Port 8000 is commonly taken on dev boxes (e.g. portainer) — the old manual gui
   set for LAN access from other origins.
 - `SCHEDULER_INTERVAL_SECONDS` — server sweep interval (lease reaper),
   default 60, floor 5; admin-set env.
+  Plan S: `SCHEDULER_INTERVAL_SECONDS`/`KAGGLE_MIN_QUEUE`/`KAGGLE_MIN_GAP_SECONDS` override runtime qua admin UI (tab Hệ thống, bảng `Setting`); env = mặc định khi DB trống (`kaggle_mode` read-only — đổi mode cần restart).
 - Bucket `img2text` auto-created by `s3-init` (official `amazon/aws-cli`
   image against LocalStack — MinIO's public images are gone, ruling R47).
 - LocalStack S3 API on http://localhost:4566
