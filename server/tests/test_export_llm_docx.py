@@ -13,6 +13,7 @@ import httpx
 import pytest
 import pytest_asyncio
 from docx import Document
+from docx.shared import Pt
 from sqlalchemy import select
 
 from app.core.config import settings
@@ -138,6 +139,71 @@ async def test_build_layout_docx_retries_without_response_format(
 
 
 # --- export route ---
+
+def _styled_result() -> dict:
+    """Two regions: HTML table text (style=table) + caption text."""
+    return {
+        "model_version": "paddleocr-vl-1.5-0.9B",
+        "gpu_seconds": 0.0,
+        "warnings": [],
+        "markdown": "",
+        "pages": [
+            {
+                "index": 0,
+                "width": 800,
+                "height": 600,
+                "page_flag": "ok",
+                "markdown": "",
+                "regions": [
+                    {"id": "r0", "bbox": [1, 2, 30, 40],
+                     "text": "<table><tr><td>A</td><td>B</td></tr>"
+                             "<tr><td>1</td><td>2</td></tr></table>",
+                     "verdict": "ok", "placeholder": False},
+                    {"id": "r1", "bbox": [1, 50, 30, 80],
+                     "text": "chú thích ảnh", "verdict": "ok",
+                     "placeholder": False},
+                ],
+            }
+        ],
+    }
+
+async def test_build_layout_docx_table_and_caption_styles(monkeypatch):
+    """Rider: style=table → HTML <tr><td> rendered as docx table rows;
+    style=caption → italic 9pt run."""
+    plan = {
+        "columns": "single",
+        "blocks": [
+            {"id": "r0", "col": "full", "style": "table"},
+            {"id": "r1", "col": "full", "style": "caption"},
+        ],
+    }
+    fake_llm(monkeypatch, [FakeResponse(json.dumps(plan))])
+    data = await build_layout_docx(_styled_result(), [(800, 600)])
+    assert data[:2] == b"PK"
+    doc = Document(io.BytesIO(data))
+    assert len(doc.tables) == 1  # HTML table → real docx table
+    rows = [[c.text for c in row.cells] for row in doc.tables[0].rows]
+    assert rows == [["A", "B"], ["1", "2"]]
+    caption = [p for p in doc.paragraphs if p.text == "chú thích ảnh"]
+    assert caption, "caption block must render as a body paragraph"
+    run = caption[0].runs[0]
+    assert run.italic is True and run.font.size == Pt(9)
+
+async def test_build_layout_docx_unplanned_block_appends_left_end(monkeypatch):
+    """Rider: plan missing one id → fallback appends the block at the end
+    of the left column (never dropped)."""
+    plan = {
+        "columns": "two",
+        "blocks": [{"id": "r0", "col": "full", "style": "body"}],
+    }
+    fake_llm(monkeypatch, [FakeResponse(json.dumps(plan))])
+    data = await build_layout_docx(_styled_result(), [(800, 600)])
+    doc = Document(io.BytesIO(data))
+    layout = doc.tables[0]
+    assert len(layout.rows) == 2  # planned full row + fallback row
+    assert layout.rows[0].cells[0].text.startswith("<table>")  # planned first
+    assert layout.rows[1].cells[0].text == "chú thích ảnh"  # left, appended
+    assert layout.rows[1].cells[1].text == ""
 
 async def test_export_docx_layout_happy(
     auth_client, done_job_with_result, storage, monkeypatch

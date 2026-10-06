@@ -328,13 +328,17 @@ def _stage_batch_kernel(dest: Path) -> str:
     )
     return str(meta["id"])
 
-async def _spawn_batch_run(api, session_factory, job: Job) -> None:
+async def _spawn_batch_run(api, session_factory, job: Job) -> bool:
     """queued job → stage input + dataset delete/create + kernels_push.
 
     Staging (input + kernel) lives in a fresh tmp dir, deleted after push —
     the run lives on Kaggle, not locally. Shared img2text-input slug means
     concurrent runs would overwrite each other's input: _ensure_batch_runs
-    enforces a single-active-run guard before every spawn."""
+    enforces a single-active-run guard before every spawn.
+
+    True = job marked running + tracked in _batch_runs. False = the UPDATE
+    matched 0 rows (an HTTP worker claimed the job mid-push): warning, no
+    tracking — the caller must not start a second run this tick."""
     global _last_spawn
     owner = settings.kaggle_username
     data = await _get_storage().get(job.storage_key)
@@ -367,7 +371,7 @@ async def _spawn_batch_run(api, session_factory, job: Job) -> None:
         # the reaper never requeues mid-run. started_at kept if already set.
         now = datetime.now(timezone.utc)
         async with session_factory() as session:
-            await session.execute(
+            result = await session.execute(
                 update(Job)
                 .where(Job.id == job.id, Job.status == "queued")
                 .values(
@@ -378,6 +382,15 @@ async def _spawn_batch_run(api, session_factory, job: Job) -> None:
                 )
             )
             await session.commit()
+            claimed = result.rowcount == 0
+        _last_spawn = time.monotonic()  # kernel pushed either way — gap applies
+        if claimed:
+            logger.warning(
+                "kaggle batch: job %s claimed before running-mark "
+                "(UPDATE rowcount 0) — run not tracked",
+                job.id,
+            )
+            return False
         logger.info(
             "kaggle batch: job %s → running (lease +%ds)",
             job.id,
@@ -386,19 +399,34 @@ async def _spawn_batch_run(api, session_factory, job: Job) -> None:
     finally:
         shutil.rmtree(build, ignore_errors=True)
     _batch_runs[job.id] = {"ref": ref, "pushed_at": time.monotonic()}
-    _last_spawn = time.monotonic()
+    return True
 
 async def _revert_job_queued(session_factory, job_id: int, why: str) -> None:
     """D1 failure path: kernel failed/error/timeout or ingest give-up →
     job back to queued with the lease cleared so the gap-guarded respawn
-    picks it up next round (reaper must not also touch it)."""
+    picks it up next round (reaper must not also touch it).
+
+    Rider guard: worker_token IS NULL — a running job claimed by an HTTP
+    worker (claim raced the failure) is left alone, not clobbered."""
     async with session_factory() as session:
-        await session.execute(
+        result = await session.execute(
             update(Job)
-            .where(Job.id == job_id, Job.status == "running")
+            .where(
+                Job.id == job_id,
+                Job.status == "running",
+                Job.worker_token.is_(None),
+            )
             .values(status="queued", lease_expires_at=None)
         )
         await session.commit()
+        reverted = result.rowcount > 0
+    if not reverted:
+        logger.warning(
+            "kaggle batch: job %s revert skipped — claimed or not running "
+            "(%s)",
+            job_id, why,
+        )
+        return
     logger.info("kaggle batch: job %s reverted to queued (%s)", job_id, why)
 
 async def _ingest_batch_result(api, session_factory, job_id: int, ref: str) -> None:
@@ -517,13 +545,17 @@ async def _ensure_batch_runs(api, session_factory) -> bool:
         ).scalars().all()
     for job in (j for j in queued if j.id not in _batch_runs):
         try:
-            await _spawn_batch_run(api, session_factory, job)
+            tracked = await _spawn_batch_run(api, session_factory, job)
         except Exception:
             _last_spawn = time.monotonic()  # anti-hammer on persistent errors
             logger.warning(
                 "batch spawn failed job=%s", job.id, exc_info=True
             )
             continue  # next candidate — a poison job must not block the queue
+        if not tracked:
+            # claimed mid-push: the pushed kernel still runs — never start
+            # a second one this tick (shared img2text-input slug)
+            return False
         logger.info(
             "kaggle batch: pushed job %s → kernel %s",
             job.id, _batch_runs[job.id]["ref"],

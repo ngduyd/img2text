@@ -8,7 +8,7 @@ from pathlib import Path
 
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, StrictBool
+from pydantic import BaseModel, ConfigDict, StrictBool
 from sqlalchemy import Date, Float, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -224,6 +224,9 @@ _SETTING_FLOORS: dict[str, tuple[int, str]] = {
 }
 
 class RuntimeSettingsPut(BaseModel):
+    # rider: unknown keys 422 — typo'd key must not silently no-op a PUT
+    model_config = ConfigDict(extra="forbid")
+
     scheduler_interval_seconds: int | None = None
     kaggle_min_queue: int | None = None
     kaggle_min_gap_seconds: int | None = None

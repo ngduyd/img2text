@@ -16,7 +16,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.core.config import settings
 from app.core.db import SessionLocal
@@ -290,6 +290,42 @@ async def _extra_queued_job(auth_client) -> int:
     )
     assert r.status_code == 201, r.text
     return r.json()["id"]
+
+async def test_revert_skips_worker_claimed_running_job(
+    kaggle_batch_env, api, storage_env, seed_job, db_session
+):
+    """Rider: revert guard (status=running AND worker_token IS NULL) — a job
+    claimed by an HTTP worker is NOT clobbered back to queued."""
+    assert await orch.ensure_worker(SessionLocal) is True  # job → running
+    job = await db_session.get(Job, seed_job)
+    job.worker_token = "claimed-tok"
+    await db_session.commit()
+    await orch._revert_job_queued(SessionLocal, seed_job, "kernel failed")
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.status == "running" and job.worker_token == "claimed-tok"
+    assert job.lease_expires_at is not None  # lease untouched too
+
+async def test_spawn_rowcount_zero_warns_and_skips_tracking(
+    kaggle_batch_env, api, storage_env, seed_job, db_session, caplog
+):
+    """Rider: job claimed between the candidate select and the running-mark
+    UPDATE (rowcount 0) → warning + no _batch_runs entry (untracked)."""
+    job = await db_session.get(Job, seed_job)  # queued candidate
+    await db_session.execute(
+        update(Job)
+        .where(Job.id == seed_job)
+        .values(status="running", worker_token="claimed-tok")
+    )
+    await db_session.commit()  # claimed by an "HTTP worker" before spawn
+    with caplog.at_level("WARNING", logger=orch.logger.name):
+        assert await orch._spawn_batch_run(api, SessionLocal, job) is False
+    assert any("run not tracked" in r.getMessage() for r in caplog.records)
+    assert orch._batch_runs == {}  # not tracked
+    assert len(_pushes(api)) == 1  # push happened, tracking skipped
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.status == "running" and job.worker_token == "claimed-tok"
 
 async def test_batch_single_active_run_blocks_new_spawn(
     kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session, monkeypatch

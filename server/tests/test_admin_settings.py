@@ -61,6 +61,23 @@ async def test_put_other_floors_and_mode_readonly(admin_client):
     assert r.status_code == 422
     assert "read-only" in r.json()["detail"]
 
+async def test_put_unknown_key_422(admin_client):
+    """Rider: extra=forbid — a typo'd key must 422, not silently no-op."""
+    r = await admin_client.put(
+        "/api/admin/settings", json={"kaggle_min_gape": 60}
+    )
+    assert r.status_code == 422
+
+async def test_put_anon_401(client):
+    r = await client.put("/api/admin/settings", json={"kaggle_min_queue": 2})
+    assert r.status_code == 401
+
+async def test_put_non_admin_403(auth_client):
+    r = await auth_client.put(
+        "/api/admin/settings", json={"kaggle_min_queue": 2}
+    )
+    assert r.status_code == 403
+
 # --- PUT upsert + live reschedule ---
 
 async def test_put_upserts_setting_rows_and_reschedules(admin_client, app):
