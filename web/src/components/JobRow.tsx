@@ -68,10 +68,18 @@ export default function JobRow({ job }: { job: JobListItem }) {
             size="sm"
             variant="secondary"
             onClick={async () => {
+              // P2: same-origin blob download (presigned host unreachable via port-forward).
               // R59a: download failure surfaces as toast (no inline slot here).
               try {
-                const { url } = await api.getJobFile(job.id);
-                window.open(url, "_blank");
+                const blob = await api.downloadJobFile(job.id);
+                const href = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = href;
+                a.download = `job-${job.id}.${blob.type.split("/")[1] || (job.file_type === "pdf" ? "pdf" : "jpg")}`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(href);
               } catch (err) {
                 toast.error(mapApiError(err));
               }

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -14,7 +14,7 @@ vi.mock("../api/client", async (importOriginal) => {
     ...actual,
     api: {
       ...actual.api,
-      getJobFile: vi.fn(),
+      downloadJobFile: vi.fn(),
       retryJob: vi.fn(),
     },
   };
@@ -101,15 +101,23 @@ it("view button navigates to detail", async () => {
   expect(mockNavigate).toHaveBeenCalledWith("/jobs/7");
 });
 
-it("dl-original opens presigned url from getJobFile", async () => {
-  const open = vi.fn();
-  vi.stubGlobal("open", open);
-  vi.mocked(api.getJobFile).mockResolvedValue({ url: "https://signed.example/f" });
+it("dl-original downloads same-origin blob via downloadJobFile + anchor", async () => {
+  // jsdom lacks blob URL APIs (same as OriginalFilePanel.test).
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:http://test/7");
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  const clickSpy = vi
+    .spyOn(HTMLAnchorElement.prototype, "click")
+    .mockImplementation(() => {});
+  vi.mocked(api.downloadJobFile).mockResolvedValue(new Blob(["pdf"]));
   renderRow(job({ status: "done" }));
   await userEvent.click(screen.getByTestId("btn-dl-original-7"));
-  expect(api.getJobFile).toHaveBeenCalledWith(7);
-  expect(open).toHaveBeenCalledWith("https://signed.example/f", "_blank");
-  vi.unstubAllGlobals();
+  expect(api.downloadJobFile).toHaveBeenCalledWith(7);
+  await waitFor(() => expect(clickSpy).toHaveBeenCalledTimes(1));
+  const anchor = clickSpy.mock.instances[0] as HTMLAnchorElement;
+  expect(anchor).toHaveAttribute("href", "blob:http://test/7");
+  expect(anchor).toHaveAttribute("download", "job-7.pdf");
+  expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:http://test/7");
+  vi.restoreAllMocks();
 });
 
 it("dl-original button rendered only when done", () => {
@@ -137,12 +145,10 @@ it("retry failure toasts mapped error", async () => {
 });
 
 it("dl-original failure toasts mapped error (no success toast)", async () => {
-  vi.stubGlobal("open", vi.fn());
-  vi.mocked(api.getJobFile).mockRejectedValue(new ApiError("Không có file."));
+  vi.mocked(api.downloadJobFile).mockRejectedValue(new ApiError("Không có file."));
   renderRow(job({ status: "done" }));
   await userEvent.click(screen.getByTestId("btn-dl-original-7"));
   expect(toast.error).toHaveBeenCalledWith("Không có file.");
-  vi.unstubAllGlobals();
 });
 
 it("retry button rendered only when failed", () => {

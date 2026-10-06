@@ -1,9 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ApiError, api } from "./api/client";
 import type { User } from "./api/types";
-import App, { queryClient } from "./App";
+import App, { AuthZone, queryClient } from "./App";
 
 vi.mock("./api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./api/client")>();
@@ -190,6 +191,32 @@ it("clicking nav-avatar again closes the dropdown (toggle)", async () => {
   await userEvent.click(avatar);
   expect(screen.getByTestId("nav-user-menu")).toBeInTheDocument();
   await userEvent.click(avatar);
+  expect(screen.queryByTestId("nav-user-menu")).not.toBeInTheDocument();
+});
+
+// P2: me → undefined (logout) must reset menuOpen; re-login must not auto-open menu.
+it("AuthZone: logout (me=undefined) resets menu open state for re-login", async () => {
+  const meUser = { id: 1, email: "user@x.io", role: "user", ocr_enabled: true } as User;
+  const { rerender } = render(
+    <MemoryRouter>
+      <AuthZone me={meUser} onLogout={() => {}} />
+    </MemoryRouter>,
+  );
+  await userEvent.click(screen.getByTestId("nav-avatar"));
+  expect(screen.getByTestId("nav-user-menu")).toBeInTheDocument();
+  // Logout: me → undefined.
+  rerender(
+    <MemoryRouter>
+      <AuthZone me={undefined} onLogout={() => {}} />
+    </MemoryRouter>,
+  );
+  // Re-login: menu must NOT auto-open (stale menuOpen reset by effect).
+  rerender(
+    <MemoryRouter>
+      <AuthZone me={meUser} onLogout={() => {}} />
+    </MemoryRouter>,
+  );
+  expect(screen.getByTestId("nav-avatar")).toBeInTheDocument();
   expect(screen.queryByTestId("nav-user-menu")).not.toBeInTheDocument();
 });
 

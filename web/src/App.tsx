@@ -26,7 +26,7 @@ import { mapApiError } from "./lib/errors";
 export const queryClient = new QueryClient();
 
 /** RIGHT auth zone: logged-out btn-login+btn-register; logged-in badge+avatar-menu (profile+logout). */
-function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () => void }) {
+export function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const userRef = useRef<HTMLDivElement>(null);
   const name = me?.email || me?.role || "";
@@ -40,6 +40,14 @@ function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () => void
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [menuOpen]);
+
+  // P2: logout sets me=undefined; without reset, re-login auto-opens stale menu.
+  // Render-time adjust (React docs pattern) — avoids setState-in-effect lint.
+  const [prevMe, setPrevMe] = useState(me);
+  if (prevMe !== me) {
+    setPrevMe(me);
+    if (!me) setMenuOpen(false);
+  }
 
   return (
     <div data-testid="auth-zone" className="flex items-center gap-2">
@@ -64,7 +72,7 @@ function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () => void
               <div
                 data-testid="nav-user-menu"
                 role="menu"
-                className="absolute right-0 top-full z-30 mt-2 min-w-fit rounded-card border border-border bg-surface p-2 text-right shadow-card"
+                className="absolute right-0 top-full z-30 mt-2 min-w-fit max-w-[calc(100vw-2rem)] rounded-card border border-border bg-surface p-2 text-right shadow-card"
               >
                 <div className="px-2 py-1">
                   <div className="font-medium text-text">{me.email}</div>

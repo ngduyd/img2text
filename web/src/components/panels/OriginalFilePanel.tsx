@@ -50,13 +50,13 @@ export default function OriginalFilePanel({
   const handleDownload = async () => {
     // Reuse viewer blob when loaded; otherwise fetch → anchor → revoke.
     if (objectUrl) {
-      triggerDownload(objectUrl, `job-${jobId}`);
+      triggerDownload(objectUrl, `job-${jobId}.${downloadExt(fileType)}`);
       return;
     }
     try {
       const blob = await api.downloadJobFile(jobId);
       const href = URL.createObjectURL(blob);
-      triggerDownload(href, `job-${jobId}`);
+      triggerDownload(href, `job-${jobId}.${downloadExt(fileType, blob)}`);
       URL.revokeObjectURL(href);
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Tải file thất bại.");
@@ -87,15 +87,16 @@ export default function OriginalFilePanel({
           Tải xuống
         </Button>
       </div>
+      {/* P2: error hoisted OUTSIDE expanded — visible collapsed (download btn always on). */}
+      {error && (
+        <p data-testid="original-error" className="mt-2 text-sm text-error">
+          {error}
+        </p>
+      )}
       {expanded && (
         <div className="mt-3">
           {loading && (
             <Skeleton testid="original-loading" className="h-40" />
-          )}
-          {error && (
-            <p data-testid="original-error" className="text-sm text-error">
-              {error}
-            </p>
           )}
           {objectUrl && !error && (
             <>
@@ -130,6 +131,11 @@ export default function OriginalFilePanel({
       )}
     </Card>
   );
+}
+
+/** Filename extension: blob.type wins (jpeg/png…); pdf vs ảnh fallback. */
+function downloadExt(fileType: string, blob?: Blob): string {
+  return blob?.type.split("/")[1] || (fileType === "pdf" ? "pdf" : "jpg");
 }
 
 function triggerDownload(href: string, filename: string) {

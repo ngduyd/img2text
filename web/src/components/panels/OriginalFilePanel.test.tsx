@@ -103,5 +103,7 @@ it("btn-download-original fetches blob, createObjectURL + anchor click + revoke"
     expect(URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
   );
   expect(clickSpy).toHaveBeenCalledTimes(1);
+  const anchor = clickSpy.mock.instances[0] as HTMLAnchorElement;
+  expect(anchor).toHaveAttribute("download", "job-5.jpg");
   expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:http://test/5");
 });
