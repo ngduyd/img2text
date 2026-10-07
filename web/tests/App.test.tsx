@@ -64,8 +64,9 @@ it("renders app shell with brand and left nav links for logged-out", () => {
   expect(jobsLink).toBeInTheDocument();
   // Root is landing now; the jobs nav-link points at the /jobs list route.
   expect(jobsLink).toHaveAttribute("href", "/jobs");
-  // D3: Word tool link — everyone, after "Công việc".
-  expect(screen.getByTestId("nav-link-word")).toHaveAttribute("href", "/word");
+  // R51 (user instruction "bỏ cái word trên nav"): no word/edit nav entry at all.
+  expect(screen.queryByTestId("nav-link-word")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("nav-link-edit")).not.toBeInTheDocument();
   // R51: admin link is role-gated (binding nav contract) — asserted in admin test.
   expect(screen.queryByTestId("nav-link-admin")).not.toBeInTheDocument();
 });
@@ -287,6 +288,14 @@ it("AuthZone: logout (me=undefined) resets menu open state for re-login", async 
   );
   expect(screen.getByTestId("nav-avatar")).toBeInTheDocument();
   expect(screen.queryByTestId("nav-user-menu")).not.toBeInTheDocument();
+});
+
+it("/word alias redirects to /edit (WordTool page moved; R51 user instruction)", async () => {
+  vi.mocked(api.me).mockRejectedValue(new ApiError("Unauthorized."));
+  window.history.pushState({}, "", "/word");
+  render(<App />);
+  expect(await screen.findByTestId("edit-page")).toBeInTheDocument();
+  expect(window.location.pathname).toBe("/edit");
 });
 
 it("hamburger toggle: aria-expanded/controls/label, opens mobile menu, closes on link click", async () => {
