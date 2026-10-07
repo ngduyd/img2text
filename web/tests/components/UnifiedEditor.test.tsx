@@ -32,6 +32,8 @@ vi.mock("../../src/api/client", async (importOriginal) => {
       downloadExport: vi.fn(),
       putMdLayoutContent: vi.fn(),
       putLayoutStyle: vi.fn(),
+      getDocxHtml: vi.fn(),
+      putDocxHtml: vi.fn(),
     },
   };
 });
@@ -78,6 +80,8 @@ beforeEach(() => {
     value: "<p>Chào</p>",
     messages: [],
   } as never);
+  // Plan M3: mặc định chưa có docx.html cache → word flow đi fallback mammoth.
+  vi.mocked(api.getDocxHtml).mockResolvedValue(null);
 });
 
 it("md cache miss: exportJob md-layout + layout-loading spinner → content renders + badge chưa lưu", async () => {
@@ -138,7 +142,10 @@ it("switch mode: word → exportJob docx-layout + mammoth iframe + word tools; m
   expect(api.exportJob).toHaveBeenCalledWith("5", "docx-layout");
   expect(screen.getByTestId("word-tb-align-center")).toBeInTheDocument();
   expect(screen.queryByTestId("btn-edit-source")).not.toBeInTheDocument();
-  expect(screen.getByText("Sửa chữ ở dạng Markdown.")).toBeInTheDocument();
+  // Plan M3: hint "Sửa chữ ở dạng Markdown" BỎ + content toolbar single-row + nút Lưu.
+  expect(screen.queryByText("Sửa chữ ở dạng Markdown.")).toBeNull();
+  expect(screen.getByTestId("word-toolbar")).toBeInTheDocument();
+  expect(screen.getByTestId("btn-save-layout-word")).toBeInTheDocument();
   // badge theo mode: docx chưa cache
   expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout chưa lưu");
 
@@ -182,7 +189,7 @@ it("word style: đổi align → btn-save-style → putLayoutStyle (objectContai
   render(<Harness job={JOB} />);
   await user.click(screen.getByTestId("switch-mode-word"));
   await screen.findByTestId("preview-docx-frame");
-  await user.click(screen.getByTestId("word-tb-align-center"));
+  await user.click(screen.getByTestId("word-style-align-center"));
   await user.click(screen.getByTestId("btn-save-style"));
   expect(api.putLayoutStyle).toHaveBeenCalledWith(
     "5",
@@ -198,7 +205,7 @@ it("word tools hydrate từ job.layout_style (session trước đã lưu)", asyn
   );
   await user.click(screen.getByTestId("switch-mode-word"));
   await screen.findByTestId("preview-docx-frame");
-  expect(screen.getByTestId("word-tb-align-center")).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByTestId("word-style-align-center")).toHaveAttribute("aria-pressed", "true");
   expect(screen.getByTestId("tool-font-size")).toHaveValue(20);
 });
 
@@ -211,4 +218,90 @@ it("flow lỗi → layout-error + btn-retry-layout + toast.error; retry chạy l
   await user.click(screen.getByTestId("btn-retry-layout"));
   expect(await screen.findByTestId("preview-markdown")).toBeInTheDocument();
   expect(screen.queryByTestId("layout-error")).toBeNull();
+});
+
+it("Plan M3: word toolbar = đúng 1 container row (overflow-x-auto, gap-2, không flex-wrap) + đủ lệnh", async () => {
+  const user = userEvent.setup();
+  render(<Harness job={JOB} />);
+  await user.click(screen.getByTestId("switch-mode-word"));
+  await screen.findByTestId("preview-docx-frame");
+  const root = screen.getByTestId("word-toolbar");
+  const rows = root.querySelectorAll('[role="toolbar"]');
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toHaveClass("overflow-x-auto");
+  expect(rows[0]).toHaveClass("gap-2");
+  expect(rows[0]).not.toHaveClass("flex-wrap");
+  const ids = [
+    "word-tb-undo",
+    "word-tb-redo",
+    "word-tb-font",
+    "word-tb-size",
+    "word-tb-bold",
+    "word-tb-italic",
+    "word-tb-underline",
+    "word-tb-align-left",
+    "word-tb-align-center",
+    "word-tb-align-right",
+    "word-tb-align-justify",
+    "word-tb-list-ul",
+    "word-tb-list-ol",
+    "word-tb-table",
+    "word-tb-clear",
+  ];
+  for (const id of ids) expect(screen.getByTestId(id)).toBeInTheDocument();
+  // contenteditable thật bật trên iframe (onLoad → body contenteditable)
+  const frame = screen.getByTestId("preview-docx-frame") as HTMLIFrameElement;
+  expect(frame.getAttribute("sandbox")).toBe("allow-same-origin");
+  expect(frame.className).toContain("min-h-[60vh]");
+});
+
+it("Plan M3: Lưu word → serialize iframe body → putDocxHtml + toast 'Đã lưu.' + invalidate job", async () => {
+  const user = userEvent.setup();
+  render(<Harness job={{ ...JOB, layout_cache: { md: true, docx: false } }} />);
+  await user.click(screen.getByTestId("switch-mode-word"));
+  const frame = (await screen.findByTestId("preview-docx-frame")) as HTMLIFrameElement;
+  expect(frame.contentDocument?.body).not.toBeNull();
+  frame.contentDocument!.body.innerHTML = "<p>Chữ đã sửa</p>";
+  await user.click(screen.getByTestId("btn-save-layout-word"));
+  expect(api.putDocxHtml).toHaveBeenCalledWith("5", "<p>Chữ đã sửa</p>");
+  expect(toast.success).toHaveBeenCalledWith("Đã lưu.");
+});
+
+it("Plan M3: layout_cache.docx_html=true → GET docx.html (getDocxHtml), KHÔNG exportJob/mammoth", async () => {
+  vi.mocked(api.getDocxHtml).mockResolvedValue("<p>Nội dung đã sửa</p>");
+  render(
+    <Harness
+      job={{ ...JOB, output_format: "docx", layout_cache: { md: true, docx: true, docx_html: true } }}
+    />,
+  );
+  const frame = await screen.findByTestId("preview-docx-frame");
+  expect(api.getDocxHtml).toHaveBeenCalledWith("5");
+  expect(frame.getAttribute("srcdoc") ?? "").toContain("Nội dung đã sửa");
+  expect(api.exportJob).not.toHaveBeenCalled();
+  expect(mammoth.convertToHtml).not.toHaveBeenCalled();
+  expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout đã lưu");
+});
+
+it("Plan M3: docx_html cache nhưng GET 404 (null) → fallback mammoth docx-layout", async () => {
+  vi.mocked(api.getDocxHtml).mockResolvedValue(null);
+  render(
+    <Harness
+      job={{ ...JOB, output_format: "docx", layout_cache: { md: true, docx: true, docx_html: true } }}
+    />,
+  );
+  await screen.findByTestId("preview-docx-frame");
+  expect(api.getDocxHtml).toHaveBeenCalledWith("5");
+  expect(api.exportJob).toHaveBeenCalledWith("5", "docx-layout");
+  expect(mammoth.convertToHtml).toHaveBeenCalled();
+});
+
+it("Plan M3 md regression: MdToolbar vẫn 1 hàng (overflow-x-auto) khi sửa nguồn", async () => {
+  const user = userEvent.setup();
+  render(<Harness job={JOB} />);
+  await screen.findByTestId("preview-markdown");
+  await user.click(screen.getByTestId("btn-edit-source"));
+  await screen.findByTestId("textarea-markdown");
+  const mdToolbar = screen.getByRole("toolbar", { name: "Công cụ Markdown" });
+  expect(mdToolbar).toHaveClass("overflow-x-auto");
+  expect(mdToolbar).not.toHaveClass("flex-wrap");
 });

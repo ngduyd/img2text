@@ -10,9 +10,9 @@ type DocStyleVariant = "md" | "word";
 type Align = "left" | "center" | "justify";
 
 const ALIGNS: { value: Align; testid: string; title: string; Icon: typeof AlignLeft }[] = [
-  { value: "left", testid: "word-tb-align-left", title: "Căn trái", Icon: AlignLeft },
-  { value: "center", testid: "word-tb-align-center", title: "Căn giữa", Icon: AlignCenter },
-  { value: "justify", testid: "word-tb-align-justify", title: "Căn đều", Icon: AlignJustify },
+  { value: "left", testid: "word-style-align-left", title: "Căn trái", Icon: AlignLeft },
+  { value: "center", testid: "word-style-align-center", title: "Căn giữa", Icon: AlignCenter },
+  { value: "justify", testid: "word-style-align-justify", title: "Căn đều", Icon: AlignJustify },
 ];
 
 const LINE_SPACINGS = ["1", "1.25", "1.5"];
@@ -34,6 +34,8 @@ const SELECT_CLS =
  * = HTML render của preview đang xem — nguồn sinh TOC (word-toc, R51 giữ testid).
  * JD2: variant="word" (pane DOCX) THÊM controls bố cục trang — css qua
  * onWordChange, chỉ áp trong word pane (UnifiedEditor inject riêng cho docx).
+ * Plan M3: controls page-style đổi testid word-style-* (word-tb-* thuộc content
+ * toolbar single-row của WordToolbar — word-toc/word-tools giữ nguyên).
  */
 export default function DocStyleTools({
   html = null,
@@ -215,7 +217,7 @@ export default function DocStyleTools({
             ))}
             <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
             <Button
-              testid="word-tb-indent-out"
+              testid="word-style-indent-out"
               variant="ghost"
               size="sm"
               title="Bớt lề"
@@ -226,7 +228,7 @@ export default function DocStyleTools({
               <IndentDecrease className="h-4 w-4" aria-hidden="true" />
             </Button>
             <Button
-              testid="word-tb-indent-in"
+              testid="word-style-indent-in"
               variant="ghost"
               size="sm"
               title="Thêm lề"
@@ -241,7 +243,7 @@ export default function DocStyleTools({
               <span className="text-muted">Giãn dòng</span>
               <select
                 id="tool-line-spacing"
-                data-testid="word-tb-spacing"
+                data-testid="word-style-spacing"
                 value={spacing}
                 onChange={(e) => setSpacing(e.target.value)}
                 className={SELECT_CLS}
@@ -256,7 +258,7 @@ export default function DocStyleTools({
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                data-testid="word-tb-underline"
+                data-testid="word-style-underline"
                 checked={underline}
                 onChange={(e) => setUnderline(e.target.checked)}
                 className="h-4 w-4 accent-accent"
