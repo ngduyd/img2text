@@ -19,9 +19,10 @@ import time
 
 import httpx
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Pt
+from docx.shared import Inches, Pt
 from docx.table import _Cell
 
 from app.core.config import settings
@@ -297,8 +298,17 @@ def _plan_items(plan: dict, blocks: list[dict]) -> list[tuple[dict, str, str]]:
     ]
     return items
 
-async def build_layout_docx(result: dict, page_dims: list[tuple[int, int]]) -> bytes:
-    """LLM layout plan → rendered .docx bytes (zip container)."""
+async def build_layout_docx(
+    result: dict,
+    page_dims: list[tuple[int, int]],
+    style_overrides: dict | None = None,
+) -> bytes:
+    """LLM layout plan → rendered .docx bytes (zip container).
+
+    Plan M: `style_overrides` (jobs.layout_style, typed by the PUT
+    route) applied over the finished plan so the user's saved style
+    wins the LLM (spec: override trước render = override beats plan).
+    """
     blocks, dims = _extract(result)
     if not dims:
         dims = list(page_dims)
@@ -311,6 +321,50 @@ async def build_layout_docx(result: dict, page_dims: list[tuple[int, int]]) -> b
             doc.add_page_break()
         page_items = [it for it in items if it[0]["page"] == pi]
         _render_page(doc, page_items, plan["columns"] == "two")
+    if style_overrides:
+        _apply_style_overrides(doc, style_overrides)
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
+
+_ALIGN_MAP = {
+    "left": WD_ALIGN_PARAGRAPH.LEFT,
+    "center": WD_ALIGN_PARAGRAPH.CENTER,
+    "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+}
+# ceiling: 1 indent level = 0.5" left indent (Word's default tab stop);
+# upgrade path = mirror web's 1.5rem/level padding when design pins it
+_INDENT_INCHES = 0.5
+
+def _all_paragraphs(container):
+    """Body + table-cell paragraphs (two-column + nested HTML tables)."""
+    for para in container.paragraphs:
+        yield para
+    for table in container.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                # merged cells repeat in row.cells — pass idempotent, ok
+                yield from _all_paragraphs(cell)
+
+def _apply_style_overrides(doc, ov: dict) -> None:
+    """Global user style → every paragraph/run (user beats LLM plan)."""
+    font = ov.get("fontFamily")
+    size = ov.get("fontSize")
+    align = _ALIGN_MAP.get(ov.get("align"))
+    indent = ov.get("indent")
+    spacing = ov.get("spacing")
+    underline = ov.get("underline")
+    for para in _all_paragraphs(doc):
+        if align is not None:
+            para.alignment = align
+        if indent is not None:  # 0 → left_indent 0 (explicit clear)
+            para.paragraph_format.left_indent = Inches(_INDENT_INCHES * indent)
+        if spacing is not None:
+            para.paragraph_format.line_spacing = float(spacing)
+        for run in para.runs:
+            if font is not None:
+                run.font.name = font
+            if size is not None:
+                run.font.size = Pt(size)
+            if underline is not None:  # underline áp cho MỌI run
+                run.underline = underline

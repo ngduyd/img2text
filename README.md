@@ -205,11 +205,12 @@ cp deploy/.env.example deploy/.env                   # then fill (see below)
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
-> **Migration 1 lần cho DB đã tồn tại (Plan D4 — `create_all` không ALTER):**
+> **Migration 1 lần cho DB đã tồn tại (Plan D4/Plan M — `create_all` không ALTER):**
 >
 > ```bash
 > docker compose -f deploy/docker-compose.yml exec postgres \
->   psql -U img2text -d img2text -c "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS output_format TEXT;"
+>   psql -U img2text -d img2text -c "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS output_format TEXT;" \
+>   -c "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS layout_style TEXT;"
 > ```
 
 Nginx serves `web/dist` and proxies `/api/` on port 80. Fill `deploy/.env`:

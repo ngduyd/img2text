@@ -134,6 +134,11 @@ class Job(Base):
     output_format: Mapped[str | None] = mapped_column(
         Text, nullable=True, default="md"
     )
+    # Plan M: word style overrides — JSON object (enum keys, typed values)
+    # hoặc NULL. ALTER-only migration (create_all never ALTERs):
+    #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS layout_style TEXT;
+    # Readers parse via json.loads (broken JSON → None + warning).
+    layout_style: Mapped[str | None] = mapped_column(Text, nullable=True)
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     worker_token: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -9,6 +9,7 @@ Crops materialized into ALL md-family exports per Plan D Task 4.
 import asyncio
 import base64
 import io
+import json
 import logging
 import re
 import subprocess
@@ -288,6 +289,38 @@ class ContentBody(BaseModel):
 class ExportBody(BaseModel):
     fmt: Literal["md", "html", "docx", "pdf", "docx-layout", "md-layout"]
 
+class MdLayoutContentBody(BaseModel):
+    # length/emptiness checked in the route → exact 422 detail
+    markdown: str
+
+MAX_MD_LAYOUT_CHARS = 500_000
+
+@router.put("/api/jobs/{id}/export/md-layout/content", status_code=204)
+async def put_md_layout_content(
+    id: int,
+    body: MdLayoutContentBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> Response:
+    """Plan M: lưu bản md-layout đã sửa (upsert exports/{id}/md-layout).
+
+    Separate from PATCH /content (job.content): content = raw OCR/edit,
+    md-layout = LLM layout + user's source edits (spec binding).
+    """
+    job = await _job_or_403(session, id, user)
+    if job.status != "done":
+        raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
+    if not body.markdown.strip():
+        raise HTTPException(status_code=422, detail="Nội dung trống.")
+    if len(body.markdown) > MAX_MD_LAYOUT_CHARS:
+        raise HTTPException(status_code=422, detail="Nội dung quá dài.")
+    key = f"exports/{id}/md-layout"
+    # S3Driver.put dedupes existing keys → delete first for upsert
+    await storage.delete_prefix(key)
+    await storage.put(key, body.markdown.encode("utf-8"))
+    return Response(status_code=204)
+
 @router.patch("/api/jobs/{id}/content")
 async def patch_content(
     id: int,
@@ -314,6 +347,8 @@ async def _llm_docx_export(job_id: int, job: Job) -> bytes:
 
     Missing result → 409 "Chưa có kết quả OCR."; LLM unreachable/timeout
     → 502 "Không kết nối LLM máy chủ." (raised before storage.put).
+    Plan M: word style overrides (jobs.layout_style) applied over the
+    LLM plan — user's saved style wins (spec binding).
     """
     result = dict(job.result or {})
     if not result.get("pages"):
@@ -323,12 +358,25 @@ async def _llm_docx_export(job_id: int, job: Job) -> bytes:
         for page in result["pages"]
     ]
     try:
-        return await build_layout_docx(result, page_dims)
+        return await build_layout_docx(
+            result, page_dims, style_overrides=_job_layout_style(job)
+        )
     except LLMLayoutError as exc:
         logger.warning("docx-layout LLM failure job=%s: %s", job_id, exc)
         raise HTTPException(
             status_code=502, detail="Không kết nối LLM máy chủ."
         ) from exc
+
+def _job_layout_style(job: Job) -> dict | None:
+    """jobs.layout_style JSON → dict; broken JSON → None + warning."""
+    if not job.layout_style:
+        return None
+    try:
+        style = json.loads(job.layout_style)
+    except (ValueError, TypeError) as exc:
+        logger.warning("job %s layout_style JSON hỏng: %s", job.id, exc)
+        return None
+    return style if isinstance(style, dict) else None
 
 async def _llm_md_export(job_id: int, job: Job) -> bytes:
     """Plan D5: result → LLM md-layout markdown bytes (never caches errors).

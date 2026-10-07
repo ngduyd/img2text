@@ -9,6 +9,7 @@ R11 capability token, R16/R17 atomic conditional-UPDATE transitions).
 import hashlib
 import hmac
 import json
+import logging
 import secrets
 import tempfile
 from datetime import datetime, timedelta, timezone
@@ -38,6 +39,55 @@ ERROR_MAX_CHARS = 500
 ROTATE_ANGLES = {0, 90, 180, 270}
 
 router = APIRouter(tags=["jobs"])
+logger = logging.getLogger(__name__)
+
+# Plan M: word style override enum + typed value rules (spec: keys subset,
+# values typed; violation → 422 "Kiểu định dạng không hợp lệ.")
+LAYOUT_STYLE_KEYS = {
+    "fontFamily", "fontSize", "align", "indent", "spacing", "underline"
+}
+LAYOUT_ALIGNS = {"left", "center", "justify"}
+LAYOUT_INDENTS = {0, 1, 2}
+LAYOUT_SPACINGS = {1, 1.25, 1.5, 2}
+LAYOUT_FONT_MAX_CHARS = 40
+LAYOUT_FONT_SIZE_RANGE = range(8, 73)  # 8-72 inclusive
+
+
+class LayoutStyleBody(BaseModel):
+    # style: object|null (spec) — validate types manually to keep the
+    # exact 422 detail "Kiểu định dạng không hợp lệ."
+    style: dict | None
+
+
+def _validate_layout_style(style: dict) -> None:
+    """Enum keys + typed values; any violation → 422 (exact detail)."""
+    def bad() -> HTTPException:
+        return HTTPException(
+            status_code=422, detail="Kiểu định dạng không hợp lệ."
+        )
+
+    if not set(style) <= LAYOUT_STYLE_KEYS:
+        raise bad()
+    for key, value in style.items():
+        if key == "fontFamily":
+            if not isinstance(value, str) or len(value) > LAYOUT_FONT_MAX_CHARS:
+                raise bad()
+        elif key == "fontSize":
+            # bool is int subclass — reject explicitly (true ≠ 8-72)
+            if type(value) is not int or value not in LAYOUT_FONT_SIZE_RANGE:
+                raise bad()
+        elif key == "align":
+            if value not in LAYOUT_ALIGNS:
+                raise bad()
+        elif key == "indent":
+            if type(value) is not int or value not in LAYOUT_INDENTS:
+                raise bad()
+        elif key == "spacing":
+            if type(value) not in (int, float) or value not in LAYOUT_SPACINGS:
+                raise bad()
+        elif key == "underline":
+            if not isinstance(value, bool):
+                raise bad()
 
 def _ocr_user(user: User = Depends(get_current_user)) -> User:
     return require_ocr(user)
@@ -246,6 +296,7 @@ async def get_job(
     id: int,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
 ) -> dict:
     job = await _job_or_403(session, id, user)
     # storage_key deliberately omitted — never leak bucket keys to users
@@ -260,7 +311,61 @@ async def get_job(
         "created_at": job.created_at,
         "started_at": job.started_at,
         "finished_at": job.finished_at,
+        # Plan M: unified-editor contract — artifact cache flags + word style
+        "layout_cache": {
+            "md": await _layout_artifact_exists(storage, id, "md-layout"),
+            "docx": await _layout_artifact_exists(storage, id, "docx-layout"),
+        },
+        "layout_style": _parse_layout_style(job),
     }
+
+async def _layout_artifact_exists(
+    storage: StorageDriver, job_id: int, fmt: str
+) -> bool:
+    """exports/{id}/{fmt} tồn tại? Storage lỗi → false + warning (không 500)."""
+    try:
+        return await storage.exists(f"exports/{job_id}/{fmt}")
+    except Exception as exc:
+        logger.warning(
+            "layout_cache check failed job=%s fmt=%s: %s", job_id, fmt, exc
+        )
+        return False
+
+def _parse_layout_style(job: Job) -> dict | None:
+    """jobs.layout_style JSON → dict; broken JSON → None + warning."""
+    if not job.layout_style:
+        return None
+    try:
+        style = json.loads(job.layout_style)
+    except (ValueError, TypeError) as exc:
+        logger.warning("job %s layout_style JSON hỏng: %s", job.id, exc)
+        return None
+    return style if isinstance(style, dict) else None
+
+@router.put("/api/jobs/{id}/layout-style", status_code=204)
+async def put_layout_style(
+    id: int,
+    body: LayoutStyleBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> Response:
+    """Plan M: lưu word style override (object → cột JSON; null → xóa).
+
+    Owner-or-admin (_job_or_403). Saved style must beat a previously
+    cached docx-layout render → exports/{id}/docx-layout invalidated here
+    (same cache-invalidation rule as PATCH /content, Plan M gates M3).
+    """
+    job = await _job_or_403(session, id, user)
+    if body.style is None:
+        job.layout_style = None
+    else:
+        _validate_layout_style(body.style)
+        job.layout_style = json.dumps(body.style, ensure_ascii=False)
+    await session.commit()
+    # style đổi → render cached cũ hết hiệu lực (user style thắng LLM plan)
+    await storage.delete_prefix(f"exports/{id}/docx-layout")
+    return Response(status_code=204)
 
 @router.get("/api/jobs/{id}/file")
 async def get_job_file(
@@ -363,6 +468,7 @@ async def retry_job(
 
 class FailBody(BaseModel):
     error: str
+
 
 def _bearer_token(request: Request) -> str | None:
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
