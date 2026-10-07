@@ -51,24 +51,20 @@ function renderPanel(result: ResultBody = RESULT): ReturnType<typeof render> {
   });
   const ui: ReactElement = (
     <QueryClientProvider client={queryClient}>
-      <ResultPanel jobId="5" result={result} />
+      {/* JD2: editing/hostRef controlled by JobDetail — harness passes the controlled pair. */}
+      <ResultPanel jobId="5" result={result} editing={false} onEditingChange={() => {}} />
     </QueryClientProvider>
   );
   return render(ui);
 }
 
-it("stats line counts verdicts exactly across pages", () => {
-  renderPanel();
-  expect(screen.getByTestId("result-stats")).toHaveTextContent(
-    "Tổng 6 vùng · 2 ok · 1 hình ảnh · 1 không trích xuất · 2 cần kiểm tra",
-  );
-});
-
-it("hosts preview, issues, export + markdown editor", async () => {
+it("hosts preview, issues + markdown editor (stats/export moved to JobDetail rail)", async () => {
   renderPanel();
   expect(screen.getByTestId("panel-result")).toBeInTheDocument();
   expect(screen.getByTestId("preview-markdown")).toBeInTheDocument();
   expect(await screen.findByTestId("issue-a4")).toBeInTheDocument();
-  expect(screen.getByTestId("export-md")).toBeInTheDocument();
   expect(screen.getByTestId("btn-edit")).toBeInTheDocument();
+  // JD2: accordion toggle present; rows stay in DOM (hidden until opened)
+  expect(screen.getByTestId("issues-toggle")).toHaveAttribute("aria-expanded", "false");
+  expect(screen.getByTestId("issues-list")).not.toBeVisible();
 });

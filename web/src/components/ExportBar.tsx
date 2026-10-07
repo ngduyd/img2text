@@ -17,9 +17,11 @@ const FORMATS = [
 
 type Fmt = (typeof FORMATS)[number]["fmt"];
 
+/** JD2 rail: 1 nút chính (.md) + disclosure "Định dạng khác" (các nút cũ giữ nguyên testid). */
 export default function ExportBar({ jobId }: { jobId: string }) {
   const [busy, setBusy] = useState<Set<Fmt>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
+  const [more, setMore] = useState(false);
 
   const exportFmt = async (fmt: Fmt) => {
     setBusy((prev) => new Set(prev).add(fmt));
@@ -42,7 +44,7 @@ export default function ExportBar({ jobId }: { jobId: string }) {
   };
 
   return (
-    <div>
+    <div data-testid="export-bar">
       {error && (
         <div
           data-testid="export-error"
@@ -51,8 +53,28 @@ export default function ExportBar({ jobId }: { jobId: string }) {
           {error}
         </div>
       )}
-      <div className="flex flex-wrap gap-2">
-        {FORMATS.map(({ fmt, testid, label }) => (
+      <div className="flex flex-wrap items-center gap-2">
+        <Button testid="export-md" loading={busy.has("md")} onClick={() => exportFmt("md")}>
+          Tải .md
+        </Button>
+        <Button
+          testid="export-more"
+          variant="secondary"
+          size="sm"
+          aria-expanded={more}
+          aria-controls="export-formats"
+          onClick={() => setMore((v) => !v)}
+        >
+          Định dạng khác
+        </Button>
+      </div>
+      <div
+        id="export-formats"
+        data-testid="export-formats"
+        hidden={!more}
+        className="mt-2 flex flex-wrap gap-2"
+      >
+        {FORMATS.filter(({ fmt }) => fmt !== "md").map(({ fmt, testid, label }) => (
           <Button
             key={fmt}
             testid={testid}

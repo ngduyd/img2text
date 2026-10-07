@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "../../src/api/client";
@@ -57,4 +58,19 @@ it("shows crop image only when bbox present", async () => {
     "https://r2/crops/p1r0.jpg",
   );
   expect(screen.queryByTestId("crop-p1r1")).toBeNull();
+});
+
+/** JD2 accordion: rows luôn trong DOM, toggle issues-toggle → hiện (document-first). */
+it("issues list collapsed by default and toggle reveals rows", async () => {
+  vi.mocked(api.getCropUrl).mockResolvedValue({ url: "https://r2/crops/p1r0.jpg" });
+  renderPanel();
+  const toggle = await screen.findByTestId("issues-toggle");
+  expect(toggle).toHaveAttribute("aria-expanded", "false");
+  expect(screen.getByTestId("issues-list")).not.toBeVisible();
+  expect(screen.getByTestId("issue-p1r0")).toBeInTheDocument();
+  const user = userEvent.setup();
+  await user.click(toggle);
+  expect(toggle).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByTestId("issues-list")).toBeVisible();
+  expect(screen.getByTestId("btn-edit-region-p1r0")).toBeVisible();
 });
