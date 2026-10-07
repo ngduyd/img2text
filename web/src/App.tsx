@@ -8,7 +8,6 @@ import type { User } from "./api/types";
 import ThemeToggle from "./components/ThemeToggle";
 import OcrBadge from "./components/OcrBadge";
 import Button, { buttonClasses } from "./components/ui/Button";
-import Edit from "./pages/Edit";
 import Forgot from "./pages/Forgot";
 import Admin from "./pages/Admin";
 import JobDetail from "./pages/JobDetail";
@@ -320,8 +319,10 @@ export default function App() {
             <Route path="/landing" element={<Navigate to="/" replace />} />
             <Route path="/jobs" element={<Jobs />} />
             <Route path="/jobs/:id" element={<JobDetail />} />
-            <Route path="/edit" element={<Edit />} />
-            <Route path="/word" element={<Navigate to="/edit" replace />} />
+            {/* R51 exception (user: "không tách /edit nữa"): standalone /edit page
+                gộp vào /jobs/:id (JD2 mount) — bookmark cũ redirect trang chủ. */}
+            <Route path="/edit" element={<Navigate to="/" replace />} />
+            <Route path="/word" element={<Navigate to="/" replace />} />
             <Route path="/admin" element={<Admin />} />
           </Routes>
         </div>

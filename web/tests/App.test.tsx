@@ -290,12 +290,15 @@ it("AuthZone: logout (me=undefined) resets menu open state for re-login", async 
   expect(screen.queryByTestId("nav-user-menu")).not.toBeInTheDocument();
 });
 
-it("/word alias redirects to /edit (WordTool page moved; R51 user instruction)", async () => {
+it("/word and /edit redirect to / (standalone /edit page removed; R51 user instruction)", async () => {
   vi.mocked(api.me).mockRejectedValue(new ApiError("Unauthorized."));
-  window.history.pushState({}, "", "/word");
-  render(<App />);
-  expect(await screen.findByTestId("edit-page")).toBeInTheDocument();
-  expect(window.location.pathname).toBe("/edit");
+  for (const route of ["/word", "/edit"]) {
+    window.history.pushState({}, "", route);
+    const view = render(<App />);
+    expect(await screen.findByTestId("landing-hero")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
+    view.unmount();
+  }
 });
 
 it("hamburger toggle: aria-expanded/controls/label, opens mobile menu, closes on link click", async () => {
