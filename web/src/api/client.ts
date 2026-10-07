@@ -1,4 +1,4 @@
-import type { AdminStatsDay, Job, JobListItem, RegionPatchOut, User, AdminSettings, AdminSettingsPut } from "./types";
+import type { AdminStatsDay, Job, JobListItem, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle } from "./types";
 
 /** Thrown for any non-2xx response; `detail` mirrors FastAPI {detail} bodies. */
 export class ApiError extends Error {
@@ -47,6 +47,8 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     }
     throw new ApiError(detail);
   }
+  // 204 = no body (Plan M PUTs) — res.json() would throw on empty payload.
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
@@ -85,6 +87,15 @@ export const api = {
   getJobFile: (id: number | string) => request<{ url: string }>(`/api/jobs/${id}/file`),
   patchContent: (id: number | string, markdown: string) =>
     request<unknown>(`/api/jobs/${id}/content`, { method: "PATCH", body: { markdown } }),
+  // Plan M (M2): nguồn md-layout (artifact) — KHÁC patchContent (VLM content).
+  putMdLayoutContent: (id: number | string, markdown: string) =>
+    request<unknown>(`/api/jobs/${id}/export/md-layout/content`, {
+      method: "PUT",
+      body: { markdown },
+    }),
+  // Plan M (M1): word style overrides (null = xoá override).
+  putLayoutStyle: (id: number | string, style: LayoutStyle | null) =>
+    request<unknown>(`/api/jobs/${id}/layout-style`, { method: "PUT", body: { style } }),
   exportJob: (id: number | string, fmt: string) =>
     request<{ url: string }>(`/api/jobs/${id}/export`, { method: "POST", body: { fmt } }),
   // Task 5: same-origin blob download of a cached export (presign window.open not usable for iframe srcdoc).

@@ -46,6 +46,16 @@ export interface RegionPatchOut {
 
 export type JobStatus = "queued" | "running" | "done" | "failed";
 
+/** Plan M: word style overrides (PUT /layout-style) — server enum-validates keys. */
+export interface LayoutStyle {
+  fontFamily?: string;
+  fontSize?: number;
+  align?: "left" | "center" | "justify";
+  indent?: number;
+  spacing?: string;
+  underline?: boolean;
+}
+
 export interface Job {
   id: number;
   status: JobStatus;
@@ -58,6 +68,10 @@ export interface Job {
   finished_at: string | null;
   /** Plan D4: export format chosen at upload ("md" | "docx"); absent on legacy rows → "md". */
   output_format?: string;
+  /** Plan M (M1): exports/{id}/md-layout + docx-layout tồn tại chưa (badge + flow). */
+  layout_cache?: { md: boolean; docx: boolean };
+  /** Plan M (M1): word style overrides đã lưu (JSON parsed | null). */
+  layout_style?: LayoutStyle | null;
 }
 
 /** List endpoint subset: server /api/jobs items omit result; started_at/finished_at

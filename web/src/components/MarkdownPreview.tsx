@@ -8,7 +8,15 @@ const DOC_PREFIX = "<!doctype html><meta charset=\"utf-8\">";
  * iframe sandbox="" — no scripts, no same-origin; srcdoc pre-sanitized via DOMPurify.
  * `css` (optional) = style block của DocStyleTools chèn SAU sanitize (trusted builder CSS).
  */
-export default function MarkdownPreview({ markdown, css }: { markdown: string; css?: string }) {
+export default function MarkdownPreview({
+  markdown,
+  css,
+  className = "",
+}: {
+  markdown: string;
+  css?: string;
+  className?: string;
+}) {
   const html = renderMarkdown(markdown);
   return (
     <iframe
@@ -16,6 +24,7 @@ export default function MarkdownPreview({ markdown, css }: { markdown: string; c
       sandbox=""
       title="Xem trước Markdown"
       srcDoc={DOC_PREFIX + (css ? withStyle(html, css) : html)}
+      className={className}
     />
   );
 }

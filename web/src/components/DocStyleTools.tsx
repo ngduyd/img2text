@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlignCenter, AlignJustify, AlignLeft, IndentDecrease, IndentIncrease } from "lucide-react";
-import { DEFAULT_PREVIEW_OPTS, FONT_FAMILIES, buildPreviewCss } from "../lib/docStyle";
+import type { LayoutStyle } from "../api/types";
+import { DEFAULT_PREVIEW_OPTS, FONT_FAMILIES, buildLayoutStyleCss, buildPreviewCss } from "../lib/docStyle";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
 
@@ -32,30 +33,35 @@ const SELECT_CLS =
  * css mới bắn ra qua onChange (nhận setter useState ổn định). `html` (optional)
  * = HTML render của preview đang xem — nguồn sinh TOC (word-toc, R51 giữ testid).
  * JD2: variant="word" (pane DOCX) THÊM controls bố cục trang — css qua
- * onWordChange, chỉ áp trong word pane (PreviewTabs inject riêng cho docx).
+ * onWordChange, chỉ áp trong word pane (UnifiedEditor inject riêng cho docx).
  */
 export default function DocStyleTools({
   html = null,
   onChange,
   variant = "md",
   onWordChange,
+  initialStyle = null,
+  onStyleChange,
 }: {
   html?: string | null;
   onChange: (css: string) => void;
   variant?: DocStyleVariant;
   onWordChange?: (css: string) => void;
+  /** Plan M: hydrate từ job.layout_style (lưu ở session trước) + emit bản PUT layout-style. */
+  initialStyle?: LayoutStyle | null;
+  onStyleChange?: (style: LayoutStyle) => void;
 }) {
-  const [fontFamily, setFontFamily] = useState(DEFAULT_PREVIEW_OPTS.fontFamily);
-  const [fontSize, setFontSize] = useState(DEFAULT_PREVIEW_OPTS.fontSize);
+  const [fontFamily, setFontFamily] = useState(initialStyle?.fontFamily ?? DEFAULT_PREVIEW_OPTS.fontFamily);
+  const [fontSize, setFontSize] = useState(initialStyle?.fontSize ?? DEFAULT_PREVIEW_OPTS.fontSize);
   const [indexOn, setIndexOn] = useState(DEFAULT_PREVIEW_OPTS.index);
   const [marginLeft, setMarginLeft] = useState(DEFAULT_PREVIEW_OPTS.marginLeft);
   const [marginRight, setMarginRight] = useState(DEFAULT_PREVIEW_OPTS.marginRight);
   const [tableBorders, setTableBorders] = useState(DEFAULT_PREVIEW_OPTS.tableBorders);
   // Word-only page layout: align/indent/line spacing/underline → CSS cho docx pane.
-  const [align, setAlign] = useState<Align>("left");
-  const [indent, setIndent] = useState(0);
-  const [spacing, setSpacing] = useState("1.5");
-  const [underline, setUnderline] = useState(false);
+  const [align, setAlign] = useState<Align>(initialStyle?.align ?? "left");
+  const [indent, setIndent] = useState(initialStyle?.indent ?? 0);
+  const [spacing, setSpacing] = useState(initialStyle?.spacing ?? "1.5");
+  const [underline, setUnderline] = useState(initialStyle?.underline ?? false);
 
   const css = useMemo(
     () => buildPreviewCss({ fontFamily, fontSize, index: indexOn, marginLeft, marginRight, tableBorders }),
@@ -65,18 +71,21 @@ export default function DocStyleTools({
     onChange(css);
   }, [css, onChange]);
 
-  const wordCss = useMemo(() => {
-    if (variant !== "word") return "";
-    const rules: string[] = [];
-    if (align !== "left") rules.push(`text-align: ${align}`);
-    if (indent > 0) rules.push(`padding-left: ${(indent * 1.5).toFixed(2)}rem`);
-    if (spacing !== "1.5") rules.push(`line-height: ${spacing}`);
-    if (underline) rules.push("text-decoration: underline");
-    return rules.length > 0 ? `body { ${rules.join("; ")}; }` : "";
-  }, [variant, align, indent, spacing, underline]);
+  // 1 builder cho word css + bản lưu PUT layout-style (enum keys khớp server).
+  const wordStyle = useMemo<LayoutStyle>(
+    () => ({ fontFamily, fontSize, align, indent, spacing, underline }),
+    [fontFamily, fontSize, align, indent, spacing, underline],
+  );
+  const wordCss = useMemo(
+    () => (variant === "word" ? buildLayoutStyleCss(wordStyle) : ""),
+    [variant, wordStyle],
+  );
   useEffect(() => {
     onWordChange?.(wordCss);
   }, [wordCss, onWordChange]);
+  useEffect(() => {
+    onStyleChange?.(wordStyle);
+  }, [wordStyle, onStyleChange]);
 
   const toc = useMemo(() => extractToc(html), [html]);
 

@@ -1,7 +1,7 @@
 import type { Query } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, FileQuestion, PenLine, TriangleAlert } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
@@ -45,20 +45,13 @@ export default function JobDetail() {
   const [editing, setEditing] = useState(false);
   const editorHostRef = useRef<HTMLElement>(null);
 
-  // Vào edit → scroll mượt tới MarkdownEditor (scroll-mt-32 tránh sticky header) + focus textarea.
-  useEffect(() => {
-    if (!editing) return;
-    const host = editorHostRef.current;
-    if (!host) return;
-    host.scrollIntoView({ behavior: "smooth", block: "start" });
-    host.querySelector("textarea")?.focus();
-  }, [editing]);
+  /* Plan M: scroll + focus nguồn md-layout do UnifiedEditor tự lo khi editing=true. */
 
   const toggleEdit = () => {
     if (editing) {
       setEditing(false);
       document
-        .querySelector('[data-testid="panel-docs"]')
+        .querySelector('[data-testid="panel-editor"]')
         ?.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
@@ -179,6 +172,7 @@ export default function JobDetail() {
           >
             <ResultPanel
               jobId={id!}
+              job={job}
               result={result}
               editing={editing}
               onEditingChange={setEditing}
