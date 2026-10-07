@@ -5,6 +5,8 @@ description = "img2text server: FastAPI + SQLAlchemy async + asyncpg"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi",
+    # llm_docx import lúc boot — phải là main dep (không nằm test group)
+    "httpx",
     "uvicorn",
     "sqlalchemy[asyncio]",
     "asyncpg",
