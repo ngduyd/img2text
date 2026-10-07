@@ -117,6 +117,26 @@ async def test_build_md_heading_and_emphasis_pass(monkeypatch):
     fake_llm(monkeypatch, [_md_response("# Xin chào")])
     assert await build_md(_result([_region("r0", [1, 2, 3, 4], "Xin chào")])) == "# Xin chào"
 
+async def test_build_md_midline_emphasis_passes(monkeypatch):
+    """D5 review P1: mid-line ** must not trip verbatim validation."""
+    result = _result([_region("r0", [1, 2, 3, 4], "giá trị quan trọng")])
+    fake_llm(monkeypatch, [_md_response("giá trị **quan trọng**")])
+    assert await build_md(result) == "giá trị **quan trọng**"
+
+async def test_build_md_word_emphasis_passes(monkeypatch):
+    result = _result([_region("r0", [1, 2, 3, 4], "Xin chào")])
+    fake_llm(monkeypatch, [_md_response("Xin **chào**")])
+    assert await build_md(result) == "Xin **chào**"
+
+async def test_build_md_table_cell_escaped_pipe_passes(monkeypatch):
+    r"""D5 review P1: escaped pipe in a table cell (a\|b) = source a|b."""
+    result = _result([
+        _region("r0", [1, 2, 798, 40], "<table><tr><td>a|b</td></tr></table>")
+    ])
+    md = "| a\\|b |"
+    fake_llm(monkeypatch, [_md_response(md)])
+    assert await build_md(result) == md
+
 async def test_build_md_content_modified_raises(monkeypatch, VALID_RESULT_JSONB):
     fake_llm(monkeypatch, [_md_response("# Xin chao da sua")])
     with pytest.raises(LLMMdContentError):

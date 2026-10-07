@@ -32,7 +32,8 @@ PROMPT_INSTRUCTION = (
     'JSON {"markdown": "..."} vẽ lại layout bằng markdown:\n'
     "1. type=table → bảng markdown bằng '| ... |' (dòng '---' phân cách).\n"
     "2. Block không phải table: hai block cùng xmin và xmax (bbox[0], bbox[2]) "
-    "ở vị trí y khác → block cột phải thụt lề bằng TAB đầu dòng.\n"
+    "ở vị trí y khác, hoặc hai box bao nhau nhưng cùng inset x (cùng lề "
+    "trái-phải) → block cột phải thụt lề bằng TAB đầu dòng.\n"
     "3. Tiêu đề → '# ' hoặc '## ' theo cấp; nhấn mạnh → '**...**'.\n"
     "4. GIỮ NGUYÊN text từng block: không sửa, không lược, không thêm từ; "
     "chỉ dùng '#', '**', TAB, '|', '>' làm định dạng; không bullet, không "
@@ -76,18 +77,20 @@ def _extract(result: dict) -> list[dict]:
 def _plain(text: str) -> str:
     """Strip md/HTML format markers per line → whitespace-normalized text.
 
-    Symmetric on both sides of the comparison: heading '#', '**', indent
-    (leading tab/space), '|' (cells split, separators dropped), blockquote
-    '>', HTML tags, hr segments (table '---' rows).
+    Symmetric on both sides of the comparison: heading '#', '**' removed
+    (no stray space), '\\|' unescaped before pipe-split, leading tab/space,
+    '|' (cells split, separators dropped), blockquote '>', HTML tags, hr
+    segments (table '---' rows), internal whitespace collapsed per segment.
     """
     out: list[str] = []
     for line in text.splitlines():
-        line = line.replace("**", " ")
-        for seg in line.split("|"):  # table pipes delimit cells
+        line = line.replace("**", "").replace("\\|", "|")
+        for seg in line.split("|"):  # table pipes delimit cells (\| unescaped)
             seg = _TAG_RE.sub(" ", seg).strip()
             while seg.startswith(">"):
                 seg = seg[1:].strip()
             seg = re.sub(r"^#{1,6}\s*", "", seg).strip()
+            seg = re.sub(r"\s+", " ", seg)  # mid-line collapse (emphasis gap)
             if not seg or _HR_RE.fullmatch(seg):
                 continue  # blank / hr / table separator cell
             out.append(seg)

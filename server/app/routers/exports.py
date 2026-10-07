@@ -372,7 +372,9 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> None:
     if fmt == "docx":
         data = await _llm_docx_export(job.id, job)  # LLM down → HTTPException → caller warns
     elif fmt == "md":
-        # D5: md auto-gen = md-layout via LLM; any failure → fallback below
+        # D5: md auto-gen = md-layout via LLM; any failure → fallback below.
+        # exports/{id}/md = md-layout bytes khi auto-gen (theo user output
+        # intent); md thường chỉ còn khi fallback (giữ nguyên key).
         try:
             data = await _llm_md_export(job.id, job)
         except HTTPException as exc:
