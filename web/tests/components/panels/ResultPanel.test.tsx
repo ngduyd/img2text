@@ -63,7 +63,10 @@ it("hosts preview, issues + markdown editor (stats/export moved to JobDetail rai
   expect(screen.getByTestId("panel-result")).toBeInTheDocument();
   expect(screen.getByTestId("preview-markdown")).toBeInTheDocument();
   expect(await screen.findByTestId("issue-a4")).toBeInTheDocument();
-  expect(screen.getByTestId("btn-edit")).toBeInTheDocument();
+  // R51 exception (user "1 chỗ thôi"): editor panel has no btn-edit — preview + hint.
+  expect(screen.queryByTestId("btn-edit")).toBeNull();
+  expect(screen.getByTestId("md-source-preview")).toBeInTheDocument();
+  expect(screen.getByTestId("md-edit-hint")).toBeInTheDocument();
   // JD2: accordion toggle present; rows stay in DOM (hidden until opened)
   expect(screen.getByTestId("issues-toggle")).toHaveAttribute("aria-expanded", "false");
   expect(screen.getByTestId("issues-list")).not.toBeVisible();
