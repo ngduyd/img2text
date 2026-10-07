@@ -60,7 +60,12 @@ class LayoutStyleBody(BaseModel):
 
 
 def _validate_layout_style(style: dict) -> None:
-    """Enum keys + typed values; any violation → 422 (exact detail)."""
+    """Enum keys + typed values; any violation → 422 (exact detail).
+
+    BUGFIX 2: web sends fontSize/spacing as STRING from <select>/inputs —
+    numeric strings are coerced in place (style dict normalized to int/float)
+    before the route json.dumps it; unparseable/out-of-range → 422.
+    """
     def bad() -> HTTPException:
         return HTTPException(
             status_code=422, detail="Kiểu định dạng không hợp lệ."
@@ -74,6 +79,12 @@ def _validate_layout_style(style: dict) -> None:
                 raise bad()
         elif key == "fontSize":
             # bool is int subclass — reject explicitly (true ≠ 8-72)
+            if isinstance(value, str):
+                try:
+                    value = int(value)
+                except ValueError:
+                    raise bad() from None
+                style[key] = value
             if type(value) is not int or value not in LAYOUT_FONT_SIZE_RANGE:
                 raise bad()
         elif key == "align":
@@ -83,6 +94,12 @@ def _validate_layout_style(style: dict) -> None:
             if type(value) is not int or value not in LAYOUT_INDENTS:
                 raise bad()
         elif key == "spacing":
+            if isinstance(value, str):
+                try:
+                    value = float(value)
+                except ValueError:
+                    raise bad() from None
+                style[key] = value
             if type(value) not in (int, float) or value not in LAYOUT_SPACINGS:
                 raise bad()
         elif key == "underline":

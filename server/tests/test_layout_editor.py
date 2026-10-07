@@ -179,14 +179,41 @@ async def test_put_layout_style_partial_ok(
     assert r.json()["layout_style"] == {"fontSize": 20}
 
 @pytest.mark.parametrize(
+    "good",
+    [
+        {"fontSize": "14"},        # web <select> gửi string → coerce int
+        {"spacing": "1.5"},        # web gửi string → coerce float
+        {"fontSize": 14, "spacing": 1.5},  # số nguyên thủy vẫn ok
+    ],
+)
+async def test_put_layout_style_string_values_coerced(
+    auth_client, done_job_with_result, db_session, good
+):
+    """BUGFIX 2: client web gửi fontSize/spacing dạng string → 204, lưu số."""
+    r = await auth_client.put(
+        f"/api/jobs/{done_job_with_result}/layout-style", json={"style": good}
+    )
+    assert r.status_code == 204, r.text
+    job = await db_session.get(Job, done_job_with_result)
+    stored = json.loads(job.layout_style)
+    assert stored == {k: int(v) if k == "fontSize" else float(v)
+                      for k, v in good.items()}
+    assert all(type(stored[k]) is (int if k == "fontSize" else float)
+               for k in good)
+
+@pytest.mark.parametrize(
     "bad",
     [
         {"color": "red"},          # key ngoài enum
         {"fontSize": 100},         # int ngoài 8-72
+        {"fontSize": "73"},        # string ngoài 8-72
+        {"fontSize": "abc"},       # string không parse được
         {"fontSize": True},        # bool ≠ int
         {"align": "middle"},       # giá trị ngoài enum
         {"indent": 3},             # ngoài [0,1,2]
         {"spacing": 1.1},          # ngoài [1,1.25,1.5,2]
+        {"spacing": 13},           # số ngoài enum
+        {"spacing": "abc"},        # string không parse được
         {"underline": "yes"},      # không phải bool
         {"fontFamily": "x" * 41},  # > 40 ký tự
     ],
