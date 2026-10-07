@@ -6,6 +6,7 @@ import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
+import * as mammoth from "mammoth";
 import { api, ApiError } from "../../src/api/client";
 import type { Job, ResultBody } from "../../src/api/types";
 import JobDetail from "../../src/pages/JobDetail";
@@ -18,9 +19,16 @@ vi.mock("../../src/api/client", async (importOriginal) => {
       ...actual.api,
       getJob: vi.fn(),
       retryJob: vi.fn(),
+      exportJob: vi.fn(),
+      downloadExport: vi.fn(),
     },
   };
 });
+
+// Plan M: unified editor tự gọi mammoth (word mode) — mock để không parse blob thật.
+vi.mock("mammoth", () => ({
+  convertToHtml: vi.fn(),
+}));
 
 /**
  * Polling assertion choice (documented): spy on the useQuery options — capture
@@ -101,6 +109,13 @@ function renderWithRouter(ui: ReactElement, { route = "/" } = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Plan M: mode md auto-flow chạy mỗi lần ResultPanel mount (mock, không đụng server).
+  vi.mocked(api.exportJob).mockResolvedValue({ url: "" });
+  vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["# Artifact"]));
+  vi.mocked(mammoth.convertToHtml).mockResolvedValue({
+    value: "<p>Chào</p>",
+    messages: [],
+  } as never);
   capturedInterval = undefined;
   lastJob = undefined;
   scrollIntoViewMock = vi.fn<ScrollIntoView>();
@@ -263,11 +278,11 @@ it("btn-edit-doc toggles inline edit: scroll + focus textarea, no navigation", a
   expect(ta).toHaveFocus();
   expect(scrollIntoViewMock).toHaveBeenCalledTimes(1);
   expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
-  // toggle lần 2 → đóng editor + scroll về preview (panel-docs)
+  // toggle lần 2 → đóng source edit + scroll về vùng Soạn thảo (panel-editor)
   await user.click(screen.getByTestId("btn-edit-doc"));
   expect(screen.queryByTestId("textarea-markdown")).toBeNull();
   expect(btn).toHaveAttribute("aria-pressed", "false");
-  expect(screen.getByTestId("panel-docs")).toBeInTheDocument();
+  expect(screen.getByTestId("panel-editor")).toBeInTheDocument();
   expect(scrollIntoViewMock).toHaveBeenCalledTimes(2);
   expect(mockNavigate).not.toHaveBeenCalled();
 });
@@ -281,7 +296,9 @@ it("layout: 2-column grid, reading col + rail with file/meta/export/info", async
   expect(grid.className).toContain("lg:grid-cols-[minmax(0,1fr)_320px]");
   const reading = screen.getByTestId("detail-reading");
   expect(reading).toContainElement(screen.getByTestId("panel-result"));
-  expect(reading).toContainElement(screen.getByTestId("preview-markdown"));
+  // Plan M: content area nằm trong panel-editor (fetch artifact xong mới render)
+  expect(await screen.findByTestId("preview-markdown")).toBeInTheDocument();
+  expect(reading).toContainElement(screen.getByTestId("panel-editor"));
   const rail = screen.getByTestId("detail-rail");
   expect(rail).toContainElement(screen.getByTestId("panel-original"));
   expect(rail).toContainElement(screen.getByTestId("job-output-format"));

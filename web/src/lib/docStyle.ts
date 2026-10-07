@@ -1,4 +1,6 @@
-/** Style preview partag (DocStyleTools + MarkdownPreview + PreviewTabs): css builder + inject. */
+/** Style preview partag (DocStyleTools + MarkdownPreview + UnifiedEditor): css builder + inject. */
+
+import type { LayoutStyle } from "../api/types";
 
 export const FONT_FAMILIES = ["system-ui", "Times New Roman", "Arial", "Georgia", "Courier New"];
 
@@ -48,4 +50,22 @@ export function withStyle(html: string, css: string): string {
   const tag = `<style id="word-style">${css}</style>`;
   if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => `${m}${tag}`);
   return tag + html;
+}
+
+/**
+ * Plan M: job.layout_style (hoặc state tools word) → 1 body rule. Dùng cho
+ * md iframe (override client theo contract M1) + wordCss của DocStyleTools
+ * (một builder duy nhất, khớp enum keys server).
+ */
+export function buildLayoutStyleCss(style: LayoutStyle | null | undefined): string {
+  if (!style) return "";
+  const rules: string[] = [];
+  if (style.fontFamily !== undefined) rules.push(`font-family: ${JSON.stringify(style.fontFamily)}`);
+  if (style.fontSize !== undefined) rules.push(`font-size: ${style.fontSize}px`);
+  if (style.align !== undefined && style.align !== "left") rules.push(`text-align: ${style.align}`);
+  if (style.indent !== undefined && style.indent > 0)
+    rules.push(`padding-left: ${(style.indent * 1.5).toFixed(2)}rem`);
+  if (style.spacing !== undefined && style.spacing !== "1.5") rules.push(`line-height: ${style.spacing}`);
+  if (style.underline) rules.push("text-decoration: underline");
+  return rules.length > 0 ? `body { ${rules.join("; ")}; }` : "";
 }

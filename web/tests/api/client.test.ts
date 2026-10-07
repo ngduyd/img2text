@@ -109,4 +109,26 @@ describe("api client", () => {
     await expect(api.login("u@x.io", "bad")).rejects.toThrow("Sai mật khẩu.");
     expect(assign).not.toHaveBeenCalled();
   });
+
+  // Plan M (M2): md-layout source save — PUT → 204 (no body) phải không ném.
+  it("putMdLayoutContent sends PUT md-layout/content and accepts 204", async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", spy);
+    await expect(api.putMdLayoutContent(5, "# B")).resolves.toBeUndefined();
+    const [url, opts] = spy.mock.calls[0];
+    expect(url).toBe("/api/jobs/5/export/md-layout/content");
+    expect(opts.method).toBe("PUT");
+    expect(opts.headers["Content-Type"]).toBe("application/json");
+    expect(JSON.parse(opts.body)).toEqual({ markdown: "# B" });
+  });
+
+  it("putLayoutStyle sends PUT layout-style with {style} body", async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", spy);
+    await expect(api.putLayoutStyle(5, { align: "center" })).resolves.toBeUndefined();
+    const [url, opts] = spy.mock.calls[0];
+    expect(url).toBe("/api/jobs/5/layout-style");
+    expect(opts.method).toBe("PUT");
+    expect(JSON.parse(opts.body)).toEqual({ style: { align: "center" } });
+  });
 });
