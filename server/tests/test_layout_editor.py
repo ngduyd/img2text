@@ -45,17 +45,17 @@ async def _set_style(db_session: Job, job_id: int, raw: str | None) -> None:
 async def test_layout_cache_all_false(auth_client, done_job_with_result):
     r = await auth_client.get(f"/api/jobs/{done_job_with_result}")
     assert r.status_code == 200
-    assert r.json()["layout_cache"] == {"md": False, "docx": False}
+    assert r.json()["layout_cache"] == {"md": False, "docx": False, "docx_html": False}
 
 async def test_layout_cache_flags_after_seed(
     auth_client, done_job_with_result, storage
 ):
     await storage.put(f"exports/{done_job_with_result}/md-layout", b"# moi")
     r = await auth_client.get(f"/api/jobs/{done_job_with_result}")
-    assert r.json()["layout_cache"] == {"md": True, "docx": False}
+    assert r.json()["layout_cache"] == {"md": True, "docx": False, "docx_html": False}
     await storage.put(f"exports/{done_job_with_result}/docx-layout", b"PK")
     r = await auth_client.get(f"/api/jobs/{done_job_with_result}")
-    assert r.json()["layout_cache"] == {"md": True, "docx": True}
+    assert r.json()["layout_cache"] == {"md": True, "docx": True, "docx_html": False}
 
 async def test_layout_cache_storage_error_false(
     auth_client, done_job_with_result, storage, monkeypatch, caplog
@@ -69,7 +69,7 @@ async def test_layout_cache_storage_error_false(
     monkeypatch.setattr(storage, "exists", boom)
     r = await auth_client.get(f"/api/jobs/{done_job_with_result}")
     assert r.status_code == 200
-    assert r.json()["layout_cache"] == {"md": False, "docx": False}
+    assert r.json()["layout_cache"] == {"md": False, "docx": False, "docx_html": False}
     assert any(
         rec.levelname == "WARNING" and "layout_cache" in rec.getMessage()
         for rec in caplog.records

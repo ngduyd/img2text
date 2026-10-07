@@ -317,6 +317,7 @@ async def get_job(
 ) -> dict:
     job = await _job_or_403(session, id, user)
     # storage_key deliberately omitted — never leak bucket keys to users
+    docx_html = await _layout_artifact_exists(storage, id, "docx.html")
     return {
         "id": job.id,
         "status": job.status,
@@ -329,9 +330,13 @@ async def get_job(
         "started_at": job.started_at,
         "finished_at": job.finished_at,
         # Plan M: unified-editor contract — artifact cache flags + word style
+        # Plan M3: docx = docx.html (user-edited) OR docx-layout (LLM render)
         "layout_cache": {
             "md": await _layout_artifact_exists(storage, id, "md-layout"),
-            "docx": await _layout_artifact_exists(storage, id, "docx-layout"),
+            "docx": docx_html or await _layout_artifact_exists(
+                storage, id, "docx-layout"
+            ),
+            "docx_html": docx_html,
         },
         "layout_style": _parse_layout_style(job),
     }

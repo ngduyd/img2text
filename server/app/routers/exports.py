@@ -30,6 +30,7 @@ from app.core.models import Job, User
 from app.routers.jobs import _job_or_403
 from app.services.llm_docx import LLMLayoutError, build_layout_docx
 from app.services.llm_md import LLMMdContentError, LLMMdError, build_md
+from app.services.html_to_docx import html_to_docx
 from app.services.storage import StorageDriver, get_storage
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,8 @@ EXPORT_CONTENT_TYPES = {
     "md": "text/markdown; charset=utf-8",
     # Plan D5: LLM md-layout is still plain markdown text
     "md-layout": "text/markdown; charset=utf-8",
+    # Plan M3: user-edited word HTML artifact (iframe srcDoc source)
+    "docx.html": "text/html; charset=utf-8",
 }
 MAX_MARKDOWN_BYTES = 2 * 1024 * 1024
 CROP_MAX_WIDTH = 800
@@ -321,6 +324,37 @@ async def put_md_layout_content(
     await storage.put(key, body.markdown.encode("utf-8"))
     return Response(status_code=204)
 
+class DocxHtmlBody(BaseModel):
+    # length checked in the route → exact 422 detail
+    html: str
+
+MAX_DOCX_HTML_CHARS = 1_000_000  # Plan M3: ≤1MB else 422 "Nội dung quá dài."
+
+@router.put("/api/jobs/{id}/export/docx-layout/html", status_code=204)
+async def put_docx_layout_html(
+    id: int,
+    body: DocxHtmlBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> Response:
+    """Plan M3: lưu HTML word đã sửa (iframe serialize) → exports/{id}/docx.html.
+
+    Owner-or-admin, done-only 409, ≤1MB else 422 "Nội dung quá dài.".
+    Derived exports/{id}/docx must not outlive the html edit → prefix delete
+    BEFORE put (S3Driver.put dedupes). NOTE: the prefix also matches
+    docx-layout + old docx.html — all superseded by the new html (user edit
+    beats LLM render; mammoth fallback no longer needed).
+    """
+    job = await _job_or_403(session, id, user)
+    if job.status != "done":
+        raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
+    if len(body.html) > MAX_DOCX_HTML_CHARS:
+        raise HTTPException(status_code=422, detail="Nội dung quá dài.")
+    await storage.delete_prefix(f"exports/{id}/docx")
+    await storage.put(f"exports/{id}/docx.html", body.html.encode("utf-8"))
+    return Response(status_code=204)
+
 @router.patch("/api/jobs/{id}/content")
 async def patch_content(
     id: int,
@@ -402,6 +436,14 @@ async def _llm_md_export(job_id: int, job: Job) -> bytes:
             status_code=502, detail="Không kết nối LLM máy chủ."
         ) from exc
 
+async def _docx_html_export(job_id: int, storage: StorageDriver) -> bytes | None:
+    """Plan M3: exports/{id}/docx.html → python-docx walker; None if absent
+    (caller falls back to the pandoc docx path)."""
+    key = f"exports/{job_id}/docx.html"
+    if not await storage.exists(key):
+        return None
+    return html_to_docx((await storage.get(key)).decode("utf-8"))
+
 async def auto_generate_output(job: Job, storage: StorageDriver) -> None:
     """Plan D4+D5: materialize job.output_format ("md"|"docx") after OCR.
 
@@ -456,6 +498,10 @@ async def export_job(
             data = await _llm_docx_export(id, job)
         elif body.fmt == "md-layout":
             data = await _llm_md_export(id, job)  # LLM errors → 502, no put
+        elif body.fmt == "docx" and (
+            data := await _docx_html_export(id, storage)
+        ) is not None:
+            pass  # Plan M3: user-edited docx.html wins over pandoc
         else:
             markdown = current_markdown(job.result or {})
             if body.fmt == "pdf":
@@ -476,7 +522,8 @@ async def export_job(
 @router.get("/api/jobs/{id}/export/{fmt}/download")
 async def download_export(
     id: int,
-    fmt: Literal["md", "html", "docx", "pdf", "docx-layout", "md-layout"],
+    fmt: Literal["md", "html", "docx", "pdf", "docx-layout", "md-layout",
+                  "docx.html"],
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     storage: StorageDriver = Depends(get_storage),
