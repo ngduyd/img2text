@@ -20,6 +20,15 @@ from tests.test_upload import TEST_JPEG  # noqa: F401 (reuses fixtures via conft
 def _put_keys(storage_spy) -> list[str]:
     return [c.args[0] for c in storage_spy.put.await_args_list]
 
+@pytest.fixture
+def md_llm_down(monkeypatch):
+    """D5: build_md raises → auto-gen md takes the plain-md fallback path."""
+    def _down(*args, **kwargs):
+        from app.services.llm_md import LLMMdError
+
+        raise LLMMdError("LLM down (test)")
+    monkeypatch.setattr("app.routers.exports.build_md", _down)
+
 
 async def test_upload_defaults_to_md(auth_client, db_session):
     r = await auth_client.post(
@@ -72,7 +81,7 @@ async def test_get_job_returns_output_format(auth_client, db_session):
 
 
 async def test_worker_result_auto_generates_md(
-    worker_client, seed_job, storage_spy, db_session, VALID_RESULT_JSONB
+    worker_client, seed_job, storage_spy, db_session, VALID_RESULT_JSONB, md_llm_down
 ):
     """POST /result (worker protocol) → exports/{id}/md written in background."""
     claim = await worker_client.get("/api/jobs/next")
@@ -168,7 +177,7 @@ async def test_auto_docx_success_stores_docx_layout_key(
 
 
 async def test_store_batch_result_schedules_md_export(
-    db_session, seed_job, storage_spy, VALID_RESULT_JSONB
+    db_session, seed_job, storage_spy, VALID_RESULT_JSONB, md_llm_down
 ):
     """Kaggle ingest path (store_batch_result) schedules the same export."""
     body = ResultBody.model_validate(VALID_RESULT_JSONB)

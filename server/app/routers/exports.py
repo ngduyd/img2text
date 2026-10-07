@@ -28,6 +28,7 @@ from app.core.deps import get_current_user
 from app.core.models import Job, User
 from app.routers.jobs import _job_or_403
 from app.services.llm_docx import LLMLayoutError, build_layout_docx
+from app.services.llm_md import LLMMdContentError, LLMMdError, build_md
 from app.services.storage import StorageDriver, get_storage
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,8 @@ EXPORT_CONTENT_TYPES = {
     "pdf": "application/pdf",
     "html": "text/html; charset=utf-8",
     "md": "text/markdown; charset=utf-8",
+    # Plan D5: LLM md-layout is still plain markdown text
+    "md-layout": "text/markdown; charset=utf-8",
 }
 MAX_MARKDOWN_BYTES = 2 * 1024 * 1024
 CROP_MAX_WIDTH = 800
@@ -283,7 +286,7 @@ class ContentBody(BaseModel):
         return v
 
 class ExportBody(BaseModel):
-    fmt: Literal["md", "html", "docx", "pdf", "docx-layout"]
+    fmt: Literal["md", "html", "docx", "pdf", "docx-layout", "md-layout"]
 
 @router.patch("/api/jobs/{id}/content")
 async def patch_content(
@@ -327,9 +330,35 @@ async def _llm_docx_export(job_id: int, job: Job) -> bytes:
             status_code=502, detail="Không kết nối LLM máy chủ."
         ) from exc
 
-async def auto_generate_output(job: Job, storage: StorageDriver) -> None:
-    """Plan D4: materialize job.output_format ("md"|"docx") after OCR.
+async def _llm_md_export(job_id: int, job: Job) -> bytes:
+    """Plan D5: result → LLM md-layout markdown bytes (never caches errors).
 
+    Missing result → 409 "Chưa có kết quả OCR."; LLM unreachable/timeout
+    → 502 "Không kết nối LLM máy chủ."; LLM altered the verbatim block
+    text → 502 "LLM sửa nội dung — thử lại." — both raised BEFORE
+    storage.put, so failures are never cached.
+    """
+    result = dict(job.result or {})
+    if not result.get("pages"):
+        raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
+    try:
+        return (await build_md(result)).encode("utf-8")
+    except LLMMdContentError as exc:
+        logger.warning("md-layout content failure job=%s: %s", job_id, exc)
+        raise HTTPException(
+            status_code=502, detail="LLM sửa nội dung — thử lại."
+        ) from exc
+    except LLMMdError as exc:
+        logger.warning("md-layout LLM failure job=%s: %s", job_id, exc)
+        raise HTTPException(
+            status_code=502, detail="Không kết nối LLM máy chủ."
+        ) from exc
+
+async def auto_generate_output(job: Job, storage: StorageDriver) -> None:
+    """Plan D4+D5: materialize job.output_format ("md"|"docx") after OCR.
+
+    D5: fmt "md" → md-layout via LLM (LLM/content failure → warning +
+    fallback to the plain markdown below, job stays done with an md file).
     Reuses the export_job internals (NO HTTP round-trip); scheduled
     fire-and-forget by job_results AFTER the result commit. Raises on
     failure — the caller logs a warning and the job stays done.
@@ -342,14 +371,22 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> None:
     key_fmt = "docx-layout" if fmt == "docx" else fmt
     if fmt == "docx":
         data = await _llm_docx_export(job.id, job)  # LLM down → HTTPException → caller warns
-    else:
-        markdown = current_markdown(job.result or {})
-        # same md branch as export_job: crops materialized before encode
-        with tempfile.TemporaryDirectory() as td:
-            markdown = await _materialize_crops(
-                job.id, markdown, job, storage, Path(td)
+    elif fmt == "md":
+        # D5: md auto-gen = md-layout via LLM; any failure → fallback below
+        try:
+            data = await _llm_md_export(job.id, job)
+        except HTTPException as exc:
+            logger.warning(
+                "md-layout auto-gen failed job=%s: %s — fallback plain md",
+                job.id, exc.detail,
             )
-        data = markdown.encode("utf-8")
+            markdown = current_markdown(job.result or {})
+            # same md branch as export_job: crops materialized before encode
+            with tempfile.TemporaryDirectory() as td:
+                markdown = await _materialize_crops(
+                    job.id, markdown, job, storage, Path(td)
+                )
+            data = markdown.encode("utf-8")
     await storage.put(f"exports/{job.id}/{key_fmt}", data)
 
 @router.post("/api/jobs/{id}/export")
@@ -367,6 +404,8 @@ async def export_job(
     if not await storage.exists(key):  # cache hit → presign only, no re-generate
         if body.fmt == "docx-layout":
             data = await _llm_docx_export(id, job)
+        elif body.fmt == "md-layout":
+            data = await _llm_md_export(id, job)  # LLM errors → 502, no put
         else:
             markdown = current_markdown(job.result or {})
             if body.fmt == "pdf":
@@ -387,7 +426,7 @@ async def export_job(
 @router.get("/api/jobs/{id}/export/{fmt}/download")
 async def download_export(
     id: int,
-    fmt: Literal["md", "html", "docx", "pdf", "docx-layout"],
+    fmt: Literal["md", "html", "docx", "pdf", "docx-layout", "md-layout"],
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     storage: StorageDriver = Depends(get_storage),

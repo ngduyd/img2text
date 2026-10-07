@@ -45,6 +45,17 @@ it("docx-layout button renders and calls exportJob with docx-layout (D4 review)"
   await waitFor(() => expect(w.location).toBe("https://r2/exports/5/docx-layout"));
 });
 
+it("md-layout button renders and calls exportJob with md-layout (D5)", async () => {
+  vi.mocked(api.exportJob).mockResolvedValue({ url: "https://r2/exports/5/md-layout" });
+  const w = { location: "about:blank" };
+  const open = vi.fn().mockReturnValue(w);
+  vi.stubGlobal("open", open);
+  render(<ExportBar jobId="5" />);
+  await userEvent.click(screen.getByTestId("btn-export-md-layout"));
+  expect(api.exportJob).toHaveBeenCalledWith("5", "md-layout");
+  await waitFor(() => expect(w.location).toBe("https://r2/exports/5/md-layout"));
+});
+
 it("shows ApiError detail when export fails", async () => {
   vi.mocked(api.exportJob).mockRejectedValue(new ApiError("Xuất file thất bại."));
   render(<ExportBar jobId="5" />);

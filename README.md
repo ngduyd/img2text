@@ -16,6 +16,7 @@ Nginx ── serves built SPA + reverse proxy /api/  (deploy/nginx.conf)
 FastAPI (uvicorn)  ── APScheduler: lease reaper, log/token pruning
    ├── Postgres 16 (auth, jobs, result JSONB, request_logs)
    ├── Cloudflare R2 via boto3 presigned URLs (uploads/ exports/ crops/)
+   ├── LLM (localhost:20128) — layout exports: docx-layout, md-layout (geometry-aware markdown)
    └── pandoc + weasyprint (exports: md/html/docx/pdf, cached in R2)
    ▲
    │  pull: GET /api/jobs/next   (Bearer RUNNER_KEY)
