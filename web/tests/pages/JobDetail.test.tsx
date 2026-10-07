@@ -151,6 +151,20 @@ it("done renders 3 panels: original + result + info with status badge", async ()
   );
 });
 
+it("output-format badge defaults to Markdown (Plan D4)", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  expect(await screen.findByTestId("job-output-format")).toHaveTextContent(
+    "Đầu ra: Markdown",
+  );
+});
+
+it("output-format badge shows Word for docx jobs (Plan D4)", async () => {
+  mockJob({ ...DONE_JOB, output_format: "docx" });
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  expect(await screen.findByTestId("job-output-format")).toHaveTextContent("Đầu ra: Word");
+});
+
 it("not done shows status-only panels, ResultPanel hidden until done", async () => {
   mockJob({ ...DONE_JOB, status: "queued", result: null });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });

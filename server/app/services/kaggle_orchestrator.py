@@ -451,7 +451,8 @@ async def _ingest_batch_result(api, session_factory, job_id: int, ref: str) -> N
             )
         body = ResultBody.model_validate(adapt_batch_document(doc))
         stored = await store_batch_result(
-            session, job_id, body, now=datetime.now(timezone.utc)
+            session, job_id, body, now=datetime.now(timezone.utc),
+            storage=_get_storage(),  # Plan D4: post-ingest auto output export
         )
         if not stored:
             logger.warning(

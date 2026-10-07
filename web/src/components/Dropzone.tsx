@@ -9,8 +9,13 @@ import Button from "./ui/Button";
 
 /** POST /api/jobs returns a partial job; callers only need `id` for routing. */
 export default function Dropzone({
+  outputFormat = "md",
   onUploaded,
-}: { onUploaded: (job: { id: number; status: string }) => void }) {
+}: {
+  /** Plan D4: export format chosen on the Jobs page — appended as multipart output_format. */
+  outputFormat?: string;
+  onUploaded: (job: { id: number; status: string }) => void;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +29,7 @@ export default function Dropzone({
   const disabled = busy || denied;
 
   const upload = useMutation({
-    mutationFn: (file: File) => api.uploadJob(file),
+    mutationFn: (file: File) => api.uploadJob(file, { output_format: outputFormat }),
     onMutate: () => {
       setError(null);
       setBusy(true);
@@ -92,10 +97,16 @@ export default function Dropzone({
       )}
       {wizardFile ? (
         wizardFile.type === "application/pdf" ? (
-          <PdfWizard file={wizardFile} onCancel={() => setWizardFile(null)} onUploaded={onUploaded} />
+          <PdfWizard
+            file={wizardFile}
+            outputFormat={outputFormat}
+            onCancel={() => setWizardFile(null)}
+            onUploaded={onUploaded}
+          />
         ) : (
           <ImageCropWizard
             file={wizardFile}
+            outputFormat={outputFormat}
             onCancel={() => setWizardFile(null)}
             onUploaded={onUploaded}
           />

@@ -5,8 +5,15 @@ One conditional UPDATE per path — the ruling R16 pattern: the claim guard
 is re-checked AT commit time, closing the read-guard-commit TOCTOU (reaper
 requeue + reclaim between guard and write; concurrent double submit).
 rowcount 0 = caller maps to 409 / skip; never raises on conflict.
+
+Plan D4: after a successful store the chosen `job.output_format` export is
+scheduled fire-and-forget (asyncio.create_task — the /result response and
+the batch ingest must not wait on pandoc/LLM). Any generation failure only
+logs a warning: the job is already done and ExportBar can export by hand.
 """
 
+import asyncio
+import logging
 from datetime import datetime
 
 from sqlalchemy import and_, or_, update
@@ -14,6 +21,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.models import Job
 from app.core.schemas import ResultBody
+from app.services.storage import StorageDriver
+
+logger = logging.getLogger(__name__)
+
+# Strong refs: create_task tasks are otherwise GC-eligible while pending.
+_pending_output: set[asyncio.Task] = set()
+
+async def _auto_output(job: Job, storage: StorageDriver) -> None:
+    try:
+        # lazy import: exports → jobs → job_results (cycle if eager)
+        from app.routers.exports import auto_generate_output
+        await auto_generate_output(job, storage)
+    except Exception as exc:
+        logger.warning(
+            "auto output failed job=%s fmt=%s: %s",
+            job.id, job.output_format, exc,
+        )
+
+def _schedule_auto_output(job: Job, storage: StorageDriver) -> None:
+    task = asyncio.create_task(_auto_output(job, storage))
+    _pending_output.add(task)
+    task.add_done_callback(_pending_output.discard)
+
+async def drain_auto_output() -> None:
+    """Await every scheduled auto-output task (tests; shutdown hook later)."""
+    while _pending_output:
+        await asyncio.gather(*list(_pending_output))
 
 async def _store(
     session: AsyncSession,
@@ -21,6 +55,7 @@ async def _store(
     body: ResultBody,
     *conds,
     now: datetime,
+    storage: StorageDriver | None = None,
 ) -> bool:
     rowcount = (
         await session.execute(
@@ -38,6 +73,13 @@ async def _store(
     if rowcount == 0:
         return False
     await session.commit()
+    # Plan D4: post-commit auto export (SCHEDULED, never blocks the response).
+    if storage is not None:
+        job = await session.get(Job, job_id)
+        if job is not None:
+            # identity map may hold the pre-UPDATE instance (expire_on_commit=False)
+            await session.refresh(job)
+            _schedule_auto_output(job, storage)
     return True
 
 async def store_worker_result(
@@ -47,6 +89,7 @@ async def store_worker_result(
     *,
     token: str | None,
     now: datetime,
+    storage: StorageDriver | None = None,
 ) -> bool:
     """Worker protocol: running + active lease + token claim → done."""
     return await _store(
@@ -57,6 +100,7 @@ async def store_worker_result(
         Job.lease_expires_at > now,
         Job.worker_token == token,
         now=now,
+        storage=storage,
     )
 
 async def store_batch_result(
@@ -65,6 +109,7 @@ async def store_batch_result(
     body: ResultBody,
     *,
     now: datetime,
+    storage: StorageDriver | None = None,
 ) -> bool:
     """Kaggle batch run finished → done. D1 guard (K5 review nới):
     (queued + unclaimed) OR (running + unclaimed + active lease).
@@ -87,4 +132,5 @@ async def store_batch_result(
             ),
         ),
         now=now,
+        storage=storage,
     )

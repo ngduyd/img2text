@@ -37,10 +37,13 @@ const ICON_BTN = "min-h-10 min-w-10 px-2";
 /** Crop wizard: draw a rect on the image, rotate 90° cw, upload the cropped JPEG. */
 export default function ImageCropWizard({
   file,
+  outputFormat = "md",
   onCancel,
   onUploaded,
 }: {
   file: File;
+  /** Plan D4: multipart output_format — chosen on the Jobs page. */
+  outputFormat?: string;
   onCancel: () => void;
   onUploaded: (job: { id: number; status: string }) => void;
 }) {
@@ -155,7 +158,7 @@ export default function ImageCropWizard({
               // R62: no rect → submit the ORIGINAL File untouched; no crop, no error.
               setBusy(true);
               try {
-                const job = await api.uploadJob(file);
+                const job = await api.uploadJob(file, { output_format: outputFormat });
                 toast.success("Không có vùng chọn — gửi ảnh gốc");
                 onUploaded(job);
               } catch (err) {
@@ -188,7 +191,10 @@ export default function ImageCropWizard({
               );
               if (!blob) throw new Error("toBlob failed");
               const base = file.name.replace(/\.[^.]+$/, "") || "image";
-              const job = await api.uploadJob(blob, { filename: `${base}-crop.jpg` });
+              const job = await api.uploadJob(blob, {
+                filename: `${base}-crop.jpg`,
+                output_format: outputFormat,
+              });
               toast.success("Đã tải lên — đang chờ xử lý.");
               onUploaded(job);
             } catch (err) {

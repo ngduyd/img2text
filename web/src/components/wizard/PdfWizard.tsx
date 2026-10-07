@@ -17,10 +17,13 @@ interface PageState {
 
 export default function PdfWizard({
   file,
+  outputFormat = "md",
   onCancel,
   onUploaded,
 }: {
   file: File;
+  /** Plan D4: multipart output_format — chosen on the Jobs page. */
+  outputFormat?: string;
   onCancel: () => void;
   onUploaded: (job: { id: number; status: string }) => void;
 }) {
@@ -99,7 +102,10 @@ export default function PdfWizard({
     const rotate: Record<string, number> = {};
     for (const p of pages) if (p.rotate !== 0) rotate[String(p.n)] = p.rotate;
     try {
-      const job = await api.uploadJob(file, { preprocess: { pages: chosen, rotate } });
+      const job = await api.uploadJob(file, {
+        preprocess: { pages: chosen, rotate },
+        output_format: outputFormat,
+      });
       toast.success("Đã tải lên — đang chờ xử lý.");
       onUploaded(job);
     } catch (err) {

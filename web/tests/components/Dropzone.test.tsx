@@ -52,7 +52,7 @@ it("dragover preventDefault and drop triggers uploadJob", async () => {
   fireEvent(dz, over);
   expect(over.defaultPrevented).toBe(true);
   fireEvent.drop(dz, { dataTransfer: { files: [file] } });
-  await waitFor(() => expect(api.uploadJob).toHaveBeenCalledWith(file));
+  await waitFor(() => expect(api.uploadJob).toHaveBeenCalledWith(file, { output_format: "md" }));
   await waitFor(() => expect(onUploaded).toHaveBeenCalledWith({ id: 42, status: "queued" }));
   // R59: upload success toast fires alongside inline behaviors.
   expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý.");

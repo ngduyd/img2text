@@ -15,14 +15,32 @@ export default function Jobs() {
   const queryClient = useQueryClient();
   const { data: jobs, isLoading } = useQuery({ queryKey: ["jobs"], queryFn: api.listJobs });
   const [filter, setFilter] = useState<StatusFilter>("all");
+  // Plan D4: export format chosen BEFORE upload — stored on the job, auto-generated after OCR.
+  const [outputFormat, setOutputFormat] = useState<"md" | "docx">("md");
   const items = jobs?.items ?? [];
   const visible = filter === "all" ? items : items.filter((j) => j.status === filter);
 
   return (
     <main id="main" className="mx-auto max-w-3xl p-4 sm:p-6">
       <h1 className="mb-6 text-2xl font-bold tracking-tight">Công việc</h1>
+      <div className="mb-3 flex items-center gap-2">
+        <label htmlFor="output-format" className="text-sm text-muted">
+          Đầu ra
+        </label>
+        <select
+          id="output-format"
+          data-testid="select-output-format"
+          value={outputFormat}
+          onChange={(e) => setOutputFormat(e.target.value as "md" | "docx")}
+          className="rounded border border-border bg-surface px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-accent"
+        >
+          <option value="md">Markdown</option>
+          <option value="docx">Word (.docx)</option>
+        </select>
+      </div>
       {/* R59: invalidate so the new job shows; navigate to the /jobs list route. */}
       <Dropzone
+        outputFormat={outputFormat}
         onUploaded={() => {
           queryClient.invalidateQueries({ queryKey: ["jobs"] });
           navigate("/jobs");
