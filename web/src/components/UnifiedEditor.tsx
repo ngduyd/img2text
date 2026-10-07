@@ -6,7 +6,7 @@ import type { RefObject } from "react";
 import { toast } from "sonner";
 import { api } from "../api/client";
 import type { Job, LayoutStyle } from "../api/types";
-import { buildLayoutStyleCss, withStyle } from "../lib/docStyle";
+import { buildLayoutStyleCss } from "../lib/docStyle";
 import { mapApiError } from "../lib/errors";
 import DocStyleTools from "./DocStyleTools";
 import MdToolbar from "./editor/MdToolbar";
@@ -155,7 +155,7 @@ export default function UnifiedEditor({
     }
   };
 
-  /** Plan M3: serialize iframe body → PUT docx.html → toast + refresh layout_cache. */
+  /** Plan M4: editor.getHTML() (Tiptap) → PUT docx.html → toast + refresh layout_cache. */
   const saveWord = async (html: string) => {
     try {
       await api.putDocxHtml(jobId, html);
@@ -290,7 +290,10 @@ export default function UnifiedEditor({
           <>
             {docxHtml !== null && (
               <WordEditor
-                srcDoc={withStyle(docxHtml, baseCss + wordCss)}
+                // Plan M4: Tiptap mount ở word mode (unmount khi switch md → useEditor destroy),
+                // css (base + word) scope vào container .word-doc thay vì iframe srcDoc.
+                html={docxHtml}
+                css={baseCss + wordCss}
                 onSave={(html) => void saveWord(html)}
               />
             )}

@@ -45,6 +45,16 @@ export function buildPreviewCss(o: PreviewOpts): string {
   return rules.join("\n");
 }
 
+/**
+ * Plan M4: word pane không còn iframe → wrap css sinh cho body (buildPreviewCss
+ * + buildLayoutStyleCss) vào container `.word-doc`, `body` → `&` (CSS nesting)
+ * để rule h1/table… scope dưới editor, không leak ra trang.
+ */
+export function scopeWordPaneCss(css: string): string {
+  if (!css.trim()) return "";
+  return `.word-doc { ${css.replace(/\bbody\b/g, "&")} }`;
+}
+
 /** Chèn style tag (id word-style) vào HTML đã sanitize — không đụng nội dung gốc. */
 export function withStyle(html: string, css: string): string {
   const tag = `<style id="word-style">${css}</style>`;

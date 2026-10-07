@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -130,7 +130,7 @@ it("layout_style đã lưu → client CSS vào md iframe (contract M1)", async (
   expect(srcdoc).toContain("text-align: center");
 });
 
-it("switch mode: word → exportJob docx-layout + mammoth iframe + word tools; md → toolbar path, không word tools", async () => {
+it("switch mode: word → exportJob docx-layout + Tiptap editor + word tools; md → toolbar path, không word tools", async () => {
   const user = userEvent.setup();
   render(<Harness job={{ ...JOB, layout_cache: { md: true, docx: false } }} />);
   await screen.findByTestId("preview-markdown");
@@ -148,6 +148,12 @@ it("switch mode: word → exportJob docx-layout + mammoth iframe + word tools; m
   expect(screen.getByTestId("btn-save-layout-word")).toBeInTheDocument();
   // badge theo mode: docx chưa cache
   expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout chưa lưu");
+  // M4: editor Tiptap thay iframe — container giữ testid, nội dung là .ProseMirror contenteditable
+  const pane = screen.getByTestId("preview-docx-frame");
+  expect(pane.className).toContain("min-h-[60vh]");
+  await waitFor(() =>
+    expect(pane.querySelector(".ProseMirror")).toHaveAttribute("contenteditable", "true"),
+  );
 
   const mdCalls = vi.mocked(api.exportJob).mock.calls.filter((c) => c[1] === "md-layout").length;
   await user.click(screen.getByTestId("switch-mode-md"));
@@ -220,7 +226,7 @@ it("flow lỗi → layout-error + btn-retry-layout + toast.error; retry chạy l
   expect(screen.queryByTestId("layout-error")).toBeNull();
 });
 
-it("Plan M3: word toolbar = đúng 1 container row (overflow-x-auto, gap-2, không flex-wrap) + đủ lệnh", async () => {
+it("Plan M4: word toolbar = đúng 1 container row (overflow-x-auto, gap-2, không flex-wrap) + đủ lệnh trên editor Tiptap", async () => {
   const user = userEvent.setup();
   render(<Harness job={JOB} />);
   await user.click(screen.getByTestId("switch-mode-word"));
@@ -249,21 +255,22 @@ it("Plan M3: word toolbar = đúng 1 container row (overflow-x-auto, gap-2, khô
     "word-tb-clear",
   ];
   for (const id of ids) expect(screen.getByTestId(id)).toBeInTheDocument();
-  // contenteditable thật bật trên iframe (onLoad → body contenteditable)
-  const frame = screen.getByTestId("preview-docx-frame") as HTMLIFrameElement;
-  expect(frame.getAttribute("sandbox")).toBe("allow-same-origin");
-  expect(frame.className).toContain("min-h-[60vh]");
+  // M4: không còn iframe — editor Tiptap (.ProseMirror contenteditable) trong container
+  const pane = screen.getByTestId("preview-docx-frame") as HTMLElement;
+  expect(pane.querySelector("iframe")).toBeNull();
+  await waitFor(() =>
+    expect(pane.querySelector(".ProseMirror")).toHaveAttribute("contenteditable", "true"),
+  );
 });
 
-it("Plan M3: Lưu word → serialize iframe body → putDocxHtml + toast 'Đã lưu.' + invalidate job", async () => {
+it("Plan M4: Lưu word → editor.getHTML() → putDocxHtml + toast 'Đã lưu.' + invalidate job", async () => {
   const user = userEvent.setup();
   render(<Harness job={{ ...JOB, layout_cache: { md: true, docx: false } }} />);
   await user.click(screen.getByTestId("switch-mode-word"));
-  const frame = (await screen.findByTestId("preview-docx-frame")) as HTMLIFrameElement;
-  expect(frame.contentDocument?.body).not.toBeNull();
-  frame.contentDocument!.body.innerHTML = "<p>Chữ đã sửa</p>";
+  const pane = await screen.findByTestId("preview-docx-frame");
+  await waitFor(() => expect(pane.querySelector(".ProseMirror")).toHaveTextContent("Chào"));
   await user.click(screen.getByTestId("btn-save-layout-word"));
-  expect(api.putDocxHtml).toHaveBeenCalledWith("5", "<p>Chữ đã sửa</p>");
+  expect(api.putDocxHtml).toHaveBeenCalledWith("5", "<p>Chào</p>");
   expect(toast.success).toHaveBeenCalledWith("Đã lưu.");
 });
 
@@ -274,9 +281,11 @@ it("Plan M3: layout_cache.docx_html=true → GET docx.html (getDocxHtml), KHÔNG
       job={{ ...JOB, output_format: "docx", layout_cache: { md: true, docx: true, docx_html: true } }}
     />,
   );
-  const frame = await screen.findByTestId("preview-docx-frame");
+  const pane = await screen.findByTestId("preview-docx-frame");
   expect(api.getDocxHtml).toHaveBeenCalledWith("5");
-  expect(frame.getAttribute("srcdoc") ?? "").toContain("Nội dung đã sửa");
+  await waitFor(() =>
+    expect(pane.querySelector(".ProseMirror")).toHaveTextContent("Nội dung đã sửa"),
+  );
   expect(api.exportJob).not.toHaveBeenCalled();
   expect(mammoth.convertToHtml).not.toHaveBeenCalled();
   expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout đã lưu");

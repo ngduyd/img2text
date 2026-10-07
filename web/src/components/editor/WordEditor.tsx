@@ -1,89 +1,46 @@
-import { useEffect, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
-import type { WordTableOp } from "../../lib/wordEditor";
-import {
-  applyFontSize,
-  caretInTable,
-  execWord,
-  insertWordTable,
-  serializeWordBody,
-  wordTableOp,
-} from "../../lib/wordEditor";
+import DOMPurify from "dompurify";
+import { EditorContent, useEditor } from "@tiptap/react";
+import { scopeWordPaneCss } from "../../lib/docStyle";
+import { wordExtensions } from "../../lib/wordEditor";
 import Button from "../ui/Button";
 import WordToolbar from "./WordToolbar";
 
+/** Chiều cao vùng soạn (khớp iframe min-h-[60vh] của M3, trừ padding). */
+const PANE_CSS = ".word-doc .ProseMirror { min-height: 55vh; }";
+
 /**
- * Plan M3: iframe contentEditable thật cho word mode. srcDoc đã sanitize +
- * style (parent render) — nội dung không chạy script (sandbox chỉ allow
- * same-origin để parent đọc/ghi document). Mọi lệnh từ toolbar bắn vào
- * contentDocument (VÙN CHỌN hiện tại); Lưu serialize body → onSave (PUT docx.html).
+ * Plan M4: iframe contentEditable (M3) → editor Tiptap. Component chỉ mount khi
+ * mode word + đã load docxHtml → switch sang md là unmount, useEditor tự destroy
+ * (không leak listener/selectionchange). Lưu = editor.getHTML() → onSave (PUT docx.html).
  */
 export default function WordEditor({
-  srcDoc,
+  html,
+  css,
   onSave,
 }: {
-  srcDoc: string;
+  html: string;
+  css: string;
   onSave: (html: string) => void;
 }) {
-  const frameRef = useRef<HTMLIFrameElement>(null);
-  const attachedDoc = useRef<Document | null>(null);
-  const trackCaret = useRef<(() => void) | null>(null);
-  const [inTable, setInTable] = useState(false);
-
-  // Sau khi srcDoc parse: bật contentEditable + theo dõi caret (in-table → cụm row/col).
-  const handleLoad = () => {
-    const doc = frameRef.current?.contentDocument ?? null;
-    if (!doc?.body) return;
-    if (attachedDoc.current && trackCaret.current) {
-      attachedDoc.current.removeEventListener("selectionchange", trackCaret.current);
-    }
-    doc.body.setAttribute("contenteditable", "true");
-    const update = () => setInTable(caretInTable(doc));
-    doc.addEventListener("selectionchange", update);
-    attachedDoc.current = doc;
-    trackCaret.current = update;
-  };
-
-  useEffect(
-    () => () => {
-      if (attachedDoc.current && trackCaret.current) {
-        attachedDoc.current.removeEventListener("selectionchange", trackCaret.current);
-      }
-    },
-    [],
-  );
-
-  const doc = () => frameRef.current?.contentDocument ?? null;
-  // Chặn mousedown trên select: blur iframe → mất selection trước khi exec.
-  const keepSelection = (e: ReactMouseEvent) => e.preventDefault();
-
-  const save = () => {
-    const html = serializeWordBody(frameRef.current);
-    if (html !== null) onSave(html);
-  };
+  const editor = useEditor({
+    extensions: wordExtensions,
+    // Ranh giới nạp: sanitize lần nữa trước khi vào nội dung soạn (runFlow đã sanitize lúc load).
+    content: DOMPurify.sanitize(html),
+  });
 
   return (
     <>
-      <WordToolbar
-        onCmd={(cmd, arg) => execWord(doc(), cmd, arg)}
-        onSize={(pt) => applyFontSize(doc(), pt)}
-        onInsertTable={(rows, cols) => insertWordTable(doc(), rows, cols)}
-        onTableOp={(op: WordTableOp) => wordTableOp(doc(), op)}
-        inTable={inTable}
-      />
-      <iframe
-        ref={frameRef}
+      <WordToolbar editor={editor} />
+      <style>{`${PANE_CSS}${scopeWordPaneCss(css)}`}</style>
+      {/* preview-docx-frame giữ testid (e2e M4) — giờ là container editor, không còn iframe. */}
+      <div
         data-testid="preview-docx-frame"
-        title="Soạn thảo DOCX"
-        // Không allow-scripts: nội dung chỉ chỉnh DOM, không chạy mã; allow-same-origin
-        // để parent truy cập contentDocument (execCommand + serialize body).
-        sandbox="allow-same-origin"
-        srcDoc={srcDoc}
-        onLoad={handleLoad}
-        className="mt-3 min-h-[60vh] w-full rounded-md border border-border"
-      />
+        className="word-doc mt-3 min-h-[60vh] w-full rounded-md border border-border p-3"
+      >
+        <EditorContent editor={editor} />
+      </div>
       <div className="mt-3 flex justify-end gap-2">
-        <Button testid="btn-save-layout-word" onMouseDown={keepSelection} onClick={save}>
+        <Button testid="btn-save-layout-word" onClick={() => editor && onSave(editor.getHTML())}>
           Lưu
         </Button>
       </div>
