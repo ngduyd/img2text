@@ -90,8 +90,9 @@ def _cell_texts(doc) -> list[str]:
 # --- build_layout_docx unit ---
 
 async def test_build_layout_docx_renders_plan(
-    monkeypatch, VALID_RESULT_JSONB
+    monkeypatch, VALID_RESULT_JSONB, caplog
 ):
+    caplog.set_level("INFO", logger="app.services.llm_docx")
     calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
     data = await build_layout_docx(VALID_RESULT_JSONB, [(800, 600)])
     assert data[:2] == b"PK"  # zip container
@@ -110,15 +111,28 @@ async def test_build_layout_docx_renders_plan(
     assert payload["response_format"] == {"type": "json_object"}
     assert '"width": 800' in payload["messages"][0]["content"]
     assert '"r0"' in payload["messages"][0]["content"]
+    # observability: one INFO "llm called" line per POST (no prompt logged)
+    info = [r.getMessage() for r in caplog.records if r.levelname == "INFO"]
+    assert any(m.startswith("llm called: fmt=docx-layout") for m in info), info
+    assert not any("Xin chào" in m for m in info)  # never log prompt/content
 
 
-async def test_build_layout_docx_llm_down_raises(monkeypatch, VALID_RESULT_JSONB):
+async def test_build_layout_docx_llm_down_raises(
+    monkeypatch, VALID_RESULT_JSONB, caplog
+):
+    caplog.set_level("INFO", logger="app.services.llm_docx")
     fake_llm(
         monkeypatch,
         [httpx.ConnectError("refused"), httpx.ConnectError("refused")],
     )
     with pytest.raises(LLMLayoutError):
         await build_layout_docx(VALID_RESULT_JSONB, [(800, 600)])
+    # failed calls stay observable: INFO "llm called" + WARNING
+    assert any(
+        r.getMessage().startswith("llm called: fmt=docx-layout")
+        for r in caplog.records
+    )
+    assert any(r.levelname == "WARNING" for r in caplog.records)
 
 
 async def test_build_layout_docx_retries_without_response_format(

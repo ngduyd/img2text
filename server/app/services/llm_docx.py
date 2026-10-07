@@ -15,6 +15,7 @@ import io
 import json
 import logging
 import re
+import time
 
 import httpx
 from docx import Document
@@ -99,6 +100,16 @@ def _parse_plan(content: str) -> dict:
     return plan
 
 
+def _log_call(endpoint: str, n_blocks: int, started: float) -> None:
+    """One INFO line per LLM POST — never log prompt/content (security)."""
+    logger.info(
+        "llm called: fmt=docx-layout model=%s endpoint=%s blocks=%d elapsed=%.1fs",
+        settings.llm_model,
+        endpoint,
+        n_blocks,
+        round(time.perf_counter() - started, 1),
+    )
+
 async def _plan(blocks: list[dict], dims: list[tuple[int, int]]) -> dict:
     """POST chat/completions; 1 retry (drops response_format when rejected)."""
     payload: dict = {
@@ -110,12 +121,16 @@ async def _plan(blocks: list[dict], dims: list[tuple[int, int]]) -> dict:
     url = settings.llm_base_url.rstrip("/") + "/chat/completions"
     async with httpx.AsyncClient(timeout=settings.llm_timeout) as client:
         for attempt in range(2):
+            started = time.perf_counter()
             try:
                 resp = await client.post(url, json=payload)
             except httpx.HTTPError as exc:
+                _log_call(url, len(blocks), started)  # failed call: still observable
+                logger.warning("llm call failed: fmt=docx-layout error=%s", exc)
                 if attempt:
                     raise LLMLayoutError(f"LLM không phản hồi: {exc}") from exc
                 continue  # retry 1
+            _log_call(url, len(blocks), started)
             if resp.status_code < 400:
                 try:
                     content = resp.json()["choices"][0]["message"]["content"]

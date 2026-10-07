@@ -89,7 +89,8 @@ GEOM_MD = "cột trái\n\n\tcột phải"  # LLM indents the second block with T
 
 # --- build_md unit ---
 
-async def test_build_md_happy(monkeypatch, VALID_RESULT_JSONB):
+async def test_build_md_happy(monkeypatch, VALID_RESULT_JSONB, caplog):
+    caplog.set_level("INFO", logger="app.services.llm_md")
     calls = fake_llm(monkeypatch, [_md_response(GOOD_MD)])
     assert await build_md(VALID_RESULT_JSONB) == GOOD_MD
     url, payload = calls[0]
@@ -100,6 +101,10 @@ async def test_build_md_happy(monkeypatch, VALID_RESULT_JSONB):
     prompt = payload["messages"][0]["content"]
     assert '"Xin chào"' in prompt  # verbatim text in input
     assert '"bbox"' in prompt  # geometry for the indent rule
+    # observability: one INFO "llm called" line per POST (no prompt logged)
+    info = [r.getMessage() for r in caplog.records if r.levelname == "INFO"]
+    assert any(m.startswith("llm called: fmt=md-layout") for m in info), info
+    assert not any(GOOD_MD in m for m in info)  # never log prompt/content
 
 async def test_build_md_table_block_keeps_md_table(monkeypatch):
     """Rule 1: type=table → real md table '| ... |' passes validation."""
@@ -142,13 +147,20 @@ async def test_build_md_content_modified_raises(monkeypatch, VALID_RESULT_JSONB)
     with pytest.raises(LLMMdContentError):
         await build_md(VALID_RESULT_JSONB)
 
-async def test_build_md_llm_down_raises(monkeypatch, VALID_RESULT_JSONB):
+async def test_build_md_llm_down_raises(monkeypatch, VALID_RESULT_JSONB, caplog):
+    caplog.set_level("INFO", logger="app.services.llm_md")
     fake_llm(
         monkeypatch,
         [httpx.ConnectError("refused"), httpx.ConnectError("refused")],
     )
     with pytest.raises(LLMMdError):
         await build_md(VALID_RESULT_JSONB)
+    # failed calls stay observable: INFO "llm called" + WARNING
+    assert any(
+        r.getMessage().startswith("llm called: fmt=md-layout")
+        for r in caplog.records
+    )
+    assert any(r.levelname == "WARNING" for r in caplog.records)
 
 async def test_build_md_retries_without_response_format(
     monkeypatch, VALID_RESULT_JSONB
