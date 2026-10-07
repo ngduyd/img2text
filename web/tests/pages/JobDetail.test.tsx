@@ -26,6 +26,17 @@ vi.mock("../../src/api/client", async (importOriginal) => {
  * the refetchInterval callback the component actually registers, then evaluate
  * it against the mocked job. Real assertion on real interval logic, no fake timers.
  */
+const mockNavigate = vi.hoisted(() => vi.fn());
+
+// Plan JD: assert the Edit button's navigate call (App.test.tsx pattern).
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
+
 let capturedInterval: ((q: Query<Job>) => number | false) | undefined;
 
 vi.mock("@tanstack/react-query", async (importOriginal) => {
@@ -172,4 +183,32 @@ it("not done shows status-only panels, ResultPanel hidden until done", async () 
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
   expect(screen.queryByTestId("panel-result")).toBeNull();
   expect(screen.getByTestId("status-5")).toHaveTextContent("Đang chờ worker Colab");
+});
+
+/** Plan JD: header 1-row structure (adjust-only queries, R51) + Edit navigation. */
+it("header: back link, title, badges, actions in one row (adjust-only)", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  expect(await screen.findByTestId("link-back-jobs")).toHaveAttribute("href", "/jobs");
+  expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
+    "Chi tiết công việc #5",
+  );
+  expect(screen.getByTestId("job-output-format")).toBeInTheDocument();
+  expect(screen.getByTestId("btn-edit-doc")).toHaveTextContent("Edit");
+  expect(screen.queryByTestId("btn-retry")).not.toBeInTheDocument();
+});
+
+it("header: Edit button navigates to /edit with the job id", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByTestId("btn-edit-doc"));
+  expect(mockNavigate).toHaveBeenCalledWith("/edit?job=5");
+});
+
+it("loading shows skeleton instead of blank page", () => {
+  vi.mocked(api.getJob).mockReturnValue(new Promise(() => {}) as never);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  expect(screen.getByTestId("job-loading")).toBeInTheDocument();
+  expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
 });

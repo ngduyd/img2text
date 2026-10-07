@@ -10,7 +10,14 @@ vi.mock("mammoth", () => ({
   convertToHtml: vi.fn(),
 }));
 
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("sonner", () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    loading: vi.fn(() => "loading-1"),
+    dismiss: vi.fn(),
+  },
+}));
 
 vi.mock("../../src/api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client")>();
@@ -28,31 +35,32 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it("renders three tabs and shows MarkdownPreview on md by default", () => {
+it("renders md/docx tabs (pdf tab dropped), Markdown preview on md by default", () => {
   render(<PreviewTabs jobId="5" markdown="# A" />);
-  for (const tab of ["preview-md", "preview-pdf", "preview-docx"]) {
-    expect(screen.getByTestId(tab)).toBeInTheDocument();
-  }
-  expect(screen.getByTestId("preview-markdown")).toBeInTheDocument();
+  expect(screen.getByTestId("preview-md")).toBeInTheDocument();
+  expect(screen.getByTestId("preview-docx")).toBeInTheDocument();
+  // Plan JD: PDF preview tab removed (R51 exception) — ExportBar still exports pdf.
+  expect(screen.queryByTestId("preview-pdf")).not.toBeInTheDocument();
+  const frame = screen.getByTestId("preview-markdown");
+  expect(frame).toBeInTheDocument();
+  expect(frame.getAttribute("srcdoc") ?? "").toContain("<h1");
   expect(screen.getByTestId("panel-docs")).toBeInTheDocument();
 });
 
-it("pdf tab lazy: exportJob called once, iframe src set; reactivation no re-call", async () => {
-  vi.mocked(api.exportJob).mockResolvedValue({ url: "https://r2/exports/5/pdf" });
+it("DocStyleTools present in both tabs and its style reaches the md preview", async () => {
   render(<PreviewTabs jobId="5" markdown="# A" />);
-  expect(api.exportJob).not.toHaveBeenCalled();
-  await userEvent.click(screen.getByTestId("preview-pdf"));
-  const frame = await screen.findByTitle("Xem trước PDF");
-  expect(frame).toHaveAttribute("src", "https://r2/exports/5/pdf");
-  expect(api.exportJob).toHaveBeenCalledTimes(1);
-  expect(api.exportJob).toHaveBeenCalledWith("5", "pdf");
-  // R59a: background export success toasts.
-  expect(toast.success).toHaveBeenCalledWith("Đã tạo bản xuất.");
-  // reactivation (md → pdf) hits the state cache — no duplicate call
-  await userEvent.click(screen.getByTestId("preview-md"));
-  await userEvent.click(screen.getByTestId("preview-pdf"));
-  expect(screen.getByTitle("Xem trước PDF")).toBeInTheDocument();
-  expect(api.exportJob).toHaveBeenCalledTimes(1);
+  expect(screen.getByTestId("doc-style-tools")).toBeInTheDocument();
+  expect(screen.getByTestId("tool-font-family")).toBeInTheDocument();
+  // change font → md iframe srcdoc picks up the injected CSS
+  await userEvent.selectOptions(screen.getByTestId("tool-font-family"), "Arial");
+  await waitFor(() =>
+    expect(screen.getByTestId("preview-markdown").getAttribute("srcdoc") ?? "").toContain(
+      'font-family: "Arial"',
+    ),
+  );
+  // switch to docx tab → tools stay (shared panel)
+  await userEvent.click(screen.getByTestId("preview-docx"));
+  expect(screen.getByTestId("tool-font-family")).toBeInTheDocument();
 });
 
 it("docx tab lazy: exportJob + downloadExport + mammoth → sanitized iframe + note", async () => {
@@ -76,17 +84,73 @@ it("docx tab lazy: exportJob + downloadExport + mammoth → sanitized iframe + n
   );
 });
 
-it("shows ApiError detail in docs-error when export fails", async () => {
+it("markdown prop change refreshes md preview (editor save wins over stale content)", () => {
+  const { rerender } = render(<PreviewTabs jobId="5" markdown="# A" />);
+  rerender(<PreviewTabs jobId="5" markdown="# B" />);
+  expect(screen.getByTestId("preview-markdown").getAttribute("srcdoc") ?? "").toContain(
+    "B</h1>",
+  );
+});
+
+it("LLM md layout: exportJob md-layout + downloadExport → preview updates + toasts", async () => {
+  vi.mocked(api.exportJob).mockResolvedValue({ url: "https://r2/exports/5/md-layout" });
+  vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["Bản mới **LLM**"]));
+  render(<PreviewTabs jobId="5" markdown="# A" />);
+  await userEvent.click(screen.getByTestId("btn-llm-layout-md"));
+  expect(api.exportJob).toHaveBeenCalledWith("5", "md-layout");
+  expect(api.downloadExport).toHaveBeenCalledWith("5", "md-layout");
+  expect(toast.loading).toHaveBeenCalledWith("Đang gọi LLM…");
+  await waitFor(() =>
+    expect(screen.getByTestId("preview-markdown").getAttribute("srcdoc") ?? "").toContain(
+      "Bản mới",
+    ),
+  );
+  expect(toast.success).toHaveBeenCalledWith("Đã cập nhật layout (LLM).", {
+    id: "loading-1",
+  });
+});
+
+it("LLM docx layout: exportJob docx-layout + downloadExport + mammoth → preview updates", async () => {
+  vi.mocked(api.exportJob).mockResolvedValue({ url: "https://r2/exports/5/docx-layout" });
+  vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["PK"]));
+  vi.mocked(mammoth.convertToHtml).mockResolvedValue({
+    value: "<p>Layout mới</p>",
+    messages: [],
+  } as never);
+  render(<PreviewTabs jobId="5" markdown="# A" />);
+  await userEvent.click(screen.getByTestId("preview-docx"));
+  await screen.findByTestId("preview-docx-frame");
+  await userEvent.click(screen.getByTestId("btn-llm-layout-docx"));
+  expect(api.exportJob).toHaveBeenCalledWith("5", "docx-layout");
+  expect(api.downloadExport).toHaveBeenCalledWith("5", "docx-layout");
+  await waitFor(() =>
+    expect(screen.getByTestId("preview-docx-frame").getAttribute("srcdoc") ?? "").toContain(
+      "Layout mới",
+    ),
+  );
+  expect(toast.success).toHaveBeenCalledWith("Đã cập nhật layout (LLM).", {
+    id: "loading-1",
+  });
+});
+
+it("LLM layout failure: toast.error with mapped message and loading toast killed", async () => {
+  vi.mocked(api.exportJob).mockRejectedValue(new ApiError("LLM lỗi."));
+  render(<PreviewTabs jobId="5" markdown="# A" />);
+  await userEvent.click(screen.getByTestId("btn-llm-layout-md"));
+  expect(toast.loading).toHaveBeenCalledWith("Đang gọi LLM…");
+  await waitFor(() => expect(toast.error).toHaveBeenCalledWith("LLM lỗi."));
+  expect(toast.dismiss).toHaveBeenCalledWith("loading-1");
+  // preview content untouched on failure
+  expect(screen.getByTestId("preview-markdown").getAttribute("srcdoc") ?? "").toContain("<h1");
+});
+
+it("shows ApiError detail in docs-error when docx export fails", async () => {
   vi.mocked(api.exportJob).mockRejectedValue(new ApiError("Xuất file thất bại."));
   render(<PreviewTabs jobId="5" markdown="# A" />);
-  await userEvent.click(screen.getByTestId("preview-pdf"));
-  expect(await screen.findByTestId("docs-error")).toHaveTextContent(
-    "Xuất file thất bại.",
-  );
+  await userEvent.click(screen.getByTestId("preview-docx"));
+  expect(await screen.findByTestId("docs-error")).toHaveTextContent("Xuất file thất bại.");
   // R51: inline docs-error kept; toast mirrors it (R59a).
   expect(toast.error).toHaveBeenCalledWith("Xuất file thất bại.");
-  // failed pdf frame never appears
-  await waitFor(() =>
-    expect(screen.queryByTitle("Xem trước PDF")).not.toBeInTheDocument(),
-  );
+  // failed docx frame never appears
+  await waitFor(() => expect(screen.queryByTestId("preview-docx-frame")).not.toBeInTheDocument());
 });
