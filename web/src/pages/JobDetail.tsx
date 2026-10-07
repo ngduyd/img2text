@@ -114,7 +114,7 @@ export default function JobDetail() {
       {/* Sticky dưới AppNav (top-14, md:top-16): title + status + actions luôn thấy khi đọc doc dài. */}
       <header
         data-testid="job-header"
-        className="sticky top-14 z-20 -mx-4 mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-surface/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 md:top-16"
+        className="sticky top-14 z-10 -mx-4 mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-surface/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 md:top-16"
       >
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           <Link
@@ -173,7 +173,10 @@ export default function JobDetail() {
         className={`grid gap-4 lg:gap-6 ${result ? "lg:grid-cols-[minmax(0,1fr)_320px]" : ""}`}
       >
         {result && (
-          <div data-testid="detail-reading" className="flex min-w-0 flex-col gap-6 py-2 lg:py-6">
+          <div
+            data-testid="detail-reading"
+            className="flex min-w-0 max-w-[75ch] flex-col gap-6 py-2 leading-[1.6] lg:py-6"
+          >
             <ResultPanel
               jobId={id!}
               result={result}
