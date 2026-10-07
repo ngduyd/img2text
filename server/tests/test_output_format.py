@@ -126,8 +126,45 @@ async def test_auto_docx_llm_down_warns_and_job_stays_done(
         await drain_auto_output()
     assert any("auto output failed" in rec.getMessage() for rec in caplog.records)
     assert f"exports/{jid}/docx" not in _put_keys(storage_spy)
+    assert f"exports/{jid}/docx-layout" not in _put_keys(storage_spy)
     job = await db_session.get(Job, jid)
     assert job.status == "done"
+
+
+async def test_auto_docx_success_stores_docx_layout_key(
+    auth_client,
+    worker_client,
+    storage_spy,
+    VALID_RESULT_JSONB,
+    monkeypatch,
+):
+    """D4 review P1: LLM bytes go to exports/{id}/docx-layout, NOT the
+    pandoc docx cache key exports/{id}/docx."""
+    import json
+
+    from tests.test_export_llm_docx import FAKE_PLAN, FakeResponse, fake_llm
+
+    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
+    r = await auth_client.post(
+        "/api/jobs",
+        files={"file": ("a.jpg", TEST_JPEG, "image/png")},
+        data={"output_format": "docx"},
+    )
+    jid = r.json()["id"]
+    claim = await worker_client.get("/api/jobs/next")
+    tok = claim.json()["worker_token"]
+    r = await worker_client.post(
+        f"/api/jobs/{jid}/result",
+        json=VALID_RESULT_JSONB,
+        headers={"Authorization": f"Bearer {tok}"},
+    )
+    assert r.status_code == 200
+    await drain_auto_output()
+    keys = _put_keys(storage_spy)
+    assert f"exports/{jid}/docx-layout" in keys
+    assert f"exports/{jid}/docx" not in keys
+    data = await storage_spy.get(f"exports/{jid}/docx-layout")
+    assert data[:2] == b"PK"  # zip magic = real docx bytes
 
 
 async def test_store_batch_result_schedules_md_export(

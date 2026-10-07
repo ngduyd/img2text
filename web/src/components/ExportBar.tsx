@@ -8,6 +8,8 @@ const FORMATS = [
   { fmt: "md", testid: "export-md", label: "Tải .md" },
   { fmt: "html", testid: "export-html", label: "Tải .html" },
   { fmt: "docx", testid: "export-docx", label: "Tải .docx" },
+  // D4 review P2: LLM layout docx (auto-gen key docx-layout; pandoc .docx khác bytes)
+  { fmt: "docx-layout", testid: "btn-export-docx-layout", label: "DOCX (giữ layout)" },
   { fmt: "pdf", testid: "export-pdf", label: "Tải .pdf" },
 ] as const;
 

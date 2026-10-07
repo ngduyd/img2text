@@ -337,6 +337,9 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> None:
     fmt = job.output_format or "md"
     if fmt not in ("md", "docx"):
         fmt = "md"
+    # D4 review P1: LLM bytes go under docx-layout — never overwrite the
+    # pandoc docx cache key exports/{id}/docx (export_job cache contract).
+    key_fmt = "docx-layout" if fmt == "docx" else fmt
     if fmt == "docx":
         data = await _llm_docx_export(job.id, job)  # LLM down → HTTPException → caller warns
     else:
@@ -347,7 +350,7 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> None:
                 job.id, markdown, job, storage, Path(td)
             )
         data = markdown.encode("utf-8")
-    await storage.put(f"exports/{job.id}/{fmt}", data)
+    await storage.put(f"exports/{job.id}/{key_fmt}", data)
 
 @router.post("/api/jobs/{id}/export")
 async def export_job(
