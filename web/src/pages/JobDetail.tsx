@@ -168,7 +168,8 @@ export default function JobDetail() {
         {result && (
           <div
             data-testid="detail-reading"
-            className="flex min-w-0 max-w-[75ch] flex-col gap-6 py-2 leading-[1.6] lg:py-6"
+            /* Plan M3: content col rộng hết cột trái (bỏ cap 75ch) — vùng Soạn thảo mở rộng. */
+            className="flex min-w-0 flex-col gap-6 py-2 leading-[1.6] lg:py-6"
           >
             <ResultPanel
               jobId={id!}

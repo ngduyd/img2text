@@ -12,6 +12,7 @@ import DocStyleTools from "./DocStyleTools";
 import MdToolbar from "./editor/MdToolbar";
 import type { MdFormatOp, MdHistory } from "./editor/mdFormat";
 import { applyMdOp } from "./editor/mdFormat";
+import WordEditor from "./editor/WordEditor";
 import MarkdownPreview from "./MarkdownPreview";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
@@ -51,6 +52,8 @@ export default function UnifiedEditor({
   const queryClient = useQueryClient();
   // Binding: default mode theo output_format chọn lúc upload.
   const [mode, setMode] = useState<Mode>(job.output_format === "docx" ? "word" : "md");
+  // Plan M3: docx.html cache (PUT html lần trước) → load thẳng, bỏ mammoth/export.
+  const docxHtmlCached = job.layout_cache?.docx_html === true;
   // md text = artifact md-layout; markdown prop chỉ là nội dung tạm trước khi artifact về.
   const [mdText, setMdText] = useState(markdown);
   const [docxHtml, setDocxHtml] = useState<string | null>(null);
@@ -70,14 +73,21 @@ export default function UnifiedEditor({
   const runFlow = useCallback(
     async (m: Mode) => {
       try {
-        await api.exportJob(jobId, FMT[m]);
-        const blob = await api.downloadExport(jobId, FMT[m]);
-        if (m === "md") {
-          setMdText(await blob.text());
+        // Plan M3: word content đã lưu (layout_cache.docx_html) → GET docx.html,
+        // không exportJob (không tốn LLM) + không mammoth; 404 → fallback bên dưới.
+        const cachedHtml = m === "word" && docxHtmlCached ? await api.getDocxHtml(jobId) : null;
+        if (cachedHtml !== null) {
+          setDocxHtml(DOMPurify.sanitize(cachedHtml));
         } else {
-          const { value } = await mammoth.convertToHtml({ arrayBuffer: await blob.arrayBuffer() });
-          // mammoth output untrusted → DOMPurify trước khi srcdoc (script bị strip).
-          setDocxHtml(DOMPurify.sanitize(value));
+          await api.exportJob(jobId, FMT[m]);
+          const blob = await api.downloadExport(jobId, FMT[m]);
+          if (m === "md") {
+            setMdText(await blob.text());
+          } else {
+            const { value } = await mammoth.convertToHtml({ arrayBuffer: await blob.arrayBuffer() });
+            // mammoth output untrusted → DOMPurify trước khi srcdoc (script bị strip).
+            setDocxHtml(DOMPurify.sanitize(value));
+          }
         }
         setLoaded((prev) => ({ ...prev, [m]: true }));
         // Retry thành công / vào lại mode lỗi → dọn error của mode này (async, sau await).
@@ -87,7 +97,7 @@ export default function UnifiedEditor({
         toast.error(mapApiError(err));
       }
     },
-    [jobId],
+    [jobId, docxHtmlCached],
   );
 
   /*
@@ -140,6 +150,18 @@ export default function UnifiedEditor({
     try {
       await api.putLayoutStyle(jobId, styleMap);
       toast.success("Đã lưu.");
+    } catch (err) {
+      toast.error(mapApiError(err));
+    }
+  };
+
+  /** Plan M3: serialize iframe body → PUT docx.html → toast + refresh layout_cache. */
+  const saveWord = async (html: string) => {
+    try {
+      await api.putDocxHtml(jobId, html);
+      toast.success("Đã lưu.");
+      // Flag layout_cache.docx_html đổi phía server → refresh job (badge + load sau).
+      await queryClient.invalidateQueries({ queryKey: ["job", jobId] });
     } catch (err) {
       toast.error(mapApiError(err));
     }
@@ -266,6 +288,12 @@ export default function UnifiedEditor({
           )
         ) : (
           <>
+            {docxHtml !== null && (
+              <WordEditor
+                srcDoc={withStyle(docxHtml, baseCss + wordCss)}
+                onSave={(html) => void saveWord(html)}
+              />
+            )}
             <DocStyleTools
               variant="word"
               html={docxHtml}
@@ -274,21 +302,11 @@ export default function UnifiedEditor({
               onWordChange={setWordCss}
               onStyleChange={setStyleMap}
             />
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-              <p className="text-xs text-muted">Sửa chữ ở dạng Markdown.</p>
+            <div className="mt-3 flex justify-end gap-2 border-t border-border pt-3">
               <Button testid="btn-save-style" onClick={() => void saveStyle()}>
                 Lưu kiểu trình bày
               </Button>
             </div>
-            {docxHtml !== null && (
-              <iframe
-                data-testid="preview-docx-frame"
-                sandbox=""
-                title="Xem trước DOCX"
-                srcDoc={withStyle(docxHtml, baseCss + wordCss)}
-                className="mt-3 h-96 w-full rounded-md border border-border"
-              />
-            )}
           </>
         )}
       </Card>

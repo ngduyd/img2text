@@ -70,7 +70,12 @@ export default function MdToolbar({
   }
 
   return (
-    <div role="toolbar" aria-label="Công cụ Markdown" className="flex flex-wrap items-center gap-1">
+    /* Plan M3: md toolbar 1 hàng duy nhất — tràn thì scroll ngang (giữ logic md nguyên). */
+    <div
+      role="toolbar"
+      aria-label="Công cụ Markdown"
+      className="flex items-center gap-1 overflow-x-auto whitespace-nowrap [&>*]:shrink-0"
+    >
       {GROUPS.map((group, gi) => (
         <Fragment key={gi}>
           {gi > 0 && <span aria-hidden="true" className="mx-1 h-5 w-px bg-border" />}

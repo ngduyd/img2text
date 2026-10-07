@@ -96,6 +96,30 @@ export const api = {
   // Plan M (M1): word style overrides (null = xoá override).
   putLayoutStyle: (id: number | string, style: LayoutStyle | null) =>
     request<unknown>(`/api/jobs/${id}/layout-style`, { method: "PUT", body: { style } }),
+  // Plan M3 (server lane): PUT docx.html (nội dung word đã sửa) — 204.
+  putDocxHtml: (id: number | string, html: string) =>
+    request<unknown>(`/api/jobs/${id}/export/docx-layout/html`, {
+      method: "PUT",
+      body: { html },
+    }),
+  // Plan M3: đọc docx.html cache (200 text/html); chưa lưu → 404 → null (fallback mammoth).
+  getDocxHtml: async (id: number | string): Promise<string | null> => {
+    const path = `/api/jobs/${id}/export/docx.html/download`;
+    const res = await fetch(path, { credentials: "include" });
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`;
+      try {
+        const data = (await res.json()) as { detail?: string } | null;
+        if (data && typeof data.detail === "string") detail = data.detail;
+      } catch {
+        // non-JSON error body → keep generic detail
+      }
+      if (res.status === 401) window.location.assign("/login");
+      throw new ApiError(detail);
+    }
+    return await res.text();
+  },
   exportJob: (id: number | string, fmt: string) =>
     request<{ url: string }>(`/api/jobs/${id}/export`, { method: "POST", body: { fmt } }),
   // Task 5: same-origin blob download of a cached export (presign window.open not usable for iframe srcdoc).
