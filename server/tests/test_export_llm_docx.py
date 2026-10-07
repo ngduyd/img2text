@@ -16,7 +16,7 @@ from docx import Document
 from docx.shared import Pt
 from sqlalchemy import select
 
-from app.core.config import settings
+from app.core.config import Settings, settings
 from app.core.models import Job, User
 from app.services import llm_docx
 from app.services.llm_docx import LLMLayoutError, build_layout_docx
@@ -66,8 +66,8 @@ def fake_llm(monkeypatch, responses: list) -> list:
         async def __aexit__(self, *exc):
             return False
 
-        async def post(self, url, json=None):
-            calls.append((url, dict(json or {})))  # copy: route pops keys
+        async def post(self, url, json=None, headers=None):
+            calls.append((url, dict(json or {}), dict(headers or {})))  # copy
             resp = responses.pop(0)
             if isinstance(resp, Exception):
                 raise resp
@@ -104,7 +104,7 @@ async def test_build_layout_docx_renders_plan(
     assert merged.paragraphs[0].style.name == "Heading 1"
     assert "[ảnh]" in _cell_texts(doc)  # image block → placeholder
     # prompt payload: model + temperature 0 + response_format + input JSON
-    url, payload = calls[0]
+    url, payload, _ = calls[0]
     assert url.endswith("/chat/completions")
     assert payload["model"] == settings.llm_model
     assert payload["temperature"] == 0
@@ -116,6 +116,40 @@ async def test_build_layout_docx_renders_plan(
     assert any(m.startswith("llm called: fmt=docx-layout") for m in info), info
     assert not any("Xin chào" in m for m in info)  # never log prompt/content
 
+
+def test_llm_api_key_default_empty():
+    assert Settings().llm_api_key == ""
+
+async def test_llm_docx_bearer_header_key_set(
+    monkeypatch, VALID_RESULT_JSONB, caplog
+):
+    """Key set → Authorization: Bearer on BOTH attempts (incl. bare retry);
+    key never in logs."""
+    caplog.set_level("INFO", logger="app.services.llm_docx")
+    monkeypatch.setattr(settings, "llm_api_key", "sk-test-1")
+    plan = {"columns": "single",
+            "blocks": [{"id": "r0", "col": "full", "style": "h1"}]}
+    calls = fake_llm(
+        monkeypatch,
+        [
+            FakeResponse(status_code=400, text="response_format unsupported"),
+            FakeResponse(json.dumps(plan)),
+        ],
+    )
+    data = await build_layout_docx(VALID_RESULT_JSONB, [(800, 600)])
+    assert data[:2] == b"PK"
+    assert [c[2] for c in calls] == [
+        {"Authorization": "Bearer sk-test-1"},
+        {"Authorization": "Bearer sk-test-1"},
+    ]
+    assert not any("sk-test-1" in r.getMessage() for r in caplog.records)
+
+async def test_llm_docx_no_auth_header_key_empty(monkeypatch, VALID_RESULT_JSONB):
+    """Empty key → no Authorization header (local server, no auth)."""
+    monkeypatch.setattr(settings, "llm_api_key", "")
+    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
+    await build_layout_docx(VALID_RESULT_JSONB, [(800, 600)])
+    assert "Authorization" not in calls[0][2]
 
 async def test_build_layout_docx_llm_down_raises(
     monkeypatch, VALID_RESULT_JSONB, caplog

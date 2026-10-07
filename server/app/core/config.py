@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://localhost:20128/v1"
     llm_model: str = "oc/muse-spark-1.3-contributor-free"
     llm_timeout: int = 120
+    # Bearer token for remote /v1/chat/completions; empty = no Authorization
+    # header (local servers without auth keep working unchanged).
+    llm_api_key: str = ""
 
     @property
     def kaggle_enabled(self) -> bool:

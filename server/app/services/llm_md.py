@@ -161,11 +161,16 @@ async def _markdown(blocks: list[dict]) -> str:
         "response_format": {"type": "json_object"},
     }
     url = settings.llm_base_url.rstrip("/") + "/chat/completions"
+    headers = (
+        {"Authorization": f"Bearer {settings.llm_api_key}"}
+        if settings.llm_api_key
+        else {}  # empty key = no auth header (local compatible)
+    )
     async with httpx.AsyncClient(timeout=settings.llm_timeout) as client:
         for attempt in range(2):
             started = time.perf_counter()
             try:
-                resp = await client.post(url, json=payload)
+                resp = await client.post(url, json=payload, headers=headers)
             except httpx.HTTPError as exc:
                 _log_call(url, len(blocks), started)  # failed call: still observable
                 logger.warning("llm call failed: fmt=md-layout error=%s", exc)

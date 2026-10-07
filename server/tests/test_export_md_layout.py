@@ -44,8 +44,8 @@ def fake_llm(monkeypatch, responses: list) -> list:
         async def __aexit__(self, *exc):
             return False
 
-        async def post(self, url, json=None):
-            calls.append((url, dict(json or {})))  # copy: route pops keys
+        async def post(self, url, json=None, headers=None):
+            calls.append((url, dict(json or {}), dict(headers or {})))  # copy
             resp = responses.pop(0)
             if isinstance(resp, Exception):
                 raise resp
@@ -93,7 +93,7 @@ async def test_build_md_happy(monkeypatch, VALID_RESULT_JSONB, caplog):
     caplog.set_level("INFO", logger="app.services.llm_md")
     calls = fake_llm(monkeypatch, [_md_response(GOOD_MD)])
     assert await build_md(VALID_RESULT_JSONB) == GOOD_MD
-    url, payload = calls[0]
+    url, payload, _ = calls[0]
     assert url.endswith("/chat/completions")
     assert payload["model"] == settings.llm_model
     assert payload["temperature"] == 0
@@ -175,6 +175,32 @@ async def test_build_md_retries_without_response_format(
     assert await build_md(VALID_RESULT_JSONB) == GOOD_MD
     assert "response_format" in calls[0][1]
     assert "response_format" not in calls[1][1]
+
+async def test_build_md_bearer_header_key_set(monkeypatch, VALID_RESULT_JSONB, caplog):
+    """Key set → Authorization: Bearer on BOTH attempts (incl. bare retry);
+    key never in logs."""
+    caplog.set_level("INFO", logger="app.services.llm_md")
+    monkeypatch.setattr(settings, "llm_api_key", "sk-test-2")
+    calls = fake_llm(
+        monkeypatch,
+        [
+            FakeResponse(status_code=400, text="response_format unsupported"),
+            _md_response(GOOD_MD),
+        ],
+    )
+    assert await build_md(VALID_RESULT_JSONB) == GOOD_MD
+    assert [c[2] for c in calls] == [
+        {"Authorization": "Bearer sk-test-2"},
+        {"Authorization": "Bearer sk-test-2"},
+    ]
+    assert not any("sk-test-2" in r.getMessage() for r in caplog.records)
+
+async def test_build_md_no_auth_header_key_empty(monkeypatch, VALID_RESULT_JSONB):
+    """Empty key → no Authorization header (local server, no auth)."""
+    monkeypatch.setattr(settings, "llm_api_key", "")
+    calls = fake_llm(monkeypatch, [_md_response(GOOD_MD)])
+    assert await build_md(VALID_RESULT_JSONB) == GOOD_MD
+    assert "Authorization" not in calls[0][2]
 
 # --- export route ---
 
