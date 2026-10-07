@@ -7,4 +7,5 @@ __pycache__/
 
 .venvs/
 *.jpg
-.codegraph/
+.codegraph/server/.venv
+server/.tools
