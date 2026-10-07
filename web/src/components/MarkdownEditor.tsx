@@ -10,8 +10,9 @@ import { applyMdOp } from "./editor/mdFormat";
 import Button from "./ui/Button";
 
 /**
- * Trạng thái `editing` controlled từ trang JobDetail (btn-edit-doc toggles
- * inline edit trên trang); save logic giữ nguyên (PATCH + invalidate job).
+ * Trạng thái `editing` controlled từ trang JobDetail (btn-edit-doc = entry
+ * duy nhất để vào edit); state chưa editing = preview read-only + hint, không
+ * nút. Save logic giữ nguyên (PATCH + invalidate job).
  */
 export default function MarkdownEditor({
   jobId,
@@ -33,7 +34,7 @@ export default function MarkdownEditor({
   const wasEditing = useRef(editing);
   const queryClient = useQueryClient();
 
-  // Vào edit (btn-edit hoặc btn-edit-doc) → nạp draft từ markdown mới nhất.
+  // Vào edit (btn-edit-doc) → nạp draft từ markdown mới nhất.
   useEffect(() => {
     if (editing && !wasEditing.current) {
       setValue(initial);
@@ -92,23 +93,26 @@ export default function MarkdownEditor({
           className="mb-2 h-64 w-full rounded-md border border-border bg-surface p-2 font-mono text-sm leading-[1.6] text-text"
         />
       )}
-      <div className="flex gap-2">
-        {editing ? (
+      {editing ? (
+        <div className="flex gap-2">
           <Button testid="btn-save" onClick={save}>
             Lưu
           </Button>
-        ) : (
-          <Button
-            testid="btn-edit"
-            onClick={() => {
-              setError(null);
-              onEditingChange(true);
-            }}
+        </div>
+      ) : (
+        /* Chưa editing: preview nguồn read-only (PreviewTabs loa rendered) + hint. */
+        <div>
+          <div
+            data-testid="md-source-preview"
+            className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-card border border-border bg-surface p-3 font-mono text-sm text-text"
           >
-            Chỉnh sửa
-          </Button>
-        )}
-      </div>
+            {initial}
+          </div>
+          <p data-testid="md-edit-hint" className="mt-2 text-xs text-muted">
+            Nhấn Edit ở trên để sửa nội dung.
+          </p>
+        </div>
+      )}
     </section>
   );
 }
