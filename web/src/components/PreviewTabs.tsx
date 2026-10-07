@@ -49,6 +49,8 @@ export default function PreviewTabs({
   // Sanitized mammoth HTML; DocStyleTools CSS is injected at render time.
   const [docxHtml, setDocxHtml] = useState<string | null>(null);
   const [css, setCss] = useState("");
+  // JD2 word pane: css bố cục trang (align/indent/spacing/underline) chỉ bắn vào docx iframe.
+  const [wordCss, setWordCss] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   // md preview rendered here (not MarkdownPreview) so DocStyleTools CSS can inject —
@@ -158,13 +160,17 @@ export default function PreviewTabs({
               data-testid="preview-docx-frame"
               sandbox=""
               title="Xem trước DOCX"
-              srcDoc={withStyle(docxHtml, css)}
+              srcDoc={withStyle(docxHtml, css + wordCss)}
               className="h-96 w-full rounded-md border border-border"
             />
           )}
         </>
       )}
-      <DocStyleTools onChange={setCss} />
+      <DocStyleTools
+        onChange={setCss}
+        onWordChange={setWordCss}
+        variant={tab === "docx" ? "word" : "md"}
+      />
     </Card>
   );
 }

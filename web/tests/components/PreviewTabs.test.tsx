@@ -63,6 +63,38 @@ it("DocStyleTools present in both tabs and its style reaches the md preview", as
   expect(screen.getByTestId("tool-font-family")).toBeInTheDocument();
 });
 
+/** JD2 amendment: variant word (docx tab) THÊM word-tb-* — css chỉ vào docx pane. */
+it("word layout controls show only on docx tab and style the docx preview", async () => {
+  vi.mocked(api.exportJob).mockResolvedValue({ url: "https://r2/exports/5/docx" });
+  vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["PK"]));
+  vi.mocked(mammoth.convertToHtml).mockResolvedValue({
+    value: "<p>Chào</p>",
+    messages: [],
+  } as never);
+  render(<PreviewTabs jobId="5" markdown="# A" />);
+  // md tab: không có word controls
+  expect(screen.queryByTestId("word-tb-align-center")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByTestId("preview-docx"));
+  await screen.findByTestId("preview-docx-frame");
+  expect(screen.getByTestId("word-tb-align-center")).toBeInTheDocument();
+  expect(screen.getByTestId("word-tb-indent-in")).toBeInTheDocument();
+  expect(screen.getByTestId("word-tb-spacing")).toBeInTheDocument();
+  expect(screen.getByTestId("word-tb-underline")).toBeInTheDocument();
+  // align center → css vào docx srcdoc
+  await userEvent.click(screen.getByTestId("word-tb-align-center"));
+  await waitFor(() =>
+    expect(screen.getByTestId("preview-docx-frame").getAttribute("srcdoc") ?? "").toContain(
+      "text-align: center",
+    ),
+  );
+  // quay lại md tab: word css KHÔNG lọt vào md pane + controls ẩn
+  await userEvent.click(screen.getByTestId("preview-md"));
+  expect(screen.getByTestId("preview-markdown").getAttribute("srcdoc") ?? "").not.toContain(
+    "text-align: center",
+  );
+  expect(screen.queryByTestId("word-tb-align-center")).not.toBeInTheDocument();
+});
+
 it("docx tab lazy: exportJob + downloadExport + mammoth → sanitized iframe + note", async () => {
   vi.mocked(api.exportJob).mockResolvedValue({ url: "https://r2/exports/5/docx" });
   vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["PK"]));

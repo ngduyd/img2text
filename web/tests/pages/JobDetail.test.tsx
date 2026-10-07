@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 import { api, ApiError } from "../../src/api/client";
 import type { Job, ResultBody } from "../../src/api/types";
 import JobDetail from "../../src/pages/JobDetail";
@@ -28,7 +29,7 @@ vi.mock("../../src/api/client", async (importOriginal) => {
  */
 const mockNavigate = vi.hoisted(() => vi.fn());
 
-// Plan JD: assert the Edit button's navigate call (App.test.tsx pattern).
+// JD2: btn-edit-doc = inline edit, KHÔNG navigate — mockNavigate chỉ để assert not-called.
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react-router-dom")>();
   return {
@@ -38,6 +39,10 @@ vi.mock("react-router-dom", async (importOriginal) => {
 });
 
 let capturedInterval: ((q: Query<Job>) => number | false) | undefined;
+
+/** JD2: scrollIntoView không có trong jsdom — mock để assert scroll+focus. */
+type ScrollIntoView = (arg?: boolean | ScrollIntoViewOptions) => void;
+let scrollIntoViewMock: Mock<ScrollIntoView>;
 
 vi.mock("@tanstack/react-query", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-query")>();
@@ -98,6 +103,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   capturedInterval = undefined;
   lastJob = undefined;
+  scrollIntoViewMock = vi.fn<ScrollIntoView>();
+  Element.prototype.scrollIntoView = scrollIntoViewMock;
 });
 
 it("queued shows waiting message and polls", async () => {
@@ -170,6 +177,44 @@ it("output-format badge defaults to Markdown (Plan D4)", async () => {
   );
 });
 
+/** JD2: stats line moved from ResultPanel → rail meta (exact counts kept). */
+it("rail stats line counts verdicts exactly across pages", async () => {
+  mockJob({
+    ...DONE_JOB,
+    result: {
+      ...EMPTY_RESULT,
+      pages: [
+        {
+          index: 0,
+          width: 10,
+          height: 10,
+          page_flag: "ok",
+          markdown: "",
+          regions: [
+            { id: "a1", bbox: null, text: "", verdict: "ok", placeholder: false },
+            { id: "a2", bbox: null, text: "", verdict: "ok", placeholder: false },
+            { id: "a3", bbox: null, text: "", verdict: "image_unextractable", placeholder: false },
+            { id: "a4", bbox: null, text: "", verdict: "unreadable", placeholder: false },
+            { id: "a5", bbox: null, text: "", verdict: "low_confidence", placeholder: false },
+          ],
+        },
+        {
+          index: 1,
+          width: 10,
+          height: 10,
+          page_flag: "low_confidence",
+          markdown: "",
+          regions: [{ id: "b1", bbox: null, text: "", verdict: "low_confidence", placeholder: false }],
+        },
+      ],
+    },
+  });
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  expect(await screen.findByTestId("result-stats")).toHaveTextContent(
+    "Tổng 6 vùng · 2 ok · 1 hình ảnh · 1 không trích xuất · 2 cần kiểm tra",
+  );
+});
+
 it("output-format badge shows Word for docx jobs (Plan D4)", async () => {
   mockJob({ ...DONE_JOB, output_format: "docx" });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
@@ -183,27 +228,83 @@ it("not done shows status-only panels, ResultPanel hidden until done", async () 
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
   expect(screen.queryByTestId("panel-result")).toBeNull();
   expect(screen.getByTestId("status-5")).toHaveTextContent("Đang chờ worker Colab");
+  // JD2: chưa có markdown → Edit (inline) vô hiệu, không có dead click
+  expect(screen.getByTestId("btn-edit-doc")).toBeDisabled();
+  expect(screen.queryByTestId("detail-reading")).toBeNull();
 });
 
-/** Plan JD: header 1-row structure (adjust-only queries, R51) + Edit navigation. */
-it("header: back link, title, badges, actions in one row (adjust-only)", async () => {
+/** Plan JD: header 1-row structure (adjust-only queries, R51) + inline Edit. */
+it("header: back link, title, badge, actions in one row (adjust-only)", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   expect(await screen.findByTestId("link-back-jobs")).toHaveAttribute("href", "/jobs");
   expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
     "Chi tiết công việc #5",
   );
-  expect(screen.getByTestId("job-output-format")).toBeInTheDocument();
-  expect(screen.getByTestId("btn-edit-doc")).toHaveTextContent("Edit");
+  // JD2: output badge moved to rail meta; header keeps status badge
+  expect(screen.getByTestId("job-header")).toContainElement(
+    screen.getByTestId("btn-edit-doc"),
+  );
   expect(screen.queryByTestId("btn-retry")).not.toBeInTheDocument();
 });
 
-it("header: Edit button navigates to /edit with the job id", async () => {
+/** JD2 amendment: btn-edit-doc = inline edit TRÊN trang (không navigate /edit). */
+it("btn-edit-doc toggles inline edit: scroll + focus textarea, no navigation", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   const user = userEvent.setup();
-  await user.click(await screen.findByTestId("btn-edit-doc"));
-  expect(mockNavigate).toHaveBeenCalledWith("/edit?job=5");
+  const btn = await screen.findByTestId("btn-edit-doc");
+  expect(btn).toHaveTextContent("Edit");
+  await user.click(btn);
+  expect(mockNavigate).not.toHaveBeenCalled();
+  expect(btn).toHaveAttribute("aria-pressed", "true");
+  expect(btn).toHaveTextContent("Đang sửa");
+  const ta = await screen.findByTestId("textarea-markdown");
+  expect(ta).toHaveFocus();
+  expect(scrollIntoViewMock).toHaveBeenCalledTimes(1);
+  expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+  // toggle lần 2 → đóng editor + scroll về preview (panel-docs)
+  await user.click(screen.getByTestId("btn-edit-doc"));
+  expect(screen.queryByTestId("textarea-markdown")).toBeNull();
+  expect(btn).toHaveAttribute("aria-pressed", "false");
+  expect(screen.getByTestId("panel-docs")).toBeInTheDocument();
+  expect(scrollIntoViewMock).toHaveBeenCalledTimes(2);
+  expect(mockNavigate).not.toHaveBeenCalled();
+});
+
+/** JD2 binding: desktop 2 cột GRID (không flex-percent) + rail chứa meta/export. */
+it("layout: 2-column grid, reading col + rail with file/meta/export/info", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const grid = await screen.findByTestId("detail-grid");
+  expect(grid.className).toContain("grid");
+  expect(grid.className).toContain("lg:grid-cols-[minmax(0,1fr)_320px]");
+  const reading = screen.getByTestId("detail-reading");
+  expect(reading).toContainElement(screen.getByTestId("panel-result"));
+  expect(reading).toContainElement(screen.getByTestId("preview-markdown"));
+  const rail = screen.getByTestId("detail-rail");
+  expect(rail).toContainElement(screen.getByTestId("panel-original"));
+  expect(rail).toContainElement(screen.getByTestId("job-output-format"));
+  expect(rail).toContainElement(screen.getByTestId("result-stats"));
+  expect(rail).toContainElement(screen.getByTestId("export-md"));
+  expect(rail).toContainElement(screen.getByTestId("panel-info"));
+  // export disclosure: nút phụ ẩn sau "Định dạng khác"
+  expect(screen.getByTestId("export-more")).toBeInTheDocument();
+  expect(screen.getByTestId("export-formats")).not.toBeVisible();
+});
+
+/** JD2 sticky context header: bám dưới AppNav (top-14 / md:top-16). */
+it("header is sticky below app nav with blurred surface bg", async () => {
+  mockJob(DONE_JOB);
+  const { container } = renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await screen.findByTestId("job-header");
+  const header = container.querySelector('[data-testid="job-header"]');
+  expect(header).not.toBeNull();
+  const cls = (header as HTMLElement).className;
+  expect(cls).toContain("sticky");
+  expect(cls).toContain("top-14");
+  expect(cls).toContain("md:top-16");
+  expect(cls).toContain("backdrop-blur");
 });
 
 it("loading shows skeleton instead of blank page", () => {

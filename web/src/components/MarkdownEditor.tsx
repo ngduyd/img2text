@@ -1,22 +1,54 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import { mapApiError } from "../lib/errors";
+import MdToolbar from "./editor/MdToolbar";
+import type { MdFormatOp, MdHistory } from "./editor/mdFormat";
+import { applyMdOp } from "./editor/mdFormat";
 import Button from "./ui/Button";
 
-export default function MarkdownEditor({ jobId, initial }: { jobId: string; initial: string }) {
-  const [editing, setEditing] = useState(false);
+/**
+ * Trạng thái `editing` controlled từ trang JobDetail (btn-edit-doc toggles
+ * inline edit trên trang); save logic giữ nguyên (PATCH + invalidate job).
+ */
+export default function MarkdownEditor({
+  jobId,
+  initial,
+  editing,
+  onEditingChange,
+  hostRef,
+}: {
+  jobId: string;
+  initial: string;
+  editing: boolean;
+  onEditingChange: (editing: boolean) => void;
+  hostRef?: RefObject<HTMLElement | null>;
+}) {
   const [value, setValue] = useState(initial);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<MdHistory>({ past: [], future: [] });
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const wasEditing = useRef(editing);
   const queryClient = useQueryClient();
+
+  // Vào edit (btn-edit hoặc btn-edit-doc) → nạp draft từ markdown mới nhất.
+  useEffect(() => {
+    if (editing && !wasEditing.current) {
+      setValue(initial);
+      setError(null);
+      setHistory({ past: [], future: [] });
+    }
+    wasEditing.current = editing;
+  }, [editing, initial]);
 
   const save = async () => {
     setError(null);
     try {
       await api.patchContent(jobId, value);
       toast.success("Đã lưu.");
-      setEditing(false);
+      onEditingChange(false);
       // Binding (T5 ledger): invalidate job query or preview shows stale
       // edited_markdown (polling stopped at done).
       await queryClient.invalidateQueries({ queryKey: ["job", jobId] });
@@ -26,8 +58,22 @@ export default function MarkdownEditor({ jobId, initial }: { jobId: string; init
     }
   };
 
+  /** Toolbar → applyMdOp (contract Edit2) → setValue + khôi phục selection sau render (rAF). */
+  const handleFormat = (op: MdFormatOp, arg?: string) => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const res = applyMdOp(value, ta.selectionStart, ta.selectionEnd, op, history, arg);
+    setValue(res.value);
+    setHistory({ past: res.past, future: res.future });
+    requestAnimationFrame(() => {
+      ta.focus();
+      ta.setSelectionRange(res.start, res.end);
+    });
+  };
+
   return (
-    <section className="mt-4">
+    /* scroll-mt-32: offset qua sticky header job (top-14/md:top-16 + header) khi btn-edit-doc scroll tới. */
+    <section ref={hostRef} className="scroll-mt-32">
       {error && (
         <div
           data-testid="editor-error"
@@ -36,12 +82,14 @@ export default function MarkdownEditor({ jobId, initial }: { jobId: string; init
           {error}
         </div>
       )}
+      {editing && <MdToolbar onFormat={handleFormat} />}
       {editing && (
         <textarea
+          ref={textareaRef}
           data-testid="textarea-markdown"
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          className="mb-2 h-64 w-full rounded-md border border-border bg-surface p-2 font-mono text-sm text-text"
+          className="mb-2 h-64 w-full rounded-md border border-border bg-surface p-2 font-mono text-sm leading-[1.6] text-text"
         />
       )}
       <div className="flex gap-2">
@@ -53,9 +101,8 @@ export default function MarkdownEditor({ jobId, initial }: { jobId: string; init
           <Button
             testid="btn-edit"
             onClick={() => {
-              setValue(initial);
               setError(null);
-              setEditing(true);
+              onEditingChange(true);
             }}
           >
             Chỉnh sửa

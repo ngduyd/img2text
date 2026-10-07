@@ -43,6 +43,8 @@ function renderPanel(onRegionUpdated?: (rid: string, text: string) => void) {
 
 async function openEditor() {
   const user = userEvent.setup();
+  // JD2: issues accordion collapsed by default — mở trước khi click vào row
+  await user.click(await screen.findByTestId("issues-toggle"));
   await user.click(await screen.findByTestId("btn-edit-region-p1r0"));
   return user;
 }
