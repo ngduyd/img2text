@@ -56,6 +56,8 @@ export interface Job {
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+  /** Plan D4: export format chosen at upload ("md" | "docx"); absent on legacy rows → "md". */
+  output_format?: string;
 }
 
 /** List endpoint subset: server /api/jobs items omit result; started_at/finished_at

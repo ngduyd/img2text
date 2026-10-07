@@ -327,6 +327,28 @@ async def _llm_docx_export(job_id: int, job: Job) -> bytes:
             status_code=502, detail="Không kết nối LLM máy chủ."
         ) from exc
 
+async def auto_generate_output(job: Job, storage: StorageDriver) -> None:
+    """Plan D4: materialize job.output_format ("md"|"docx") after OCR.
+
+    Reuses the export_job internals (NO HTTP round-trip); scheduled
+    fire-and-forget by job_results AFTER the result commit. Raises on
+    failure — the caller logs a warning and the job stays done.
+    """
+    fmt = job.output_format or "md"
+    if fmt not in ("md", "docx"):
+        fmt = "md"
+    if fmt == "docx":
+        data = await _llm_docx_export(job.id, job)  # LLM down → HTTPException → caller warns
+    else:
+        markdown = current_markdown(job.result or {})
+        # same md branch as export_job: crops materialized before encode
+        with tempfile.TemporaryDirectory() as td:
+            markdown = await _materialize_crops(
+                job.id, markdown, job, storage, Path(td)
+            )
+        data = markdown.encode("utf-8")
+    await storage.put(f"exports/{job.id}/{fmt}", data)
+
 @router.post("/api/jobs/{id}/export")
 async def export_job(
     id: int,

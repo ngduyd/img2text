@@ -52,6 +52,7 @@ async def upload_job(
     request: Request,
     file: UploadFile = File(...),
     preprocess: str | None = Form(None),
+    output_format: str | None = Form(None),
     user: User = Depends(_ocr_user),
     storage: StorageDriver = Depends(get_storage),
     session: AsyncSession = Depends(get_session),
@@ -69,6 +70,10 @@ async def upload_job(
     ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=422, detail="Định dạng file không được hỗ trợ.")
+    # Plan D4: export format chosen at upload; invalid → 422 BEFORE any write
+    fmt = output_format or "md"
+    if fmt not in ("md", "docx"):
+        raise HTTPException(status_code=422, detail="Đầu ra không hợp lệ.")
 
     # hash while spooling to temp file; size cap enforced during the stream
     hasher = hashlib.sha256()
@@ -142,6 +147,7 @@ async def upload_job(
         file_type=file_type,
         page_count=page_count,
         preprocess=preprocess_json,
+        output_format=fmt,
     )
     session.add(job)
     await session.commit()
@@ -151,6 +157,7 @@ async def upload_job(
         "status": job.status,
         "page_count": job.page_count,
         "file_type": job.file_type,
+        "output_format": fmt,
     }
 
 # --- Owner reads: GET /api/jobs, /{id}, /{id}/file ---
@@ -248,6 +255,7 @@ async def get_job(
         "file_type": job.file_type,
         "page_count": job.page_count,
         "error": job.error,
+        "output_format": job.output_format or "md",
         "result": job.result if job.status == "done" else None,
         "created_at": job.created_at,
         "started_at": job.started_at,
@@ -426,6 +434,7 @@ async def submit_result(
     body: ResultBody,
     request: Request,
     session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
 ) -> dict:
     token = _bearer_token(request)
     now = _utcnow()
@@ -456,7 +465,7 @@ async def submit_result(
     # claim at commit time — service extracted in Plan K5 (shared with the
     # Kaggle batch orchestrator); behavior unchanged, guard identical.
     ok = await store_worker_result(
-        session, id, body, token=token, now=now
+        session, id, body, token=token, now=now, storage=storage
     )
     if not ok:
         raise HTTPException(status_code=409, detail="job not runnable")

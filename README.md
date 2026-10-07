@@ -204,6 +204,13 @@ cp deploy/.env.example deploy/.env                   # then fill (see below)
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
+> **Migration 1 lần cho DB đã tồn tại (Plan D4 — `create_all` không ALTER):**
+>
+> ```bash
+> docker compose -f deploy/docker-compose.yml exec postgres \
+>   psql -U img2text -d img2text -c "ALTER TABLE jobs ADD COLUMN IF NOT EXISTS output_format TEXT;"
+> ```
+
 Nginx serves `web/dist` and proxies `/api/` on port 80. Fill `deploy/.env`:
 `APP_SECRET`, `RUNNER_KEY`, `BASE_URL`, `ADMIN_EMAIL`/`ADMIN_PASSWORD` (bootstraps
 the admin user on first start), R2 keys ([docs/r2-setup.md](docs/r2-setup.md)),

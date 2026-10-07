@@ -58,6 +58,10 @@ export default function JobDetail() {
             Chi tiết công việc <span className="font-mono">#{job.id}</span>
           </h1>
           <Badge tone={STATUS_TONE[job.status]}>{STATUS_TEXT[job.status]}</Badge>
+          {/* Plan D4: export format chosen at upload; legacy rows default to Markdown. */}
+          <Badge tone="info" testid="job-output-format">
+            Đầu ra: {job.output_format === "docx" ? "Word" : "Markdown"}
+          </Badge>
         </div>
         {job.status === "failed" && (
           <Button

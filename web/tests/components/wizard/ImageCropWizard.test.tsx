@@ -136,8 +136,18 @@ it("submit uploads cropped JPEG blob with -crop.jpg filename, NOT the original F
   expect(blob.type).toBe("image/jpeg");
   expect(blob.size).toBeGreaterThan(0);
   expect(opts?.filename).toBe("photo-crop.jpg");
+  expect(opts?.output_format).toBe("md"); // Plan D4 default appended
   await waitFor(() => expect(onUploaded).toHaveBeenCalledWith({ id: 7, status: "queued" }));
   expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý.");
+});
+
+it("outputFormat prop passes through to uploadJob (Plan D4)", async () => {
+  render(<ImageCropWizard file={file} outputFormat="docx" onCancel={vi.fn()} onUploaded={vi.fn()} />);
+  vi.mocked(api.uploadJob).mockResolvedValue({ id: 7, status: "queued" });
+  loadImage();
+  fireEvent.click(screen.getByTestId("wizard-submit")); // no rect → original File path
+  await waitFor(() => expect(api.uploadJob).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(api.uploadJob).mock.calls[0][1]?.output_format).toBe("docx");
 });
 
 it("no rect (R62) → submit ORIGINAL File + full-image toast, no wizard-error", async () => {

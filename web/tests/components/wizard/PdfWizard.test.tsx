@@ -60,7 +60,10 @@ it("uncheck page 2 → submit uploads original File with preprocess pages [1,3]"
   fireEvent.click(screen.getByTestId("wizard-page-2").querySelector("input[type=checkbox]")!);
   fireEvent.click(screen.getByTestId("wizard-submit"));
   await waitFor(() =>
-    expect(api.uploadJob).toHaveBeenCalledWith(file, { preprocess: { pages: [1, 3], rotate: {} } }),
+    expect(api.uploadJob).toHaveBeenCalledWith(file, {
+      preprocess: { pages: [1, 3], rotate: {} },
+      output_format: "md",
+    }),
   );
   await waitFor(() => expect(onUploaded).toHaveBeenCalledWith({ id: 7, status: "queued" }));
 });
@@ -73,6 +76,7 @@ it("rotate page 3 to 90 → submit preprocess rotate {3:90}", async () => {
   await waitFor(() =>
     expect(api.uploadJob).toHaveBeenCalledWith(file, {
       preprocess: { pages: [1, 2, 3], rotate: { "3": 90 } },
+      output_format: "md",
     }),
   );
 });

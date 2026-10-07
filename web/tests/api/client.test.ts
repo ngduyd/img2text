@@ -47,6 +47,23 @@ describe("api client", () => {
     expect((opts.body as FormData).get("preprocess")).toBeNull();
   });
 
+  it("uploadJob appends output_format field when opts.output_format present", async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1, status: "queued" }), { status: 200 }));
+    vi.stubGlobal("fetch", spy);
+    const file = new File(["x"], "a.jpg", { type: "image/jpeg" });
+    await api.uploadJob(file, { output_format: "docx" });
+    const [, opts] = spy.mock.calls[0];
+    expect((opts.body as FormData).get("output_format")).toBe("docx");
+  });
+
+  it("uploadJob omits output_format field when opts absent", async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1, status: "queued" }), { status: 200 }));
+    vi.stubGlobal("fetch", spy);
+    await api.uploadJob(new File(["x"], "a.jpg", { type: "image/jpeg" }));
+    const [, opts] = spy.mock.calls[0];
+    expect((opts.body as FormData).get("output_format")).toBeNull();
+  });
+
   it("uploadJob accepts Blob + filename (cropped JPEG multipart name)", async () => {
     const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1, status: "queued" }), { status: 200 }));
     vi.stubGlobal("fetch", spy);

@@ -72,10 +72,33 @@ it("upload button enabled and calls api when granted", async () => {
   const file = new File(["x"], "a.txt", { type: "text/plain" });
   const user = userEvent.setup({ applyAccept: false });
   await user.upload(screen.getByTestId("input-file"), file);
-  expect(api.uploadJob).toHaveBeenCalledWith(file);
+  expect(api.uploadJob).toHaveBeenCalledWith(file, { output_format: "md" });
   // R59: upload success → toast + navigate to /jobs (the list route now).
   expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý.");
   await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs"));
+});
+
+it("output-format select renders with Markdown as default", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  renderWithRouter(<Jobs />);
+  const select = await screen.findByTestId("select-output-format");
+  expect(select).toHaveValue("md");
+  expect(screen.getByRole("option", { name: "Markdown" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "Word (.docx)" })).toBeInTheDocument();
+});
+
+it("choosing Word passes output_format docx to uploadJob", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  vi.mocked(api.uploadJob).mockResolvedValue({ id: 42, status: "queued" } as Job);
+  renderWithRouter(<Jobs />);
+  await screen.findByTestId("btn-upload");
+  const user = userEvent.setup({ applyAccept: false });
+  await user.selectOptions(screen.getByTestId("select-output-format"), "docx");
+  const file = new File(["x"], "a.txt", { type: "text/plain" });
+  await user.upload(screen.getByTestId("input-file"), file);
+  expect(api.uploadJob).toHaveBeenCalledWith(file, { output_format: "docx" });
 });
 
 it("upload error surfaces server detail", async () => {
@@ -92,7 +115,7 @@ it("upload error surfaces server detail", async () => {
   );
   // R59: failing upload also toasts mapped detail (inline block kept, R51).
   expect(toast.error).toHaveBeenCalledWith("Đã đạt giới hạn upload hôm nay.");
-  expect(api.uploadJob).toHaveBeenCalledWith(file);
+  expect(api.uploadJob).toHaveBeenCalledWith(file, { output_format: "md" });
 });
 
 it("job rows render status badge", async () => {
