@@ -4,8 +4,9 @@ Flow: result blocks (id/type/bbox/text VERBATIM, no truncation) → POST
 {LLM_BASE_URL}/chat/completions (model, temperature 0, response_format
 json_object; one retry — a rejected response_format is dropped on retry)
 → JSON {"markdown": "..."} → content validation: format markers stripped
-from BOTH the LLM output and the source texts must yield the same
-normalized plain text (the LLM may only add md syntax, never touch words)
+from BOTH the LLM output and the source texts must yield the same word
+MULTISET (word-multiset check — LLM may add md syntax or RE-ORDER words
+for layout, never touch the words themselves)
 → markdown string. LLMMdError = unreachable/unparsable; LLMMdContentError
 = LLM altered block content. Routes map both to 502 and never cache.
 """
@@ -14,6 +15,7 @@ import json
 import logging
 import re
 import time
+from collections import Counter
 
 import httpx
 
@@ -114,11 +116,20 @@ def _expected(blocks: list[dict]) -> str:
     return " ".join(parts)
 
 def _validate(blocks: list[dict], markdown: str) -> None:
-    expected = _expected(blocks)
-    actual = _plain(markdown)
+    """BUGFIX 1: compare as word MULTISETS, not sequence.
+
+    LLM re-orders header words to center them — same words = PASS; any
+    added/removed/duplicated/substituted word still raises (route → 502).
+    ponytail: word-multiset check — cho phép re-order cho layout; upgrade
+    path: per-block position check nếu cần chống shuffle ngầm.
+    """
+    expected = Counter(_expected(blocks).split())
+    actual = Counter(_plain(markdown).split())
     if expected != actual:
+        missing = list((expected - actual).elements())
+        extra = list((actual - expected).elements())
         raise LLMMdContentError(
-            f"lệch nội dung: mong đợi {expected[:200]!r} ≠ nhận {actual[:200]!r}"
+            f"lệch nội dung: thiếu {missing[:20]!r} ≠ dư {extra[:20]!r}"
         )
 
 def _parse(content: str) -> str:

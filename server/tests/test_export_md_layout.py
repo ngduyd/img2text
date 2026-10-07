@@ -147,6 +147,35 @@ async def test_build_md_content_modified_raises(monkeypatch, VALID_RESULT_JSONB)
     with pytest.raises(LLMMdContentError):
         await build_md(VALID_RESULT_JSONB)
 
+async def test_build_md_reordered_header_passes(monkeypatch):
+    """BUGFIX 1 (user: md layout vẽ sai): LLM re-words header để center →
+    word-multiset giống nhau → PASS (không còn 502 loop)."""
+    result = _result([
+        _region("r0", [1, 2, 798, 40],
+                "BỘ GIÁO DỤC VÀ ĐÀO TẠO ĐỂ THỨ CHÍNH THỨC KỸ THI")
+    ])
+    md = "# ĐỂ THỨ CHÍNH THỨC KỸ THI BỘ GIÁO DỤC VÀ ĐÀO TẠO"
+    fake_llm(monkeypatch, [_md_response(md)])
+    assert await build_md(result) == md
+
+async def test_build_md_missing_word_raises(monkeypatch):
+    result = _result([_region("r0", [1, 2, 3, 4], "Xin chào các bạn")])
+    fake_llm(monkeypatch, [_md_response("# Xin chào bạn")])  # bỏ "các"
+    with pytest.raises(LLMMdContentError):
+        await build_md(result)
+
+async def test_build_md_extra_word_raises(monkeypatch):
+    result = _result([_region("r0", [1, 2, 3, 4], "Xin chào")])
+    fake_llm(monkeypatch, [_md_response("# Xin chào bạn")])  # thêm "bạn"
+    with pytest.raises(LLMMdContentError):
+        await build_md(result)
+
+async def test_build_md_changed_word_raises(monkeypatch):
+    result = _result([_region("r0", [1, 2, 3, 4], "Xin chào")])
+    fake_llm(monkeypatch, [_md_response("# Xin chao")])  # sai từ
+    with pytest.raises(LLMMdContentError):
+        await build_md(result)
+
 async def test_build_md_llm_down_raises(monkeypatch, VALID_RESULT_JSONB, caplog):
     caplog.set_level("INFO", logger="app.services.llm_md")
     fake_llm(
