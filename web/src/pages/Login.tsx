@@ -1,16 +1,17 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import { mapApiError } from "../lib/errors";
+import AuthLayout from "../components/AuthLayout";
 import Button from "../components/ui/Button";
-import Card from "../components/ui/Card";
 import Input from "../components/ui/Input";
 
 export default function Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -20,10 +21,10 @@ export default function Login() {
     setLoading(true);
     try {
       await api.login(email, password);
-      toast.success("Đã đăng nhập.");
-      navigate("/jobs"); // vào app list sau đăng nhập; trang chủ "/" vẫn truy cập được tự do qua nav
+      toast.success("Signed in.");
+      navigate("/jobs");
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Đã xảy ra lỗi.");
+      setError(err instanceof ApiError ? err.detail : "An error occurred.");
       toast.error(mapApiError(err));
     } finally {
       setLoading(false);
@@ -31,34 +32,62 @@ export default function Login() {
   }
 
   return (
-    <main id="main" className="mx-auto max-w-sm p-4 sm:p-6">
-      <h1 className="mb-6 text-2xl font-bold tracking-tight">Đăng nhập</h1>
-      <Card>
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
-          <Input
-            label="Email"
-            testid="input-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <Input
-            label="Mật khẩu"
-            testid="input-password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          {error && (
-            <p data-testid="error-detail" role="alert" className="text-sm text-error">
-              {error}
-            </p>
-          )}
-          <Button testid="btn-login" type="submit" loading={loading} className="w-full">
-            Đăng nhập
-          </Button>
-        </form>
-      </Card>
-    </main>
+    <AuthLayout
+      title="Sign in"
+      subtitle="Welcome back. Sign in to continue."
+      footer={
+        <>
+          No account?{" "}
+          <Link to="/register" className="text-accent-text hover:underline">
+            Sign up
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <Input
+          label="Email"
+          testid="input-email"
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-muted">Password</span>
+            <Link to="/forgot" className="text-xs text-accent-text hover:underline">
+              Forgot password?
+            </Link>
+          </div>
+          <div className="relative">
+            <input
+              id="input-password"
+              data-testid="input-password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="h-10 w-full rounded-sm border border-border bg-surface px-3 pr-16 text-text placeholder:text-muted"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((s) => !s)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted hover:text-text"
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
+        </div>
+        {error && (
+          <p data-testid="error-detail" role="alert" className="text-sm text-error">
+            {error}
+          </p>
+        )}
+        <Button testid="btn-login" type="submit" loading={loading} className="w-full">
+          Sign in
+        </Button>
+      </form>
+    </AuthLayout>
   );
 }

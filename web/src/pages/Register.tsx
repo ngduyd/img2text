@@ -1,6 +1,9 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
+import { mapApiError } from "../lib/errors";
+import AuthLayout from "../components/AuthLayout";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 
@@ -17,43 +20,55 @@ export default function Register() {
     setLoading(true);
     try {
       await api.register(email, password);
+      toast.success("Account created. Please sign in.");
       navigate("/login");
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Đã xảy ra lỗi.");
+      setError(err instanceof ApiError ? err.detail : "An error occurred.");
+      toast.error(mapApiError(err));
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <main id="main" className="mx-auto max-w-sm p-6">
-      <h1 className="mb-4 text-xl font-bold">Đăng ký</h1>
-      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+    <AuthLayout
+      title="Sign up"
+      subtitle="Create an account to get started."
+      footer={
+        <>
+          Already have an account?{" "}
+          <Link to="/login" className="text-accent-text hover:underline">
+            Sign in
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={onSubmit} className="flex flex-col gap-4">
         <Input
           label="Email"
           testid="input-email"
           type="email"
+          autoComplete="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="Email"
         />
         <Input
-          label="Mật khẩu"
+          label="Password"
           testid="input-password"
           type="password"
+          autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Mật khẩu"
         />
         {error && (
-          <p data-testid="error-detail" className="text-sm text-error">
+          <p data-testid="error-detail" role="alert" className="text-sm text-error">
             {error}
           </p>
         )}
-        <Button testid="btn-register" type="submit" loading={loading}>
-          Đăng ký
+        <Button testid="btn-register" type="submit" loading={loading} className="w-full">
+          Sign up
         </Button>
       </form>
-    </main>
+    </AuthLayout>
   );
 }
