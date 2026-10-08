@@ -337,6 +337,22 @@ async def test_batch_failed_drops_ref_and_respawns_after_gap(
     assert len(_pushes(api)) == 2
     assert seed_job in orch._batch_runs
 
+async def test_batch_cancelled_drops_ref_and_reverts_to_queued(
+    kaggle_batch_env, api, storage_env, seed_job, db_session, caplog
+):
+    """cancelled kernel (user cancel on Kaggle UI / auto-cancel) → ref dropped
+    + job reverted to queued, same as failed/error (no 3h timeout hang)."""
+    assert await orch.ensure_worker(SessionLocal) is True
+    api.status = {"status": SimpleNamespace(name="CANCELLED")}
+    with caplog.at_level("WARNING", logger=orch.logger.name):
+        assert await orch.ensure_worker(SessionLocal) is False  # poll drops ref
+    assert orch._batch_runs == {}  # ref deleted
+    assert any("stays queued" in r.getMessage() for r in caplog.records)
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    # revert → queued + lease cleared → respawn candidate
+    assert job.status == "queued" and job.lease_expires_at is None
+
 async def test_batch_timeout_drops_ref_with_warning(
     kaggle_batch_env, api, storage_env, seed_job, db_session, caplog
 ):
