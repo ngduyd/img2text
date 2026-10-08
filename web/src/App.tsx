@@ -105,10 +105,10 @@ export function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () 
         </>
       ) : (
         <>
-          <Link to="/login" data-testid="btn-login" className={buttonClasses("primary", "sm")}>
+          <Link to="/signin" data-testid="btn-login" className={buttonClasses("primary", "sm")}>
             Sign in
           </Link>
-          <Link to="/register" data-testid="btn-register" className={buttonClasses("ghost", "sm")}>
+          <Link to="/signup" data-testid="btn-register" className={buttonClasses("ghost", "sm")}>
             Sign up
           </Link>
         </>
@@ -174,7 +174,7 @@ function AppNav() {
       toast.error(mapApiError(err));
     }
     queryClient.clear();
-    navigate("/login");
+    navigate("/signin");
   }
 
   // Hamburger: close on outside click.
@@ -310,8 +310,8 @@ export default function App() {
             richColors
           />
           <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
+            <Route path="/signin" element={<Login />} />
+            <Route path="/signup" element={<Register />} />
             <Route path="/forgot" element={<Forgot />} />
             <Route path="/reset" element={<Reset />} />
             <Route path="/profile" element={<Profile />} />

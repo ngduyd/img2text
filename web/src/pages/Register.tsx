@@ -21,7 +21,7 @@ export default function Register() {
     try {
       await api.register(email, password);
       toast.success("Account created. Please sign in.");
-      navigate("/login");
+      navigate("/signin");
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "An error occurred.");
       toast.error(mapApiError(err));
@@ -37,7 +37,7 @@ export default function Register() {
       footer={
         <>
           Already have an account?{" "}
-          <Link to="/login" className="text-accent-text hover:underline">
+          <Link to="/signin" className="text-accent-text hover:underline">
             Sign in
           </Link>
         </>

@@ -25,7 +25,7 @@ function renderLanding() {
   );
 }
 
-it("renders landing shell, H1, and CTA 'Bắt đầu' to /login", () => {
+it("renders landing shell, H1, and CTA 'Bắt đầu' to /signin", () => {
   renderLanding();
   expect(screen.getByTestId("landing")).toBeInTheDocument();
   expect(screen.getByTestId("landing-hero")).toBeInTheDocument();
@@ -33,7 +33,7 @@ it("renders landing shell, H1, and CTA 'Bắt đầu' to /login", () => {
   expect(h1).toHaveTextContent("Biến ảnh và PDF thành văn bản sửa được");
   const cta = screen.getByTestId("landing-cta");
   expect(cta).toHaveTextContent("Bắt đầu");
-  expect(cta).toHaveAttribute("href", "/login");
+  expect(cta).toHaveAttribute("href", "/signin");
 });
 
 it("bento features section has exactly 5 cells", () => {

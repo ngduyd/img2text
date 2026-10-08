@@ -310,9 +310,9 @@ it("non-admin is redirected to trang chủ '/'", async () => {
   expect(screen.queryByTestId("tab-users")).not.toBeInTheDocument();
 });
 
-it("me error redirects to /login and renders no tabs", async () => {
+it("me error redirects to /signin and renders no tabs", async () => {
   vi.mocked(api.me).mockRejectedValue(new ApiError("Unauthorized."));
   renderWithRouter(<Admin />, { route: "/admin" });
-  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/login"));
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/signin"));
   expect(screen.queryByTestId("tab-users")).not.toBeInTheDocument();
 });

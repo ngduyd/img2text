@@ -1,0 +1,13 @@
+# Plan D — Word/DOCX UI + job-status + LLM layout DOCX (spec, user 2026-10-06)
+
+## Yêu cầu user
+- D1: BE spawn kernel Kaggle nhưng chưa update trạng thái job → set running khi spawn (UI thấy "Đang xử lý" thay vì "Chờ xử lý" suốt 6-7 phút); kernel failed/timeout → về queued.
+- D2: JSON từ Kaggle → dùng LLM API `http://localhost:20128/v1`, model `oc/muse-spark-1.3-contributor-free` xử lý tọa độ bbox VLM → xuất **DOCX giữ vị trí khối** (word trước, markdown sau — markdown export sẵn có giữ nguyên).
+- D3: Trang mẫu `/word` — nhập URL (hoặc upload) → xem UI trước + vài tools cho Word (preview mammoth, xuất Markdown, xuất DOCX-layout, thống kê heading/styles). Iterate sau.
+- Tách subagent từng lane.
+
+## Decisions
+- D1 (server, small): orchestrator `_spawn_batch_run` → sau push OK: UPDATE job status="running", started_at=now, lease_expires_at=now+kaggle_timeout (reaper không nuốt); kernel failed/timeout/ingest-giveup → status back "queued" + lease NULL. `store_batch_result` guard nới: (status="queued" AND token NULL) OR (status="running" AND token NULL AND lease>now). Tests: spawn sets running+lease; failed→queued; ingest trên running vẫn OK; reaper không requeue (lease dài).
+- D2 (server, on-demand export — KHÔNG dính ingest): extend exports fmt → `docx-layout`: POST /api/jobs/{id}/export {fmt:"docx-layout"} → service `services/llm_docx.py`: (1) build prompt từ result.json (blocks+bbox+page w/h+markdown fallback), (2) httpx POST LLM_BASE_URL(=http://localhost:20128/v1)/chat/completions, model LLM_MODEL, JSON plan {columns, blocks:[{id, col, style}]}, timeout/retry 2, (3) renderer python-docx (dep mới server): cột trái/phải → table 2 cột, heading theo type, table HTML→docx table, ảnh placeholder; store exports/{id}/docx-layout + presign/download giống fmt khác (Literal + content-type map + download route + web export bar button "DOCX (giữ layout)"). LLM down → 502 "Không kết nối LLM máy chủ." Tests: mock httpx LLM (plan fixture), render bytes = zip magic + docx lib open, LLM down→502, auth/owner, download content-type.
+- D3 (web, prototype): route `/word` (nav thêm link "Word" — everyone) + `pages/WordTool.tsx`: input URL (text) + upload docx → mammoth preview (dep đã có) → tools: btn-word-to-md (tải .md từ HTML→md converter tối giản client-side), btn-word-export-docx (POST export docx-layout → tải), stats (đếm h1/h2/h3/tables); testids word-tool, input-word-url, btn-word-*; UI theo DESIGN.md tokens. MVP: URL field load qua fetch có thể CORS-limited → hiển thị inline error (ceiling: demo upload trước, URL server-side fetch để sau).
+- Non-goals: auto-fetch URL server-side (dời sau), LLM prompt tối ưu tinh (iterate), stats dashboard.

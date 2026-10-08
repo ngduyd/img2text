@@ -75,7 +75,7 @@ describe("api client", () => {
     expect(entry.type).toBe("image/jpeg");
   });
 
-  it("401 on non-auth path redirects to /login and still throws ApiError", async () => {
+  it("401 on non-auth path redirects to /signin and still throws ApiError", async () => {
     const assign = stubLocationAssign();
     vi.stubGlobal(
       "fetch",
@@ -84,7 +84,7 @@ describe("api client", () => {
       ),
     );
     await expect(api.listJobs()).rejects.toThrow("Phiên đăng nhập hết hạn.");
-    expect(assign).toHaveBeenCalledWith("/login");
+    expect(assign).toHaveBeenCalledWith("/signin");
   });
 
   it("getJobFile GETs /api/jobs/{id}/file and returns {url}", async () => {

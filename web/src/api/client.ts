@@ -41,9 +41,9 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
       // non-JSON error body → keep generic detail
     }
     // R36: non-auth 401 → session lost, bounce to login. Auth endpoints
-    // (login/register/forgot/reset/refresh/logout) handle their own failures.
+    // (login/signup/forgot/reset/refresh/logout) handle their own failures.
     if (res.status === 401 && !path.startsWith("/api/auth/")) {
-      window.location.assign("/login");
+      window.location.assign("/signin");
     }
     throw new ApiError(detail);
   }
@@ -117,7 +117,7 @@ export const api = {
       } catch {
         // non-JSON error body → keep generic detail
       }
-      if (res.status === 401) window.location.assign("/login");
+      if (res.status === 401) window.location.assign("/signin");
       throw new ApiError(detail);
     }
     return await res.text();
@@ -136,7 +136,7 @@ export const api = {
       } catch {
         // non-JSON error body → keep generic detail
       }
-      if (res.status === 401) window.location.assign("/login");
+      if (res.status === 401) window.location.assign("/signin");
       throw new ApiError(detail);
     }
     return await res.blob();
@@ -154,7 +154,7 @@ export const api = {
       } catch {
         // non-JSON error body → keep generic detail
       }
-      if (res.status === 401) window.location.assign("/login");
+      if (res.status === 401) window.location.assign("/signin");
       throw new ApiError(detail);
     }
     return await res.blob();

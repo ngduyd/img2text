@@ -23,7 +23,7 @@ export default function Reset() {
     setLoading(true);
     try {
       await api.resetPassword(token, password);
-      navigate("/login");
+      navigate("/signin");
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : "Đã xảy ra lỗi.");
     } finally {

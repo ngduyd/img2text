@@ -36,7 +36,7 @@ vi.mock("react-router-dom", async (importOriginal) => {
     ...actual,
     // Wrap the real navigate: <Navigate/> redirects (e.g. /landing → /) must
     // still change the route, while mockNavigate keeps call-target assertions
-    // working. Trailing-undefined args dropped so toHaveBeenCalledWith("/login")
+    // working. Trailing-undefined args dropped so toHaveBeenCalledWith("/signin")
     // keeps matching single-arg calls.
     useNavigate: () => {
       const navigate = actual.useNavigate() as (to: unknown, opts?: unknown) => unknown;
@@ -71,14 +71,14 @@ it("renders app shell with brand and left nav links for logged-out", () => {
   expect(screen.queryByTestId("nav-link-admin")).not.toBeInTheDocument();
 });
 
-it("/ renders Landing publicly (hero H1 + CTA to /login)", async () => {
+it("/ renders Landing publicly (hero H1 + CTA to /signin)", async () => {
   vi.mocked(api.me).mockRejectedValue(new ApiError("Unauthorized."));
   render(<App />);
   expect(await screen.findByTestId("landing-hero")).toBeInTheDocument();
   expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
     "Biến ảnh và PDF thành văn bản sửa được",
   );
-  expect(screen.getByTestId("landing-cta")).toHaveAttribute("href", "/login");
+  expect(screen.getByTestId("landing-cta")).toHaveAttribute("href", "/signin");
 });
 
 it("/jobs renders the Jobs list (empty-state)", async () => {
@@ -191,7 +191,7 @@ it("logged-in user sees nav-link-jobs, NOT nav-link-admin", async () => {
   await waitFor(() => expect(screen.queryByTestId("nav-link-admin")).not.toBeInTheDocument());
 });
 
-it("logged-in user sees btn-logout in dropdown; click calls api.logout and navigates to /login", async () => {
+it("logged-in user sees btn-logout in dropdown; click calls api.logout and navigates to /signin", async () => {
   vi.mocked(api.me).mockResolvedValue({ id: 1, email: "user@x.io", role: "user", ocr_enabled: true } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   vi.mocked(api.logout).mockResolvedValue({});
@@ -200,7 +200,7 @@ it("logged-in user sees btn-logout in dropdown; click calls api.logout and navig
   expect(screen.getByTestId("btn-logout")).toBeInTheDocument();
   await userEvent.click(screen.getByTestId("btn-logout"));
   await waitFor(() => expect(api.logout).toHaveBeenCalled());
-  expect(mockNavigate).toHaveBeenCalledWith("/login");
+  expect(mockNavigate).toHaveBeenCalledWith("/signin");
 });
 
 it("btn-profile inside dropdown links to /profile placeholder route", async () => {

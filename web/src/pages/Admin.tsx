@@ -29,7 +29,7 @@ export default function Admin() {
 
   // Unauthenticated /api/auth/me → 401; send to login, not a blank page.
   useEffect(() => {
-    if (isError) navigate("/login");
+    if (isError) navigate("/signin");
   }, [isError, navigate]);
 
   useEffect(() => {

@@ -144,7 +144,7 @@ export default function Landing() {
             Tải lên, chọn trang, cắt vùng, xuất MD, DOCX, PDF. Chạy trên Colab miễn phí.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-4">
-            <Link to="/login" data-testid="landing-cta" className={buttonClasses("primary", "md")}>
+            <Link to="/signin" data-testid="landing-cta" className={buttonClasses("primary", "md")}>
               Bắt đầu
             </Link>
             <a href="#how" className="text-accent hover:underline">
@@ -229,7 +229,7 @@ export default function Landing() {
         <Reveal>
           <h2 className="text-2xl font-semibold md:text-3xl">Tải ảnh đầu tiên của bạn</h2>
           <div className="mt-8">
-            <Link to="/login" className={buttonClasses("primary", "md")}>
+            <Link to="/signin" className={buttonClasses("primary", "md")}>
               Bắt đầu
             </Link>
           </div>
