@@ -232,6 +232,10 @@ class RuntimeSettingsPut(BaseModel):
     kaggle_min_gap_seconds: int | None = None
     # read-only in the API — mode flip needs a restart (half-applied state)
     kaggle_mode: str | None = None
+    llm_base_url: str | None = None
+    llm_model: str | None = None
+    proofread_llm_model: str | None = None
+    llm_api_key: str | None = None
 
 async def _runtime_settings(session_factory) -> dict:
     return {
@@ -281,6 +285,15 @@ async def put_settings(
         if value is not None and value < floor:
             raise HTTPException(status_code=422, detail=message)
     for key in _SETTING_FLOORS:
+        value = getattr(body, key)
+        if value is None:
+            continue
+        row = await session.get(Setting, key)
+        if row is None:
+            session.add(Setting(key=key, value=str(value)))
+        else:
+            row.value = str(value)
+    for key in ("llm_base_url", "llm_model", "proofread_llm_model", "llm_api_key"):
         value = getattr(body, key)
         if value is None:
             continue

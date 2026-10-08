@@ -194,6 +194,21 @@ async def test_run_proofread_garbage_json_warns_and_returns_zero(
         assert await run_proofread(db_session, job) == 0
     assert any("proofread" in rec.getMessage() for rec in caplog.records)
 
+async def test_run_proofread_reads_db_model_override(
+    monkeypatch, db_session, done_job_with_result
+):
+    """DB Setting row for proofread_llm_model wins over env default."""
+    from app.core.models import Setting
+    db_session.add(Setting(key="proofread_llm_model", value="db-proofread-model"))
+    await db_session.commit()
+    calls = fake_llm(
+        monkeypatch,
+        [_llm_response([{"phrase": "chào", "suggestion": "chao", "reason": "dấu"}])],
+    )
+    job = await _job(db_session, done_job_with_result)
+    await run_proofread(db_session, job)
+    assert calls[0][1]["model"] == "db-proofread-model"
+
 async def test_run_proofread_no_result_returns_zero(db_session, done_job_with_result):
     job = await _job(db_session, done_job_with_result)
     job.result = None

@@ -20,6 +20,8 @@ from collections import Counter
 import httpx
 
 from app.core.config import settings
+from app.core.db import SessionLocal
+from app.services.runtime_settings import get_runtime_setting
 
 logger = logging.getLogger(__name__)
 
@@ -146,11 +148,11 @@ def _parse(content: str) -> str:
         raise LLMMdError('phản hồi thiếu khóa "markdown"')
     return data["markdown"]
 
-def _log_call(endpoint: str, n_blocks: int, started: float) -> None:
+def _log_call(endpoint: str, model: str, n_blocks: int, started: float) -> None:
     """One INFO line per LLM POST — never log prompt/content (security)."""
     logger.info(
         "llm called: fmt=md-layout model=%s endpoint=%s blocks=%d elapsed=%.1fs",
-        settings.llm_model,
+        model,
         endpoint,
         n_blocks,
         round(time.perf_counter() - started, 1),
@@ -158,8 +160,11 @@ def _log_call(endpoint: str, n_blocks: int, started: float) -> None:
 
 async def _markdown(blocks: list[dict]) -> str:
     """POST chat/completions; 1 retry (drops response_format when rejected)."""
+    model = await get_runtime_setting(SessionLocal, "llm_model", settings.llm_model)
+    base_url = await get_runtime_setting(SessionLocal, "llm_base_url", settings.llm_base_url)
+    api_key = await get_runtime_setting(SessionLocal, "llm_api_key", settings.llm_api_key)
     payload: dict = {
-        "model": settings.llm_model,
+        "model": model,
         "messages": [
             {
                 "role": "user",
@@ -171,10 +176,10 @@ async def _markdown(blocks: list[dict]) -> str:
         "temperature": 0,
         "response_format": {"type": "json_object"},
     }
-    url = settings.llm_base_url.rstrip("/") + "/chat/completions"
+    url = base_url.rstrip("/") + "/chat/completions"
     headers = (
-        {"Authorization": f"Bearer {settings.llm_api_key}"}
-        if settings.llm_api_key
+        {"Authorization": f"Bearer {api_key}"}
+        if api_key
         else {}  # empty key = no auth header (local compatible)
     )
     async with httpx.AsyncClient(timeout=settings.llm_timeout) as client:
@@ -183,12 +188,12 @@ async def _markdown(blocks: list[dict]) -> str:
             try:
                 resp = await client.post(url, json=payload, headers=headers)
             except httpx.HTTPError as exc:
-                _log_call(url, len(blocks), started)  # failed call: still observable
+                _log_call(url, model, len(blocks), started)  # failed call: still observable
                 logger.warning("llm call failed: fmt=md-layout error=%s", exc)
                 if attempt:
                     raise LLMMdError(f"LLM không phản hồi: {exc}") from exc
                 continue  # retry 1
-            _log_call(url, len(blocks), started)
+            _log_call(url, model, len(blocks), started)
             if resp.status_code < 400:
                 try:
                     content = resp.json()["choices"][0]["message"]["content"]

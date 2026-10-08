@@ -19,6 +19,10 @@ RUNTIME_SETTING_KEYS = (
     "kaggle_min_queue",
     "kaggle_min_gap_seconds",
     "kaggle_mode",
+    "llm_base_url",
+    "llm_model",
+    "proofread_llm_model",
+    "llm_api_key",
 )
 
 def _parse(value: str, default):

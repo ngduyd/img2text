@@ -151,6 +151,39 @@ async def test_llm_docx_no_auth_header_key_empty(monkeypatch, VALID_RESULT_JSONB
     await build_layout_docx(VALID_RESULT_JSONB, [(800, 600)])
     assert "Authorization" not in calls[0][2]
 
+async def test_build_layout_docx_reads_db_model_override(
+    monkeypatch, VALID_RESULT_JSONB, db_session
+):
+    """DB Setting row for llm_model wins over env default."""
+    from app.core.models import Setting
+    db_session.add(Setting(key="llm_model", value="db-override-model"))
+    await db_session.commit()
+    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
+    await build_layout_docx(VALID_RESULT_JSONB, [(800, 600)])
+    assert calls[0][1]["model"] == "db-override-model"
+
+async def test_build_layout_docx_reads_db_base_url_override(
+    monkeypatch, VALID_RESULT_JSONB, db_session
+):
+    """DB Setting row for llm_base_url wins over env default."""
+    from app.core.models import Setting
+    db_session.add(Setting(key="llm_base_url", value="http://db-llm:9999/v1"))
+    await db_session.commit()
+    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
+    await build_layout_docx(VALID_RESULT_JSONB, [(800, 600)])
+    assert calls[0][0].startswith("http://db-llm:9999/v1")
+
+async def test_build_layout_docx_reads_db_api_key_override(
+    monkeypatch, VALID_RESULT_JSONB, db_session
+):
+    """DB Setting row for llm_api_key wins over env default."""
+    from app.core.models import Setting
+    db_session.add(Setting(key="llm_api_key", value="sk-db-key"))
+    await db_session.commit()
+    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
+    await build_layout_docx(VALID_RESULT_JSONB, [(800, 600)])
+    assert calls[0][2] == {"Authorization": "Bearer sk-db-key"}
+
 async def test_build_layout_docx_llm_down_raises(
     monkeypatch, VALID_RESULT_JSONB, caplog
 ):

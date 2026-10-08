@@ -48,6 +48,10 @@ const SETTINGS: AdminSettings = {
   kaggle_min_queue: { value: 1, source: "db" },
   kaggle_min_gap_seconds: { value: 600, source: "env" },
   kaggle_mode: { value: "batch", source: "env" },
+  llm_base_url: { value: "http://localhost:20128/v1", source: "env" },
+  llm_model: { value: "oc/muse-spark-1.3-contributor-free", source: "env" },
+  proofread_llm_model: { value: "oc/fledge-alpha-free", source: "env" },
+  llm_api_key: { value: "", source: "env" },
 };
 
 const adminMe = { id: 1, role: "admin", ocr_enabled: true } as User;
@@ -142,6 +146,49 @@ it("server-side floor error maps inline + error toast", async () => {
   expect(toast.error).toHaveBeenCalledWith(
     "kaggle_min_gap_seconds phải từ 60 giây trở lên.",
   );
+});
+
+it("renders LLM string fields with source badges", async () => {
+  vi.mocked(api.getAdminSettings).mockResolvedValue(SETTINGS);
+  renderPage(<AdminSettingsPage />);
+  await waitFor(() =>
+    expect(screen.getByTestId("input-llm-base-url")).toHaveValue(
+      "http://localhost:20128/v1",
+    ),
+  );
+  expect(screen.getByTestId("input-llm-model")).toHaveValue(
+    "oc/muse-spark-1.3-contributor-free",
+  );
+  expect(screen.getByTestId("input-proofread-llm-model")).toHaveValue(
+    "oc/fledge-alpha-free",
+  );
+  expect(screen.getByTestId("source-llm-base-url")).toHaveTextContent("env");
+  expect(screen.getByTestId("source-llm-model")).toHaveTextContent("env");
+  expect(screen.getByTestId("source-proofread-llm-model")).toHaveTextContent("env");
+});
+
+it("save sends LLM string values via PUT", async () => {
+  vi.mocked(api.getAdminSettings).mockResolvedValue(SETTINGS);
+  vi.mocked(api.putAdminSettings).mockResolvedValue({
+    ...SETTINGS,
+    llm_model: { value: "custom-model", source: "db" },
+  });
+  renderPage(<AdminSettingsPage />);
+  await waitFor(() =>
+    expect(screen.getByTestId("input-llm-model")).toHaveValue(
+      "oc/muse-spark-1.3-contributor-free",
+    ),
+  );
+  const user = userEvent.setup();
+  await user.clear(screen.getByTestId("input-llm-model"));
+  await user.type(screen.getByTestId("input-llm-model"), "custom-model");
+  await user.click(screen.getByTestId("btn-save-settings"));
+  await waitFor(() =>
+    expect(api.putAdminSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ llm_model: "custom-model" }),
+    ),
+  );
+  expect(toast.success).toHaveBeenCalledWith("Đã lưu.");
 });
 
 it("tab-settings renders the settings form (Admin rail)", async () => {
