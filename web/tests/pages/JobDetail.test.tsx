@@ -19,6 +19,7 @@ vi.mock("../../src/api/client", async (importOriginal) => {
       ...actual.api,
       getJob: vi.fn(),
       retryJob: vi.fn(),
+      retryLayout: vi.fn(),
       exportJob: vi.fn(),
       downloadExport: vi.fn(),
     },
@@ -150,6 +151,22 @@ it("retry failure shows retry-error with server detail", async () => {
   const user = userEvent.setup();
   await user.click(screen.getByTestId("btn-retry"));
   expect(await screen.findByTestId("retry-error")).toHaveTextContent("Forbidden.");
+});
+
+it("done without layout_cache shows retry-layout button and calls api", async () => {
+  mockJob({ ...DONE_JOB, layout_cache: { md: false, docx: false } });
+  vi.mocked(api.retryLayout).mockResolvedValue({ md: true, docx: true });
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByTestId("btn-retry-layout"));
+  expect(api.retryLayout).toHaveBeenCalledWith("5");
+});
+
+it("done with layout_cache hides retry-layout button", async () => {
+  mockJob({ ...DONE_JOB, layout_cache: { md: true, docx: true } });
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await screen.findByTestId("md-editor");
+  expect(screen.queryByTestId("btn-retry-layout")).not.toBeInTheDocument();
 });
 
 it("done stops polling", async () => {

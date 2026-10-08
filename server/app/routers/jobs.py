@@ -487,6 +487,31 @@ async def retry_job(
     # ORM instance not expired (expire_on_commit=False): return known values
     return {"id": id, "status": "queued"}
 
+# --- Retry layout gen: POST /api/jobs/{id}/retry-layout (LLM re-run) ---
+
+@router.post("/api/jobs/{id}/retry-layout")
+async def retry_layout(
+    id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> dict:
+    """Re-run layout gen (md-layout + docx-layout) for a done job.
+
+    Layout gen is post-OCR fire-and-forget: works regardless of job
+    status, no 409 gate. Each format is independent inside
+    auto_generate_output (one failing logs a warning, the other still
+    generates). Returns which layouts exist after the attempt.
+    """
+    job = await _job_or_403(session, id, user)
+    # lazy import: exports → jobs (cycle if eager)
+    from app.routers.exports import auto_generate_output
+    await auto_generate_output(job, storage)
+    return {
+        "md": await storage.exists(f"exports/{id}/md-layout"),
+        "docx": await storage.exists(f"exports/{id}/docx-layout"),
+    }
+
 # --- Plan proofread: gợi ý sửa lỗi OCR (LLM best-effort, user quyết định) ---
 
 def _suggestion_out(s: OcrSuggestion) -> dict:
