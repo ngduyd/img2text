@@ -94,7 +94,7 @@ it("hosts unified editor + issues (Plan M gộp MarkdownEditor/PreviewTabs)", as
   renderPanel();
   expect(screen.getByTestId("panel-result")).toBeInTheDocument();
   expect(await screen.findByTestId("panel-editor")).toBeInTheDocument();
-  expect(await screen.findByTestId("preview-markdown")).toBeInTheDocument();
+  expect(await screen.findByTestId("md-editor")).toBeInTheDocument();
   expect(await screen.findByTestId("issue-a4")).toBeInTheDocument();
   // R51: các testid editor cũ (md-source-preview/md-edit-hint, btn-edit) gỡ theo Plan M
   expect(screen.queryByTestId("btn-edit")).toBeNull();

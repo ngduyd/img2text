@@ -1,4 +1,4 @@
-/** Style preview partag (DocStyleTools + MarkdownPreview + UnifiedEditor): css builder + inject. */
+/** Style preview partag (DocStyleTools + UnifiedEditor): css builder + inject. */
 
 import type { LayoutStyle } from "../api/types";
 
@@ -55,17 +55,10 @@ export function scopeWordPaneCss(css: string): string {
   return `.word-doc { ${css.replace(/\bbody\b/g, "&")} }`;
 }
 
-/** Chèn style tag (id word-style) vào HTML đã sanitize — không đụng nội dung gốc. */
-export function withStyle(html: string, css: string): string {
-  const tag = `<style id="word-style">${css}</style>`;
-  if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => `${m}${tag}`);
-  return tag + html;
-}
-
 /**
  * Plan M: job.layout_style (hoặc state tools word) → 1 body rule. Dùng cho
- * md iframe (override client theo contract M1) + wordCss của DocStyleTools
- * (một builder duy nhất, khớp enum keys server).
+ * md preview (override client theo contract M1, scope `.md-pane .w-md-editor-preview`
+ * trong UnifiedEditor) + wordCss của DocStyleTools (một builder duy nhất, khớp enum keys server).
  */
 export function buildLayoutStyleCss(style: LayoutStyle | null | undefined): string {
   if (!style) return "";

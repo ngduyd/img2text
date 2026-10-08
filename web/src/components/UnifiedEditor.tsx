@@ -1,7 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
+import MDEditor from "@uiw/react-md-editor";
 import DOMPurify from "dompurify";
 import * as mammoth from "mammoth";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RefObject } from "react";
 import { toast } from "sonner";
 import { api } from "../api/client";
@@ -9,11 +10,7 @@ import type { Job, LayoutStyle } from "../api/types";
 import { buildLayoutStyleCss } from "../lib/docStyle";
 import { mapApiError } from "../lib/errors";
 import DocStyleTools from "./DocStyleTools";
-import MdToolbar from "./editor/MdToolbar";
-import type { MdFormatOp, MdHistory } from "./editor/mdFormat";
-import { applyMdOp } from "./editor/mdFormat";
 import WordEditor from "./editor/WordEditor";
-import MarkdownPreview from "./MarkdownPreview";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
 import Card from "./ui/Card";
@@ -25,8 +22,9 @@ const FMT: Record<Mode, "md-layout" | "docx-layout"> = { md: "md-layout", word: 
 
 /**
  * Plan M region "Soạn thảo" (gộp card "Tài liệu" + MarkdownEditor cũ; R51:
- * testids preview-markdown/preview-docx-frame giữ, tabs preview-md/preview-docx,
- * panel-docs, md-source-preview/md-edit-hint, btn-llm-layout-* gỡ).
+ * testids preview-docx-frame giữ, tabs preview-md/preview-docx, panel-docs,
+ * md-source-preview/md-edit-hint, btn-llm-layout-* gỡ; M5: md mode dùng
+ * @uiw/react-md-editor — iframe preview-markdown + MdToolbar/btn-edit-source gỡ).
  *
  * Flow per mode: exportJob(fmt) → downloadExport(fmt) → render. exportJob TỰ
  * gọi LLM khi layout_cache miss, cache-hit trả về nhanh không tốn LLM, nên
@@ -59,16 +57,21 @@ export default function UnifiedEditor({
   const [docxHtml, setDocxHtml] = useState<string | null>(null);
   const [loaded, setLoaded] = useState({ md: false, word: false });
   const [error, setError] = useState<{ mode: Mode; message: string } | null>(null);
-  // Md source edit (handleFormat pattern từ MarkdownEditor cũ, nguồn = md-layout).
-  const [history, setHistory] = useState<MdHistory>({ past: [], future: [] });
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   // Word style: css bắn vào iframe sống, styleMap là bản PUT layout-style.
   const [baseCss, setBaseCss] = useState("");
   const [wordCss, setWordCss] = useState("");
   const [styleMap, setStyleMap] = useState<LayoutStyle | null>(null);
 
-  // layout_style đã lưu → client CSS cho md iframe (word iframe tái tạo từ tools hydrate).
+  // layout_style đã lưu → client CSS cho md preview (word iframe tái tạo từ tools hydrate).
   const savedCss = useMemo(() => buildLayoutStyleCss(job.layout_style), [job.layout_style]);
+  /*
+   * Contract M1: md mode không còn iframe → scope rule `body {…}` xuống preview
+   * pane của MDEditor (.w-md-editor-preview), không leak toolbar/trang.
+   */
+  const mdPaneCss = useMemo(
+    () => savedCss.replace(/^body\b/, ".md-pane .w-md-editor-preview"),
+    [savedCss],
+  );
 
   const runFlow = useCallback(
     async (m: Mode) => {
@@ -167,19 +170,6 @@ export default function UnifiedEditor({
     }
   };
 
-  /** Toolbar → applyMdOp (contract Edit2) → setValue + khôi phục selection sau render (rAF). */
-  const handleFormat = (op: MdFormatOp, arg?: string) => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const res = applyMdOp(mdText, ta.selectionStart, ta.selectionEnd, op, history, arg);
-    setMdText(res.value);
-    setHistory({ past: res.past, future: res.future });
-    requestAnimationFrame(() => {
-      ta.focus();
-      ta.setSelectionRange(res.start, res.end);
-    });
-  };
-
   const cached = (job.layout_cache ?? { md: false, docx: false })[
     activeMode === "md" ? "md" : "docx"
   ];
@@ -219,17 +209,6 @@ export default function UnifiedEditor({
             <Badge testid="layout-badge" tone={cached ? "success" : "neutral"}>
               {cached ? "Layout đã lưu" : "Layout chưa lưu"}
             </Badge>
-            {activeMode === "md" && (
-              <Button
-                testid="btn-edit-source"
-                variant="secondary"
-                size="sm"
-                aria-pressed={editing}
-                onClick={() => onEditingChange(!editing)}
-              >
-                Chỉnh sửa nguồn
-              </Button>
-            )}
           </div>
         </div>
         {displayError !== null && (
@@ -264,28 +243,22 @@ export default function UnifiedEditor({
             <p className="text-sm text-muted">Đang vẽ layout bằng LLM…</p>
           </div>
         ) : activeMode === "md" ? (
-          editing ? (
-            <div>
-              <MdToolbar onFormat={handleFormat} />
-              <textarea
-                ref={textareaRef}
-                data-testid="textarea-markdown"
-                value={mdText}
-                onChange={(e) => setMdText(e.target.value)}
-                aria-label="Nguồn Markdown (md-layout)"
-                className="mb-2 mt-2 h-64 w-full rounded-md border border-border bg-surface p-2 font-mono text-sm leading-[1.6] text-text"
-              />
+          /*
+           * Plan M5: MDEditor (uiw) — toolbar built-in + preview split (live)
+           * mặc định, luôn show (bỏ toggle btn-edit-source); onChange → mdText.
+           * ponytail: preview uiw KHÔNG sanitize HTML thô (rehype-raw) — md chỉ
+           * từ artifact VLM/self input cùng origin (self-XSS); upgrade khi cần:
+           * previewOptions.rehypePlugins + rehype-sanitize.
+           */
+          <div data-testid="md-editor" className="md-pane">
+            <style>{mdPaneCss}</style>
+            <MDEditor value={mdText} onChange={(v) => setMdText(v ?? "")} height="24rem" />
+            <div className="mt-3 flex justify-end border-t border-border pt-3">
               <Button testid="btn-save-layout" onClick={() => void saveLayout()}>
                 Lưu
               </Button>
             </div>
-          ) : (
-            <MarkdownPreview
-              markdown={mdText}
-              css={savedCss}
-              className="h-96 w-full rounded-md border border-border"
-            />
-          )
+          </div>
         ) : (
           <>
             {docxHtml !== null && (

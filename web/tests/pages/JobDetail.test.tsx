@@ -155,7 +155,7 @@ it("retry failure shows retry-error with server detail", async () => {
 it("done stops polling", async () => {
   mockJob({ id: 5, status: "done", result: EMPTY_RESULT } as Job);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  expect(await screen.findByTestId("preview-markdown")).toBeInTheDocument();
+  expect(await screen.findByTestId("md-editor")).toBeInTheDocument();
   expect(pollSpyCalled()).toBe(false);
 });
 
@@ -253,9 +253,10 @@ it("header: back link, title, badge, actions in one row (adjust-only)", async ()
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   expect(await screen.findByTestId("link-back-jobs")).toHaveAttribute("href", "/jobs");
-  expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-    "Chi tiết công việc #5",
-  );
+  // name scope: preview MDEditor inline (M5) cũng render heading từ md artifact
+  expect(
+    screen.getByRole("heading", { level: 1, name: "Chi tiết công việc #5" }),
+  ).toBeInTheDocument();
   // JD2: output badge moved to rail meta; header keeps status badge
   expect(screen.getByTestId("job-header")).toContainElement(
     screen.getByTestId("btn-edit-doc"),
@@ -264,7 +265,7 @@ it("header: back link, title, badge, actions in one row (adjust-only)", async ()
 });
 
 /** JD2 amendment: btn-edit-doc = inline edit TRÊN trang (không navigate /edit). */
-it("btn-edit-doc toggles inline edit: scroll + focus textarea, no navigation", async () => {
+it("btn-edit-doc toggles inline edit: scroll + focus MDEditor textarea, no navigation", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   const user = userEvent.setup();
@@ -274,14 +275,14 @@ it("btn-edit-doc toggles inline edit: scroll + focus textarea, no navigation", a
   expect(mockNavigate).not.toHaveBeenCalled();
   expect(btn).toHaveAttribute("aria-pressed", "true");
   expect(btn).toHaveTextContent("Đang sửa");
-  const ta = await screen.findByTestId("textarea-markdown");
-  expect(ta).toHaveFocus();
+  const editor = await screen.findByTestId("md-editor");
+  expect(editor.querySelector("textarea")).toHaveFocus();
   expect(scrollIntoViewMock).toHaveBeenCalledTimes(1);
   expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
-  // toggle lần 2 → đóng source edit + scroll về vùng Soạn thảo (panel-editor)
+  // toggle lần 2 → tắt editing; MDEditor luôn hiển thị trong md mode (M5)
   await user.click(screen.getByTestId("btn-edit-doc"));
-  expect(screen.queryByTestId("textarea-markdown")).toBeNull();
   expect(btn).toHaveAttribute("aria-pressed", "false");
+  expect(screen.getByTestId("md-editor")).toBeInTheDocument();
   expect(screen.getByTestId("panel-editor")).toBeInTheDocument();
   expect(scrollIntoViewMock).toHaveBeenCalledTimes(2);
   expect(mockNavigate).not.toHaveBeenCalled();
@@ -296,8 +297,8 @@ it("layout: 2-column grid, reading col + rail with file/meta/export/info", async
   expect(grid.className).toContain("lg:grid-cols-[minmax(0,1fr)_320px]");
   const reading = screen.getByTestId("detail-reading");
   expect(reading).toContainElement(screen.getByTestId("panel-result"));
-  // Plan M: content area nằm trong panel-editor (fetch artifact xong mới render)
-  expect(await screen.findByTestId("preview-markdown")).toBeInTheDocument();
+  // Plan M: content area nằm trong panel-editor (fetch artifact xong mới render; M5: MDEditor)
+  expect(await screen.findByTestId("md-editor")).toBeInTheDocument();
   expect(reading).toContainElement(screen.getByTestId("panel-editor"));
   const rail = screen.getByTestId("detail-rail");
   expect(rail).toContainElement(screen.getByTestId("panel-original"));

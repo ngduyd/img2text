@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -53,7 +53,7 @@ const JOB: Job = {
   layout_style: null,
 };
 
-/** Harness có state editing thật (btn-edit-source toggle như JobDetail control). */
+/** Harness có state editing thật (btn-edit-doc header toggle như JobDetail control). */
 function Harness({ job, markdown = "# Artifact" }: { job: Job; markdown?: string }) {
   const [editing, setEditing] = useState(false);
   const [client] = useState(
@@ -98,8 +98,8 @@ it("md cache miss: exportJob md-layout + layout-loading spinner → content rend
   expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout chưa lưu");
   expect(api.exportJob).toHaveBeenCalledWith("5", "md-layout");
   await act(async () => release?.());
-  const frame = await screen.findByTestId("preview-markdown");
-  expect(frame.getAttribute("srcdoc") ?? "").toContain("Mới từ LLM");
+  const editor = await screen.findByTestId("md-editor");
+  await waitFor(() => expect(editor.querySelector("textarea")?.value).toContain("Mới từ LLM"));
   expect(screen.queryByTestId("layout-loading")).toBeNull();
 });
 
@@ -107,14 +107,15 @@ it("md cache hit (layout_cache.md=true): badge đã lưu + exportJob/downloadExp
   vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["# Cached"]));
   render(<Harness job={{ ...JOB, layout_cache: { md: true, docx: true } }} />);
   expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout đã lưu");
-  const frame = await screen.findByTestId("preview-markdown");
+  const editor = await screen.findByTestId("md-editor");
   expect(api.exportJob).toHaveBeenCalledWith("5", "md-layout");
   expect(api.downloadExport).toHaveBeenCalledWith("5", "md-layout");
-  // renderMarkdown sanitize contract (preview-markdown giữ nguyên testid, R51)
-  expect(frame.getAttribute("srcdoc") ?? "").toContain("<h1");
+  // value wiring: md-layout vào MDEditor + preview split render heading
+  await waitFor(() => expect(editor.querySelector("textarea")?.value).toContain("# Cached"));
+  expect(editor.querySelector(".w-md-editor-preview")?.textContent).toContain("Cached");
 });
 
-it("layout_style đã lưu → client CSS vào md iframe (contract M1)", async () => {
+it("layout_style đã lưu → client CSS scope preview pane md (contract M1, M5 không iframe)", async () => {
   render(
     <Harness
       job={{
@@ -124,24 +125,26 @@ it("layout_style đã lưu → client CSS vào md iframe (contract M1)", async (
       }}
     />,
   );
-  const frame = await screen.findByTestId("preview-markdown");
-  const srcdoc = frame.getAttribute("srcdoc") ?? "";
-  expect(srcdoc).toContain('font-family: "Arial"');
-  expect(srcdoc).toContain("text-align: center");
+  const editor = await screen.findByTestId("md-editor");
+  const css = editor.querySelector("style")?.textContent ?? "";
+  expect(css).toContain(".md-pane .w-md-editor-preview");
+  expect(css).toContain('font-family: "Arial"');
+  expect(css).toContain("text-align: center");
 });
 
 it("switch mode: word → exportJob docx-layout + Tiptap editor + word tools; md → toolbar path, không word tools", async () => {
   const user = userEvent.setup();
   render(<Harness job={{ ...JOB, layout_cache: { md: true, docx: false } }} />);
-  await screen.findByTestId("preview-markdown");
+  await screen.findByTestId("md-editor");
   expect(screen.queryByTestId("word-tb-align-center")).not.toBeInTheDocument();
-  expect(screen.getByTestId("btn-edit-source")).toBeInTheDocument();
 
   await user.click(screen.getByTestId("switch-mode-word"));
   await screen.findByTestId("preview-docx-frame");
   expect(api.exportJob).toHaveBeenCalledWith("5", "docx-layout");
   expect(screen.getByTestId("word-tb-align-center")).toBeInTheDocument();
-  expect(screen.queryByTestId("btn-edit-source")).not.toBeInTheDocument();
+  // M5: md node unmount khi sang word (không rò)
+  expect(screen.queryByTestId("md-editor")).toBeNull();
+  expect(screen.queryByTestId("btn-save-layout")).toBeNull();
   // Plan M3: hint "Sửa chữ ở dạng Markdown" BỎ + content toolbar single-row + nút Lưu.
   expect(screen.queryByText("Sửa chữ ở dạng Markdown.")).toBeNull();
   expect(screen.getByTestId("word-toolbar")).toBeInTheDocument();
@@ -157,7 +160,7 @@ it("switch mode: word → exportJob docx-layout + Tiptap editor + word tools; md
 
   const mdCalls = vi.mocked(api.exportJob).mock.calls.filter((c) => c[1] === "md-layout").length;
   await user.click(screen.getByTestId("switch-mode-md"));
-  expect(screen.getByTestId("preview-markdown")).toBeInTheDocument();
+  expect(screen.getByTestId("md-editor")).toBeInTheDocument();
   expect(screen.queryByTestId("word-tb-align-center")).not.toBeInTheDocument();
   // đã load rồi → không chạy lại flow md
   expect(vi.mocked(api.exportJob).mock.calls.filter((c) => c[1] === "md-layout").length).toBe(
@@ -172,21 +175,16 @@ it("default mode = word khi output_format docx (binding)", async () => {
   expect(api.exportJob).toHaveBeenCalledWith("5", "docx-layout");
 });
 
-it("md source: btn-edit-source → MdToolbar + textarea; handleFormat bold; Lưu → putMdLayoutContent + toast", async () => {
+it("M5: md mode = MDEditor (value/onChange wiring); Lưu → putMdLayoutContent + toast", async () => {
   const user = userEvent.setup();
   render(<Harness job={JOB} />);
-  await screen.findByTestId("preview-markdown");
-  await user.click(screen.getByTestId("btn-edit-source"));
-  const ta = (await screen.findByTestId("textarea-markdown")) as HTMLTextAreaElement;
-  expect(screen.getByTestId("md-tb-bold")).toBeInTheDocument();
-  // handleFormat pattern (applyMdOp): bold quanh selection
-  ta.setSelectionRange(0, 3);
-  await user.click(screen.getByTestId("md-tb-bold"));
-  expect((screen.getByTestId("textarea-markdown") as HTMLTextAreaElement).value).toContain(
-    "**# A**",
-  );
+  const editor = await screen.findByTestId("md-editor");
+  const ta = editor.querySelector("textarea") as HTMLTextAreaElement;
+  expect(ta.value).toBe("# Artifact");
+  fireEvent.change(ta, { target: { value: "# Đã sửa" } });
+  expect(ta.value).toBe("# Đã sửa");
   await user.click(screen.getByTestId("btn-save-layout"));
-  expect(api.putMdLayoutContent).toHaveBeenCalledWith("5", "**# A**rtifact");
+  expect(api.putMdLayoutContent).toHaveBeenCalledWith("5", "# Đã sửa");
   expect(toast.success).toHaveBeenCalledWith("Đã lưu.");
 });
 
@@ -222,7 +220,7 @@ it("flow lỗi → layout-error + btn-retry-layout + toast.error; retry chạy l
   expect(await screen.findByTestId("layout-error")).toHaveTextContent("LLM lỗi.");
   expect(toast.error).toHaveBeenCalledWith("LLM lỗi.");
   await user.click(screen.getByTestId("btn-retry-layout"));
-  expect(await screen.findByTestId("preview-markdown")).toBeInTheDocument();
+  expect(await screen.findByTestId("md-editor")).toBeInTheDocument();
   expect(screen.queryByTestId("layout-error")).toBeNull();
 });
 
@@ -304,13 +302,10 @@ it("Plan M3: docx_html cache nhưng GET 404 (null) → fallback mammoth docx-lay
   expect(mammoth.convertToHtml).toHaveBeenCalled();
 });
 
-it("Plan M3 md regression: MdToolbar vẫn 1 hàng (overflow-x-auto) khi sửa nguồn", async () => {
-  const user = userEvent.setup();
+it("Plan M3 → M5: md mode không còn MdToolbar/textarea hand-rolled (R51 exception theo lệnh dùng thư viện)", async () => {
   render(<Harness job={JOB} />);
-  await screen.findByTestId("preview-markdown");
-  await user.click(screen.getByTestId("btn-edit-source"));
-  await screen.findByTestId("textarea-markdown");
-  const mdToolbar = screen.getByRole("toolbar", { name: "Công cụ Markdown" });
-  expect(mdToolbar).toHaveClass("overflow-x-auto");
-  expect(mdToolbar).not.toHaveClass("flex-wrap");
+  await screen.findByTestId("md-editor");
+  expect(screen.queryByRole("toolbar", { name: "Công cụ Markdown" })).toBeNull();
+  expect(screen.queryByTestId("textarea-markdown")).toBeNull();
+  expect(screen.queryByTestId("btn-edit-source")).toBeNull();
 });
