@@ -106,10 +106,10 @@ export function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () 
       ) : (
         <>
           <Link to="/login" data-testid="btn-login" className={buttonClasses("primary", "sm")}>
-            Đăng nhập
+            Sign in
           </Link>
           <Link to="/register" data-testid="btn-register" className={buttonClasses("ghost", "sm")}>
-            Đăng ký
+            Sign up
           </Link>
         </>
       )}

@@ -122,8 +122,8 @@ it("logged-out auth-zone (RIGHT) has btn-login + btn-register; NO left nav-link-
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   render(<App />);
   const zone = within(await screen.findByTestId("auth-zone"));
-  expect(await screen.findByTestId("btn-login")).toHaveTextContent("Đăng nhập");
-  expect(zone.getByTestId("btn-register")).toHaveTextContent("Đăng ký");
+  expect(await screen.findByTestId("btn-login")).toHaveTextContent("Sign in");
+  expect(zone.getByTestId("btn-register")).toHaveTextContent("Sign up");
   // Removed from left per binding contract — assertion moved here, not deleted.
   expect(screen.queryByTestId("nav-link-login")).not.toBeInTheDocument();
   expect(screen.queryByTestId("btn-logout")).not.toBeInTheDocument();
