@@ -201,3 +201,52 @@ it("loading state renders skeleton rows while the jobs list is pending", async (
   renderWithRouter(<Jobs />);
   expect((await screen.findAllByTestId("skeleton")).length).toBeGreaterThan(0);
 });
+
+it("header shows job stats (total, pending, done)", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({
+    items: [
+      { id: 1, status: "queued", page_count: 1, file_type: "pdf", created_at: "2026-10-04T00:00:00Z", error: null },
+      { id: 2, status: "running", page_count: 2, file_type: "jpg", created_at: "2026-10-04T00:00:00Z", error: null },
+      { id: 3, status: "done", page_count: 3, file_type: "pdf", created_at: "2026-10-04T00:00:00Z", error: null },
+      { id: 4, status: "failed", page_count: 1, file_type: "jpg", created_at: "2026-10-04T00:00:00Z", error: "boom" },
+    ] as Job[],
+    total: 4,
+  });
+  renderWithRouter(<Jobs />);
+  await screen.findByTestId("job-row-4");
+  expect(screen.getByTestId("stats-total")).toHaveTextContent("4");
+  expect(screen.getByTestId("stats-pending")).toHaveTextContent("2");
+  expect(screen.getByTestId("stats-done")).toHaveTextContent("1");
+});
+
+it("toolbar shows format select and filter tabs together", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  renderWithRouter(<Jobs />);
+  await screen.findByTestId("empty-state");
+  expect(screen.getByTestId("select-output-format")).toBeInTheDocument();
+  expect(screen.getByTestId("filter-all")).toBeInTheDocument();
+  expect(screen.getByTestId("filter-done")).toBeInTheDocument();
+});
+
+it("empty state shows CTA hint", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  renderWithRouter(<Jobs />);
+  const empty = await screen.findByTestId("empty-state");
+  expect(empty).toHaveTextContent("Tải file lên để tạo công việc đầu tiên.");
+});
+
+it("job row shows file type icon", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({
+    items: [
+      { id: 7, status: "queued", page_count: 2, file_type: "pdf", created_at: "2026-10-04T00:00:00Z", error: null },
+    ] as Job[],
+    total: 1,
+  });
+  renderWithRouter(<Jobs />);
+  const row = await screen.findByTestId("job-row-7");
+  expect(row.querySelector("svg")).not.toBeNull();
+});

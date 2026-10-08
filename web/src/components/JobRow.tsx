@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
+import { FileText, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../api/client";
 import type { JobListItem } from "../api/types";
@@ -34,20 +35,29 @@ export default function JobRow({ job }: { job: JobListItem }) {
     doneOrFailed && job.started_at && job.finished_at
       ? formatDuration(new Date(job.finished_at).getTime() - new Date(job.started_at).getTime())
       : null;
+  const isPdf = job.file_type === "pdf";
 
   return (
     <li
       data-testid={`job-row-${job.id}`}
-      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors duration-150 ease-out hover:bg-surface-2/50"
     >
-      <div>
-        <span className="font-medium text-text">
-          <span className="font-mono">#{job.id}</span> · {job.file_type === "pdf" ? "PDF" : "Ảnh"} ·{" "}
-          <span className="font-mono">{job.page_count}</span> trang
+      <div className="flex min-w-0 items-center gap-3">
+        <span
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-surface-2/60 text-muted"
+          aria-hidden="true"
+        >
+          {isPdf ? <FileText className="h-4 w-4" /> : <ImageIcon className="h-4 w-4" />}
         </span>
-        <div className="mt-0.5 text-xs text-muted">
-          <span className="font-mono">{DATE_FORMAT.format(new Date(job.created_at))}</span>
-          {duration && <span className="ml-2 font-mono">{duration}</span>}
+        <div className="min-w-0">
+          <span className="block truncate font-medium text-text">
+            <span className="font-mono">#{job.id}</span> · {isPdf ? "PDF" : "Ảnh"} ·{" "}
+            <span className="font-mono">{job.page_count}</span> trang
+          </span>
+          <div className="mt-0.5 text-xs text-muted">
+            <span className="font-mono">{DATE_FORMAT.format(new Date(job.created_at))}</span>
+            {duration && <span className="ml-2 font-mono">{duration}</span>}
+          </div>
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -75,7 +85,7 @@ export default function JobRow({ job }: { job: JobListItem }) {
                 const href = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.href = href;
-                a.download = `job-${job.id}.${blob.type.split("/")[1] || (job.file_type === "pdf" ? "pdf" : "jpg")}`;
+                a.download = `job-${job.id}.${blob.type.split("/")[1] || (isPdf ? "pdf" : "jpg")}`;
                 document.body.appendChild(a);
                 a.click();
                 a.remove();

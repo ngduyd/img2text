@@ -34,7 +34,7 @@ export default function StatusFilterTabs({
   for (const j of items) counts[j.status] += 1;
 
   return (
-    <div className="mb-3 flex flex-wrap gap-1">
+    <div className="flex flex-wrap gap-1">
       {TABS.map(({ key, label }) => (
         <Button
           key={key}
