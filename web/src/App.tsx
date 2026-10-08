@@ -13,9 +13,9 @@ import Admin from "./pages/Admin";
 import JobDetail from "./pages/JobDetail";
 import Jobs from "./pages/Jobs";
 import Landing from "./pages/Landing";
-import Login from "./pages/Login";
+import Signin from "./pages/Signin";
 import Profile from "./pages/Profile";
-import Register from "./pages/Register";
+import Signup from "./pages/Signup";
 import Reset from "./pages/Reset";
 import { mapApiError } from "./lib/errors";
 
@@ -310,8 +310,8 @@ export default function App() {
             richColors
           />
           <Routes>
-            <Route path="/signin" element={<Login />} />
-            <Route path="/signup" element={<Register />} />
+            <Route path="/signin" element={<Signin />} />
+            <Route path="/signup" element={<Signup />} />
             <Route path="/forgot" element={<Forgot />} />
             <Route path="/reset" element={<Reset />} />
             <Route path="/profile" element={<Profile />} />

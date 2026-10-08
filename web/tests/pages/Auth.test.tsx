@@ -7,8 +7,8 @@ import { ApiError, api } from "../../src/api/client";
 import type { User } from "../../src/api/types";
 import { toast } from "sonner";
 import Forgot from "../../src/pages/Forgot";
-import Login from "../../src/pages/Login";
-import Register from "../../src/pages/Register";
+import Signin from "../../src/pages/Signin";
+import Signup from "../../src/pages/Signup";
 import Reset from "../../src/pages/Reset";
 
 export const mockNavigate = vi.fn();
@@ -52,7 +52,7 @@ beforeEach(() => {
 
 it("login button exists and submits credentials", async () => {
   vi.mocked(api.login).mockResolvedValue({} as User);
-  renderWithRouter(<Login />);
+  renderWithRouter(<Signin />);
   await userEvent.type(screen.getByTestId("input-email"), "u@x.io");
   await userEvent.type(screen.getByTestId("input-password"), "secret123");
   await userEvent.click(screen.getByTestId("btn-login"));
@@ -64,7 +64,7 @@ it("login button exists and submits credentials", async () => {
 
 it("login shows server detail error", async () => {
   vi.mocked(api.login).mockRejectedValue(new ApiError("Sai mật khẩu."));
-  renderWithRouter(<Login />);
+  renderWithRouter(<Signin />);
   await userEvent.click(screen.getByTestId("btn-login"));
   expect(await screen.findByText("Sai mật khẩu.")).toBeInTheDocument();
   // R59: failing login also toasts mapped detail.
@@ -73,7 +73,7 @@ it("login shows server detail error", async () => {
 
 it("register button exists and submits", async () => {
   vi.mocked(api.register).mockResolvedValue({} as User);
-  renderWithRouter(<Register />);
+  renderWithRouter(<Signup />);
   await userEvent.click(screen.getByTestId("btn-register"));
   expect(api.register).toHaveBeenCalled();
 });
