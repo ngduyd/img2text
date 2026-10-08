@@ -23,8 +23,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.deps import get_current_user, get_runner_key, require_ocr
 from app.core.limiter import DailyCounter
-from app.core.models import Job, User
+from app.core.models import Job, OcrSuggestion, User
 from app.core.schemas import PreprocessIn, ResultBody
+from app.services import proofread
 from app.services.job_results import store_worker_result
 from app.services.storage import StorageDriver, get_storage
 
@@ -485,6 +486,88 @@ async def retry_job(
     await session.commit()
     # ORM instance not expired (expire_on_commit=False): return known values
     return {"id": id, "status": "queued"}
+
+# --- Plan proofread: gợi ý sửa lỗi OCR (LLM best-effort, user quyết định) ---
+
+def _suggestion_out(s: OcrSuggestion) -> dict:
+    return {
+        "id": s.id,
+        "page_index": s.page_index,
+        "start": s.start,
+        "end": s.end,
+        "original": s.original,
+        "suggestion": s.suggestion,
+        "reason": s.reason,
+        "status": s.status,
+    }
+
+async def _set_suggestion_status(
+    session: AsyncSession, job_id: int, sid: int, status: str
+) -> dict:
+    """Status-only transition — client tự replace trong editor rồi PUT save."""
+    rowcount = (
+        await session.execute(
+            update(OcrSuggestion)
+            .where(OcrSuggestion.id == sid, OcrSuggestion.job_id == job_id)
+            .values(status=status)
+        )
+    ).rowcount
+    if rowcount == 0:
+        raise HTTPException(status_code=404, detail="suggestion not found")
+    await session.commit()
+    return {"status": status}
+
+@router.get("/api/jobs/{id}/suggestions")
+async def list_suggestions(
+    id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict]:
+    """Owner-or-admin: pending trước (mới nhất trước), rồi status khác."""
+    await _job_or_403(session, id, user)
+    rows = (
+        await session.execute(
+            select(OcrSuggestion)
+            .where(OcrSuggestion.job_id == id)
+            .order_by(
+                (OcrSuggestion.status == "pending").desc(),
+                OcrSuggestion.created_at.desc(),
+                OcrSuggestion.id.desc(),
+            )
+        )
+    ).scalars().all()
+    return [_suggestion_out(s) for s in rows]
+
+@router.post("/api/jobs/{id}/suggestions/{sid}/accept")
+async def accept_suggestion(
+    id: int,
+    sid: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    await _job_or_403(session, id, user)
+    return await _set_suggestion_status(session, id, sid, "accepted")
+
+@router.post("/api/jobs/{id}/suggestions/{sid}/reject")
+async def reject_suggestion(
+    id: int,
+    sid: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    await _job_or_403(session, id, user)
+    return await _set_suggestion_status(session, id, sid, "rejected")
+
+@router.post("/api/jobs/{id}/proofread")
+async def proofread_job(
+    id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Nút refresh: chạy lại proofread thủ công → số gợi ý; LLM down → 0."""
+    job = await _job_or_403(session, id, user)
+    count = await proofread.run_proofread(session, job)
+    return {"count": count}
 
 # --- Worker protocol: heartbeat / result / fail (Task 4) ---
 

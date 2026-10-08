@@ -20,6 +20,7 @@ os.environ.setdefault("WEASYPRINT_CACHE_DIR", tempfile.gettempdir())
 
 import boto3
 import httpx
+import pytest
 import pytest_asyncio
 from moto import mock_aws
 from sqlalchemy import select, text, update
@@ -96,6 +97,28 @@ async def app():
             region="us-east-1",
         )
         yield application
+
+@pytest.fixture(autouse=True)
+def proofread_llm_down(monkeypatch):
+    """Proofread fires after every stored /result — keep the suite hermetic:
+    its LLM seam (module-local AsyncClient, bound at import so the global
+    fake_llm patches never reach it) fails fast unless a test fakes it."""
+    from app.services import proofread
+
+    class _Down:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def post(self, url, json=None, headers=None):
+            raise httpx.ConnectError("LLM down (tests default)")
+
+    monkeypatch.setattr(proofread, "AsyncClient", _Down)
 
 @pytest_asyncio.fixture
 async def client(app):

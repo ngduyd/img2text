@@ -10,6 +10,9 @@ Plan D4: after a successful store the chosen `job.output_format` export is
 scheduled fire-and-forget (asyncio.create_task — the /result response and
 the batch ingest must not wait on pandoc/LLM). Any generation failure only
 logs a warning: the job is already done and ExportBar can export by hand.
+
+Plan proofread: `_schedule_proofread` rides the same task set — OCR done →
+LLM proofread best-effort (LLM down → warning, job stays done).
 """
 
 import asyncio
@@ -44,8 +47,25 @@ def _schedule_auto_output(job: Job, storage: StorageDriver) -> None:
     _pending_output.add(task)
     task.add_done_callback(_pending_output.discard)
 
+async def _proofread(job: Job) -> None:
+    try:
+        # own session: request session is closed once the task runs
+        from app.core.db import SessionLocal
+        from app.services import proofread
+        async with SessionLocal() as session:
+            await proofread.run_proofread(session, job)
+    except Exception as exc:
+        # best-effort: proofread failure never affects job status
+        logger.warning("proofread failed job=%s: %s", job.id, exc)
+
+def _schedule_proofread(job: Job) -> None:
+    """Plan proofread: fire-and-forget after OCR (same task-set pattern)."""
+    task = asyncio.create_task(_proofread(job))
+    _pending_output.add(task)
+    task.add_done_callback(_pending_output.discard)
+
 async def drain_auto_output() -> None:
-    """Await every scheduled auto-output task (tests; shutdown hook later)."""
+    """Await every scheduled auto-output + proofread task (tests; shutdown hook later)."""
     while _pending_output:
         await asyncio.gather(*list(_pending_output))
 
@@ -80,6 +100,9 @@ async def _store(
             # identity map may hold the pre-UPDATE instance (expire_on_commit=False)
             await session.refresh(job)
             _schedule_auto_output(job, storage)
+            # Plan proofread: song song auto_output — gợi ý sửa lỗi OCR
+            # (LLM down → warning bên trong run_proofread, job vẫn done).
+            _schedule_proofread(job)
     return True
 
 async def store_worker_result(
