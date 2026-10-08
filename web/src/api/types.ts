@@ -122,4 +122,8 @@ export interface AdminSettingsPut {
   scheduler_interval_seconds?: number;
   kaggle_min_queue?: number;
   kaggle_min_gap_seconds?: number;
+  llm_base_url?: string;
+  llm_model?: string;
+  proofread_llm_model?: string;
+  llm_api_key?: string;
 }

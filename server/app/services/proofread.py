@@ -28,7 +28,9 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.db import SessionLocal
 from app.core.models import Job, OcrSuggestion
+from app.services.runtime_settings import get_runtime_setting
 
 logger = logging.getLogger(__name__)
 
@@ -117,18 +119,21 @@ def _parse(content: str) -> list[dict]:
 
 async def _call_llm(page_text: str, hint: str) -> list[dict]:
     """One chat/completions POST (temperature 0, json_object, Bearer nếu có)."""
+    model = await get_runtime_setting(SessionLocal, "proofread_llm_model", settings.proofread_llm_model)
+    base_url = await get_runtime_setting(SessionLocal, "llm_base_url", settings.llm_base_url)
+    api_key = await get_runtime_setting(SessionLocal, "llm_api_key", settings.llm_api_key)
     payload: dict = {
-        "model": settings.proofread_llm_model,
+        "model": model,
         "messages": [
             {"role": "user", "content": PROMPT.format(hint=hint, text=page_text)}
         ],
         "temperature": 0,
         "response_format": {"type": "json_object"},
     }
-    url = settings.llm_base_url.rstrip("/") + "/chat/completions"
+    url = base_url.rstrip("/") + "/chat/completions"
     headers = (
-        {"Authorization": f"Bearer {settings.llm_api_key}"}
-        if settings.llm_api_key
+        {"Authorization": f"Bearer {api_key}"}
+        if api_key
         else {}  # empty key = no auth header (local compatible)
     )
     async with AsyncClient(timeout=settings.llm_timeout) as client:

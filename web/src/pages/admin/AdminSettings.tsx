@@ -18,6 +18,37 @@ type FieldKey =
   | "kaggle_min_queue"
   | "kaggle_min_gap_seconds";
 
+type StringFieldKey =
+  | "llm_base_url"
+  | "llm_model"
+  | "proofread_llm_model";
+
+const STRING_FIELDS: {
+  key: StringFieldKey;
+  slug: string;
+  label: string;
+  helper: string;
+}[] = [
+  {
+    key: "llm_base_url",
+    slug: "llm-base-url",
+    label: "Địa chỉ LLM",
+    helper: "Endpoint OpenAI-compatible (vd http://localhost:20128/v1).",
+  },
+  {
+    key: "llm_model",
+    slug: "llm-model",
+    label: "Model layout",
+    helper: "Model dùng cho md-layout + docx-layout.",
+  },
+  {
+    key: "proofread_llm_model",
+    slug: "proofread-llm-model",
+    label: "Model kiểm tra từ",
+    helper: "Model dùng cho proofread (gợi ý sửa lỗi OCR).",
+  },
+];
+
 const FIELDS: {
   key: FieldKey;
   slug: string;
@@ -79,7 +110,7 @@ export default function AdminSettings() {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const payload: AdminSettingsPut = {};
-    const next: Partial<Record<FieldKey, string>> = {};
+    const next: Partial<Record<FieldKey | StringFieldKey, string>> = {};
     for (const f of FIELDS) {
       const n = Number.parseInt(String(fd.get(f.key) ?? ""), 10);
       if (!Number.isFinite(n)) {
@@ -88,6 +119,12 @@ export default function AdminSettings() {
         next[f.key] = f.floorMessage;
       } else {
         payload[f.key] = n;
+      }
+    }
+    for (const f of STRING_FIELDS) {
+      const v = String(fd.get(f.key) ?? "").trim();
+      if (v) {
+        payload[f.key] = v;
       }
     }
     setErrors(next);
@@ -126,6 +163,30 @@ export default function AdminSettings() {
                   type="number"
                   inputMode="numeric"
                   min={f.floor}
+                  defaultValue={String(cur?.value ?? "")}
+                  helper={`${f.helper} Hiện tại: ${cur?.value} (${cur?.source}).`}
+                  error={errors[f.key]}
+                />
+              </div>
+              <Badge
+                testid={`source-${f.slug}`}
+                tone={cur?.source === "db" ? "info" : "neutral"}
+              >
+                {cur?.source}
+              </Badge>
+            </div>
+          );
+        })}
+        {STRING_FIELDS.map((f) => {
+          const cur = data[f.key];
+          return (
+            <div key={f.key} className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <Input
+                  label={f.label}
+                  testid={`input-${f.slug}`}
+                  name={f.key}
+                  type="text"
                   defaultValue={String(cur?.value ?? "")}
                   helper={`${f.helper} Hiện tại: ${cur?.value} (${cur?.source}).`}
                   error={errors[f.key]}

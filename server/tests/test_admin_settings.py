@@ -21,6 +21,10 @@ KEYS = (
     "kaggle_min_queue",
     "kaggle_min_gap_seconds",
     "kaggle_mode",
+    "llm_base_url",
+    "llm_model",
+    "proofread_llm_model",
+    "llm_api_key",
 )
 
 # --- GET ---
@@ -67,6 +71,33 @@ async def test_put_unknown_key_422(admin_client):
         "/api/admin/settings", json={"kaggle_min_gape": 60}
     )
     assert r.status_code == 422
+
+async def test_put_llm_string_keys(admin_client):
+    """LLM keys are strings — upsert + effective value returned."""
+    r = await admin_client.put(
+        "/api/admin/settings",
+        json={
+            "llm_base_url": "http://llm.example/v1",
+            "llm_model": "custom-layout-model",
+            "proofread_llm_model": "custom-proofread-model",
+            "llm_api_key": "sk-test-key",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["llm_base_url"] == {"value": "http://llm.example/v1", "source": "db"}
+    assert body["llm_model"] == {"value": "custom-layout-model", "source": "db"}
+    assert body["proofread_llm_model"] == {"value": "custom-proofread-model", "source": "db"}
+    assert body["llm_api_key"] == {"value": "sk-test-key", "source": "db"}
+    # upsert: second PUT rewrites
+    r = await admin_client.put(
+        "/api/admin/settings", json={"llm_model": "another-model"}
+    )
+    assert r.status_code == 200
+    assert r.json()["llm_model"] == {"value": "another-model", "source": "db"}
+    # untouched keys stay env
+    assert r.json()["llm_base_url"]["source"] == "db"
+    assert r.json()["proofread_llm_model"]["source"] == "db"
 
 async def test_put_anon_401(client):
     r = await client.put("/api/admin/settings", json={"kaggle_min_queue": 2})
