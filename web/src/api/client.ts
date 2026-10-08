@@ -1,4 +1,4 @@
-import type { AdminStatsDay, Job, JobListItem, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle } from "./types";
+import type { AdminStatsDay, Job, JobListItem, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion } from "./types";
 
 /** Thrown for any non-2xx response; `detail` mirrors FastAPI {detail} bodies. */
 export class ApiError extends Error {
@@ -183,4 +183,13 @@ export const api = {
   getAdminSettings: () => request<AdminSettings>("/api/admin/settings"),
   putAdminSettings: (body: AdminSettingsPut) =>
     request<AdminSettings>("/api/admin/settings", { method: "PUT", body }),
+  // Plan proofread: gợi ý sửa lỗi OCR (client tự replace + save, server chỉ lưu status).
+  getSuggestions: (id: number | string) =>
+    request<Suggestion[]>(`/api/jobs/${id}/suggestions`),
+  acceptSuggestion: (id: number | string, sid: number) =>
+    request<{ status: string }>(`/api/jobs/${id}/suggestions/${sid}/accept`, { method: "POST" }),
+  rejectSuggestion: (id: number | string, sid: number) =>
+    request<{ status: string }>(`/api/jobs/${id}/suggestions/${sid}/reject`, { method: "POST" }),
+  runProofread: (id: number | string) =>
+    request<{ count: number }>(`/api/jobs/${id}/proofread`, { method: "POST" }),
 };

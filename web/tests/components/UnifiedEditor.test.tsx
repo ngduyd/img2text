@@ -34,6 +34,10 @@ vi.mock("../../src/api/client", async (importOriginal) => {
       putLayoutStyle: vi.fn(),
       getDocxHtml: vi.fn(),
       putDocxHtml: vi.fn(),
+      getSuggestions: vi.fn(),
+      acceptSuggestion: vi.fn(),
+      rejectSuggestion: vi.fn(),
+      runProofread: vi.fn(),
     },
   };
 });
@@ -82,6 +86,8 @@ beforeEach(() => {
   } as never);
   // Plan M3: mặc định chưa có docx.html cache → word flow đi fallback mammoth.
   vi.mocked(api.getDocxHtml).mockResolvedValue(null);
+  // Plan proofread: mặc định không có gợi ý.
+  vi.mocked(api.getSuggestions).mockResolvedValue([]);
 });
 
 it("md cache miss: exportJob md-layout + layout-loading spinner → content renders + badge chưa lưu", async () => {

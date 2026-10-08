@@ -131,4 +131,51 @@ describe("api client", () => {
     expect(opts.method).toBe("PUT");
     expect(JSON.parse(opts.body)).toEqual({ style: { align: "center" } });
   });
+
+  // Plan proofread: gợi ý sửa lỗi OCR.
+  it("getSuggestions GETs /api/jobs/{id}/suggestions and returns array", async () => {
+    const spy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([{ id: 1, page_index: 0, start: 0, end: 5, original: "a", suggestion: "b", reason: "r", status: "pending" }]), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", spy);
+    const items = await api.getSuggestions(5);
+    expect(items).toHaveLength(1);
+    expect(items[0].original).toBe("a");
+    const [url, opts] = spy.mock.calls[0];
+    expect(url).toBe("/api/jobs/5/suggestions");
+    expect(opts.method).toBe("GET");
+  });
+
+  it("acceptSuggestion POSTs accept and returns {status}", async () => {
+    const spy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: "accepted" }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", spy);
+    await expect(api.acceptSuggestion(5, 7)).resolves.toEqual({ status: "accepted" });
+    const [url, opts] = spy.mock.calls[0];
+    expect(url).toBe("/api/jobs/5/suggestions/7/accept");
+    expect(opts.method).toBe("POST");
+  });
+
+  it("rejectSuggestion POSTs reject and returns {status}", async () => {
+    const spy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: "rejected" }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", spy);
+    await expect(api.rejectSuggestion(5, 7)).resolves.toEqual({ status: "rejected" });
+    const [url, opts] = spy.mock.calls[0];
+    expect(url).toBe("/api/jobs/5/suggestions/7/reject");
+    expect(opts.method).toBe("POST");
+  });
+
+  it("runProofread POSTs proofread and returns {count}", async () => {
+    const spy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ count: 3 }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", spy);
+    await expect(api.runProofread(5)).resolves.toEqual({ count: 3 });
+    const [url, opts] = spy.mock.calls[0];
+    expect(url).toBe("/api/jobs/5/proofread");
+    expect(opts.method).toBe("POST");
+  });
 });

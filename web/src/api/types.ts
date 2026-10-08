@@ -56,6 +56,18 @@ export interface LayoutStyle {
   underline?: boolean;
 }
 
+/** Plan proofread: gợi ý sửa lỗi OCR (GET /api/jobs/{id}/suggestions). */
+export interface Suggestion {
+  id: number;
+  page_index: number;
+  start: number;
+  end: number;
+  original: string;
+  suggestion: string;
+  reason: string;
+  status: "pending" | "accepted" | "rejected";
+}
+
 export interface Job {
   id: number;
   status: JobStatus;

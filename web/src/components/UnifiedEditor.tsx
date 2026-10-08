@@ -2,14 +2,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import MDEditor from "@uiw/react-md-editor";
 import DOMPurify from "dompurify";
 import * as mammoth from "mammoth";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { RefreshCw, Sparkles } from "lucide-react";
+import type { Editor } from "@tiptap/core";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { toast } from "sonner";
 import { api } from "../api/client";
-import type { Job, LayoutStyle } from "../api/types";
+import type { Job, LayoutStyle, Suggestion } from "../api/types";
 import { buildLayoutStyleCss } from "../lib/docStyle";
 import { mapApiError } from "../lib/errors";
 import DocStyleTools from "./DocStyleTools";
+import SuggestionsPanel from "./SuggestionsPanel";
 import WordEditor from "./editor/WordEditor";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
@@ -19,6 +22,52 @@ import Skeleton from "./ui/Skeleton";
 type Mode = "md" | "word";
 
 const FMT: Record<Mode, "md-layout" | "docx-layout"> = { md: "md-layout", word: "docx-layout" };
+
+/** Fuzzy find: whitespace-normalized match of needle in haystack → raw [start, end). */
+function findFuzzy(haystack: string, needle: string): [number, number] | null {
+  const n = needle.replace(/\s+/g, " ").trim();
+  if (!n) return null;
+  for (let i = 0; i < haystack.length; i++) {
+    let hi = i;
+    let ni = 0;
+    let ok = true;
+    while (ni < n.length) {
+      while (hi < haystack.length && /\s/.test(haystack[hi])) hi++;
+      if (hi >= haystack.length || haystack[hi] !== n[ni]) {
+        ok = false;
+        break;
+      }
+      hi++;
+      ni++;
+    }
+    if (ok) {
+      let end = hi;
+      while (end > i && /\s/.test(haystack[end - 1])) end--;
+      return [i, end];
+    }
+  }
+  return null;
+}
+
+/** Find phrase within a single Tiptap text node → PM positions. */
+function findPhraseInEditor(
+  editor: Editor,
+  phrase: string,
+): { from: number; to: number } | null {
+  const doc = editor.state.doc;
+  let result: { from: number; to: number } | null = null;
+  doc.descendants((node, pos) => {
+    if (result) return false;
+    if (node.isText && node.text) {
+      const found = findFuzzy(node.text, phrase);
+      if (found) {
+        result = { from: pos + 1 + found[0], to: pos + 1 + found[1] };
+        return false;
+      }
+    }
+  });
+  return result;
+}
 
 /**
  * Plan M region "Soạn thảo" (gộp card "Tài liệu" + MarkdownEditor cũ; R51:
@@ -61,6 +110,17 @@ export default function UnifiedEditor({
   const [baseCss, setBaseCss] = useState("");
   const [wordCss, setWordCss] = useState("");
   const [styleMap, setStyleMap] = useState<LayoutStyle | null>(null);
+
+  // Plan proofread: suggestions + panel toggle + Tiptap editor ref (word mode).
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [proofreadLoading, setProofreadLoading] = useState(false);
+  const wordEditorRef = useRef<Editor | null>(null);
+  const pendingCount = suggestions.filter((s) => s.status === "pending").length;
+
+  useEffect(() => {
+    api.getSuggestions(jobId).then(setSuggestions).catch(() => {});
+  }, [jobId]);
 
   // layout_style đã lưu → client CSS cho md preview (word iframe tái tạo từ tools hydrate).
   const savedCss = useMemo(() => buildLayoutStyleCss(job.layout_style), [job.layout_style]);
@@ -170,6 +230,96 @@ export default function UnifiedEditor({
     }
   };
 
+  /** Plan proofread: jump tới vị trí original trong editor (MD textarea / Tiptap). */
+  const handleJump = (s: Suggestion) => {
+    if (activeMode === "md") {
+      const ta = hostRef?.current?.querySelector<HTMLTextAreaElement>(
+        ".w-md-editor-text-input, textarea",
+      );
+      if (!ta) return;
+      const found = findFuzzy(ta.value, s.original);
+      if (!found) {
+        toast.error("Không tìm thấy trong nội dung");
+        return;
+      }
+      ta.focus();
+      ta.setSelectionRange(found[0], found[1]);
+      ta.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else {
+      const editor = wordEditorRef.current;
+      if (!editor) return;
+      const found = findPhraseInEditor(editor, s.original);
+      if (!found) {
+        toast.error("Không tìm thấy trong nội dung");
+        return;
+      }
+      editor.chain().focus().setTextSelection({ from: found.from, to: found.to }).scrollIntoView().run();
+    }
+  };
+
+  /** Plan proofread: replace original → suggestion trong editor → save → accept. */
+  const handleAccept = async (sid: number) => {
+    const s = suggestions.find((x) => x.id === sid);
+    if (!s) return;
+    try {
+      if (activeMode === "md") {
+        const ta = hostRef?.current?.querySelector<HTMLTextAreaElement>(
+          ".w-md-editor-text-input, textarea",
+        );
+        if (!ta) throw new Error("no textarea");
+        const found = findFuzzy(ta.value, s.original);
+        if (!found) {
+          toast.error("Không tìm thấy trong nội dung");
+          return;
+        }
+        const newText = ta.value.slice(0, found[0]) + s.suggestion + ta.value.slice(found[1]);
+        setMdText(newText);
+        await api.putMdLayoutContent(jobId, newText);
+      } else {
+        const editor = wordEditorRef.current;
+        if (!editor) throw new Error("no editor");
+        const found = findPhraseInEditor(editor, s.original);
+        if (!found) {
+          toast.error("Không tìm thấy trong nội dung");
+          return;
+        }
+        editor.chain().focus().insertContentAt({ from: found.from, to: found.to }, s.suggestion).run();
+        await api.putDocxHtml(jobId, editor.getHTML());
+      }
+      await api.acceptSuggestion(jobId, sid);
+      setSuggestions((prev) => prev.filter((x) => x.id !== sid));
+      toast.success("Đã áp dụng gợi ý.");
+    } catch (err) {
+      toast.error(mapApiError(err));
+    }
+  };
+
+  /** Plan proofread: reject → remove khỏi list. */
+  const handleReject = async (sid: number) => {
+    try {
+      await api.rejectSuggestion(jobId, sid);
+      setSuggestions((prev) => prev.filter((x) => x.id !== sid));
+    } catch (err) {
+      toast.error(mapApiError(err));
+    }
+  };
+
+  /** Plan proofread: chạy lại proofread thủ công (nút refresh). */
+  const handleRefresh = async () => {
+    setProofreadLoading(true);
+    try {
+      const { count } = await api.runProofread(jobId);
+      toast.success(`Đã tìm thấy ${count} gợi ý.`);
+      const items = await api.getSuggestions(jobId);
+      setSuggestions(items);
+      setPanelOpen(true);
+    } catch (err) {
+      toast.error(mapApiError(err));
+    } finally {
+      setProofreadLoading(false);
+    }
+  };
+
   const cached = (job.layout_cache ?? { md: false, docx: false })[
     activeMode === "md" ? "md" : "docx"
   ];
@@ -209,6 +359,34 @@ export default function UnifiedEditor({
             <Badge testid="layout-badge" tone={cached ? "success" : "neutral"}>
               {cached ? "Layout đã lưu" : "Layout chưa lưu"}
             </Badge>
+            <Button
+              testid="btn-refresh-proofread"
+              variant="ghost"
+              size="sm"
+              title="Chạy lại kiểm tra"
+              aria-label="Chạy lại kiểm tra"
+              disabled={proofreadLoading}
+              onClick={() => void handleRefresh()}
+            >
+              <RefreshCw className="h-4 w-4" aria-hidden="true" />
+            </Button>
+            <Button
+              testid="btn-proofread"
+              variant="secondary"
+              aria-pressed={panelOpen}
+              onClick={() => setPanelOpen((o) => !o)}
+            >
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+              Kiểm tra lỗi
+              {pendingCount > 0 && (
+                <span
+                  data-testid="proofread-badge"
+                  className="ml-1 rounded-full bg-error px-1.5 text-xs font-semibold text-white"
+                >
+                  {pendingCount}
+                </span>
+              )}
+            </Button>
           </div>
         </div>
         {displayError !== null && (
@@ -231,6 +409,8 @@ export default function UnifiedEditor({
             </Button>
           </div>
         )}
+        <div className="flex gap-4">
+          <div className="min-w-0 flex-1">
         {loading ? (
           /* Loading khớp hình content area thật (skeleton, không spinner tròn). */
           <div
@@ -268,6 +448,7 @@ export default function UnifiedEditor({
                 html={docxHtml}
                 css={baseCss + wordCss}
                 onSave={(html) => void saveWord(html)}
+                editorRef={wordEditorRef}
               />
             )}
             <DocStyleTools
@@ -284,6 +465,18 @@ export default function UnifiedEditor({
             </div>
           </>
         )}
+          </div>
+          {panelOpen && (
+            <aside className="w-72 shrink-0">
+              <SuggestionsPanel
+                suggestions={suggestions}
+                onAccept={(sid) => void handleAccept(sid)}
+                onReject={(sid) => void handleReject(sid)}
+                onJump={handleJump}
+              />
+            </aside>
+          )}
+        </div>
       </Card>
     </section>
   );
