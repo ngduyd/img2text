@@ -140,7 +140,27 @@ export default function JobDetail() {
                 }
               }}
             >
-              Thử lại
+              Chạy lại OCR
+            </Button>
+          )}
+          {/* Layout gen failed (done but layout_cache miss): re-run LLM md+docx. */}
+          {job.status === "done" && result && (!job.layout_cache?.md || !job.layout_cache?.docx) && (
+            <Button
+              testid="btn-retry-layout"
+              variant="secondary"
+              onClick={async () => {
+                setRetryError(null);
+                try {
+                  await api.retryLayout(id!);
+                  toast.success("Đã tạo lại layout.");
+                  await queryClient.invalidateQueries({ queryKey: ["job", id] });
+                } catch (err) {
+                  setRetryError(err instanceof ApiError ? err.detail : "Tạo lại layout thất bại.");
+                  toast.error(mapApiError(err));
+                }
+              }}
+            >
+              Chạy lại layout
             </Button>
           )}
           {/* JD2 amendment: Edit = inline edit trên chính trang này (không còn navigate /edit). */}

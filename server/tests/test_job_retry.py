@@ -85,3 +85,41 @@ async def test_retry_invalidates_both_prefixes(auth_client, failed_job, storage_
     assert r.status_code == 200
     storage_spy.delete_prefix.assert_any_call(f"exports/{failed_job}/")
     storage_spy.delete_prefix.assert_any_call(f"crops/{failed_job}/")
+
+# --- Retry layout gen: POST /api/jobs/{id}/retry-layout ---
+
+async def test_retry_layout_regenerates(auth_client, done_job_with_result, storage, monkeypatch):
+    """retry-layout re-runs auto_generate_output; returns which layouts exist."""
+    # Drain the fire-and-forget auto-output scheduled at result-commit, then
+    # clear its artifacts: job ids restart at 1 after truncate, so a prior
+    # test's exports/{id}/ would otherwise leak into this one.
+    from app.services.job_results import drain_auto_output
+    await drain_auto_output()
+    await storage.delete_prefix(f"exports/{done_job_with_result}/")
+    called = {}
+    async def fake_auto(job, storage):
+        called["job_id"] = job.id
+        await storage.put(f"exports/{job.id}/md-layout", b"# md")
+    monkeypatch.setattr("app.routers.exports.auto_generate_output", fake_auto)
+    r = await auth_client.post(f"/api/jobs/{done_job_with_result}/retry-layout")
+    assert r.status_code == 200
+    assert r.json() == {"md": True, "docx": False}
+    assert called["job_id"] == done_job_with_result
+
+async def test_retry_layout_works_when_queued(auth_client, seed_job, storage, monkeypatch):
+    """Layout gen is post-OCR fire-and-forget: no status gate (queued → 200)."""
+    from app.services.job_results import drain_auto_output
+    await drain_auto_output()
+    await storage.delete_prefix(f"exports/{seed_job}/")
+    async def fake_auto(job, storage):
+        pass
+    monkeypatch.setattr("app.routers.exports.auto_generate_output", fake_auto)
+    r = await auth_client.post(f"/api/jobs/{seed_job}/retry-layout")
+    assert r.status_code == 200
+    assert r.json() == {"md": False, "docx": False}
+
+async def test_retry_layout_unknown_404(auth_client):
+    assert (await auth_client.post("/api/jobs/999999/retry-layout")).status_code == 404
+
+async def test_retry_layout_other_user_403(other_client, done_job_with_result):
+    assert (await other_client.post(f"/api/jobs/{done_job_with_result}/retry-layout")).status_code == 403
