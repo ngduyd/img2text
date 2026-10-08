@@ -53,7 +53,7 @@ INPUT_SLUG = "img2text-input"  # batch input dataset (run_one.py K4, shared slug
 # kernel statuses meaning "run in progress" (case-insensitive match)
 _ACTIVE_STATUSES = frozenset({"running", "pending", "queued"})
 # batch statuses meaning "terminal" (normalized lowercase)
-_FAILED_STATUSES = frozenset({"failed", "error"})
+_FAILED_STATUSES = frozenset({"failed", "error", "cancelled"})
 # mirrors kernel VL_MODEL / worker build_result default (result.json has no version)
 BATCH_MODEL_VERSION = "PaddleOCR-VL-1.5-0.9B"
 # per-block markdown prefixes (batch doc_title → H1, paragraph_title → H2;
