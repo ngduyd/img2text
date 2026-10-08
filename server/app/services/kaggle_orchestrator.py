@@ -66,6 +66,9 @@ _INGEST_MAX_FAILURES = 3
 # Plan K5 batch runs: {job_id: {"ref": str, "pushed_at": monotonic}}.
 # In-memory only (non-goal: no DB column) — restart orphans a running kernel.
 _batch_runs: dict[int, dict] = {}
+# input-dataset freshness verify before kernels_push (stale-dataset guard)
+_INPUT_VERIFY_TIMEOUT = 60.0
+_INPUT_VERIFY_INTERVAL = 3.0
 
 
 def _api():
@@ -250,8 +253,22 @@ def adapt_batch_document(doc: dict) -> dict:
     }
 
 def _api_dataset_exists(api, ref: str) -> bool:
-    """Hasattr-verified exists check via dataset_list (both API generations).
-    Mirrors deploy/kaggle/kcompat.api_dataset_exists (server cannot import it)."""
+    """Exists check via dataset_status when available (owner-scoped — works
+    for PRIVATE datasets). dataset_list search does NOT return private
+    datasets, so the search path reported "absent" for img2text-input every
+    tick: delete skipped + create returned its silent "already in use" error
+    payload → kernel pushed against the OLD input (bug: dataset stale).
+    Search path kept as fallback for packages without dataset_status.
+    Missing dataset (HTTPError 403/404 on .response) → False; other errors raise."""
+    status_fn = getattr(api, "dataset_status", None)
+    if status_fn is not None:
+        try:
+            status_fn(ref)
+            return True
+        except Exception as exc:
+            if getattr(getattr(exc, "response", None), "status_code", None) in (403, 404):
+                return False
+            raise
     _owner, slug = ref.split("/", 1)
     list_fn = getattr(api, "dataset_list", None)
     with_resp_fn = getattr(api, "dataset_list_with_response", None)
@@ -289,12 +306,58 @@ def _api_delete_dataset(api, ref: str) -> bool:
 
 def _api_create_dataset(api, folder):
     """Upload-create from folder (dataset-metadata.json).
-    Mirrors kcompat.api_create_dataset — kaggle 2.2.x renamed the API."""
+    Mirrors kcompat.api_create_dataset — kaggle 2.2.x renamed the API.
+    kaggle 2.2.4 returns an error PAYLOAD instead of raising when the ref
+    is still in use (title collision after an ineffective delete) — raise,
+    so the spawn fails instead of silently pushing the old dataset."""
     if hasattr(api, "dataset_create_new"):
-        return api.dataset_create_new(str(folder))
-    if hasattr(api, "datasets_create_with_files"):
-        return api.datasets_create_with_files(upload_folder=str(folder))
-    raise RuntimeError("kaggle package: dataset_create_new not found — cần kaggle>=1.6")
+        result = api.dataset_create_new(str(folder))
+    elif hasattr(api, "datasets_create_with_files"):
+        result = api.datasets_create_with_files(upload_folder=str(folder))
+    else:
+        raise RuntimeError("kaggle package: dataset_create_new not found — cần kaggle>=1.6")
+    if isinstance(result, dict):
+        status, error = result.get("status"), result.get("error")
+    else:
+        status, error = getattr(result, "status", None), getattr(result, "error", None)
+    if error or str(status or "").lower() == "error":
+        raise RuntimeError(f"kaggle dataset create failed: {error or status}")
+    return result
+
+
+def _verify_input_dataset(api, ref: str, expected_name: str) -> None:
+    """Stale-input guard: poll dataset_list_files until the STAGED upload is
+    served (kaggle's create can return before the new files propagate).
+    Timeout → RuntimeError: spawn skipped before kernels_push (the run would
+    execute against the previous input), retried next tick."""
+    deadline = time.monotonic() + _INPUT_VERIFY_TIMEOUT
+    seen: list[str] = []
+    last_error: Exception | None = None
+    while True:
+        try:
+            resp = api.dataset_list_files(ref)
+            files = getattr(resp, "dataset_files", None)
+            if files is None:
+                files = resp.get("files") if isinstance(resp, dict) else resp
+            seen = []
+            for f in files or []:
+                if hasattr(f, "name"):
+                    seen.append(str(f.name))
+                elif isinstance(f, dict):
+                    seen.append(str(f.get("name", "")))
+            last_error = None
+        except Exception as exc:  # not found / not propagated — keep polling
+            last_error = exc
+        if expected_name in seen:
+            return
+        if time.monotonic() >= deadline:
+            detail = f" (last error: {last_error})" if last_error else ""
+            raise RuntimeError(
+                f"input dataset {ref} not refreshed: expected {expected_name!r}, "
+                f"saw {seen} after {_INPUT_VERIFY_TIMEOUT:g}s — kernels_push "
+                f"skipped, spawn retried next tick{detail}"
+            )
+        time.sleep(_INPUT_VERIFY_INTERVAL)
 
 def _ensure_input_dataset(api, owner: str, folder: Path) -> None:
     """img2text-input: exists → DELETE + recreate with the staged folder
@@ -363,8 +426,14 @@ async def _spawn_batch_run(api, session_factory, job: Job) -> bool:
         kernel_stage = build / "kernel"
         ref = _stage_batch_kernel(kernel_stage)
         # stale-input guard: refresh the dataset BEFORE push (the kernel
-        # executes against the mounted dataset, never the staged folder)
+        # executes against the mounted dataset, never the staged folder),
+        # then poll list_files until the staged upload is actually served —
+        # pushing earlier runs against the PREVIOUS input (dataset stale)
+        input_ref = f"{owner}/{INPUT_SLUG}"
         await asyncio.to_thread(_ensure_input_dataset, api, owner, input_stage)
+        await asyncio.to_thread(
+            _verify_input_dataset, api, input_ref, Path(job.storage_key).name
+        )
         await asyncio.to_thread(api.kernels_push, str(kernel_stage))
         # D1: push OK → job visibly running (UI "Đang xử lý" instead of
         # "Chờ xử lý" for the whole run); lease = now + kaggle_timeout so

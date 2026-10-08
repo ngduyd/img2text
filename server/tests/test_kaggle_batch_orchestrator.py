@@ -66,8 +66,20 @@ RESULT_DOC = {
     ],
 }
 
+class _NotFound(Exception):
+    """kaggle 2.2.4 missing-dataset shape: requests HTTPError (403/404)."""
+
+    def __init__(self, code: int) -> None:
+        super().__init__(f"{code} Client Error")
+        self.response = SimpleNamespace(status_code=code)
+
+
 class BatchStubKaggleApi:
-    """Live-shaped KaggleApi: enum-like status, folder dataset APIs, output pull."""
+    """Live-shaped KaggleApi: enum-like status, folder dataset APIs, output pull.
+
+    Dataset state mirrors production: the img2text-input dataset EXISTS
+    (private — dataset_list search never returns it) and serves the OLD
+    input file until a successful delete+create replaces it."""
 
     def __init__(self) -> None:
         self.calls: list = []  # (method, ...) in call order
@@ -75,19 +87,40 @@ class BatchStubKaggleApi:
         self.dataset_items: list = []
         self.result_doc: dict | None = None
         self.output_error: Exception | None = None
+        self.dataset_exists = True  # private dataset present (prod state)
+        self.dataset_files = ["TA.jpg"]  # OLD input served by list_files
+        self.stale_after_create = False  # create OK but files stay old
 
     def dataset_list(self, search=None):
         self.calls.append(("dataset_list", search))
         return self.dataset_items
 
+    def dataset_status(self, ref):
+        self.calls.append(("dataset_status", ref))
+        if not self.dataset_exists:
+            raise _NotFound(403)
+        return "ready"
+
+    def dataset_list_files(self, ref):
+        self.calls.append(("dataset_list_files", ref))
+        if not self.dataset_exists:
+            raise _NotFound(403)
+        return SimpleNamespace(
+            dataset_files=[SimpleNamespace(name=n) for n in self.dataset_files]
+        )
+
     def dataset_delete(self, owner, slug, no_confirm=False):
         self.calls.append(("dataset_delete", f"{owner}/{slug}"))
+        self.dataset_exists = False  # files linger until create (eventual)
         return True
 
     def dataset_create_new(self, folder):
         meta = json.loads((Path(folder) / "dataset-metadata.json").read_text())
         files = sorted(p.name for p in Path(folder).iterdir())
         self.calls.append(("dataset_create_new", meta["id"], files))
+        self.dataset_exists = True
+        if not self.stale_after_create:
+            self.dataset_files = [f for f in files if f != "dataset-metadata.json"]
         return {"ref": meta["id"]}
 
     def kernels_push(self, path):
@@ -145,6 +178,43 @@ def storage_env(app, storage_spy, monkeypatch):
 
 def _pushes(api) -> list:
     return [c for c in api.calls if c[0] == "kernels_push"]
+
+async def test_batch_stale_input_dataset_skips_kernel_push(
+    kaggle_batch_env, api, storage_env, seed_job, db_session, monkeypatch, caplog
+):
+    """BUG (dataset stale): delete+create return but dataset_list_files still
+    serves the OLD file (TA.jpg) → kernels_push must NOT run; the spawn
+    failure skips the job (stays queued, retried next tick)."""
+    monkeypatch.setattr(orch, "_INPUT_VERIFY_TIMEOUT", 0.05)
+    monkeypatch.setattr(orch, "_INPUT_VERIFY_INTERVAL", 0.01)
+    api.stale_after_create = True
+    with caplog.at_level("WARNING", logger=orch.logger.name):
+        assert await orch.ensure_worker(SessionLocal) is False
+    assert _pushes(api) == []  # NEVER pushed into the old dataset
+    assert any(
+        "batch spawn failed" in r.getMessage() for r in caplog.records
+    )
+    assert orch._batch_runs == {}
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.status == "queued"  # untouched — retried next tick
+
+async def test_batch_verifies_input_files_before_kernel_push(
+    kaggle_batch_env, api, storage_env, seed_job, db_session
+):
+    """list_files shows the staged upload → push proceeds. Also pins the
+    private-dataset exists check: dataset_status sees it (dataset_list search
+    returns []), so delete runs and the verify call precedes kernels_push."""
+    assert await orch.ensure_worker(SessionLocal) is True
+    job = await db_session.get(Job, seed_job)
+    staged = Path(job.storage_key).name  # sha.<ext>
+    assert ("dataset_status", "testuser/img2text-input") in api.calls
+    assert ("dataset_delete", "testuser/img2text-input") in api.calls
+    files_checks = [c for c in api.calls if c[0] == "dataset_list_files"]
+    assert files_checks and files_checks[0][1] == "testuser/img2text-input"
+    kinds = [c[0] for c in api.calls]
+    assert kinds.index("dataset_list_files") < kinds.index("kernels_push")
+    assert staged in api.dataset_files  # served file == the staged upload
 
 async def test_batch_happy_flow_spawn_then_complete_ingest(
     kaggle_batch_env, api, storage_env, seed_job, db_session
@@ -509,6 +579,23 @@ def test_adapter_maps_kernel_problems_to_warnings():
     out = orch.adapt_batch_document(doc)
     assert out["warnings"] == ["page_0002.png: precheck unreadable — không OCR"]
     ResultBody.model_validate(out)
+
+def test_api_create_dataset_raises_on_silent_error_response():
+    """kaggle 2.2.4 dataset_create_new returns an error PAYLOAD (no raise)
+    when the ref still exists — must raise so the spawn fails instead of
+    pushing the kernel against the old dataset."""
+
+    class SilentDict:
+        def dataset_create_new(self, folder):
+            return {"status": "error", "error": 'title "x" already in use'}
+
+    class SilentObj:
+        def dataset_create_new(self, folder):
+            return SimpleNamespace(status="error", error="already in use")
+
+    for stub in (SilentDict(), SilentObj()):
+        with pytest.raises(RuntimeError, match="already in use"):
+            orch._api_create_dataset(stub, "/tmp")
 
 def test_norm_status_enum_and_string_forms():
     assert orch._norm_status({"status": SimpleNamespace(name="COMPLETE")}) == "complete"
