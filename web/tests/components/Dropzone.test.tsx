@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api } from "../../src/api/client";
 import type { User } from "../../src/api/types";
 import Dropzone from "../../src/components/Dropzone";
+import { loadPdf } from "../../src/lib/pdfjs";
 
 // R30: pdfjs mocked at module boundary — pdf wizard never loads real pdfjs in tests.
 vi.mock("../../src/lib/pdfjs", () => ({
@@ -106,4 +107,85 @@ it("drop uploads nothing when ocr not enabled", async () => {
   const file = new File(["x"], "a.jpg", { type: "image/jpeg" });
   fireEvent.drop(screen.getByTestId("dropzone"), { dataTransfer: { files: [file] } });
   expect(api.uploadJob).not.toHaveBeenCalled();
+});
+
+// --- Stale-state guards: a NEW file selection must reset wizard state ---
+// Bug: upload sent the PREVIOUS file's bytes after the user selected another file
+// (crop rect/dims + preview bitmap + pdf doc persisted across the file swap).
+
+it("selecting image B while crop wizard holds A resets crop state — submits B untouched", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.uploadJob).mockResolvedValue({ id: 42, status: "queued" });
+  renderDropzone();
+  await screen.findByTestId("btn-upload");
+  // jsdom: stub object URL + canvas like ImageCropWizard.test.tsx
+  Object.defineProperty(URL, "createObjectURL", {
+    value: vi.fn(() => "blob:mock"),
+    configurable: true,
+    writable: true,
+  });
+  Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), configurable: true, writable: true });
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    drawImage: vi.fn(), fillRect: vi.fn(), strokeRect: vi.fn(), save: vi.fn(), restore: vi.fn(),
+    translate: vi.fn(), rotate: vi.fn(), scale: vi.fn(), fillStyle: "", strokeStyle: "",
+  } as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, "getBoundingClientRect").mockReturnValue({
+    x: 0, y: 0, left: 0, top: 0, right: 400, bottom: 300, width: 400, height: 300,
+    toJSON: () => ({}),
+  } as DOMRect);
+  vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((cb) =>
+    cb(new Blob([new Uint8Array([1, 2, 3])], { type: "image/jpeg" })),
+  );
+
+  const a = new File(["A"], "hoa.png", { type: "image/png" });
+  const b = new File(["B"], "van.png", { type: "image/png" });
+  // File A opens the crop wizard; load dims, draw a crop rect
+  fireEvent.change(screen.getByTestId("input-file"), { target: { files: [a] } });
+  const img = await screen.findByTestId("wizard-image");
+  Object.defineProperty(img, "naturalWidth", { value: 800, configurable: true });
+  Object.defineProperty(img, "naturalHeight", { value: 600, configurable: true });
+  fireEvent.load(img);
+  const canvas = screen.getByTestId("crop-canvas");
+  fireEvent.pointerDown(canvas, { clientX: 50, clientY: 50 });
+  fireEvent.pointerMove(canvas, { clientX: 150, clientY: 125 });
+  fireEvent.pointerUp(canvas, { clientX: 150, clientY: 125 });
+  // File B arrives while the wizard is open (drag & drop onto the dropzone)
+  fireEvent.drop(screen.getByTestId("dropzone"), { dataTransfer: { files: [b] } });
+  await screen.findByTestId("wizard-crop");
+  fireEvent.click(screen.getByTestId("wizard-submit"));
+  await waitFor(() => expect(api.uploadJob).toHaveBeenCalledTimes(1));
+  // Stale crop rect (from A) must not crop B — the NEW file uploads as-is.
+  expect(vi.mocked(api.uploadJob).mock.calls[0][0]).toBe(b);
+});
+
+it("selecting pdf B while pdf wizard holds A reloads the document — pages come from B", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.uploadJob).mockResolvedValue({ id: 43, status: "queued" });
+  // A: 3-page pdf → B: 1-page pdf
+  vi.mocked(loadPdf)
+    .mockResolvedValueOnce({
+      numPages: 3,
+      getPage: vi.fn(async () => ({ viewport: { width: 10, height: 10 }, renderCanvas: vi.fn() })),
+    } as never)
+    .mockResolvedValueOnce({
+      numPages: 1,
+      getPage: vi.fn(async () => ({ viewport: { width: 10, height: 10 }, renderCanvas: vi.fn() })),
+    } as never);
+  renderDropzone();
+  await screen.findByTestId("btn-upload");
+  const a = new File(["%PDF-1.7 a"], "hoa.pdf", { type: "application/pdf" });
+  const b = new File(["%PDF-1.7 b"], "van.pdf", { type: "application/pdf" });
+  fireEvent.change(screen.getByTestId("input-file"), { target: { files: [a] } });
+  await screen.findByTestId("wizard-page-3"); // A's 3 pages rendered
+  fireEvent.drop(screen.getByTestId("dropzone"), { dataTransfer: { files: [b] } });
+  await screen.findByTestId("wizard-pdf");
+  // B's document is 1 page — A's page list must not survive the swap.
+  expect(screen.queryByTestId("wizard-page-3")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByTestId("wizard-submit"));
+  await waitFor(() => expect(api.uploadJob).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(api.uploadJob).mock.calls[0][0]).toBe(b);
+  expect(vi.mocked(api.uploadJob).mock.calls[0][1]).toEqual({
+    preprocess: { pages: [1], rotate: {} },
+    output_format: "md",
+  });
 });

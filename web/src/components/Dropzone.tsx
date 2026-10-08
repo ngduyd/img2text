@@ -27,6 +27,9 @@ export default function Dropzone({
   // ponytail: gate only after me resolves — avoids disabled-button race in tests; server enforces anyway
   const denied = me !== undefined && !granted;
   const disabled = busy || denied;
+  // Remount the wizard per selected file: crop rect/dims, preview bitmap and
+  // pdf doc are file-scoped — they must not survive a file swap (stale bytes).
+  const wizardKey = wizardFile ? `${wizardFile.name}-${wizardFile.size}-${wizardFile.lastModified}` : null;
 
   const upload = useMutation({
     mutationFn: (file: File) => api.uploadJob(file, { output_format: outputFormat }),
@@ -98,6 +101,7 @@ export default function Dropzone({
       {wizardFile ? (
         wizardFile.type === "application/pdf" ? (
           <PdfWizard
+            key={wizardKey}
             file={wizardFile}
             outputFormat={outputFormat}
             onCancel={() => setWizardFile(null)}
@@ -105,6 +109,7 @@ export default function Dropzone({
           />
         ) : (
           <ImageCropWizard
+            key={wizardKey}
             file={wizardFile}
             outputFormat={outputFormat}
             onCancel={() => setWizardFile(null)}
