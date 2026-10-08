@@ -104,9 +104,11 @@ def _page_text(page: dict) -> str:
 
 def _parse(content: str) -> list[dict]:
     """LLM content → list of item dicts (bad shape → ProofreadError)."""
+    if not isinstance(content, str):
+        raise ProofreadError("phản hồi thiếu content (null)")
     try:
         data = json.loads(content)
-    except ValueError as exc:
+    except (ValueError, TypeError) as exc:
         raise ProofreadError(f"phản hồi không phải JSON: {exc}") from exc
     items = data.get("items") if isinstance(data, dict) else None
     if not isinstance(items, list):
@@ -163,11 +165,16 @@ async def run_proofread(session: AsyncSession, job: Job) -> int:
         except ProofreadError as exc:
             logger.warning("proofread: LLM failed job=%s page=%d: %s", job.id, index, exc)
             return 0
+        seen: set[tuple[str, str]] = set()
         for item in items:
             phrase = (item.get("phrase") or "").strip()
             suggestion = (item.get("suggestion") or "").strip()
             if not phrase or not suggestion:
                 continue
+            key = (phrase, suggestion)
+            if key in seen:
+                continue
+            seen.add(key)
             hit = locate(text, phrase)
             if hit is None:
                 continue  # fuzzy chặn phrase không tồn tại (LLM ảo giác)
