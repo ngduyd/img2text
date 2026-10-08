@@ -156,3 +156,46 @@ class Job(Base):
     finished_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+class OcrSuggestion(Base):
+    """Plan proofread: LLM-detected OCR error candidate (user decides).
+
+    start/end = char offsets into the PAGE TEXT (regions joined by \\n) —
+    informational only; the client re-locates by `original` (fuzzy) because
+    editor content ≠ page text. Dev DB: table created by hand via psql
+    (Alembic deferred):
+      CREATE TABLE ocr_suggestions (
+        id SERIAL PRIMARY KEY,
+        job_id BIGINT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+        page_index INTEGER NOT NULL,
+        start INTEGER NOT NULL,
+        end INTEGER NOT NULL,
+        original TEXT NOT NULL,
+        suggestion TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX ix_ocr_suggestions_job_id ON ocr_suggestions (job_id);
+    """
+
+    __tablename__ = "ocr_suggestions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("jobs.id", ondelete="CASCADE"), index=True
+    )
+    page_index: Mapped[int] = mapped_column(Integer)
+    start: Mapped[int] = mapped_column(Integer)
+    end: Mapped[int] = mapped_column(Integer)
+    original: Mapped[str] = mapped_column(Text)
+    suggestion: Mapped[str] = mapped_column(Text)
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(
+        Text, default="pending", server_default=text("'pending'")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=text("now()"),
+    )
