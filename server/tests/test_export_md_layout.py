@@ -320,9 +320,15 @@ async def test_export_md_layout_other_user_403(
 async def test_auto_md_llm_ok_stores_md_layout(
     worker_client, seed_job, storage_spy, db_session, VALID_RESULT_JSONB, monkeypatch
 ):
-    """D5: output_format=md auto-gen writes the LLM md-layout to exports/{id}/md."""
+    """output_format=md auto-gen writes the LLM md-layout to exports/{id}/md-layout."""
     from app.services.job_results import drain_auto_output
 
+    async def _docx_down(*args, **kwargs):
+        from app.services.llm_docx import LLMLayoutError
+
+        raise LLMLayoutError("LLM down (test)")
+
+    monkeypatch.setattr("app.routers.exports.build_layout_docx", _docx_down)
     fake_llm(monkeypatch, [_md_response(GOOD_MD)])
     claim = await worker_client.get("/api/jobs/next")
     tok = claim.json()["worker_token"]
@@ -333,7 +339,7 @@ async def test_auto_md_llm_ok_stores_md_layout(
     )
     assert r.status_code == 200
     await drain_auto_output()
-    data = await storage_spy.get(f"exports/{seed_job}/md")
+    data = await storage_spy.get(f"exports/{seed_job}/md-layout")
     assert data.decode("utf-8") == GOOD_MD  # md-layout, not plain result md
     job = await db_session.get(Job, seed_job)
     assert job.status == "done"
@@ -353,7 +359,13 @@ async def test_auto_md_llm_down_falls_back_to_plain_md(
     def _down(*args, **kwargs):
         raise LLMMdError("LLM down (test)")
 
+    async def _docx_down(*args, **kwargs):
+        from app.services.llm_docx import LLMLayoutError
+
+        raise LLMLayoutError("LLM down (test)")
+
     monkeypatch.setattr("app.routers.exports.build_md", _down)
+    monkeypatch.setattr("app.routers.exports.build_layout_docx", _docx_down)
     claim = await worker_client.get("/api/jobs/next")
     tok = claim.json()["worker_token"]
     with caplog.at_level("WARNING", logger="app.services.job_results"):

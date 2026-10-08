@@ -29,6 +29,15 @@ def md_llm_down(monkeypatch):
         raise LLMMdError("LLM down (test)")
     monkeypatch.setattr("app.routers.exports.build_md", _down)
 
+@pytest.fixture
+def docx_llm_down(monkeypatch):
+    """build_layout_docx raises → auto-gen docx-layout skipped (warning)."""
+    def _down(*args, **kwargs):
+        from app.services.llm_docx import LLMLayoutError
+
+        raise LLMLayoutError("LLM down (test)")
+    monkeypatch.setattr("app.routers.exports.build_layout_docx", _down)
+
 
 async def test_upload_defaults_to_md(auth_client, db_session):
     r = await auth_client.post(
@@ -81,7 +90,7 @@ async def test_get_job_returns_output_format(auth_client, db_session):
 
 
 async def test_worker_result_auto_generates_md(
-    worker_client, seed_job, storage_spy, db_session, VALID_RESULT_JSONB, md_llm_down
+    worker_client, seed_job, storage_spy, db_session, VALID_RESULT_JSONB, md_llm_down, docx_llm_down
 ):
     """POST /result (worker protocol) → exports/{id}/md written in background."""
     claim = await worker_client.get("/api/jobs/next")
@@ -133,7 +142,7 @@ async def test_auto_docx_llm_down_warns_and_job_stays_done(
         )
         assert r.status_code == 200
         await drain_auto_output()
-    assert any("auto output failed" in rec.getMessage() for rec in caplog.records)
+    assert any("docx-layout auto-gen failed" in rec.getMessage() for rec in caplog.records)
     assert f"exports/{jid}/docx" not in _put_keys(storage_spy)
     assert f"exports/{jid}/docx-layout" not in _put_keys(storage_spy)
     job = await db_session.get(Job, jid)
@@ -146,6 +155,7 @@ async def test_auto_docx_success_stores_docx_layout_key(
     storage_spy,
     VALID_RESULT_JSONB,
     monkeypatch,
+    md_llm_down,
 ):
     """D4 review P1: LLM bytes go to exports/{id}/docx-layout, NOT the
     pandoc docx cache key exports/{id}/docx."""
@@ -175,9 +185,49 @@ async def test_auto_docx_success_stores_docx_layout_key(
     data = await storage_spy.get(f"exports/{jid}/docx-layout")
     assert data[:2] == b"PK"  # zip magic = real docx bytes
 
+async def test_auto_generates_both_formats(
+    auth_client,
+    worker_client,
+    storage_spy,
+    VALID_RESULT_JSONB,
+    monkeypatch,
+):
+    """User request: auto-gen writes BOTH md-layout AND docx-layout regardless
+    of output_format — viewing never waits for LLM."""
+    import json
+
+    from tests.test_export_llm_docx import FAKE_PLAN, FakeResponse, fake_llm
+
+    async def _md_ok(*args, **kwargs):
+        return "# layout md"
+
+    monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
+    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
+    r = await auth_client.post(
+        "/api/jobs",
+        files={"file": ("a.jpg", TEST_JPEG, "image/png")},
+        data={"output_format": "md"},
+    )
+    jid = r.json()["id"]
+    claim = await worker_client.get("/api/jobs/next")
+    tok = claim.json()["worker_token"]
+    r = await worker_client.post(
+        f"/api/jobs/{jid}/result",
+        json=VALID_RESULT_JSONB,
+        headers={"Authorization": f"Bearer {tok}"},
+    )
+    assert r.status_code == 200
+    await drain_auto_output()
+    keys = _put_keys(storage_spy)
+    assert f"exports/{jid}/md-layout" in keys
+    assert f"exports/{jid}/docx-layout" in keys
+    md_data = await storage_spy.get(f"exports/{jid}/md-layout")
+    assert md_data.decode("utf-8") == "# layout md"
+    docx_data = await storage_spy.get(f"exports/{jid}/docx-layout")
+    assert docx_data[:2] == b"PK"
 
 async def test_store_batch_result_schedules_md_export(
-    db_session, seed_job, storage_spy, VALID_RESULT_JSONB, md_llm_down
+    db_session, seed_job, storage_spy, VALID_RESULT_JSONB, md_llm_down, docx_llm_down
 ):
     """Kaggle ingest path (store_batch_result) schedules the same export."""
     body = ResultBody.model_validate(VALID_RESULT_JSONB)

@@ -445,41 +445,38 @@ async def _docx_html_export(job_id: int, storage: StorageDriver) -> bytes | None
     return html_to_docx((await storage.get(key)).decode("utf-8"))
 
 async def auto_generate_output(job: Job, storage: StorageDriver) -> None:
-    """Plan D4+D5: materialize job.output_format ("md"|"docx") after OCR.
+    """Generate BOTH md-layout and docx-layout eagerly after OCR.
 
-    D5: fmt "md" → md-layout via LLM (LLM/content failure → warning +
-    fallback to the plain markdown below, job stays done with an md file).
+    User request: both formats ready before viewing — no LLM wait at view
+    time. Each format is independent: one failing logs a warning, the
+    other still generates. Job stays done (best-effort).
     Reuses the export_job internals (NO HTTP round-trip); scheduled
-    fire-and-forget by job_results AFTER the result commit. Raises on
-    failure — the caller logs a warning and the job stays done.
+    fire-and-forget by job_results AFTER the result commit.
     """
-    fmt = job.output_format or "md"
-    if fmt not in ("md", "docx"):
-        fmt = "md"
-    # D4 review P1: LLM bytes go under docx-layout — never overwrite the
-    # pandoc docx cache key exports/{id}/docx (export_job cache contract).
-    key_fmt = "docx-layout" if fmt == "docx" else fmt
-    if fmt == "docx":
-        data = await _llm_docx_export(job.id, job)  # LLM down → HTTPException → caller warns
-    elif fmt == "md":
-        # D5: md auto-gen = md-layout via LLM; any failure → fallback below.
-        # exports/{id}/md = md-layout bytes khi auto-gen (theo user output
-        # intent); md thường chỉ còn khi fallback (giữ nguyên key).
-        try:
-            data = await _llm_md_export(job.id, job)
-        except HTTPException as exc:
-            logger.warning(
-                "md-layout auto-gen failed job=%s: %s — fallback plain md",
-                job.id, exc.detail,
+    # md-layout (LLM) — failure → warning + fallback plain md at exports/{id}/md
+    try:
+        data = await _llm_md_export(job.id, job)
+        await storage.put(f"exports/{job.id}/md-layout", data)
+    except HTTPException as exc:
+        logger.warning(
+            "md-layout auto-gen failed job=%s: %s — fallback plain md",
+            job.id, exc.detail,
+        )
+        markdown = current_markdown(job.result or {})
+        # same md branch as export_job: crops materialized before encode
+        with tempfile.TemporaryDirectory() as td:
+            markdown = await _materialize_crops(
+                job.id, markdown, job, storage, Path(td)
             )
-            markdown = current_markdown(job.result or {})
-            # same md branch as export_job: crops materialized before encode
-            with tempfile.TemporaryDirectory() as td:
-                markdown = await _materialize_crops(
-                    job.id, markdown, job, storage, Path(td)
-                )
-            data = markdown.encode("utf-8")
-    await storage.put(f"exports/{job.id}/{key_fmt}", data)
+        await storage.put(f"exports/{job.id}/md", markdown.encode("utf-8"))
+    # docx-layout (LLM) — failure → warning (independent of md above)
+    try:
+        data = await _llm_docx_export(job.id, job)
+        await storage.put(f"exports/{job.id}/docx-layout", data)
+    except HTTPException as exc:
+        logger.warning(
+            "docx-layout auto-gen failed job=%s: %s", job.id, exc.detail
+        )
 
 @router.post("/api/jobs/{id}/export")
 async def export_job(
