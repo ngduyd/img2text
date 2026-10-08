@@ -1,19 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlignCenter, AlignJustify, AlignLeft, IndentDecrease, IndentIncrease } from "lucide-react";
+import { IndentDecrease, IndentIncrease } from "lucide-react";
 import type { LayoutStyle } from "../api/types";
-import { DEFAULT_PREVIEW_OPTS, FONT_FAMILIES, buildLayoutStyleCss, buildPreviewCss } from "../lib/docStyle";
+import { DEFAULT_PREVIEW_OPTS, buildLayoutStyleCss, buildPreviewCss } from "../lib/docStyle";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
 
-type DocStyleVariant = "md" | "word";
-
 type Align = "left" | "center" | "justify";
-
-const ALIGNS: { value: Align; testid: string; title: string; Icon: typeof AlignLeft }[] = [
-  { value: "left", testid: "word-style-align-left", title: "Căn trái", Icon: AlignLeft },
-  { value: "center", testid: "word-style-align-center", title: "Căn giữa", Icon: AlignCenter },
-  { value: "justify", testid: "word-style-align-justify", title: "Căn đều", Icon: AlignJustify },
-];
 
 const LINE_SPACINGS = ["1", "1.25", "1.5"];
 
@@ -29,41 +21,44 @@ const SELECT_CLS =
   "h-10 rounded-sm border border-border bg-surface px-2 text-text file:cursor-pointer";
 
 /**
- * Bộ tool định dạng doc partag (pane md/word của /edit): state style nằm đây,
- * css mới bắn ra qua onChange (nhận setter useState ổn định). `html` (optional)
- * = HTML render của preview đang xem — nguồn sinh TOC (word-toc, R51 giữ testid).
- * JD2: variant="word" (pane DOCX) THÊM controls bố cục trang — css qua
- * onWordChange, chỉ áp trong word pane (UnifiedEditor inject riêng cho docx).
- * Plan M3: controls page-style đổi testid word-style-* (word-tb-* thuộc content
- * toolbar single-row của WordToolbar — word-toc/word-tools giữ nguyên).
+ * Bộ tool định dạng pane WORD (/edit mode word, M4): chỉ controls TRANG-LEVEL —
+ * margin, giãn dòng, TOC/đánh số heading, viền bảng, indent trang.
+ * R51 exception (lệnh user): gỡ control NỘI DUNG trùng toolbar Tiptap M4
+ * (tool-font-family, tool-font-size, word-style-align-*, word-style-underline) —
+ * toolbar xử lý theo vùng chọn.
+ * css bắn qua onChange (baseCss) + onWordChange (wordCss); state style nằm đây.
+ * `html` (optional) = HTML render của preview — nguồn sinh TOC (word-toc).
+ * Plan M3: hydrate từ job.layout_style + emit bản PUT layout-style (onStyleChange);
+ * fontFamily/fontSize/align/underline GIỮ state (key LayoutStyle server, export
+ * fallback dùng) nhưng KHÔNG còn UI control.
  */
 export default function DocStyleTools({
   html = null,
   onChange,
-  variant = "md",
   onWordChange,
   initialStyle = null,
   onStyleChange,
 }: {
   html?: string | null;
   onChange: (css: string) => void;
-  variant?: DocStyleVariant;
   onWordChange?: (css: string) => void;
   /** Plan M: hydrate từ job.layout_style (lưu ở session trước) + emit bản PUT layout-style. */
   initialStyle?: LayoutStyle | null;
   onStyleChange?: (style: LayoutStyle) => void;
 }) {
-  const [fontFamily, setFontFamily] = useState(initialStyle?.fontFamily ?? DEFAULT_PREVIEW_OPTS.fontFamily);
-  const [fontSize, setFontSize] = useState(initialStyle?.fontSize ?? DEFAULT_PREVIEW_OPTS.fontSize);
+  // Font/align/underline: state hydrate từ layout_style, không UI control (gỡ theo
+  // lệnh user — trùng toolbar Tiptap) nhưng vẫn phát trong wordStyle → PUT giữ key.
+  const [fontFamily] = useState(initialStyle?.fontFamily ?? DEFAULT_PREVIEW_OPTS.fontFamily);
+  const [fontSize] = useState(initialStyle?.fontSize ?? DEFAULT_PREVIEW_OPTS.fontSize);
   const [indexOn, setIndexOn] = useState(DEFAULT_PREVIEW_OPTS.index);
   const [marginLeft, setMarginLeft] = useState(DEFAULT_PREVIEW_OPTS.marginLeft);
   const [marginRight, setMarginRight] = useState(DEFAULT_PREVIEW_OPTS.marginRight);
   const [tableBorders, setTableBorders] = useState(DEFAULT_PREVIEW_OPTS.tableBorders);
-  // Word-only page layout: align/indent/line spacing/underline → CSS cho docx pane.
-  const [align, setAlign] = useState<Align>(initialStyle?.align ?? "left");
+  // Page layout: indent/line spacing có UI; align/underline chỉ hydrate (xem trên).
+  const [align] = useState<Align>(initialStyle?.align ?? "left");
   const [indent, setIndent] = useState(initialStyle?.indent ?? 0);
   const [spacing, setSpacing] = useState(initialStyle?.spacing ?? "1.5");
-  const [underline, setUnderline] = useState(initialStyle?.underline ?? false);
+  const [underline] = useState(initialStyle?.underline ?? false);
 
   const css = useMemo(
     () => buildPreviewCss({ fontFamily, fontSize, index: indexOn, marginLeft, marginRight, tableBorders }),
@@ -78,10 +73,7 @@ export default function DocStyleTools({
     () => ({ fontFamily, fontSize, align, indent, spacing, underline }),
     [fontFamily, fontSize, align, indent, spacing, underline],
   );
-  const wordCss = useMemo(
-    () => (variant === "word" ? buildLayoutStyleCss(wordStyle) : ""),
-    [variant, wordStyle],
-  );
+  const wordCss = useMemo(() => buildLayoutStyleCss(wordStyle), [wordStyle]);
   useEffect(() => {
     onWordChange?.(wordCss);
   }, [wordCss, onWordChange]);
@@ -98,37 +90,6 @@ export default function DocStyleTools({
 
   return (
     <div data-testid="doc-style-tools">
-      {/* Chữ (Font) */}
-      <div className="mb-3">
-        <label className="flex flex-col gap-1 text-sm" htmlFor="tool-font-family">
-          <span className="text-muted">Font chữ</span>
-          <select
-            id="tool-font-family"
-            data-testid="tool-font-family"
-            value={fontFamily}
-            onChange={(e) => setFontFamily(e.target.value)}
-            className={SELECT_CLS}
-          >
-            {FONT_FAMILIES.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="mt-2">
-          <Input
-            label="Cỡ chữ (px, 8-72)"
-            testid="tool-font-size"
-            type="number"
-            min={8}
-            max={72}
-            value={fontSize}
-            onChange={(e) => setFontSize(clamp(e.target.value, 8, 72, fontSize))}
-          />
-        </div>
-      </div>
-
       {/* Index (Mục lục) */}
       <div className="mb-3">
         <label className="flex items-center gap-2 text-sm">
@@ -196,78 +157,48 @@ export default function DocStyleTools({
         Viền bảng
       </label>
 
-      {/* JD2 word pane: bố cục trang (align/indent/giãn dòng/gạch chân) */}
-      {variant === "word" && (
-        <div data-testid="word-tools" className="mt-3 border-t border-border pt-3">
-          <div className="mb-3 flex items-center gap-2">
-            {ALIGNS.map(({ value, testid, title, Icon }) => (
-              <Button
-                key={value}
-                testid={testid}
-                variant="ghost"
-                size="sm"
-                title={title}
-                aria-label={title}
-                aria-pressed={align === value}
-                className={align === value ? "bg-surface-2" : ""}
-                onClick={() => setAlign(value)}
-              >
-                <Icon className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            ))}
-            <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
-            <Button
-              testid="word-style-indent-out"
-              variant="ghost"
-              size="sm"
-              title="Bớt lề"
-              aria-label="Bớt lề"
-              disabled={indent === 0}
-              onClick={() => setIndent((n) => Math.max(0, n - 1))}
-            >
-              <IndentDecrease className="h-4 w-4" aria-hidden="true" />
-            </Button>
-            <Button
-              testid="word-style-indent-in"
-              variant="ghost"
-              size="sm"
-              title="Thêm lề"
-              aria-label="Thêm lề"
-              onClick={() => setIndent((n) => Math.min(4, n + 1))}
-            >
-              <IndentIncrease className="h-4 w-4" aria-hidden="true" />
-            </Button>
-          </div>
-          <div className="flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2 text-sm" htmlFor="tool-line-spacing">
-              <span className="text-muted">Giãn dòng</span>
-              <select
-                id="tool-line-spacing"
-                data-testid="word-style-spacing"
-                value={spacing}
-                onChange={(e) => setSpacing(e.target.value)}
-                className={SELECT_CLS}
-              >
-                {LINE_SPACINGS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                data-testid="word-style-underline"
-                checked={underline}
-                onChange={(e) => setUnderline(e.target.checked)}
-                className="h-4 w-4 accent-accent"
-              />
-              Gạch chân chữ
-            </label>
-          </div>
+      {/* Bố cục trang word: indent/giãn dòng */}
+      <div data-testid="word-tools" className="mt-3 border-t border-border pt-3">
+        <div className="mb-3 flex items-center gap-2">
+          <Button
+            testid="word-style-indent-out"
+            variant="ghost"
+            size="sm"
+            title="Bớt lề"
+            aria-label="Bớt lề"
+            disabled={indent === 0}
+            onClick={() => setIndent((n) => Math.max(0, n - 1))}
+          >
+            <IndentDecrease className="h-4 w-4" aria-hidden="true" />
+          </Button>
+          <Button
+            testid="word-style-indent-in"
+            variant="ghost"
+            size="sm"
+            title="Thêm lề"
+            aria-label="Thêm lề"
+            onClick={() => setIndent((n) => Math.min(4, n + 1))}
+          >
+            <IndentIncrease className="h-4 w-4" aria-hidden="true" />
+          </Button>
         </div>
-      )}
+        <label className="flex items-center gap-2 text-sm" htmlFor="tool-line-spacing">
+          <span className="text-muted">Giãn dòng</span>
+          <select
+            id="tool-line-spacing"
+            data-testid="word-style-spacing"
+            value={spacing}
+            onChange={(e) => setSpacing(e.target.value)}
+            className={SELECT_CLS}
+          >
+            {LINE_SPACINGS.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
     </div>
   );
 }

@@ -271,7 +271,6 @@ export default function UnifiedEditor({
               />
             )}
             <DocStyleTools
-              variant="word"
               html={docxHtml}
               initialStyle={job.layout_style}
               onChange={setBaseCss}

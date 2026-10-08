@@ -188,16 +188,16 @@ it("M5: md mode = MDEditor (value/onChange wiring); Lưu → putMdLayoutContent 
   expect(toast.success).toHaveBeenCalledWith("Đã lưu.");
 });
 
-it("word style: đổi align → btn-save-style → putLayoutStyle (objectContaining) + toast", async () => {
+it("word style: đổi line spacing → btn-save-style → putLayoutStyle (objectContaining) + toast", async () => {
   const user = userEvent.setup();
   render(<Harness job={JOB} />);
   await user.click(screen.getByTestId("switch-mode-word"));
   await screen.findByTestId("preview-docx-frame");
-  await user.click(screen.getByTestId("word-style-align-center"));
+  await user.selectOptions(screen.getByTestId("word-style-spacing"), "1");
   await user.click(screen.getByTestId("btn-save-style"));
   expect(api.putLayoutStyle).toHaveBeenCalledWith(
     "5",
-    expect.objectContaining({ align: "center" }),
+    expect.objectContaining({ spacing: "1" }),
   );
   expect(toast.success).toHaveBeenCalledWith("Đã lưu.");
 });
@@ -205,12 +205,40 @@ it("word style: đổi align → btn-save-style → putLayoutStyle (objectContai
 it("word tools hydrate từ job.layout_style (session trước đã lưu)", async () => {
   const user = userEvent.setup();
   render(
-    <Harness job={{ ...JOB, layout_style: { align: "center", fontSize: 20 } }} />,
+    <Harness job={{ ...JOB, layout_style: { align: "center", fontSize: 20, spacing: "1" } }} />,
   );
   await user.click(screen.getByTestId("switch-mode-word"));
   await screen.findByTestId("preview-docx-frame");
-  expect(screen.getByTestId("word-style-align-center")).toHaveAttribute("aria-pressed", "true");
-  expect(screen.getByTestId("tool-font-size")).toHaveValue(20);
+  expect(screen.getByTestId("word-style-spacing")).toHaveValue("1");
+});
+
+it("DocStyleTools word: giữ controls trang-level; gỡ control trùng toolbar Tiptap (R51 exception theo lệnh user)", async () => {
+  const user = userEvent.setup();
+  render(<Harness job={JOB} />);
+  await user.click(screen.getByTestId("switch-mode-word"));
+  await screen.findByTestId("preview-docx-frame");
+  screen.getByTestId("doc-style-tools");
+  // còn lại: margin / line spacing / TOC / indent / viền bảng (trang-level)
+  for (const id of [
+    "tool-margin-left",
+    "tool-margin-right",
+    "word-style-spacing",
+    "tool-index-toggle",
+    "word-style-indent-in",
+    "word-style-indent-out",
+    "tool-table-borders",
+  ])
+    expect(screen.getByTestId(id)).toBeInTheDocument();
+  // gỡ: trùng toolbar Tiptap theo vùng chọn — không render nữa
+  for (const id of [
+    "tool-font-family",
+    "tool-font-size",
+    "word-style-align-left",
+    "word-style-align-center",
+    "word-style-align-justify",
+    "word-style-underline",
+  ])
+    expect(screen.queryByTestId(id)).toBeNull();
 });
 
 it("flow lỗi → layout-error + btn-retry-layout + toast.error; retry chạy lại flow", async () => {
