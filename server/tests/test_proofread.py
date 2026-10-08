@@ -76,7 +76,7 @@ async def test_run_proofread_stores_suggestions(
     # LLM call contract: model from settings, temperature 0, json_object, prompt
     url, payload, _ = calls[0]
     assert url.endswith("/chat/completions")
-    assert payload["model"] == settings.llm_model
+    assert payload["model"] == settings.proofread_llm_model
     assert payload["temperature"] == 0
     assert payload["response_format"] == {"type": "json_object"}
     prompt = payload["messages"][0]["content"]

@@ -118,7 +118,7 @@ def _parse(content: str) -> list[dict]:
 async def _call_llm(page_text: str, hint: str) -> list[dict]:
     """One chat/completions POST (temperature 0, json_object, Bearer nếu có)."""
     payload: dict = {
-        "model": settings.llm_model,
+        "model": settings.proofread_llm_model,
         "messages": [
             {"role": "user", "content": PROMPT.format(hint=hint, text=page_text)}
         ],
