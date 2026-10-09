@@ -75,40 +75,44 @@ def main() -> int:
     size_mb = os.path.getsize(OUTPUT_TAR) / 1024 / 1024
     print(f"packed: {OUTPUT_TAR} ({size_mb:.1f} MB)", flush=True)
 
-    # 2.5 Copy dataset-metadata.json to output folder
+    # 2.5 Copy dataset-metadata.json to script folder (/kaggle/src/)
     import shutil
-    # Kaggle kernel chạy từ /kaggle/src/ → copy metadata vào đó
-    metadata_src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dataset-metadata.json")
-    if not os.path.exists(metadata_src):
-        # Fallback: tìm trong parent folders
-        for parent in [os.path.dirname(metadata_src), os.path.dirname(os.path.dirname(metadata_src))]:
-            candidate = os.path.join(parent, "dataset-metadata.json")
-            if os.path.exists(candidate):
-                metadata_src = candidate
-                break
-    if os.path.exists(metadata_src):
-        shutil.copy(metadata_src, os.path.dirname(OUTPUT_TAR))
-        print(f"copied dataset-metadata.json from {metadata_src}", flush=True)
+    # Tìm dataset-metadata.json trong git folder (deploy/kaggle/env-kernel/)
+    metadata_src = None
+    for candidate in [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "dataset-metadata.json"),
+        "/kaggle/src/dataset-metadata.json",
+        "/kaggle/working/dataset-metadata.json",
+    ]:
+        if os.path.exists(candidate):
+            metadata_src = candidate
+            break
+    if metadata_src:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        shutil.copy(metadata_src, script_dir)
+        print(f"copied dataset-metadata.json from {metadata_src} to {script_dir}", flush=True)
     else:
         print("WARNING: dataset-metadata.json not found", flush=True)
 
-    # 3. Upload Dataset
+    # 3. Upload Dataset (folder = script_dir, chứa dataset-metadata.json)
     os.environ.setdefault("KAGGLE_CONFIG_DIR", "/root/.kaggle")
     from kaggle.api.kaggle_api_extended import KaggleApi
 
     api = KaggleApi()
     api.authenticate()
 
+    upload_folder = os.path.dirname(os.path.abspath(__file__))
+
     try:
         api.dataset_create_new(
-            folder=os.path.dirname(OUTPUT_TAR),
+            folder=upload_folder,
             public=False,
         )
     except Exception as e:
         print(f"dataset create (may already exist): {e}")
 
     api.dataset_create_version(
-        folder=os.path.dirname(OUTPUT_TAR),
+        folder=upload_folder,
         version_notes="img2text env",
     )
     print(f"uploaded to Kaggle Dataset: {DATASET_SLUG}", flush=True)
