@@ -108,8 +108,9 @@ def _page_text(page: dict) -> str:
     lines: list[str] = []
     for r in page.get("regions", []):
         text = r.get("text") or ""
-        if text and (r.get("verdict") != "ok" or r.get("placeholder")):
-            text = f"[verdict={r.get('verdict')}] {text}"
+        verdict = r.get("verdict") or "ok"
+        if text and (verdict != "ok" or r.get("placeholder")):
+            text = f"[verdict={verdict}] {text}"
         lines.append(text)
     return "\n".join(lines)
 

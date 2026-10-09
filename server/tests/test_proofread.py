@@ -121,6 +121,16 @@ async def test_prompt_marks_non_ok_regions_with_verdict(
     # hint = text REGION ĐẦU (context tài liệu: trường/đề thi), không phải "3 dòng đầu"
     assert "Đề thi (ngữ cảnh): Xin chào" in prompt
 
+def test_page_text_region_missing_verdict_key_not_prefixed():
+    """P2: region thiếu key verdict → default ok → text không bị prefix [verdict=...]."""
+    assert proofread._page_text({"regions": [{"text": "xin chao"}]}) == "xin chao"
+    assert (
+        proofread._page_text(
+            {"regions": [{"text": "anh meo", "verdict": "image_unextractable"}]}
+        )
+        == "[verdict=image_unextractable] anh meo"
+    )
+
 def test_prompt_new_instructions_and_no_conservative_line():
     """Prompt mới: task VLM OCR + verdict legend + liệt kê mọi từ khả nghi;"
     "dòng bảo thủ 'Chỉ nghi ngờ thực sự' bị gỡ."""

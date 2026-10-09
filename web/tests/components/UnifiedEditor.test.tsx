@@ -58,7 +58,15 @@ const JOB: Job = {
 };
 
 /** Harness có state editing thật (btn-edit-doc header toggle như JobDetail control). */
-function Harness({ job, markdown = "# Artifact" }: { job: Job; markdown?: string }) {
+function Harness({
+  job,
+  markdown = "# Artifact",
+  hostRef,
+}: {
+  job: Job;
+  markdown?: string;
+  hostRef?: { current: HTMLElement | null };
+}) {
   const [editing, setEditing] = useState(false);
   const [client] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
@@ -69,6 +77,7 @@ function Harness({ job, markdown = "# Artifact" }: { job: Job; markdown?: string
         jobId={String(job.id)}
         job={job}
         markdown={markdown}
+        hostRef={hostRef}
         editing={editing}
         onEditingChange={setEditing}
       />
@@ -407,6 +416,39 @@ it("Plan proofread: md preview highlight pending phrase trong <mark> (best effor
   await waitFor(() =>
     expect(document.querySelector(".w-md-editor-preview mark")).toHaveTextContent("Artifact"),
   );
+});
+
+it("Plan proofread: md jump → click suggestion-jump-7 → setSelectionRange tại phrase + focus + scroll", async () => {
+  // P1: jsdom thiếu scrollIntoView — mock để assert, KHÔNG phụ thuộc implementation khác.
+  const scrollIntoViewMock = vi.fn();
+  Element.prototype.scrollIntoView = scrollIntoViewMock;
+  const user = userEvent.setup();
+  vi.mocked(api.getSuggestions).mockResolvedValue([PENDING]);
+  // handleJump đọc textarea qua hostRef (JobDetail truyền ref) → Harness phải nối ref.
+  const hostRef: { current: HTMLElement | null } = { current: null };
+  render(<Harness job={JOB} hostRef={hostRef} />); // mdText = "# Artifact" → "Artifact" = [2, 10)
+  await screen.findByTestId("md-editor");
+  await user.click(screen.getByTestId("btn-proofread"));
+  await user.click(await screen.findByTestId("suggestion-jump-7"));
+  const ta = hostRef.current?.querySelector<HTMLTextAreaElement>(
+    ".w-md-editor-text-input, textarea",
+  ) as HTMLTextAreaElement;
+  expect(ta.selectionStart).toBe(2);
+  expect(ta.selectionEnd).toBe(10);
+  expect(ta).toHaveFocus();
+  expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: "smooth", block: "center" });
+});
+
+it("Plan proofread: reject → rejectSuggestion(suggestion id) + toast.success + row biến mất", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.getSuggestions).mockResolvedValue([PENDING]);
+  render(<Harness job={JOB} />);
+  await screen.findByTestId("md-editor");
+  await user.click(screen.getByTestId("btn-proofread"));
+  await user.click(await screen.findByTestId("suggestion-reject-7"));
+  await waitFor(() => expect(api.rejectSuggestion).toHaveBeenCalledWith("5", 7));
+  expect(toast.success).toHaveBeenCalledWith("Đã bỏ qua gợi ý.");
+  await waitFor(() => expect(screen.queryByTestId("suggestion-7")).toBeNull());
 });
 
 it("Plan M3 → M5: md mode không còn MdToolbar/textarea hand-rolled (R51 exception theo lệnh dùng thư viện)", async () => {
