@@ -46,7 +46,7 @@ it("queued job without result omits gpu/model/finished", () => {
   };
   render(<InfoPanel job={job} />);
   const panel = screen.getByTestId("panel-info");
-  expect(within(panel).getByTestId("status-5")).toHaveTextContent("Đang chờ worker Colab");
+  expect(within(panel).getByTestId("status-5")).toHaveTextContent("Đang lập lịch");
   expect(within(panel).queryByText(/GPU/)).toBeNull();
   expect(within(panel).queryByText("m1")).toBeNull();
   expect(within(panel).getAllByText(/\/2026/)).toHaveLength(1);

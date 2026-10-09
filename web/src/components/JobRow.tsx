@@ -24,7 +24,8 @@ export default function JobRow({ job }: { job: JobListItem }) {
   const retry = useMutation({
     mutationFn: () => api.retryJob(job.id),
     onSuccess: () => {
-      toast.success("Đã chạy lại.");
+      // Plan job-phases R59: retry upsert lịch chạy lại.
+      toast.success("Đã lên lịch chạy lại");
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
     onError: (err) => toast.error(mapApiError(err)),
@@ -100,7 +101,7 @@ export default function JobRow({ job }: { job: JobListItem }) {
         )}
         {job.status === "failed" && (
           <Button
-            testid={`btn-retry-${job.id}`}
+            testid="btn-retry-job"
             size="sm"
             variant="secondary"
             disabled={retry.isPending}

@@ -44,7 +44,7 @@ export interface RegionPatchOut {
   markdown_replaced: boolean;
 }
 
-export type JobStatus = "queued" | "running" | "done" | "failed";
+export type JobStatus = "queued" | "extracting" | "rendering" | "done" | "failed";
 
 /** Plan M: word style overrides (PUT /layout-style) — server enum-validates keys. */
 export interface LayoutStyle {

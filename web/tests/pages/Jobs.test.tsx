@@ -135,8 +135,8 @@ it("job rows render status badge", async () => {
   });
   renderWithRouter(<Jobs />);
   expect(await screen.findByTestId("job-row-7")).toBeInTheDocument();
-  // P2: badge literal pins the shared STATUS_TEXT spelling ("Đang chờ worker Colab").
-  expect(screen.getByTestId("badge-7")).toHaveTextContent("Đang chờ worker Colab");
+  // P2: badge literal pins the shared STATUS_TEXT spelling ("Đang lập lịch").
+  expect(screen.getByTestId("badge-7")).toHaveTextContent("Đang lập lịch");
 });
 
 it("filter tabs show counts and click filters rows", async () => {
@@ -147,16 +147,24 @@ it("filter tabs show counts and click filters rows", async () => {
       { id: 2, status: "done", page_count: 2, file_type: "jpg", created_at: "2026-10-04T00:00:00Z", error: null },
       { id: 3, status: "done", page_count: 3, file_type: "pdf", created_at: "2026-10-04T00:00:00Z", error: null },
       { id: 4, status: "failed", page_count: 1, file_type: "jpg", created_at: "2026-10-04T00:00:00Z", error: "boom" },
+      { id: 5, status: "extracting", page_count: 2, file_type: "pdf", created_at: "2026-10-04T00:00:00Z", error: null },
+      { id: 6, status: "rendering", page_count: 1, file_type: "jpg", created_at: "2026-10-04T00:00:00Z", error: null },
     ] as Job[],
-    total: 4,
+    total: 6,
   });
   renderWithRouter(<Jobs />);
   await screen.findByTestId("job-row-4");
-  await waitFor(() => expect(screen.getByTestId("filter-all")).toHaveTextContent("Tất cả (4)"));
+  await waitFor(() => expect(screen.getByTestId("filter-all")).toHaveTextContent("Tất cả (6)"));
   // P2: chip labels share STATUS_TEXT spellings with badges (one spelling per status).
-  expect(screen.getByTestId("filter-queued")).toHaveTextContent("Đang chờ worker Colab (1)");
+  expect(screen.getByTestId("filter-queued")).toHaveTextContent("Đang lập lịch (1)");
+  expect(screen.getByTestId("filter-extracting")).toHaveTextContent("Đang trích xuất văn bản (1)");
+  expect(screen.getByTestId("filter-rendering")).toHaveTextContent("Đang dựng layout (1)");
   expect(screen.getByTestId("filter-done")).toHaveTextContent("Hoàn tất (2)");
   expect(screen.getByTestId("filter-failed")).toHaveTextContent("Xử lý thất bại (1)");
+  // New phase tabs filter to their own rows.
+  await userEvent.click(screen.getByTestId("filter-extracting"));
+  expect(screen.getByTestId("job-row-5")).toBeInTheDocument();
+  expect(screen.queryByTestId("job-row-1")).not.toBeInTheDocument();
   const user = userEvent.setup();
   await user.click(screen.getByTestId("filter-done"));
   expect(screen.getByTestId("job-row-2")).toBeInTheDocument();
@@ -207,16 +215,18 @@ it("header shows job stats (total, pending, done)", async () => {
   vi.mocked(api.listJobs).mockResolvedValue({
     items: [
       { id: 1, status: "queued", page_count: 1, file_type: "pdf", created_at: "2026-10-04T00:00:00Z", error: null },
-      { id: 2, status: "running", page_count: 2, file_type: "jpg", created_at: "2026-10-04T00:00:00Z", error: null },
+      { id: 2, status: "extracting", page_count: 2, file_type: "jpg", created_at: "2026-10-04T00:00:00Z", error: null },
+      { id: 5, status: "rendering", page_count: 2, file_type: "jpg", created_at: "2026-10-04T00:00:00Z", error: null },
       { id: 3, status: "done", page_count: 3, file_type: "pdf", created_at: "2026-10-04T00:00:00Z", error: null },
       { id: 4, status: "failed", page_count: 1, file_type: "jpg", created_at: "2026-10-04T00:00:00Z", error: "boom" },
     ] as Job[],
-    total: 4,
+    total: 5,
   });
   renderWithRouter(<Jobs />);
   await screen.findByTestId("job-row-4");
-  expect(screen.getByTestId("stats-total")).toHaveTextContent("4");
-  expect(screen.getByTestId("stats-pending")).toHaveTextContent("2");
+  // Plan job-phases: pending bucket = queued + extracting + rendering.
+  expect(screen.getByTestId("stats-total")).toHaveTextContent("5");
+  expect(screen.getByTestId("stats-pending")).toHaveTextContent("3");
   expect(screen.getByTestId("stats-done")).toHaveTextContent("1");
 });
 
