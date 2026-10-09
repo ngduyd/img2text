@@ -75,6 +75,13 @@ def main() -> int:
     size_mb = os.path.getsize(OUTPUT_TAR) / 1024 / 1024
     print(f"packed: {OUTPUT_TAR} ({size_mb:.1f} MB)", flush=True)
 
+    # 2.5 Copy dataset-metadata.json to output folder
+    import shutil
+    metadata_src = os.path.join(os.path.dirname(__file__), "dataset-metadata.json")
+    if os.path.exists(metadata_src):
+        shutil.copy(metadata_src, os.path.dirname(OUTPUT_TAR))
+        print("copied dataset-metadata.json", flush=True)
+
     # 3. Upload Dataset
     os.environ.setdefault("KAGGLE_CONFIG_DIR", "/root/.kaggle")
     from kaggle.api.kaggle_api_extended import KaggleApi
@@ -84,9 +91,8 @@ def main() -> int:
 
     try:
         api.dataset_create_new(
-            slug=DATASET_SLUG.split("/")[1],
-            title="img2text-env",
-            is_private=True,
+            folder=os.path.dirname(OUTPUT_TAR),
+            public=False,
         )
     except Exception as e:
         print(f"dataset create (may already exist): {e}")
@@ -94,7 +100,6 @@ def main() -> int:
     api.dataset_create_version(
         folder=os.path.dirname(OUTPUT_TAR),
         version_notes="img2text env",
-        dataset_slug=DATASET_SLUG,
     )
     print(f"uploaded to Kaggle Dataset: {DATASET_SLUG}", flush=True)
 
