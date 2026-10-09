@@ -9,6 +9,7 @@ after store, API GET/accept/reject/proofread + 403/404.
 """
 
 import json
+import re
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -103,6 +104,78 @@ async def test_run_proofread_stores_suggestions(
     info = [r.getMessage() for r in caplog.records if r.levelname == "INFO"]
     assert any(m.startswith("proofread: job=") for m in info), info
     assert not any("thiếu dấu" in m for m in info)
+
+async def test_prompt_marks_non_ok_regions_with_verdict(
+    monkeypatch, db_session, done_job_with_result
+):
+    """VLM signal: non-ok region prefixed [verdict=...] trong prompt; ok region
+    giữ nguyên (prompt lấy đúng text trang gửi LLM)."""
+    job = await _job(db_session, done_job_with_result)
+    regions = job.result["pages"][0]["regions"]
+    regions[1]["text"] = "hinh anh meo"  # verdict=image_unextractable, có text
+    calls = fake_llm(monkeypatch, [_llm_response([])])
+    assert await run_proofread(db_session, job) == 0
+    prompt = calls[0][1]["messages"][0]["content"]
+    assert "[verdict=image_unextractable] hinh anh meo" in prompt
+    assert "[verdict=ok]" not in prompt
+    # hint = text REGION ĐẦU (context tài liệu: trường/đề thi), không phải "3 dòng đầu"
+    assert "Đề thi (ngữ cảnh): Xin chào" in prompt
+
+def test_page_text_region_missing_verdict_key_not_prefixed():
+    """P2: region thiếu key verdict → default ok → text không bị prefix [verdict=...]."""
+    assert proofread._page_text({"regions": [{"text": "xin chao"}]}) == "xin chao"
+    assert (
+        proofread._page_text(
+            {"regions": [{"text": "anh meo", "verdict": "image_unextractable"}]}
+        )
+        == "[verdict=image_unextractable] anh meo"
+    )
+
+def test_prompt_new_instructions_and_no_conservative_line():
+    """Prompt mới: task VLM OCR + verdict legend + liệt kê mọi từ khả nghi;"
+    "dòng bảo thủ 'Chỉ nghi ngờ thực sự' bị gỡ."""
+    p = proofread.PROMPT.format(hint="H", text="T")
+    assert "Đây là ảnh chụp đề thi tiếng Việt đã OCR" in p
+    assert "bổ mẹ" in p
+    assert "[verdict=...]" in p
+    assert "Liệt kê mọi từ khả nghi" in p
+    assert "Chỉ nghi ngờ thực sự" not in p
+    assert "3 dòng đầu" not in p
+    assert '{"items":[{"phrase"' in p.replace("{{", "{").replace("}}", "}")
+
+async def test_timeout_retries_once_then_succeeds(
+    monkeypatch, db_session, done_job_with_result, caplog
+):
+    """ReadTimeout lần 1 → retry 1 lần → response OK → suggestions lưu."""
+    fake_llm(
+        monkeypatch,
+        [
+            httpx.ReadTimeout("timed out"),
+            _llm_response([{"phrase": "chào", "suggestion": "chao", "reason": "dấu"}]),
+        ],
+    )
+    job = await _job(db_session, done_job_with_result)
+    with caplog.at_level("WARNING", logger="app.services.proofread"):
+        assert await run_proofread(db_session, job) == 1
+    warns = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any("timeout" in m for m in warns), warns
+
+async def test_both_timeouts_raise_proofread_error_with_diagnostics(
+    monkeypatch, db_session, done_job_with_result, caplog
+):
+    """Timeout ×2 → ProofreadError (str(ReadTimeout) rỗng → message phải tự
+    chứa 'timeout' + số lần + elapsed) → warning + 0, job giữ done."""
+    fake_llm(
+        monkeypatch,
+        [httpx.ReadTimeout(""), httpx.ReadTimeout("")],
+    )
+    job = await _job(db_session, done_job_with_result)
+    with caplog.at_level("WARNING", logger="app.services.proofread"):
+        assert await run_proofread(db_session, job) == 0
+    warns = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any("LLM timeout sau 2 lần" in m for m in warns), warns
+    assert any(re.search(r"\(\d+s\)", m) for m in warns), warns
+    assert job.status == "done"
 
 async def test_run_proofread_skips_unknown_phrase(monkeypatch, db_session, done_job_with_result):
     fake_llm(

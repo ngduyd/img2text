@@ -41,9 +41,11 @@ function findFuzzy(haystack: string, needle: string): [number, number] | null {
       ni++;
     }
     if (ok) {
+      let start = i;
       let end = hi;
-      while (end > i && /\s/.test(haystack[end - 1])) end--;
-      return [i, end];
+      while (start < end && /\s/.test(haystack[start])) start++; // bỏ space leading
+      while (end > start && /\s/.test(haystack[end - 1])) end--;
+      return [start, end];
     }
   }
   return null;
@@ -61,12 +63,69 @@ function findPhraseInEditor(
     if (node.isText && node.text) {
       const found = findFuzzy(node.text, phrase);
       if (found) {
-        result = { from: pos + 1 + found[0], to: pos + 1 + found[1] };
+        // text node pos = vị trí TRƯỚC ký tự đầu (descendants) → không +1.
+        result = { from: pos + found[0], to: pos + found[1] };
         return false;
       }
     }
   });
   return result;
+}
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Best-effort MD preview highlight: rehype plugin bọc phrase cần sửa trong
+ * <mark> (hast text nodes, chạy sau rehypeRaw/rewrite của preview).
+ */
+function rehypeMarkPhrases(phrases: string[]) {
+  const list = phrases.filter(Boolean);
+  if (list.length === 0) return () => () => undefined;
+  const re = new RegExp(`(${list.map(escapeRegExp).join("|")})`, "g");
+  type Hast = { type?: string; tagName?: string; value?: string; children?: Hast[] };
+  const splitText = (node: Hast): Hast[] | null => {
+    const value = node.value ?? "";
+    const out: Hast[] = [];
+    let last = 0;
+    let m: RegExpExecArray | null;
+    re.lastIndex = 0;
+    while ((m = re.exec(value)) !== null) {
+      if (m.index > last) out.push({ type: "text", value: value.slice(last, m.index) });
+      out.push({
+        type: "element",
+        tagName: "mark",
+        properties: {},
+        children: [{ type: "text", value: m[0] }],
+      } as Hast);
+      last = m.index + m[0].length;
+    }
+    if (out.length === 0) return null;
+    if (last < value.length) out.push({ type: "text", value: value.slice(last) });
+    return out;
+  };
+  const rewrite = (parent: Hast) => {
+    if (!parent.children) return;
+    const next: Hast[] = [];
+    for (const child of parent.children) {
+      if (child.type === "element" && child.tagName === "mark") {
+        next.push(child);
+        continue;
+      }
+      if (child.type === "text") {
+        const wrapped = splitText(child);
+        if (wrapped) {
+          next.push(...wrapped);
+          continue;
+        }
+      }
+      next.push(child);
+    }
+    parent.children = next;
+    for (const child of next)
+      if (child.children && !(child.type === "element" && child.tagName === "mark"))
+        rewrite(child);
+  };
+  return () => (tree: Hast) => rewrite(tree);
 }
 
 /**
@@ -117,6 +176,15 @@ export default function UnifiedEditor({
   const [proofreadLoading, setProofreadLoading] = useState(false);
   const wordEditorRef = useRef<Editor | null>(null);
   const pendingCount = suggestions.filter((s) => s.status === "pending").length;
+  // MD preview highlight: phrase đang pending → <mark> trong preview MDEditor.
+  const pendingPhrases = useMemo(
+    () => suggestions.filter((s) => s.status === "pending").map((s) => s.original),
+    [suggestions],
+  );
+  const previewHighlight = useMemo(
+    () => ({ rehypePlugins: [rehypeMarkPhrases(pendingPhrases)] }),
+    [pendingPhrases],
+  );
 
   useEffect(() => {
     api.getSuggestions(jobId).then(setSuggestions).catch(() => {});
@@ -263,16 +331,13 @@ export default function UnifiedEditor({
     if (!s) return;
     try {
       if (activeMode === "md") {
-        const ta = hostRef?.current?.querySelector<HTMLTextAreaElement>(
-          ".w-md-editor-text-input, textarea",
-        );
-        if (!ta) throw new Error("no textarea");
-        const found = findFuzzy(ta.value, s.original);
+        // MD: thay occurrence đầu trong editor value (mdText) → PUT md-layout.
+        const found = findFuzzy(mdText, s.original);
         if (!found) {
           toast.error("Không tìm thấy trong nội dung");
           return;
         }
-        const newText = ta.value.slice(0, found[0]) + s.suggestion + ta.value.slice(found[1]);
+        const newText = mdText.slice(0, found[0]) + s.suggestion + mdText.slice(found[1]);
         setMdText(newText);
         await api.putMdLayoutContent(jobId, newText);
       } else {
@@ -294,11 +359,12 @@ export default function UnifiedEditor({
     }
   };
 
-  /** Plan proofread: reject → remove khỏi list. */
+  /** Plan proofread: reject → remove khỏi list (toast R59). */
   const handleReject = async (sid: number) => {
     try {
       await api.rejectSuggestion(jobId, sid);
       setSuggestions((prev) => prev.filter((x) => x.id !== sid));
+      toast.success("Đã bỏ qua gợi ý.");
     } catch (err) {
       toast.error(mapApiError(err));
     }
@@ -409,8 +475,7 @@ export default function UnifiedEditor({
             </Button>
           </div>
         )}
-        <div className="flex gap-4">
-          <div className="min-w-0 flex-1">
+        <div className="min-w-0">
         {loading ? (
           /* Loading khớp hình content area thật (skeleton, không spinner tròn). */
           <div
@@ -432,7 +497,12 @@ export default function UnifiedEditor({
            */
           <div data-testid="md-editor" className="md-pane">
             <style>{mdPaneCss}</style>
-            <MDEditor value={mdText} onChange={(v) => setMdText(v ?? "")} height="24rem" />
+            <MDEditor
+              value={mdText}
+              onChange={(v) => setMdText(v ?? "")}
+              height="24rem"
+              previewOptions={previewHighlight}
+            />
             <div className="mt-3 flex justify-end border-t border-border pt-3">
               <Button testid="btn-save-layout" onClick={() => void saveLayout()}>
                 Lưu
@@ -466,17 +536,17 @@ export default function UnifiedEditor({
           </>
         )}
           </div>
-          {panelOpen && (
-            <aside className="w-72 shrink-0">
-              <SuggestionsPanel
-                suggestions={suggestions}
-                onAccept={(sid) => void handleAccept(sid)}
-                onReject={(sid) => void handleReject(sid)}
-                onJump={handleJump}
-              />
-            </aside>
-          )}
-        </div>
+        {panelOpen && (
+          /* Plan proofread: panel DƯỚI editor, full width (bỏ side-panel) — cả 2 mode. */
+          <div className="mt-4 border-t border-border pt-4">
+            <SuggestionsPanel
+              suggestions={suggestions}
+              onAccept={(sid) => void handleAccept(sid)}
+              onReject={(sid) => void handleReject(sid)}
+              onJump={handleJump}
+            />
+          </div>
+        )}
       </Card>
     </section>
   );

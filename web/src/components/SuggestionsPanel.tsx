@@ -3,9 +3,8 @@ import type { Suggestion } from "../api/types";
 import Button from "./ui/Button";
 
 /**
- * Plan proofread: side panel gợi ý sửa lỗi OCR. List theo trang, mỗi item =
- * original (gạch ngang đỏ) → suggestion (xanh), reason (muted), nút Áp dụng /
- * Bỏ qua. User quyết định, không tự thay thế.
+ * Plan proofread: panel DƯỚI editor — mỗi dòng = phrase → suggestion + reason,
+ * click dòng = jump tới vị trí; nút Áp dụng / Bỏ qua. User quyết định.
  */
 export default function SuggestionsPanel({
   suggestions,
@@ -60,14 +59,16 @@ export default function SuggestionsPanel({
                 type="button"
                 data-testid={`suggestion-jump-${s.id}`}
                 onClick={() => onJump(s)}
-                className="flex w-full cursor-pointer items-baseline gap-2 text-left transition duration-150 ease-out hover:opacity-80"
+                className="flex w-full cursor-pointer flex-col items-baseline gap-1 text-left transition duration-150 ease-out hover:opacity-80"
               >
-                <span className="text-sm line-through decoration-error text-error">
-                  {s.original}
+                <span className="flex items-baseline gap-2">
+                  <span className="text-sm line-through decoration-error text-error">
+                    {s.original}
+                  </span>
+                  <span className="text-sm text-success">{s.suggestion}</span>
                 </span>
-                <span className="text-sm text-success">{s.suggestion}</span>
+                <span className="text-xs text-muted">{s.reason}</span>
               </button>
-              <p className="mt-1 text-xs text-muted">{s.reason}</p>
               <div className="mt-2 flex gap-2">
                 <Button
                   testid={`suggestion-accept-${s.id}`}
