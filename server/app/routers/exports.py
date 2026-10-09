@@ -24,12 +24,12 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.convert import PANDOC_BIN, REFERENCE_DOCX
-from app.core.db import get_session
+from app.core.db import SessionLocal, get_session
 from app.core.deps import get_current_user
 from app.core.models import Job, User
 from app.routers.jobs import _job_or_403
-from app.services.llm_docx import LLMLayoutError, build_layout_docx
-from app.services.llm_md import LLMMdContentError, LLMMdError, build_md
+from app.services.render_docx import LLMError as DocxLLMError, build_docx
+from app.services.render_md import LLMError, build_md
 from app.services.html_to_docx import html_to_docx
 from app.services.storage import StorageDriver, get_storage
 
@@ -376,26 +376,25 @@ async def patch_content(
 
 # --- Export generation + download: POST /export, GET /export/{fmt}/download ---
 
-async def _llm_docx_export(job_id: int, job: Job) -> bytes:
-    """Plan D2: result → LLM layout plan → docx bytes (never caches errors).
+async def _llm_docx_export(
+    job_id: int, job: Job, ir_sink: dict | None = None
+) -> bytes:
+    """IR rewrite: result → LLM IR → docx bytes (never caches errors).
 
     Missing result → 409 "Chưa có kết quả OCR."; LLM unreachable/timeout
     → 502 "Không kết nối LLM máy chủ." (raised before storage.put).
-    Plan M: word style overrides (jobs.layout_style) applied over the
-    LLM plan — user's saved style wins (spec binding).
+    Plan M: jobs.layout_style applied over the IR render (user wins).
     """
     result = dict(job.result or {})
     if not result.get("pages"):
         raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
-    page_dims = [
-        (page.get("width") or 0, page.get("height") or 0)
-        for page in result["pages"]
-    ]
     try:
-        return await build_layout_docx(
-            result, page_dims, style_overrides=_job_layout_style(job)
+        return await build_docx(
+            result,
+            style_overrides=_job_layout_style(job),
+            ir_sink=ir_sink,
         )
-    except LLMLayoutError as exc:
+    except DocxLLMError as exc:
         logger.warning("docx-layout LLM failure job=%s: %s", job_id, exc)
         raise HTTPException(
             status_code=502, detail="Không kết nối LLM máy chủ."
@@ -412,25 +411,20 @@ def _job_layout_style(job: Job) -> dict | None:
         return None
     return style if isinstance(style, dict) else None
 
-async def _llm_md_export(job_id: int, job: Job) -> bytes:
-    """Plan D5: result → LLM md-layout markdown bytes (never caches errors).
+async def _llm_md_export(
+    job_id: int, job: Job, ir_sink: dict | None = None
+) -> bytes:
+    """IR rewrite: result → LLM IR → markdown bytes (never caches errors).
 
     Missing result → 409 "Chưa có kết quả OCR."; LLM unreachable/timeout
-    → 502 "Không kết nối LLM máy chủ."; LLM altered the verbatim block
-    text → 502 "LLM sửa nội dung — thử lại." — both raised BEFORE
-    storage.put, so failures are never cached.
+    → 502 "Không kết nối LLM máy chủ." — raised BEFORE storage.put.
     """
     result = dict(job.result or {})
     if not result.get("pages"):
         raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
     try:
-        return (await build_md(result)).encode("utf-8")
-    except LLMMdContentError as exc:
-        logger.warning("md-layout content failure job=%s: %s", job_id, exc)
-        raise HTTPException(
-            status_code=502, detail="LLM sửa nội dung — thử lại."
-        ) from exc
-    except LLMMdError as exc:
+        return (await build_md(result, ir_sink=ir_sink)).encode("utf-8")
+    except LLMError as exc:
         logger.warning("md-layout LLM failure job=%s: %s", job_id, exc)
         raise HTTPException(
             status_code=502, detail="Không kết nối LLM máy chủ."
@@ -450,12 +444,15 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> None:
     User request: both formats ready before viewing — no LLM wait at view
     time. Each format is independent: one failing logs a warning, the
     other still generates. Job stays done (best-effort).
+    The IR from either build (single LLM call each) fills job.ir_json
+    for GET /api/jobs/{id}/ir — no separate generate_ir round-trip.
     Reuses the export_job internals (NO HTTP round-trip); scheduled
     fire-and-forget by job_results AFTER the result commit.
     """
+    ir_sink: dict = {}
     # md-layout (LLM) — failure → warning + fallback plain md at exports/{id}/md
     try:
-        data = await _llm_md_export(job.id, job)
+        data = await _llm_md_export(job.id, job, ir_sink)
         await storage.put(f"exports/{job.id}/md-layout", data)
     except HTTPException as exc:
         logger.warning(
@@ -471,12 +468,22 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> None:
         await storage.put(f"exports/{job.id}/md", markdown.encode("utf-8"))
     # docx-layout (LLM) — failure → warning (independent of md above)
     try:
-        data = await _llm_docx_export(job.id, job)
+        data = await _llm_docx_export(job.id, job, ir_sink)
         await storage.put(f"exports/{job.id}/docx-layout", data)
     except HTTPException as exc:
         logger.warning(
             "docx-layout auto-gen failed job=%s: %s", job.id, exc.detail
         )
+    # IR produced by either build → job.ir_json (own session: task outlives request)
+    if ir_sink:
+        try:
+            async with SessionLocal() as session:
+                db_job = await session.get(Job, job.id)
+                if db_job is not None:
+                    db_job.ir_json = json.dumps(ir_sink, ensure_ascii=False)
+                    await session.commit()
+        except Exception as exc:
+            logger.warning("IR save failed job=%s: %s", job.id, exc)
 
 @router.post("/api/jobs/{id}/export")
 async def export_job(

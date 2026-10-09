@@ -390,6 +390,21 @@ async def put_layout_style(
     await storage.delete_prefix(f"exports/{id}/docx-layout")
     return Response(status_code=204)
 
+@router.get("/api/jobs/{id}/ir")
+async def get_job_ir(
+    id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Get Document IR JSON for a job (if LLM produced one)."""
+    job = await _job_or_403(session, id, user)
+    if not job.ir_json:
+        raise HTTPException(status_code=404, detail="Chưa có IR.")
+    try:
+        return json.loads(job.ir_json)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=500, detail="IR JSON hỏng.") from exc
+
 @router.get("/api/jobs/{id}/file")
 async def get_job_file(
     id: int,

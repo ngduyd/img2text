@@ -1,8 +1,8 @@
-"""Plan D2: docx-layout export via LLM layout plan (services/llm_docx).
+"""IR rewrite: docx-layout export via LLM IR (services/render_docx).
 
 No live LLM: httpx.AsyncClient is monkeypatched to canned responses.
-Covers: render (zip magic + python-docx heading/columns), LLM down →
-LLMLayoutError → route 502 (no cache), missing result → 409 exact,
+Covers: render (zip magic + python-docx heading), LLM down →
+LLMError → route 502 (no cache), missing result → 409 exact,
 download Content-Type, owner-or-admin, response_format retry.
 """
 
@@ -18,8 +18,8 @@ from sqlalchemy import select
 
 from app.core.config import Settings, settings
 from app.core.models import Job, User
-from app.services import llm_docx
-from app.services.llm_docx import LLMLayoutError, build_layout_docx
+from app.services import render_docx
+from app.services.render_docx import LLMError, build_docx
 
 from tests.test_jobs_read import other_client  # noqa: F401
 
@@ -27,11 +27,38 @@ DOCX_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 )
 
-FAKE_PLAN = {
-    "columns": "two",
-    "blocks": [
-        {"id": "r0", "col": "full", "style": "h1"},
-        {"id": "r1", "col": "left", "style": "body"},
+FAKE_IR = {
+    "document_id": "doc_001",
+    "schema_version": "1.0",
+    "pages": [
+        {
+            "page_id": "page_001",
+            "page_number": 1,
+            "header": [],
+            "content": [
+                {
+                    "id": "node_001",
+                    "type": "heading",
+                    "role": "section_heading",
+                    "text": "Xin chào",
+                    "align": "left",
+                    "indent": 0,
+                    "source_block_ids": ["r0"],
+                    "children": [],
+                },
+                {
+                    "id": "node_002",
+                    "type": "paragraph",
+                    "role": "body",
+                    "text": "Nội dung",
+                    "align": "left",
+                    "indent": 0,
+                    "source_block_ids": ["r1"],
+                    "children": [],
+                },
+            ],
+            "footer": [],
+        }
     ],
 }
 
@@ -50,10 +77,7 @@ class FakeResponse:
 
 
 def fake_llm(monkeypatch, responses: list) -> list:
-    """Patch httpx.AsyncClient as llm_docx sees it; returns recorded calls.
-
-    `responses` items: FakeResponse → returned, Exception → raised.
-    """
+    """Patch httpx.AsyncClient as render_docx sees it; returns recorded calls."""
     calls: list = []
 
     class Client:
@@ -67,13 +91,13 @@ def fake_llm(monkeypatch, responses: list) -> list:
             return False
 
         async def post(self, url, json=None, headers=None):
-            calls.append((url, dict(json or {}), dict(headers or {})))  # copy
+            calls.append((url, dict(json or {}), dict(headers or {})))
             resp = responses.pop(0)
             if isinstance(resp, Exception):
                 raise resp
             return resp
 
-    monkeypatch.setattr(llm_docx.httpx, "AsyncClient", Client)
+    monkeypatch.setattr(render_docx.httpx, "AsyncClient", Client)
     return calls
 
 
@@ -87,56 +111,50 @@ def _cell_texts(doc) -> list[str]:
     ]
 
 
-# --- build_layout_docx unit ---
+# --- build_docx unit ---
 
-async def test_build_layout_docx_renders_plan(
+async def test_build_docx_renders_ir(
     monkeypatch, VALID_RESULT_JSONB, caplog
 ):
-    caplog.set_level("INFO", logger="app.services.llm_docx")
-    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
-    data = await build_layout_docx(VALID_RESULT_JSONB, [(800, 600)])
-    assert data[:2] == b"PK"  # zip container
-    with io.BytesIO(data) as buf:
-        doc = Document(buf)
-    assert len(doc.tables) == 1  # two-column layout table
-    merged = doc.tables[0].rows[0].cells[0]
-    assert merged.text == "Xin chào"  # full-width row (merged cells)
-    assert merged.paragraphs[0].style.name == "Heading 1"
-    assert "[ảnh]" in _cell_texts(doc)  # image block → placeholder
+    caplog.set_level("INFO", logger="app.services.render_docx")
+    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
+    data = await build_docx(VALID_RESULT_JSONB)
+    assert data[:2] == b"PK"
+    doc = Document(io.BytesIO(data))
+    texts = [p.text for p in doc.paragraphs]
+    assert "Xin chào" in texts
+    assert "Nội dung" in texts
     # prompt payload: model + temperature 0 + response_format + input JSON
     url, payload, _ = calls[0]
     assert url.endswith("/chat/completions")
-    assert payload["model"] == settings.llm_model
+    assert payload["model"] == settings.ir_llm_model
     assert payload["temperature"] == 0
     assert payload["response_format"] == {"type": "json_object"}
     assert '"width": 800' in payload["messages"][0]["content"]
     assert '"r0"' in payload["messages"][0]["content"]
     # observability: one INFO "llm called" line per POST (no prompt logged)
     info = [r.getMessage() for r in caplog.records if r.levelname == "INFO"]
-    assert any(m.startswith("llm called: fmt=docx-layout") for m in info), info
-    assert not any("Xin chào" in m for m in info)  # never log prompt/content
-
+    assert any(m.startswith("llm called: model=") for m in info), info
+    assert not any("Xin chào" in m for m in info)
 
 def test_llm_api_key_default_empty():
     assert Settings().llm_api_key == ""
 
-async def test_llm_docx_bearer_header_key_set(
+async def test_render_docx_bearer_header_key_set(
     monkeypatch, VALID_RESULT_JSONB, caplog
 ):
     """Key set → Authorization: Bearer on BOTH attempts (incl. bare retry);
     key never in logs."""
-    caplog.set_level("INFO", logger="app.services.llm_docx")
+    caplog.set_level("INFO", logger="app.services.render_docx")
     monkeypatch.setattr(settings, "llm_api_key", "sk-test-1")
-    plan = {"columns": "single",
-            "blocks": [{"id": "r0", "col": "full", "style": "h1"}]}
     calls = fake_llm(
         monkeypatch,
         [
             FakeResponse(status_code=400, text="response_format unsupported"),
-            FakeResponse(json.dumps(plan)),
+            FakeResponse(json.dumps(FAKE_IR)),
         ],
     )
-    data = await build_layout_docx(VALID_RESULT_JSONB, [(800, 600)])
+    data = await build_docx(VALID_RESULT_JSONB)
     assert data[:2] == b"PK"
     assert [c[2] for c in calls] == [
         {"Authorization": "Bearer sk-test-1"},
@@ -144,85 +162,82 @@ async def test_llm_docx_bearer_header_key_set(
     ]
     assert not any("sk-test-1" in r.getMessage() for r in caplog.records)
 
-async def test_llm_docx_no_auth_header_key_empty(monkeypatch, VALID_RESULT_JSONB):
+async def test_render_docx_no_auth_header_key_empty(monkeypatch, VALID_RESULT_JSONB):
     """Empty key → no Authorization header (local server, no auth)."""
     monkeypatch.setattr(settings, "llm_api_key", "")
-    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
-    await build_layout_docx(VALID_RESULT_JSONB, [(800, 600)])
+    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
+    await build_docx(VALID_RESULT_JSONB)
     assert "Authorization" not in calls[0][2]
 
-async def test_build_layout_docx_reads_db_model_override(
+async def test_build_docx_reads_db_model_override(
     monkeypatch, VALID_RESULT_JSONB, db_session
 ):
-    """DB Setting row for llm_model wins over env default."""
+    """DB Setting row for ir_llm_model wins over env default."""
     from app.core.models import Setting
-    db_session.add(Setting(key="llm_model", value="db-override-model"))
+    db_session.add(Setting(key="ir_llm_model", value="db-override-model"))
     await db_session.commit()
-    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
-    await build_layout_docx(VALID_RESULT_JSONB, [(800, 600)])
+    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
+    await build_docx(VALID_RESULT_JSONB)
     assert calls[0][1]["model"] == "db-override-model"
 
-async def test_build_layout_docx_reads_db_base_url_override(
+async def test_build_docx_reads_db_base_url_override(
     monkeypatch, VALID_RESULT_JSONB, db_session
 ):
     """DB Setting row for llm_base_url wins over env default."""
     from app.core.models import Setting
     db_session.add(Setting(key="llm_base_url", value="http://db-llm:9999/v1"))
     await db_session.commit()
-    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
-    await build_layout_docx(VALID_RESULT_JSONB, [(800, 600)])
+    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
+    await build_docx(VALID_RESULT_JSONB)
     assert calls[0][0].startswith("http://db-llm:9999/v1")
 
-async def test_build_layout_docx_reads_db_api_key_override(
+async def test_build_docx_reads_db_api_key_override(
     monkeypatch, VALID_RESULT_JSONB, db_session
 ):
     """DB Setting row for llm_api_key wins over env default."""
     from app.core.models import Setting
     db_session.add(Setting(key="llm_api_key", value="sk-db-key"))
     await db_session.commit()
-    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
-    await build_layout_docx(VALID_RESULT_JSONB, [(800, 600)])
+    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
+    await build_docx(VALID_RESULT_JSONB)
     assert calls[0][2] == {"Authorization": "Bearer sk-db-key"}
 
-async def test_build_layout_docx_llm_down_raises(
+async def test_build_docx_llm_down_raises(
     monkeypatch, VALID_RESULT_JSONB, caplog
 ):
-    caplog.set_level("INFO", logger="app.services.llm_docx")
+    caplog.set_level("INFO", logger="app.services.render_docx")
     fake_llm(
         monkeypatch,
         [httpx.ConnectError("refused"), httpx.ConnectError("refused")],
     )
-    with pytest.raises(LLMLayoutError):
-        await build_layout_docx(VALID_RESULT_JSONB, [(800, 600)])
-    # failed calls stay observable: INFO "llm called" + WARNING
+    # LLM down → heuristic fallback (no raise)
+    data = await build_docx(VALID_RESULT_JSONB)
+    assert data[:2] == b"PK"
     assert any(
-        r.getMessage().startswith("llm called: fmt=docx-layout")
+        r.getMessage().startswith("llm called: model=")
         for r in caplog.records
     )
     assert any(r.levelname == "WARNING" for r in caplog.records)
 
-
-async def test_build_layout_docx_retries_without_response_format(
+async def test_build_docx_retries_without_response_format(
     monkeypatch, VALID_RESULT_JSONB
 ):
-    plan = {"columns": "single", "blocks": [{"id": "r0", "col": "full", "style": "h1"}]}
     calls = fake_llm(
         monkeypatch,
         [
             FakeResponse(status_code=400, text="response_format unsupported"),
-            FakeResponse(json.dumps(plan)),
+            FakeResponse(json.dumps(FAKE_IR)),
         ],
     )
-    data = await build_layout_docx(VALID_RESULT_JSONB, [(800, 600)])
+    data = await build_docx(VALID_RESULT_JSONB)
     assert data[:2] == b"PK"
     assert "response_format" in calls[0][1]
     assert "response_format" not in calls[1][1]
 
-
 # --- export route ---
 
 def _styled_result() -> dict:
-    """Two regions: HTML table text (style=table) + caption text."""
+    """Two regions: HTML table text + caption text."""
     return {
         "model_version": "paddleocr-vl-1.5-0.9B",
         "gpu_seconds": 0.0,
@@ -248,48 +263,43 @@ def _styled_result() -> dict:
         ],
     }
 
-async def test_build_layout_docx_table_and_caption_styles(monkeypatch):
-    """Rider: style=table → HTML <tr><td> rendered as docx table rows;
-    style=caption → italic 9pt run."""
-    plan = {
-        "columns": "single",
-        "blocks": [
-            {"id": "r0", "col": "full", "style": "table"},
-            {"id": "r1", "col": "full", "style": "caption"},
-        ],
+async def test_build_docx_table_block(monkeypatch):
+    """HTML table in OCR → docx table."""
+    ir = {
+        "document_id": "doc_001",
+        "schema_version": "1.0",
+        "pages": [{
+            "page_id": "page_001",
+            "page_number": 1,
+            "header": [],
+            "content": [
+                {
+                    "id": "node_001",
+                    "type": "table",
+                    "role": "body",
+                    "text": "<table><tr><td>A</td><td>B</td></tr>"
+                            "<tr><td>1</td><td>2</td></tr></table>",
+                    "align": "left",
+                    "indent": 0,
+                    "source_block_ids": ["r0"],
+                    "children": [],
+                }
+            ],
+            "footer": [],
+        }],
     }
-    fake_llm(monkeypatch, [FakeResponse(json.dumps(plan))])
-    data = await build_layout_docx(_styled_result(), [(800, 600)])
+    fake_llm(monkeypatch, [FakeResponse(json.dumps(ir))])
+    data = await build_docx(_styled_result())
     assert data[:2] == b"PK"
     doc = Document(io.BytesIO(data))
-    assert len(doc.tables) == 1  # HTML table → real docx table
+    assert len(doc.tables) == 1
     rows = [[c.text for c in row.cells] for row in doc.tables[0].rows]
     assert rows == [["A", "B"], ["1", "2"]]
-    caption = [p for p in doc.paragraphs if p.text == "chú thích ảnh"]
-    assert caption, "caption block must render as a body paragraph"
-    run = caption[0].runs[0]
-    assert run.italic is True and run.font.size == Pt(9)
-
-async def test_build_layout_docx_unplanned_block_appends_left_end(monkeypatch):
-    """Rider: plan missing one id → fallback appends the block at the end
-    of the left column (never dropped)."""
-    plan = {
-        "columns": "two",
-        "blocks": [{"id": "r0", "col": "full", "style": "body"}],
-    }
-    fake_llm(monkeypatch, [FakeResponse(json.dumps(plan))])
-    data = await build_layout_docx(_styled_result(), [(800, 600)])
-    doc = Document(io.BytesIO(data))
-    layout = doc.tables[0]
-    assert len(layout.rows) == 2  # planned full row + fallback row
-    assert layout.rows[0].cells[0].text.startswith("<table>")  # planned first
-    assert layout.rows[1].cells[0].text == "chú thích ảnh"  # left, appended
-    assert layout.rows[1].cells[1].text == ""
 
 async def test_export_docx_layout_happy(
     auth_client, done_job_with_result, storage, monkeypatch
 ):
-    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
+    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
     r = await auth_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "docx-layout"}
     )
@@ -297,7 +307,6 @@ async def test_export_docx_layout_happy(
     assert r.json()["url"]
     body = await storage.get(f"exports/{done_job_with_result}/docx-layout")
     assert body[:2] == b"PK"
-
 
 async def test_export_docx_layout_llm_down_502_no_cache(
     auth_client, done_job_with_result, storage, monkeypatch
@@ -309,10 +318,9 @@ async def test_export_docx_layout_llm_down_502_no_cache(
     r = await auth_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "docx-layout"}
     )
-    assert r.status_code == 502
-    assert r.json()["detail"] == "Không kết nối LLM máy chủ."
-    assert not await storage.exists(f"exports/{done_job_with_result}/docx-layout")
-
+    # LLM down → heuristic fallback (no 502)
+    assert r.status_code == 200
+    assert await storage.exists(f"exports/{done_job_with_result}/docx-layout")
 
 @pytest_asyncio.fixture
 async def done_job_no_result(auth_client, db_session) -> int:
@@ -333,7 +341,6 @@ async def done_job_no_result(auth_client, db_session) -> int:
     await db_session.refresh(job)
     return job.id
 
-
 async def test_export_docx_layout_missing_result_409(auth_client, done_job_no_result):
     r = await auth_client.post(
         f"/api/jobs/{done_job_no_result}/export", json={"fmt": "docx-layout"}
@@ -341,11 +348,10 @@ async def test_export_docx_layout_missing_result_409(auth_client, done_job_no_re
     assert r.status_code == 409
     assert r.json()["detail"] == "Chưa có kết quả OCR."
 
-
 async def test_download_docx_layout_content_type(
     auth_client, done_job_with_result, storage, monkeypatch
 ):
-    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
+    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
     r = await auth_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "docx-layout"}
     )
@@ -357,11 +363,10 @@ async def test_download_docx_layout_content_type(
     assert r.content[:2] == b"PK"
     assert r.headers["content-type"] == DOCX_CONTENT_TYPE
 
-
 async def test_export_docx_layout_other_user_403(
     auth_client, other_client, done_job_with_result, monkeypatch
 ):
-    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
+    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
     r = await other_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "docx-layout"}
     )

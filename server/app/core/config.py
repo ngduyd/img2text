@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     llm_base_url: str = "http://localhost:20128/v1"
     llm_model: str = "oc/muse-spark-1.3-contributor-free"
     llm_timeout: int = 120
+    # IR rewrite: LLM phân loại cấu trúc document (config: ir_llm_model)
+    ir_llm_model: str = "mimo-v2.6-flash"
     # Proofread dùng model riêng (khác layout model) — cùng endpoint.
     proofread_llm_model: str = "oc/fledge-alpha-free"
     # Bearer token for remote /v1/chat/completions; empty = no Authorization

@@ -140,6 +140,8 @@ class Job(Base):
     # Readers parse via json.loads (broken JSON → None + warning).
     layout_style: Mapped[str | None] = mapped_column(Text, nullable=True)
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # IR rewrite: LLM-produced Document IR JSON (nullable, ALTER-only)
+    ir_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     worker_token: Mapped[str | None] = mapped_column(Text, nullable=True)
     lease_expires_at: Mapped[datetime | None] = mapped_column(

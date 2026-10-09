@@ -16,28 +16,24 @@ from app.core.schemas import ResultBody
 
 from tests.test_upload import TEST_JPEG  # noqa: F401 (reuses fixtures via conftest)
 
-
 def _put_keys(storage_spy) -> list[str]:
     return [c.args[0] for c in storage_spy.put.await_args_list]
 
 @pytest.fixture
 def md_llm_down(monkeypatch):
-    """D5: build_md raises → auto-gen md takes the plain-md fallback path."""
+    """IR rewrite: build_md raises → auto-gen md takes the plain-md fallback path."""
     def _down(*args, **kwargs):
-        from app.services.llm_md import LLMMdError
-
-        raise LLMMdError("LLM down (test)")
+        from app.services.render_md import LLMError
+        raise LLMError("LLM down (test)")
     monkeypatch.setattr("app.routers.exports.build_md", _down)
 
 @pytest.fixture
 def docx_llm_down(monkeypatch):
-    """build_layout_docx raises → auto-gen docx-layout skipped (warning)."""
+    """build_docx raises → auto-gen docx-layout skipped (warning)."""
     def _down(*args, **kwargs):
-        from app.services.llm_docx import LLMLayoutError
-
-        raise LLMLayoutError("LLM down (test)")
-    monkeypatch.setattr("app.routers.exports.build_layout_docx", _down)
-
+        from app.services.render_docx import LLMError
+        raise LLMError("LLM down (test)")
+    monkeypatch.setattr("app.routers.exports.build_docx", _down)
 
 async def test_upload_defaults_to_md(auth_client, db_session):
     r = await auth_client.post(
@@ -47,7 +43,6 @@ async def test_upload_defaults_to_md(auth_client, db_session):
     assert r.json()["output_format"] == "md"
     job = await db_session.get(Job, r.json()["id"])
     assert job.output_format == "md"
-
 
 async def test_upload_docx_accepted(auth_client, db_session):
     r = await auth_client.post(
@@ -60,7 +55,6 @@ async def test_upload_docx_accepted(auth_client, db_session):
     job = await db_session.get(Job, r.json()["id"])
     assert job.output_format == "docx"
 
-
 async def test_upload_invalid_output_format_422(auth_client):
     r = await auth_client.post(
         "/api/jobs",
@@ -69,7 +63,6 @@ async def test_upload_invalid_output_format_422(auth_client):
     )
     assert r.status_code == 422
     assert r.json()["detail"] == "Đầu ra không hợp lệ."
-
 
 async def test_get_job_returns_output_format(auth_client, db_session):
     r = await auth_client.post(
@@ -87,7 +80,6 @@ async def test_get_job_returns_output_format(auth_client, db_session):
     await db_session.commit()
     r = await auth_client.get(f"/api/jobs/{jid}")
     assert r.json()["output_format"] == "md"
-
 
 async def test_worker_result_auto_generates_md(
     worker_client, seed_job, storage_spy, db_session, VALID_RESULT_JSONB, md_llm_down, docx_llm_down
@@ -107,8 +99,7 @@ async def test_worker_result_auto_generates_md(
     data = await storage_spy.get(key)
     assert data.decode("utf-8") == VALID_RESULT_JSONB["markdown"]
     job = await db_session.get(Job, seed_job)
-    assert job.status == "done"  # generation never flips the done state
-
+    assert job.status == "done"
 
 async def test_auto_docx_llm_down_warns_and_job_stays_done(
     auth_client,
@@ -127,11 +118,10 @@ async def test_auto_docx_llm_down_warns_and_job_stays_done(
     jid = r.json()["id"]
 
     def _llm_down(*args, **kwargs):
-        from app.services.llm_docx import LLMLayoutError
+        from app.services.render_docx import LLMError
+        raise LLMError("LLM down")
 
-        raise LLMLayoutError("LLM down")
-
-    monkeypatch.setattr("app.routers.exports.build_layout_docx", _llm_down)
+    monkeypatch.setattr("app.routers.exports.build_docx", _llm_down)
     claim = await worker_client.get("/api/jobs/next")
     tok = claim.json()["worker_token"]
     with caplog.at_level("WARNING", logger="app.services.job_results"):
@@ -148,7 +138,6 @@ async def test_auto_docx_llm_down_warns_and_job_stays_done(
     job = await db_session.get(Job, jid)
     assert job.status == "done"
 
-
 async def test_auto_docx_success_stores_docx_layout_key(
     auth_client,
     worker_client,
@@ -157,13 +146,34 @@ async def test_auto_docx_success_stores_docx_layout_key(
     monkeypatch,
     md_llm_down,
 ):
-    """D4 review P1: LLM bytes go to exports/{id}/docx-layout, NOT the
-    pandoc docx cache key exports/{id}/docx."""
+    """IR rewrite: LLM bytes go to exports/{id}/docx-layout."""
     import json
 
-    from tests.test_export_llm_docx import FAKE_PLAN, FakeResponse, fake_llm
+    from tests.test_export_llm_docx import FakeResponse, fake_llm
 
-    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
+    ir_response = json.dumps({
+        "document_id": "doc_001",
+        "schema_version": "1.0",
+        "pages": [{
+            "page_id": "page_001",
+            "page_number": 1,
+            "header": [],
+            "content": [
+                {
+                    "id": "node_001",
+                    "type": "heading",
+                    "role": "section_heading",
+                    "text": "Xin chào",
+                    "align": "left",
+                    "indent": 0,
+                    "source_block_ids": ["r0"],
+                    "children": [],
+                }
+            ],
+            "footer": [],
+        }],
+    })
+    fake_llm(monkeypatch, [FakeResponse(ir_response)])
     r = await auth_client.post(
         "/api/jobs",
         files={"file": ("a.jpg", TEST_JPEG, "image/png")},
@@ -183,7 +193,7 @@ async def test_auto_docx_success_stores_docx_layout_key(
     assert f"exports/{jid}/docx-layout" in keys
     assert f"exports/{jid}/docx" not in keys
     data = await storage_spy.get(f"exports/{jid}/docx-layout")
-    assert data[:2] == b"PK"  # zip magic = real docx bytes
+    assert data[:2] == b"PK"
 
 async def test_auto_generates_both_formats(
     auth_client,
@@ -196,13 +206,35 @@ async def test_auto_generates_both_formats(
     of output_format — viewing never waits for LLM."""
     import json
 
-    from tests.test_export_llm_docx import FAKE_PLAN, FakeResponse, fake_llm
+    from tests.test_export_llm_docx import FakeResponse, fake_llm
 
     async def _md_ok(*args, **kwargs):
         return "# layout md"
 
+    ir_response = json.dumps({
+        "document_id": "doc_001",
+        "schema_version": "1.0",
+        "pages": [{
+            "page_id": "page_001",
+            "page_number": 1,
+            "header": [],
+            "content": [
+                {
+                    "id": "node_001",
+                    "type": "heading",
+                    "role": "section_heading",
+                    "text": "Xin chào",
+                    "align": "left",
+                    "indent": 0,
+                    "source_block_ids": ["r0"],
+                    "children": [],
+                }
+            ],
+            "footer": [],
+        }],
+    })
     monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
-    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
+    fake_llm(monkeypatch, [FakeResponse(ir_response)])
     r = await auth_client.post(
         "/api/jobs",
         files={"file": ("a.jpg", TEST_JPEG, "image/png")},
@@ -241,7 +273,6 @@ async def test_store_batch_result_schedules_md_export(
     assert stored is True
     await drain_auto_output()
     assert f"exports/{seed_job}/md" in _put_keys(storage_spy)
-
 
 async def test_store_without_storage_skips_scheduling(
     db_session, seed_job, VALID_RESULT_JSONB

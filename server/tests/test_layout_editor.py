@@ -17,10 +17,10 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt
 
 from app.core.models import Job
-from app.services.llm_docx import build_layout_docx
+from app.services.render_docx import build_docx
 
 from tests.test_export_llm_docx import (  # noqa: F401  (fixtures/helpers)
-    FAKE_PLAN,
+    FAKE_IR,
     FakeResponse,
     fake_llm,
 )
@@ -272,8 +272,7 @@ async def test_export_docx_layout_applies_style_overrides(
     auth_client, done_job_with_result, storage, db_session, monkeypatch
 ):
     await _set_style(db_session, done_job_with_result, json.dumps(FULL_STYLE))
-    plan = {"columns": "single", "blocks": [{"id": "r0", "col": "full", "style": "h1"}]}
-    fake_llm(monkeypatch, [FakeResponse(json.dumps(plan))])
+    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
     r = await auth_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "docx-layout"}
     )
@@ -289,21 +288,28 @@ async def test_export_docx_layout_applies_style_overrides(
     assert para.paragraph_format.line_spacing == 1.5
     assert para.paragraph_format.left_indent == Inches(0.5)
 
-async def test_build_layout_docx_overrides_reach_table_cells(
+async def test_build_docx_overrides_reach_table_cells(
     monkeypatch, VALID_RESULT_JSONB
 ):
-    """Two-column plan: override áp cả paragraph trong cell (đọc lại)."""
-    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_PLAN))])
-    data = await build_layout_docx(
+    """IR: override áp cả run ngoài lẫn paragraph trong table cell (đọc lại)."""
+    ir = json.loads(json.dumps(FAKE_IR))
+    ir["pages"][0]["content"].append({
+        "id": "node_003",
+        "type": "table",
+        "role": "body",
+        "text": "<table><tr><td>A</td><td>B</td></tr></table>",
+        "align": "left",
+        "indent": 0,
+        "source_block_ids": ["r1"],
+        "children": [],
+    })
+    fake_llm(monkeypatch, [FakeResponse(json.dumps(ir))])
+    data = await build_docx(
         VALID_RESULT_JSONB,
-        [(800, 600)],
-        style_overrides={"fontFamily": "Courier New", "align": "justify"},
+        style_overrides={"fontFamily": "Arial"},
     )
     doc = Document(io.BytesIO(data))
-    table = doc.tables[0]
-    merged = table.rows[0].cells[0]
-    assert merged.paragraphs[0].runs[0].font.name == "Courier New"
-    assert merged.paragraphs[0].alignment == WD_ALIGN_PARAGRAPH.JUSTIFY
-    left = table.rows[1].cells[0]
-    assert left.paragraphs[0].runs[0].font.name == "Courier New"
-    assert left.paragraphs[0].alignment == WD_ALIGN_PARAGRAPH.JUSTIFY
+    para = next(p for p in doc.paragraphs if p.text == "Xin chào")
+    assert para.runs[0].font.name == "Arial"
+    cell = doc.tables[0].rows[0].cells[0]
+    assert cell.paragraphs[0].runs[0].font.name == "Arial"
