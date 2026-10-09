@@ -89,7 +89,7 @@ export default function AdminSettings() {
     queryKey: ["admin-settings"],
     queryFn: api.getAdminSettings,
   });
-  const [errors, setErrors] = useState<Partial<Record<FieldKey, string>>>({});
+  const [errors, setErrors] = useState<Partial<Record<FieldKey | StringFieldKey, string>>>({});
 
   const save = useMutation({
     mutationFn: (payload: AdminSettingsPut) => api.putAdminSettings(payload),
