@@ -23,17 +23,54 @@ type Mode = "md" | "word";
 
 const FMT: Record<Mode, "md-layout" | "docx-layout"> = { md: "md-layout", word: "docx-layout" };
 
-/** Fuzzy find: whitespace-normalized match of needle in haystack → raw [start, end). */
-function findFuzzy(haystack: string, needle: string): [number, number] | null {
-  const n = needle.replace(/\s+/g, " ").trim();
-  if (!n) return null;
-  for (let i = 0; i < haystack.length; i++) {
+/** Fold dấu tiếng Việt: NFD → strip combining marks → lower-case (tầng 3). */
+function foldDiacritics(s: string): string {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+/**
+ * Transform chuỗi theo cụm base + dấu, kèm map offset text-đã-transform →
+ * offset CHUỖI GỐC (map[text.length] = s.length; map[k] = offset gốc ký tự k).
+ */
+function mapTransform(s: string, f: (cluster: string) => string): { text: string; map: number[] } {
+  let text = "";
+  const map: number[] = [];
+  let i = 0;
+  while (i < s.length) {
+    let j = i + 1;
+    while (j < s.length && /\p{M}/u.test(s[j])) j++;
+    const out = f(s.slice(i, j));
+    for (let k = 0; k < out.length; k++) map.push(i);
+    text += out;
+    i = j;
+  }
+  map.push(s.length);
+  return { text, map };
+}
+
+/** Tìm needle trong text đã transform; trả [start,end) offset chuỗi GỐC. */
+function matchTier(
+  hay: { text: string; map: number[] | null },
+  needle: string,
+): [number, number] | null {
+  for (let i = 0; i < hay.text.length; i++) {
     let hi = i;
     let ni = 0;
     let ok = true;
-    while (ni < n.length) {
-      while (hi < haystack.length && /\s/.test(haystack[hi])) hi++;
-      if (hi >= haystack.length || haystack[hi] !== n[ni]) {
+    while (ni < needle.length) {
+      if (/\s/.test(needle[ni])) {
+        // Space trong needle khớp mọi run whitespace trong haystack (bỏ qua
+        // space đơn thuần là lỗi cũ: skip-trước-compare nuốt mất space cả 2 bên).
+        if (hi >= hay.text.length || !/\s/.test(hay.text[hi])) {
+          ok = false;
+          break;
+        }
+        while (hi < hay.text.length && /\s/.test(hay.text[hi])) hi++;
+        ni++;
+        continue;
+      }
+      while (hi < hay.text.length && /\s/.test(hay.text[hi])) hi++;
+      if (hi >= hay.text.length || hay.text[hi] !== needle[ni]) {
         ok = false;
         break;
       }
@@ -43,33 +80,71 @@ function findFuzzy(haystack: string, needle: string): [number, number] | null {
     if (ok) {
       let start = i;
       let end = hi;
-      while (start < end && /\s/.test(haystack[start])) start++; // bỏ space leading
-      while (end > start && /\s/.test(haystack[end - 1])) end--;
-      return [start, end];
+      while (start < end && /\s/.test(hay.text[start])) start++; // bỏ space leading
+      while (end > start && /\s/.test(hay.text[end - 1])) end--;
+      return [hay.map ? hay.map[start] : start, hay.map ? hay.map[end] : end];
     }
   }
   return null;
 }
 
-/** Find phrase within a single Tiptap text node → PM positions. */
+/**
+ * Fuzzy find 3 bậc, LUÔN trả offset trong ORIGINAL haystack:
+ * exact (code unit) → NFC → fold-diacritics. Bug: OCR text là NFD, LLM markdown
+ * là NFC — TRÔNG giống hệt, code-unit khác nhau → match fail, toast sai.
+ */
+function findFuzzy(haystack: string, needle: string): [number, number] | null {
+  const n = needle.replace(/\s+/g, " ").trim();
+  if (!n) return null;
+  const exact = matchTier({ text: haystack, map: null }, n);
+  if (exact) return exact;
+  const nfc = mapTransform(haystack, (c) => c.normalize("NFC"));
+  const nfcHit = matchTier(nfc, n.normalize("NFC"));
+  if (nfcHit) return nfcHit;
+  const folded = mapTransform(haystack, foldDiacritics);
+  return matchTier(folded, foldDiacritics(n));
+}
+
+/**
+ * Word mode: search TOÀN doc (gộp text node, block tách "\n" — phrase trải
+ * nhiều text node vẫn find được) → map plain offset → PM position.
+ */
 function findPhraseInEditor(
   editor: Editor,
   phrase: string,
 ): { from: number; to: number } | null {
   const doc = editor.state.doc;
-  let result: { from: number; to: number } | null = null;
+  // Gộp text + map offset → PM pos của text node chứa offset đó.
+  let text = "";
+  const spans: Array<{ offset: number; pos: number }> = [];
+  let needSep = false;
   doc.descendants((node, pos) => {
-    if (result) return false;
     if (node.isText && node.text) {
-      const found = findFuzzy(node.text, phrase);
-      if (found) {
-        // text node pos = vị trí TRƯỚC ký tự đầu (descendants) → không +1.
-        result = { from: pos + found[0], to: pos + found[1] };
-        return false;
+      if (needSep) {
+        text += "\n";
+        needSep = false;
       }
+      spans.push({ offset: text.length, pos });
+      text += node.text;
+    } else if (node.isBlock) {
+      // "\n" chỉ chèn giữa 2 block CÓ nội dung.
+      needSep = text.length > 0;
     }
+    return true;
   });
-  return result;
+  const found = findFuzzy(text, phrase);
+  if (!found || spans.length === 0) return null;
+  // to có thể vượt hết text node đầu (phrase span ≥2 node) → pos vẫn chính xác
+  // vì 2 node liền nhau cùng paragraph (hoặc đã qua "\n").
+  const posAt = (offset: number) => {
+    let pos = spans[0].pos;
+    for (const s of spans) {
+      if (s.offset > offset) break;
+      pos = s.pos + (offset - s.offset);
+    }
+    return pos;
+  };
+  return { from: posAt(found[0]), to: posAt(found[1]) };
 }
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

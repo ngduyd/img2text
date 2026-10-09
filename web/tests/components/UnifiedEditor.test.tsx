@@ -458,3 +458,65 @@ it("Plan M3 → M5: md mode không còn MdToolbar/textarea hand-rolled (R51 exce
   expect(screen.queryByTestId("textarea-markdown")).toBeNull();
   expect(screen.queryByTestId("btn-edit-source")).toBeNull();
 });
+
+it("BUG NFD/NFC: md jump phrase NFD vs mdText NFC → find được, offset gốc, không toast lỗi", async () => {
+  const scrollIntoViewMock = vi.fn();
+  Element.prototype.scrollIntoView = scrollIntoViewMock;
+  const user = userEvent.setup();
+  vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["# thính máy"])); // NFC
+  vi.mocked(api.getSuggestions).mockResolvedValue([
+    { ...PENDING, original: "thi\u0301nh", suggestion: "thính" }, // NFD
+  ]);
+  const hostRef: { current: HTMLElement | null } = { current: null };
+  render(<Harness job={JOB} hostRef={hostRef} />);
+  const editor = await screen.findByTestId("md-editor");
+  await waitFor(() => expect(editor.querySelector("textarea")?.value).toBe("# thính máy"));
+  await user.click(screen.getByTestId("btn-proofread"));
+  await user.click(await screen.findByTestId("suggestion-jump-7"));
+  const ta = hostRef.current?.querySelector<HTMLTextAreaElement>(
+    ".w-md-editor-text-input, textarea",
+  ) as HTMLTextAreaElement;
+  expect(ta.selectionStart).toBe(2);
+  expect(ta.selectionEnd).toBe(7);
+  expect(toast.error).not.toHaveBeenCalled();
+});
+
+it("BUG NFD/NFC: md accept phrase NFD vs mdText NFC → replace hoạt động", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["# thính máy"])); // NFC
+  vi.mocked(api.getSuggestions).mockResolvedValue([
+    { ...PENDING, original: "thi\u0301nh", suggestion: "thông minh" }, // NFD
+  ]);
+  render(<Harness job={JOB} />);
+  const editor = await screen.findByTestId("md-editor");
+  await waitFor(() => expect(editor.querySelector("textarea")?.value).toBe("# thính máy"));
+  await user.click(screen.getByTestId("btn-proofread"));
+  await user.click(await screen.findByTestId("suggestion-accept-7"));
+  await waitFor(() =>
+    expect(api.putMdLayoutContent).toHaveBeenCalledWith("5", "# thông minh máy"),
+  );
+  expect(api.acceptSuggestion).toHaveBeenCalledWith("5", 7);
+  expect(toast.error).not.toHaveBeenCalled();
+  await waitFor(() => expect(editor.querySelector("textarea")?.value).toBe("# thông minh máy"));
+});
+
+it("BUG word: phrase trải 2 text node trong 1 paragraph → find được, thay OK", async () => {
+  const user = userEvent.setup();
+  vi.mocked(mammoth.convertToHtml).mockResolvedValue({
+    value: "<p>Chào <em>thế</em> giới</p>",
+    messages: [],
+  } as never);
+  vi.mocked(api.getSuggestions).mockResolvedValue([
+    { ...PENDING, original: "thế giới", suggestion: "bạn mới" },
+  ]);
+  render(<Harness job={{ ...JOB, output_format: "docx" }} />);
+  const pane = await screen.findByTestId("preview-docx-frame");
+  await waitFor(() => expect(pane.querySelector(".ProseMirror")).toHaveTextContent("thế giới"));
+  await user.click(screen.getByTestId("btn-proofread"));
+  await user.click(await screen.findByTestId("suggestion-accept-7"));
+  await waitFor(() =>
+    expect(api.putDocxHtml).toHaveBeenCalledWith("5", expect.stringContaining("bạn mới")),
+  );
+  expect(api.acceptSuggestion).toHaveBeenCalledWith("5", 7);
+  expect(toast.error).not.toHaveBeenCalled();
+});
