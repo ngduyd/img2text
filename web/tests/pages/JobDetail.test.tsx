@@ -74,6 +74,7 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
 });
 
 let lastJob: Job | undefined;
+let lastQueryClient: QueryClient | undefined;
 
 /** Brief's pollSpyCalled(): evaluates captured refetchInterval on last mocked job. */
 function pollSpyCalled(): boolean {
@@ -100,6 +101,7 @@ function renderWithRouter(ui: ReactElement, { route = "/" } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  lastQueryClient = queryClient;
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[route]}>
@@ -149,6 +151,7 @@ it("failed shows retry button and calls api", async () => {
   vi.mocked(api.retryJob).mockResolvedValue({ id: 5, status: "queued" });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   expect(await screen.findByTestId("status-5")).toHaveTextContent("Xử lý thất bại");
+  const invalidate = vi.spyOn(lastQueryClient!, "invalidateQueries");
   const user = userEvent.setup();
   await user.click(screen.getByTestId("btn-retry-job"));
   expect(api.retryJob).toHaveBeenCalledWith("5");
@@ -156,6 +159,8 @@ it("failed shows retry button and calls api", async () => {
   await waitFor(() =>
     expect(toast.success).toHaveBeenCalledWith("Đã lên lịch chạy lại"),
   );
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["job", "5"] });
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
 });
 
 it("retry failure shows retry-error with server detail", async () => {

@@ -101,7 +101,7 @@ export default function JobRow({ job }: { job: JobListItem }) {
         )}
         {job.status === "failed" && (
           <Button
-            testid="btn-retry-job"
+            testid={`btn-retry-job-${job.id}`}
             size="sm"
             variant="secondary"
             disabled={retry.isPending}

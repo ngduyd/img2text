@@ -130,7 +130,7 @@ it("retry button calls retryJob and invalidates jobs", async () => {
   const invalidate = vi.spyOn(queryClient, "invalidateQueries");
   vi.mocked(api.retryJob).mockResolvedValue({ id: 7, status: "queued" });
   renderRow(job({ status: "failed", error: "boom" }), queryClient);
-  await userEvent.click(screen.getByTestId("btn-retry-job"));
+  await userEvent.click(screen.getByTestId("btn-retry-job-7"));
   expect(api.retryJob).toHaveBeenCalledWith(7);
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
   // R59a: retry success toasts the plan copy.
@@ -140,7 +140,7 @@ it("retry button calls retryJob and invalidates jobs", async () => {
 it("retry failure toasts mapped error", async () => {
   vi.mocked(api.retryJob).mockRejectedValue(new ApiError("Job đang chạy."));
   renderRow(job({ status: "failed", error: "boom" }));
-  await userEvent.click(screen.getByTestId("btn-retry-job"));
+  await userEvent.click(screen.getByTestId("btn-retry-job-7"));
   expect(toast.error).toHaveBeenCalledWith("Job đang chạy.");
 });
 
@@ -153,5 +153,5 @@ it("dl-original failure toasts mapped error (no success toast)", async () => {
 
 it("retry button rendered only when failed", () => {
   renderRow(job({ status: "done" }));
-  expect(screen.queryByTestId("btn-retry-job")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("btn-retry-job-7")).not.toBeInTheDocument();
 });
