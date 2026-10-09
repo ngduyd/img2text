@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import type { Job, ResultPage, Verdict } from "../api/types";
 import { mapApiError } from "../lib/errors";
-import { STATUS_TEXT, STATUS_TONE } from "../lib/status";
+import { STATUS_TEXT, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
 import ExportBar from "../components/ExportBar";
 import InfoPanel from "../components/panels/InfoPanel";
 import OriginalFilePanel from "../components/panels/OriginalFilePanel";
@@ -17,9 +17,9 @@ import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import Skeleton from "../components/ui/Skeleton";
 
-/** Poll every 3s while queued/running; stop once done/failed (binding, Task 4). */
+/** Poll every 3s while pending (queued/extracting/rendering); stop once done/failed (binding, Task 4). */
 const jobRefetchInterval = (q: Query<Job>): number | false =>
-  q.state.data?.status === "queued" || q.state.data?.status === "running" ? 3000 : false;
+  q.state.data && PENDING_STATUSES.includes(q.state.data.status) ? 3000 : false;
 
 /** Task 2 verdict stats — counts keyed by RegionOut.verdict (VERDICT_LABELS keys). */
 function statsLine(pages: ResultPage[]): string {
@@ -126,13 +126,14 @@ export default function JobDetail() {
         <div className="flex flex-wrap items-center gap-2">
           {job.status === "failed" && (
             <Button
-              testid="btn-retry"
+              testid="btn-retry-job"
               onClick={async () => {
                 setRetryError(null);
                 try {
                   await api.retryJob(id!);
-                  toast.success("Đã chạy lại.");
+                  toast.success("Đã lên lịch chạy lại");
                   await queryClient.invalidateQueries({ queryKey: ["job", id] });
+                  await queryClient.invalidateQueries({ queryKey: ["jobs"] });
                 } catch (err) {
                   // R51: inline retry-error kept; toast mirrors it (R59a).
                   setRetryError(err instanceof ApiError ? err.detail : "Thử lại thất bại.");

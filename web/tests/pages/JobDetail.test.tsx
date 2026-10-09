@@ -1,6 +1,6 @@
 import type { Query } from "@tanstack/react-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -8,6 +8,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import * as mammoth from "mammoth";
 import { api, ApiError } from "../../src/api/client";
+import { toast } from "sonner";
 import type { Job, ResultBody } from "../../src/api/types";
 import JobDetail from "../../src/pages/JobDetail";
 
@@ -30,6 +31,8 @@ vi.mock("../../src/api/client", async (importOriginal) => {
 vi.mock("mammoth", () => ({
   convertToHtml: vi.fn(),
 }));
+
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 /**
  * Polling assertion choice (documented): spy on the useQuery options — capture
@@ -71,6 +74,7 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
 });
 
 let lastJob: Job | undefined;
+let lastQueryClient: QueryClient | undefined;
 
 /** Brief's pollSpyCalled(): evaluates captured refetchInterval on last mocked job. */
 function pollSpyCalled(): boolean {
@@ -97,6 +101,7 @@ function renderWithRouter(ui: ReactElement, { route = "/" } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  lastQueryClient = queryClient;
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[route]}>
@@ -127,20 +132,35 @@ it("queued shows waiting message and polls", async () => {
   mockJob({ id: 5, status: "queued", page_count: 1, result: null } as Job);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   // Task 2: header badge duplicates status text — scope to InfoPanel's status badge.
-  expect(await screen.findByTestId("status-5")).toHaveTextContent("Đang chờ worker Colab");
+  expect(await screen.findByTestId("status-5")).toHaveTextContent("Đang lập lịch");
   // Back link points at the /jobs list route (root is public landing now).
   expect(screen.getByTestId("link-back-jobs")).toHaveAttribute("href", "/jobs");
   expect(pollSpyCalled()).toBe(true);
 });
 
+// Plan job-phases: extracting + rendering are pending — poll keeps running.
+it.each(["extracting", "rendering"] as const)("%s keeps polling", async (status) => {
+  mockJob({ id: 5, status, page_count: 1, result: null } as Job);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await screen.findByTestId("panel-info");
+  expect(pollSpyCalled()).toBe(true);
+});
+
 it("failed shows retry button and calls api", async () => {
   mockJob({ id: 5, status: "failed", error: "boom", result: null } as Job);
-  vi.mocked(api.retryJob).mockResolvedValue({ id: 5, status: "queued" });
+  vi.mocked(api.retryJob).mockResolvedValue(undefined);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   expect(await screen.findByTestId("status-5")).toHaveTextContent("Xử lý thất bại");
+  const invalidate = vi.spyOn(lastQueryClient!, "invalidateQueries");
   const user = userEvent.setup();
-  await user.click(screen.getByTestId("btn-retry"));
+  await user.click(screen.getByTestId("btn-retry-job"));
   expect(api.retryJob).toHaveBeenCalledWith("5");
+  // R59: retry success toasts plan copy + refetches detail + list.
+  await waitFor(() =>
+    expect(toast.success).toHaveBeenCalledWith("Đã lên lịch chạy lại"),
+  );
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["job", "5"] });
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
 });
 
 it("retry failure shows retry-error with server detail", async () => {
@@ -149,7 +169,7 @@ it("retry failure shows retry-error with server detail", async () => {
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   expect(await screen.findByTestId("status-5")).toHaveTextContent("Xử lý thất bại");
   const user = userEvent.setup();
-  await user.click(screen.getByTestId("btn-retry"));
+  await user.click(screen.getByTestId("btn-retry-job"));
   expect(await screen.findByTestId("retry-error")).toHaveTextContent("Forbidden.");
 });
 
@@ -259,7 +279,7 @@ it("not done shows status-only panels, ResultPanel hidden until done", async () 
   expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
   expect(screen.queryByTestId("panel-result")).toBeNull();
-  expect(screen.getByTestId("status-5")).toHaveTextContent("Đang chờ worker Colab");
+  expect(screen.getByTestId("status-5")).toHaveTextContent("Đang lập lịch");
   // JD2: chưa có markdown → Edit (inline) vô hiệu, không có dead click
   expect(screen.getByTestId("btn-edit-doc")).toBeDisabled();
   expect(screen.queryByTestId("detail-reading")).toBeNull();
@@ -278,7 +298,7 @@ it("header: back link, title, badge, actions in one row (adjust-only)", async ()
   expect(screen.getByTestId("job-header")).toContainElement(
     screen.getByTestId("btn-edit-doc"),
   );
-  expect(screen.queryByTestId("btn-retry")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("btn-retry-job")).not.toBeInTheDocument();
 });
 
 /** JD2 amendment: btn-edit-doc = inline edit TRÊN trang (không navigate /edit). */

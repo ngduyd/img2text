@@ -66,8 +66,8 @@ it("renders name line, status badge and vi-VN date", () => {
   renderRow(job({ file_type: "pdf" }));
   expect(screen.getByTestId("job-row-7")).toHaveTextContent("#7 · PDF · 2 trang");
   // R51: badge-{id} testid assertion preserved from old Jobs.test.tsx;
-  // P2: literal pins the shared STATUS_TEXT spelling ("Đang chờ worker Colab").
-  expect(screen.getByTestId("badge-7")).toHaveTextContent("Đang chờ worker Colab");
+  // P2: literal pins the shared STATUS_TEXT spelling ("Đang lập lịch").
+  expect(screen.getByTestId("badge-7")).toHaveTextContent("Đang lập lịch");
   const expected = new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(
     new Date("2026-10-04T00:00:00Z"),
   );
@@ -128,19 +128,19 @@ it("dl-original button rendered only when done", () => {
 it("retry button calls retryJob and invalidates jobs", async () => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const invalidate = vi.spyOn(queryClient, "invalidateQueries");
-  vi.mocked(api.retryJob).mockResolvedValue({ id: 7, status: "queued" });
+  vi.mocked(api.retryJob).mockResolvedValue(undefined);
   renderRow(job({ status: "failed", error: "boom" }), queryClient);
-  await userEvent.click(screen.getByTestId("btn-retry-7"));
+  await userEvent.click(screen.getByTestId("btn-retry-job-7"));
   expect(api.retryJob).toHaveBeenCalledWith(7);
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
-  // R59a: retry success toasts.
-  expect(toast.success).toHaveBeenCalledWith("Đã chạy lại.");
+  // R59a: retry success toasts the plan copy.
+  expect(toast.success).toHaveBeenCalledWith("Đã lên lịch chạy lại");
 });
 
 it("retry failure toasts mapped error", async () => {
   vi.mocked(api.retryJob).mockRejectedValue(new ApiError("Job đang chạy."));
   renderRow(job({ status: "failed", error: "boom" }));
-  await userEvent.click(screen.getByTestId("btn-retry-7"));
+  await userEvent.click(screen.getByTestId("btn-retry-job-7"));
   expect(toast.error).toHaveBeenCalledWith("Job đang chạy.");
 });
 
@@ -153,5 +153,5 @@ it("dl-original failure toasts mapped error (no success toast)", async () => {
 
 it("retry button rendered only when failed", () => {
   renderRow(job({ status: "done" }));
-  expect(screen.queryByTestId("btn-retry-7")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("btn-retry-job-7")).not.toBeInTheDocument();
 });

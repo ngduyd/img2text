@@ -9,7 +9,8 @@ export type StatusFilter = "all" | JobStatus;
 const TABS: { key: StatusFilter; label: string }[] = [
   { key: "all", label: "Tất cả" },
   { key: "queued", label: STATUS_TEXT.queued },
-  { key: "running", label: STATUS_TEXT.running },
+  { key: "extracting", label: STATUS_TEXT.extracting },
+  { key: "rendering", label: STATUS_TEXT.rendering },
   { key: "done", label: STATUS_TEXT.done },
   { key: "failed", label: STATUS_TEXT.failed },
 ];
@@ -27,7 +28,8 @@ export default function StatusFilterTabs({
   const counts: Record<StatusFilter, number> = {
     all: items.length,
     queued: 0,
-    running: 0,
+    extracting: 0,
+    rendering: 0,
     done: 0,
     failed: 0,
   };

@@ -9,6 +9,7 @@ import StatusFilterTabs from "../components/StatusFilterTabs";
 import type { StatusFilter } from "../components/StatusFilterTabs";
 import Card from "../components/ui/Card";
 import Skeleton from "../components/ui/Skeleton";
+import { PENDING_STATUSES } from "../lib/status";
 
 export default function Jobs() {
   const navigate = useNavigate();
@@ -19,7 +20,7 @@ export default function Jobs() {
   const [outputFormat, setOutputFormat] = useState<"md" | "docx">("md");
   const items = jobs?.items ?? [];
   const visible = filter === "all" ? items : items.filter((j) => j.status === filter);
-  const pending = items.filter((j) => j.status === "queued" || j.status === "running").length;
+  const pending = items.filter((j) => PENDING_STATUSES.includes(j.status)).length;
   const done = items.filter((j) => j.status === "done").length;
 
   return (
