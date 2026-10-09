@@ -148,7 +148,7 @@ it.each(["extracting", "rendering"] as const)("%s keeps polling", async (status)
 
 it("failed shows retry button and calls api", async () => {
   mockJob({ id: 5, status: "failed", error: "boom", result: null } as Job);
-  vi.mocked(api.retryJob).mockResolvedValue({ id: 5, status: "queued" });
+  vi.mocked(api.retryJob).mockResolvedValue(undefined);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   expect(await screen.findByTestId("status-5")).toHaveTextContent("Xử lý thất bại");
   const invalidate = vi.spyOn(lastQueryClient!, "invalidateQueries");

@@ -128,7 +128,7 @@ it("dl-original button rendered only when done", () => {
 it("retry button calls retryJob and invalidates jobs", async () => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const invalidate = vi.spyOn(queryClient, "invalidateQueries");
-  vi.mocked(api.retryJob).mockResolvedValue({ id: 7, status: "queued" });
+  vi.mocked(api.retryJob).mockResolvedValue(undefined);
   renderRow(job({ status: "failed", error: "boom" }), queryClient);
   await userEvent.click(screen.getByTestId("btn-retry-job-7"));
   expect(api.retryJob).toHaveBeenCalledWith(7);
