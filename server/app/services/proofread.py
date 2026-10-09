@@ -35,12 +35,13 @@ from app.services.runtime_settings import get_runtime_setting
 logger = logging.getLogger(__name__)
 
 PROMPT = (
+    "Đây là ảnh chụp đề thi tiếng Việt đã OCR. "
+    "Tìm từ/cụm từ bị OCR sai: thiếu dấu, sai chữ, sai ngữ cảnh "
+    "(vd 'bổ mẹ' → 'bố mẹ'). Prefix [verdict=...] nghĩa là VLM không chắc chỗ đó.\n"
     "Đề thi (ngữ cảnh): {hint}\n"
     "Văn bản OCR (có thể lệch):\n{text}\n"
-    "Tìm từ/cụm từ bị OCR sai: ký tự lỗi, thiếu dấu, sai ngữ cảnh.\n"
     'Trả JSON: {{"items":[{{"phrase":"...","reason":"...","suggestion":"..."}}]}}\n'
-    "Chỉ nghi ngờ thực sự. Không sửa lỗi chính tả bình thường. "
-    "Không đổi nội dung đúng."
+    "Liệt kê mọi từ khả nghi; chỉ bỏ qua từ chắc chắn đúng. Không đổi nội dung đúng."
 )
 
 class ProofreadError(Exception):
@@ -102,7 +103,15 @@ def locate(page_text: str, phrase: str) -> tuple[int, int] | None:
     return None
 
 def _page_text(page: dict) -> str:
-    return "\n".join(r.get("text") or "" for r in page.get("regions", []))
+    """Regions join (newline); region không-OK (verdict != ok / placeholder)
+    có text → prefix `[verdict=<verdict>] ` làm tín hiệu VLM cho LLM."""
+    lines: list[str] = []
+    for r in page.get("regions", []):
+        text = r.get("text") or ""
+        if text and (r.get("verdict") != "ok" or r.get("placeholder")):
+            text = f"[verdict={r.get('verdict')}] {text}"
+        lines.append(text)
+    return "\n".join(lines)
 
 def _parse(content: str) -> list[dict]:
     """LLM content → list of item dicts (bad shape → ProofreadError)."""
@@ -137,10 +146,33 @@ async def _call_llm(page_text: str, hint: str) -> list[dict]:
         else {}  # empty key = no auth header (local compatible)
     )
     async with AsyncClient(timeout=settings.llm_timeout) as client:
-        try:
-            resp = await client.post(url, json=payload, headers=headers)
-        except httpx.HTTPError as exc:
-            raise ProofreadError(f"LLM không phản hồi: {exc}") from exc
+        started = time.perf_counter()
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                resp = await client.post(url, json=payload, headers=headers)
+                break
+            except httpx.TimeoutException as exc:
+                # str(ReadTimeout) rỗng → message phải tự chứa class + elapsed.
+                elapsed = time.perf_counter() - started
+                logger.warning(
+                    "proofread: LLM timeout attempt=%d elapsed=%.0fs class=%s",
+                    attempts, elapsed, type(exc).__name__,
+                )
+                if attempts >= 2:
+                    raise ProofreadError(
+                        f"LLM timeout sau {attempts} lần ({elapsed:.0f}s)"
+                    ) from exc
+            except httpx.HTTPError as exc:
+                elapsed = time.perf_counter() - started
+                logger.warning(
+                    "proofread: LLM HTTP error class=%s elapsed=%.0fs",
+                    type(exc).__name__, elapsed,
+                )
+                raise ProofreadError(
+                    f"LLM không phản hồi ({type(exc).__name__}): {exc}"
+                ) from exc
     if resp.status_code >= 400:
         raise ProofreadError(f"LLM HTTP {resp.status_code}")
     try:
@@ -164,7 +196,9 @@ async def run_proofread(session: AsyncSession, job: Job) -> int:
         text = _page_text(page)
         if not text.strip():
             continue
-        hint = "\n".join(text.splitlines()[:3])  # context = 3 dòng đầu
+        # hint = text REGION ĐẦU (header: trường/đề thi) = ngữ cảnh tài liệu
+        regions = page.get("regions") or []
+        hint = (regions[0].get("text") or "") if regions else ""
         try:
             items = await _call_llm(text, hint)
         except ProofreadError as exc:
