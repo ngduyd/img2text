@@ -91,6 +91,7 @@ class BatchStubKaggleApi:
         self.dataset_items: list = []
         self.result_doc: dict | None = None
         self.output_error: Exception | None = None
+        self.missing_outputs: set[int] = set()  # jobs the kernel wrote NOTHING for
         self.dataset_exists = True  # private dataset present (prod state)
         self.dataset_files = ["TA.jpg"]  # OLD input served by list_files
         self.stale_after_create = False  # create OK but files stay old
@@ -146,9 +147,14 @@ class BatchStubKaggleApi:
         if self.output_error is not None:
             raise self.output_error  # transient pull failure (test knob)
         assert self.result_doc is not None, "kernels_output before test set result_doc"
-        (Path(path) / "result.json").write_text(
-            json.dumps(self.result_doc, ensure_ascii=False), encoding="utf-8"
-        )
+        # production shape: per-job output named from the STAGED {id}__ prefix
+        for name in self.dataset_files:
+            head, sep, _ = name.partition("__")
+            if not sep or not head.isdigit() or int(head) in self.missing_outputs:
+                continue
+            (Path(path) / f"{head}_result.json").write_text(
+                json.dumps(self.result_doc, ensure_ascii=False), encoding="utf-8"
+            )
         return None
 
     # K2 surface (only touched by the mode=loop dispatch test)
@@ -427,6 +433,92 @@ async def test_batch_spawn_caps_staged_jobs_at_config(
     job3_row = await db_session.get(Job, job3)
     assert job3_row.status == "queued" and job3_row.kaggle_ref is None
     assert orch._batch_runs[BATCH_REF]["job_ids"] == [seed_job, job2]
+
+async def test_batch_ingests_every_jobs_own_output(
+    kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session,
+    monkeypatch,
+):
+    """Task 3(a): kernel success → ONE kernels_output pull → each job
+    ingests its own {job_id}_result.json; all 3 leave extracting
+    (→ rendering via store)."""
+    api.result_doc = RESULT_DOC
+    gate = asyncio.Event()
+
+    async def _gated_auto(job, storage):
+        await gate.wait()  # hold jobs in "rendering" deterministically
+        return True
+
+    monkeypatch.setattr("app.routers.exports.auto_generate_output", _gated_auto)
+    job2 = await _extra_queued_job(auth_client, "seed2")
+    job3 = await _extra_queued_job(auth_client, "seed3")
+    assert await orch.ensure_worker(SessionLocal) is True  # 1 run, 3 jobs
+    api.status = {"status": SimpleNamespace(name="COMPLETE")}
+    try:
+        assert await orch.ensure_worker(SessionLocal) is False  # ingest
+        pulls = [c for c in api.calls if c[0] == "kernels_output"]
+        assert len(pulls) == 1  # pull-once-per-run, not per job
+        assert orch._batch_runs == {}
+        db_session.expire_all()
+        for jid in (seed_job, job2, job3):
+            job = await db_session.get(Job, jid)
+            assert job.status == "rendering" and job.result is not None
+            assert job.failed_step is None
+    finally:
+        gate.set()
+        await drain_auto_output()
+
+async def test_batch_missing_job_output_fails_only_that_job(
+    kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session,
+    monkeypatch,
+):
+    """Task 3(b) partial-fail: job 2's output missing → job2 failed +
+    failed_step=extracting + specific error; jobs 1/3 ingest normally."""
+    api.result_doc = RESULT_DOC
+    gate = asyncio.Event()
+
+    async def _gated_auto(job, storage):
+        await gate.wait()
+        return True
+
+    monkeypatch.setattr("app.routers.exports.auto_generate_output", _gated_auto)
+    job2 = await _extra_queued_job(auth_client, "seed2")
+    job3 = await _extra_queued_job(auth_client, "seed3")
+    assert await orch.ensure_worker(SessionLocal) is True  # 1 run, 3 jobs
+    api.missing_outputs = {job2}  # kernel continue-on-error wrote nothing
+    api.status = {"status": SimpleNamespace(name="COMPLETE")}
+    try:
+        assert await orch.ensure_worker(SessionLocal) is False
+        assert orch._batch_runs == {}
+        db_session.expire_all()
+        job2_row = await db_session.get(Job, job2)
+        assert job2_row.status == "failed" and job2_row.failed_step == "extracting"
+        assert job2_row.error == f"Kaggle kernel thiếu output {job2}_result.json"
+        assert job2_row.lease_expires_at is None
+        for jid in (seed_job, job3):
+            job = await db_session.get(Job, jid)
+            assert job.status == "rendering" and job.result is not None
+    finally:
+        gate.set()
+        await drain_auto_output()
+
+async def test_batch_cancelled_fails_every_job_in_run(
+    kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session
+):
+    """Task 3(c): run-level terminal status → EVERY job in the run failed +
+    failed_step=extracting + error naming the kernel status (batch scope)."""
+    job2 = await _extra_queued_job(auth_client, "seed2")
+    job3 = await _extra_queued_job(auth_client, "seed3")
+    assert await orch.ensure_worker(SessionLocal) is True  # 1 run, 3 jobs
+    api.status = {"status": SimpleNamespace(name="CANCELLED")}
+    assert await orch.ensure_worker(SessionLocal) is False  # poll drops ref
+    assert orch._batch_runs == {}
+    db_session.expire_all()
+    for jid in (seed_job, job2, job3):
+        job = await db_session.get(Job, jid)
+        assert job.status == "failed" and job.failed_step == "extracting"
+        assert job.error == "Kaggle kernel cancelled"
+        assert job.lease_expires_at is None and job.finished_at is not None
+    assert len(_pushes(api)) == 1
 
 async def test_batch_failed_marks_failed_with_extracting_step(
     kaggle_batch_env, api, storage_env, seed_job, db_session, caplog, monkeypatch

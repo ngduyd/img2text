@@ -24,7 +24,8 @@ a DB-backed spawn record.
 Plan K5 (kaggle_mode=batch, default): ensure_worker dispatches — batch mode
 stages the queued job's upload as the img2text-input dataset (delete+create),
 pushes the standalone script kernel (deploy/kaggle/img2text_batch.py), polls
-status, pulls result.json and ingests it into the job. No public URL needed.
+status, pulls the per-job outputs ({job_id}_result.json) and ingests them
+into the jobs (partial-fail per job). No public URL needed.
 Runs live in the in-memory _batch_runs map; the kernel ref is ALSO persisted
 in jobs.kaggle_ref (spec 2026-10-09) so _ensure_batch_runs re-adopts an
 "extracting" job after a restart — the poll loop resumes, no orphan kernel.
@@ -39,6 +40,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from pydantic import ValidationError
 from sqlalchemy import func, select, update
 
 from app.core.config import settings
@@ -546,16 +548,14 @@ async def _revert_job_queued(session_factory, job_id: int, why: str) -> None:
         return
     logger.info("kaggle batch: job %s reverted to queued (%s)", job_id, why)
 
-async def _ingest_batch_result(api, session_factory, job_id: int, ref: str) -> None:
-    """kernels_output → result.json → spec §4 ResultBody → job done."""
-    out_dir = Path(tempfile.mkdtemp(prefix="kaggle-img2text-out-"))
-    try:
-        await asyncio.to_thread(
-            api.kernels_output, ref, path=str(out_dir), quiet=False
-        )
-        doc = json.loads((out_dir / "result.json").read_text(encoding="utf-8"))
-    finally:
-        shutil.rmtree(out_dir, ignore_errors=True)
+async def _ingest_batch_result(session_factory, job_id: int, out_dir: Path) -> None:
+    """{job_id}_result.json (the run's pulled output dir) → spec §4
+    ResultBody → store. FileNotFoundError / JSONDecodeError / ValidationError
+    bubble up = THIS job's output unusable (partial-fail: only this job gets
+    failed by the caller); anything else (DB/storage) = run-level transient."""
+    doc = json.loads(
+        (out_dir / f"{job_id}_result.json").read_text(encoding="utf-8")
+    )
     async with session_factory() as session:
         job = await session.get(Job, job_id)
         if job is None:
@@ -579,6 +579,39 @@ async def _ingest_batch_result(api, session_factory, job_id: int, ref: str) -> N
             )
             return
     logger.info("kaggle batch: job %s done (%d pages)", job_id, len(body.pages))
+
+async def _ingest_complete_run(api, session_factory, run: dict) -> None:
+    """kernel complete → ONE kernels_output pull → each job ingests its OWN
+    {job_id}_result.json (N files, no overwrite). Partial-fail policy: a job
+    whose output is missing/unparsable is failed at step "extracting" HERE
+    (specific error) — the other jobs still ingest in the same tick.
+    Raise = run-level transient (pull / DB / storage) → the caller retries
+    the whole run next tick (ref kept)."""
+    ref = str(run["ref"])
+    out_dir = Path(tempfile.mkdtemp(prefix="kaggle-img2text-out-"))
+    try:
+        await asyncio.to_thread(
+            api.kernels_output, ref, path=str(out_dir), quiet=False
+        )
+        for job_id in run["job_ids"]:
+            try:
+                await _ingest_batch_result(session_factory, job_id, out_dir)
+            except FileNotFoundError:
+                error = f"Kaggle kernel thiếu output {job_id}_result.json"
+                logger.warning(
+                    "kaggle batch: %s — job %s failed at step extracting",
+                    error, job_id,
+                )
+                await _fail_job_extracting(session_factory, job_id, error)
+            except (json.JSONDecodeError, ValidationError) as exc:
+                error = f"Kaggle kernel output {job_id}_result.json không hợp lệ"
+                logger.warning(
+                    "kaggle batch: %s (%s) — job %s failed at step extracting",
+                    error, exc, job_id,
+                )
+                await _fail_job_extracting(session_factory, job_id, error)
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
 
 async def _fail_job_extracting(session_factory, job_id: int, error: str) -> None:
     """job → failed at step "extracting" with the given error (spec
@@ -612,10 +645,11 @@ async def _fail_job_extracting(session_factory, job_id: int, error: str) -> None
 
 async def _poll_batch_run(api, session_factory, run: dict) -> None:
     """One poll of a tracked run (ref-keyed; run["job_ids"] = the batch).
-    complete → ingest EVERY job (ref dropped only AFTER all jobs attempted —
-    a transient kernels_output/ValidationError failure on any job retries the
-    run next tick; _INGEST_MAX_FAILURES persistent failures drop the ref +
-    revert ALL jobs so a deterministic poison result can't loop forever);
+    complete → ONE pull + per-job ingest (ref dropped only AFTER every job
+    was attempted — a transient pull/DB failure retries the run next tick;
+    a job with missing/unparsable output fails THAT job only, partial-fail;
+    _INGEST_MAX_FAILURES persistent run-level failures drop the ref +
+    revert ALL jobs still extracting so a poison pull can't loop forever);
     failed/error/cancelled/timeout → drop ref + fail EVERY job at step
     "extracting" (owner retries via POST /retry; job.error names the kernel
     status); run older than kaggle_timeout → drop ref + revert ALL jobs to
@@ -625,8 +659,7 @@ async def _poll_batch_run(api, session_factory, run: dict) -> None:
     status = _norm_status(await asyncio.to_thread(api.kernels_status, ref))
     if status == "complete":
         try:
-            for job_id in job_ids:
-                await _ingest_batch_result(api, session_factory, job_id, ref)
+            await _ingest_complete_run(api, session_factory, run)
         except Exception:
             run["ingest_failures"] = run.get("ingest_failures", 0) + 1
             if run["ingest_failures"] >= _INGEST_MAX_FAILURES:
@@ -645,7 +678,7 @@ async def _poll_batch_run(api, session_factory, run: dict) -> None:
                     ref, exc_info=True,
                 )
             return
-        _batch_runs.pop(ref, None)  # success only — retry pull on failure
+        _batch_runs.pop(ref, None)  # every job attempted — retry pull on failure
         return
     if status in _FAILED_STATUSES:
         _batch_runs.pop(ref, None)
