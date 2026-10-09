@@ -94,7 +94,7 @@ Thay cho `pip install` network mỗi run (hoặc đóng gói cả conda env — 
    uv venv /tmp/paddle-venv --python 3.12          # py3.13 Kaggle không có paddle wheel
    uv pip install --python /tmp/paddle-venv/bin/python \
      --no-index --find-links /kaggle/input/img2text-wheelbuild-env/wheels \
-     pillow numpy opencv-python-headless rapidfuzz pymupdf paddlepaddle-gpu paddleocr
+     pillow numpy opencv-python-headless rapidfuzz pymupdf paddlepaddle-gpu paddleocr "paddlex[ocr]"
    ```
    `img2text_batch.py` đã dùng đúng pattern này (fallback `pip install` network nếu wheel dataset chưa mount).
 4. **Verify (tuỳ chọn)** — `deploy/kaggle/wheeltest-kernel/` (kernel `jhandf/img2text-wheeltest`, GPU): mount wheel dataset → `uv pip install --no-index` → verify imports (`paddle cuda=True`) → OCR smoke → in `REPORT {install_s, verify_s, ocr_s, total_s}`. Push:

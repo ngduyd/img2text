@@ -12,7 +12,7 @@ import sys
 
 DEPS = [
     "pillow", "numpy", "opencv-python-headless", "rapidfuzz", "pymupdf",
-    "paddlepaddle-gpu", "paddleocr",
+    "paddlepaddle-gpu", "paddleocr", "paddlex[ocr]",
 ]
 WHEELS = "/kaggle/working/wheels"
 

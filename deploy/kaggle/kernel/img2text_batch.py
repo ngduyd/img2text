@@ -132,7 +132,7 @@ PADDLE_PPU_INDEX = "https://www.paddlepaddle.org.cn/packages/stable/cu126/"
 # saved per run. Deps list = wheelbuild build set.
 WHEELHOUSE_DEPS = [
     "pillow", "numpy", "opencv-python-headless", "rapidfuzz",
-    "pymupdf", "paddlepaddle-gpu", "paddleocr",
+    "pymupdf", "paddlepaddle-gpu", "paddleocr", "paddlex[ocr]",
 ]
 
 def _find_wheelhouse() -> str | None:
