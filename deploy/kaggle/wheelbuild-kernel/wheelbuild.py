@@ -31,9 +31,11 @@ def main() -> int:
     subprocess.run(["uv", "venv", DL_VENV, "--python", "3.12"], check=True)
     py = os.path.join(DL_VENV, "bin", "python")
 
-    # ensure pip trong venv (uv venv không kèm pip)
-    subprocess.run([py, "-m", "ensurepip", "-q"], check=False)
-    subprocess.run([py, "-m", "pip", "install", "-q", "pip"], check=False)
+    # uv venv không kèm pip + không ensurepip → bootstrap pip qua uv
+    subprocess.run(
+        ["uv", "pip", "install", "--python", py, "pip"],
+        check=False,
+    )
 
     cmd = [
         py, "-m", "pip", "download", "-d", WHEELS,
