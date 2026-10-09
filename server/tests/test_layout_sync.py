@@ -47,3 +47,24 @@ async def test_sync_job_layouts(storage):
 async def test_sync_job_layouts_not_found(storage):
     out = await sync_job_layouts(storage, 9, "khongco", "x")
     assert out == {"md": False, "docx": False}
+
+def test_docx_replace_escapes_new():
+    """P1-2: escaped new text — user content cannot inject markup into DOM."""
+    assert sync_docx_html("<p>sai</p>", "sai", "a<b>c") == \
+        "<p>a&lt;b&gt;c</p>"
+
+async def test_sync_job_layouts_failure_isolated(storage):
+    """P2: one layout failing (storage error) → other still syncs, no abort."""
+    await storage.put("exports/9/md-layout", b"noi dung sai")
+    await storage.put("exports/9/docx.html", b"<p>doc sai</p>")
+    real_get = storage.get
+
+    async def flaky_get(key):
+        if key == "exports/9/md-layout":
+            raise RuntimeError("s3 down")
+        return await real_get(key)
+
+    storage.get = flaky_get
+    out = await sync_job_layouts(storage, 9, "sai", "x")
+    assert out == {"md": False, "docx": True}
+    assert await storage.get("exports/9/docx.html") == b"<p>doc x</p>"

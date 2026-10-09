@@ -30,7 +30,7 @@ from app.core.models import Job, User
 from app.routers.jobs import _job_or_403
 from app.services.render_docx import LLMError as DocxLLMError, build_docx
 from app.services.render_md import LLMError, build_md
-from app.services.doc_versions import save_version
+from app.services.doc_versions import save_version, snapshot_current_layout
 from app.services.html_to_docx import html_to_docx
 from app.services.storage import StorageDriver, get_storage
 
@@ -377,6 +377,14 @@ async def patch_content(
     job = await _job_or_403(session, id, user)
     if job.status != "done":
         raise HTTPException(status_code=409, detail="job not done")
+    # P1-3: the wipe destroys layout artifacts → snapshot them into version
+    # history first (user edit of content → detached snapshots).
+    await snapshot_current_layout(
+        storage, session, id, "md-layout", job.text_version, detached=True
+    )
+    await snapshot_current_layout(
+        storage, session, id, "docx-layout", job.text_version, detached=True
+    )
     result = dict(job.result or {})  # JSONB merge: copy, set, reassign
     result["edited_markdown"] = body.markdown
     job.result = result
@@ -469,6 +477,8 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
     # md-layout (LLM) — failure → warning + fallback plain md at exports/{id}/md
     try:
         data = await _llm_md_export(job.id, job, ir_sink)
+        # P1-3: LLM overwrite must not wipe unsnapshotted artifact bytes
+        await snapshot_current_layout(storage, None, job.id, "md-layout", job.text_version)
         await storage.put(f"exports/{job.id}/md-layout", data)
         md_ok = True
     except HTTPException as exc:
@@ -539,6 +549,9 @@ async def export_job(
                 data = markdown.encode()
             else:  # html (bleach-sanitized) / docx via pandoc
                 data = await _pandoc_export(body.fmt, id, markdown, job, storage)
+        if body.fmt == "md-layout":
+            # P1-3: keep previous artifact bytes in version history
+            await snapshot_current_layout(storage, session, id, "md-layout", job.text_version)
         await storage.put(key, data)
     url = await storage.presign_get(key, EXPORT_PRESIGN_EXPIRES_SECONDS)
     return {"url": url}

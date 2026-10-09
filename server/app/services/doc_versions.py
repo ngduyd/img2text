@@ -12,6 +12,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.models import DocumentVersion
+from app.services.layout_sync import DOCX_HTML_KEY, MD_LAYOUT_KEY
 from app.services.storage import StorageDriver
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,42 @@ async def latest_version(
 
 async def read_version(storage: StorageDriver, row: DocumentVersion) -> bytes:
     return await storage.get(row.storage_key)
+
+async def snapshot_current_layout(
+    storage: StorageDriver,
+    session: AsyncSession | None,
+    job_id: int,
+    kind: str,
+    based_on_text_version: int,
+    detached: bool = False,
+) -> None:
+    """Snapshot the live layout artifact BEFORE an overwrite/wipe (P1-3/P2).
+
+    No artifact → no-op (nothing to lose); bytes identical to the latest
+    snapshot → no-op (history stays append-only without duplicates).
+    """
+    from app.core.db import SessionLocal
+
+    key = (MD_LAYOUT_KEY if kind == "md-layout" else DOCX_HTML_KEY).format(
+        job_id=job_id
+    )
+    try:
+        data = await storage.get(key)
+    except KeyError:
+        return
+    own = session is None
+    session = session or SessionLocal()
+    try:
+        latest = await latest_version(session, job_id, kind)
+        if latest is not None and await read_version(storage, latest) == data:
+            return
+        await save_version(
+            storage, job_id, kind, data, based_on_text_version,
+            detached=detached, session=session,
+        )
+    finally:
+        if own:
+            await session.close()
 
 
 async def save_version(

@@ -31,6 +31,7 @@ from app.services.doc_versions import (
     read_version,
     save_version,
     seed_current,
+    snapshot_current_layout,
 )
 from app.services.job_results import _schedule_auto_output, store_worker_result
 from app.services.layout_sync import (
@@ -735,11 +736,29 @@ async def post_extraction(
         raise HTTPException(
             status_code=409, detail="Layout có chỉnh tay. Đồng bộ sẽ ghi đè."
         )
-    # 1) persist text + bump + snapshot
+    # 1) persist text + bump + snapshot — P1-4: ONE conditional UPDATE
+    #    re-checks expected_text_version at commit time (atomic; closes the
+    #    check-then-set race: loser gets rowcount=0 → 409, never a silent
+    #    last-win overwrite nor a UNIQUE version clash).
     result = dict(job.result or {})
     result["extraction_text"] = body.text
-    job.result = result
-    job.text_version += 1
+    new_version = body.expected_text_version + 1
+    rowcount = (
+        await session.execute(
+            update(Job)
+            .where(
+                Job.id == id,
+                Job.status == "done",
+                Job.text_version == body.expected_text_version,
+            )
+            .values(result=result, text_version=new_version)
+        )
+    ).rowcount
+    if rowcount == 0:
+        raise HTTPException(
+            status_code=409, detail="Nội dung đã thay đổi ở nơi khác. Tải lại trang."
+        )
+    job.text_version = new_version
     await session.commit()
     await save_version(
         storage, id, "text", body.text.encode("utf-8"), job.text_version,
@@ -752,7 +771,10 @@ async def post_extraction(
         "md": await storage.exists(MD_LAYOUT_KEY.format(job_id=id)),
         "docx": await storage.exists(DOCX_HTML_KEY.format(job_id=id)),
     }
-    if body.old_phrase is not None and body.new_phrase is not None:
+    needs_render: list[str] = []
+    # P1-1: empty/None old OR new → skip sync entirely (old="" would
+    # "replace" between every character and corrupt the artifact)
+    if body.old_phrase and body.new_phrase:
         # detached kinds 409'd above unless force → force overwrites them
         synced = await sync_job_layouts(
             storage, id, body.old_phrase, body.new_phrase
@@ -769,11 +791,11 @@ async def post_extraction(
                 storage, id, kind, await storage.get(key), job.text_version,
                 session=session,
             )
-    needs_render = [
-        kind
-        for kind, flag in (("md-layout", "md"), ("docx-layout", "docx"))
-        if exists[flag] and not synced[flag] and kind not in detached
-    ]
+        needs_render = [
+            kind
+            for kind, flag in (("md-layout", "md"), ("docx-layout", "docx"))
+            if exists[flag] and not synced[flag] and kind not in detached
+        ]
     return {
         "synced": synced,
         "needs_render": needs_render,
@@ -823,8 +845,8 @@ async def restore_version(
     if row is None or row.job_id != id:
         raise HTTPException(status_code=404, detail="version not found")
     data = await read_version(storage, row)
+    job = await session.get(Job, id)
     if row.kind == "text":
-        job = await session.get(Job, id)
         result = dict(job.result or {})
         result["extraction_text"] = data.decode("utf-8")
         job.result = result
@@ -838,6 +860,11 @@ async def restore_version(
         MD_LAYOUT_KEY.format(job_id=id)
         if row.kind == "md-layout"
         else DOCX_HTML_KEY.format(job_id=id)
+    )
+    # P2: snapshot the current artifact BEFORE the overwrite — crash-safe
+    # provenance (pre-restore bytes stay in version history).
+    await snapshot_current_layout(
+        storage, session, id, row.kind, job.text_version
     )
     if row.kind == "docx-layout":
         # supersede rule: derived exports/{id}/docx* die with the html edit

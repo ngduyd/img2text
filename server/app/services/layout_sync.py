@@ -6,9 +6,13 @@ Phrase not found in an artifact → that kind is NOT touched (atomic
 per-layout; caller flags needs_render for it).
 """
 
+from html import escape
 from html.parser import HTMLParser
+import logging
 
 from app.services.storage import StorageDriver
+
+logger = logging.getLogger(__name__)
 
 MD_LAYOUT_KEY = "exports/{job_id}/md-layout"
 DOCX_HTML_KEY = "exports/{job_id}/docx.html"
@@ -48,7 +52,12 @@ def sync_docx_html(html: str, old: str, new: str) -> str | None:
     Spans are located first, then replaced back-to-front so earlier offsets
     stay valid; a phrase spanning two text nodes is not found (never
     rewrites across tags — would corrupt the document).
+
+    P1-2: `new` is html-escaped before insertion — user text can never
+    inject markup into the DOM. Limitation: `old` is searched raw against
+    source, so a phrase containing an entity (e.g. "&amp;") is never found.
     """
+    safe_new = escape(new)
     parser = _TextSpans(html)
     parser.feed(html)
     parser.close()
@@ -58,7 +67,7 @@ def sync_docx_html(html: str, old: str, new: str) -> str | None:
         seg = html[start:end]
         n = seg.count(old)
         if n:
-            out = out[:start] + seg.replace(old, new) + out[end:]
+            out = out[:start] + seg.replace(old, safe_new) + out[end:]
             replaced += n
     return out if replaced else None
 
@@ -91,12 +100,18 @@ async def _sync_one(
     syncer,
     delete_prefix: str | None = None,
 ) -> bool:
-    if not await storage.exists(key):
+    """Per-layout failure isolation (P2): any error → False (needs_render),
+    never aborts the sibling layout after text is already committed."""
+    try:
+        if not await storage.exists(key):
+            return False
+        text = (await storage.get(key)).decode("utf-8")
+        updated = syncer(text, old, new)
+        if updated is None:
+            return False
+        await storage.delete_prefix(delete_prefix or key)
+        await storage.put(key, updated.encode("utf-8"))
+        return True
+    except Exception as exc:
+        logger.warning("layout sync failed key=%s: %s", key, exc)
         return False
-    text = (await storage.get(key)).decode("utf-8")
-    updated = syncer(text, old, new)
-    if updated is None:
-        return False
-    await storage.delete_prefix(delete_prefix or key)
-    await storage.put(key, updated.encode("utf-8"))
-    return True
