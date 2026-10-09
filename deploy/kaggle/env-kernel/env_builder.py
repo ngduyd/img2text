@@ -35,12 +35,33 @@ def run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True)
 
 
+def ensure_micromamba() -> str:
+    """Install micromamba if not present, return path."""
+    mmamba = "/kaggle/working/micromamba/bin/micromamba"
+    if os.path.exists(mmamba):
+        return mmamba
+    os.makedirs(os.path.dirname(mmamba), exist_ok=True)
+    subprocess.run(
+        [
+            "curl", "-Ls", "https://micro.mamba.pm/api/micromamba/linux-64/latest",
+            "|", "tar", "-xj", "-C", "/kaggle/working/micromamba",
+            "--strip-components=1",
+        ],
+        check=True,
+        shell=True,
+    )
+    return mmamba
+
+
 def main() -> int:
     print("=== img2text env builder ===", flush=True)
 
+    mmamba = ensure_micromamba()
+    print(f"micromamba: {mmamba}", flush=True)
+
     # 1. Create env
     run([
-        "conda", "create", "-y", "-p", ENV_PREFIX,
+        mmamba, "create", "-y", "-p", ENV_PREFIX,
         "-c", "conda-forge",
     ] + DEPS)
     print("env created", flush=True)
