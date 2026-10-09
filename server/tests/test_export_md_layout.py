@@ -326,7 +326,8 @@ async def test_auto_md_llm_down_falls_back_to_plain_md(
     monkeypatch,
     caplog,
 ):
-    """LLM failure → warning + fallback (exports/{id}/md still written)."""
+    """LLM failure → warning + fallback (exports/{id}/md still written);
+    BOTH layouts failed → spec 2026-10-09: failed + failed_step="rendering"."""
     from app.services.job_results import drain_auto_output
 
     def _down(*args, **kwargs):
@@ -352,4 +353,4 @@ async def test_auto_md_llm_down_falls_back_to_plain_md(
     data = await storage_spy.get(f"exports/{seed_job}/md")
     assert data.decode("utf-8") == VALID_RESULT_JSONB["markdown"]
     job = await db_session.get(Job, seed_job)
-    assert job.status == "done"
+    assert job.status == "failed" and job.failed_step == "rendering"

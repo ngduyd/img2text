@@ -84,7 +84,9 @@ async def test_get_job_returns_output_format(auth_client, db_session):
 async def test_worker_result_auto_generates_md(
     worker_client, seed_job, storage_spy, db_session, VALID_RESULT_JSONB, md_llm_down, docx_llm_down
 ):
-    """POST /result (worker protocol) → exports/{id}/md written in background."""
+    """POST /result → exports/{id}/md written in background; BOTH layouts
+    fail (spec 2026-10-09) → job failed + failed_step="rendering" — the
+    plain-md fallback artifact still lands for the rendering retry."""
     claim = await worker_client.get("/api/jobs/next")
     tok = claim.json()["worker_token"]
     r = await worker_client.post(
@@ -99,7 +101,7 @@ async def test_worker_result_auto_generates_md(
     data = await storage_spy.get(key)
     assert data.decode("utf-8") == VALID_RESULT_JSONB["markdown"]
     job = await db_session.get(Job, seed_job)
-    assert job.status == "done"
+    assert job.status == "failed" and job.failed_step == "rendering"
 
 async def test_auto_docx_llm_down_warns_and_job_stays_done(
     auth_client,
@@ -110,6 +112,7 @@ async def test_auto_docx_llm_down_warns_and_job_stays_done(
     monkeypatch,
     caplog,
 ):
+    """docx-layout LLM down + md-layout OK → spec partial-OK rule: done."""
     r = await auth_client.post(
         "/api/jobs",
         files={"file": ("a.jpg", TEST_JPEG, "image/png")},
@@ -121,6 +124,10 @@ async def test_auto_docx_llm_down_warns_and_job_stays_done(
         from app.services.render_docx import LLMError
         raise LLMError("LLM down")
 
+    async def _md_ok(*args, **kwargs):
+        return "# layout md"  # the "one format OK" half of the rule
+
+    monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
     monkeypatch.setattr("app.routers.exports.build_docx", _llm_down)
     claim = await worker_client.get("/api/jobs/next")
     tok = claim.json()["worker_token"]

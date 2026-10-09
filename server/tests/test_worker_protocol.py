@@ -42,11 +42,18 @@ async def test_result_422_bad_bbox_shape(worker_client, seed_job, VALID_RESULT_J
                                  headers={"Authorization": f"Bearer {tok}"})
     assert r.status_code == 422
 
-async def test_result_done(worker_client, db_session, seed_job, VALID_RESULT_JSONB):
+async def test_result_done(worker_client, db_session, seed_job, VALID_RESULT_JSONB, monkeypatch):
+    """POST /result → result stored (rendering) → auto-output → done."""
+    async def _md_ok(*args, **kwargs):
+        return "# layout md"
+    monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
     claim = await worker_client.get("/api/jobs/next"); tok = claim.json()["worker_token"]
     r = await worker_client.post(f"/api/jobs/{seed_job}/result", json=VALID_RESULT_JSONB,
                                  headers={"Authorization": f"Bearer {tok}"})
     assert r.status_code == 200
+    from app.services.job_results import drain_auto_output
+    await drain_auto_output()
+    db_session.expire_all()
     job = await db_session.get(Job, seed_job)
     assert job.status == "done" and job.result["model_version"] and job.worker_token is None
 

@@ -25,8 +25,9 @@ Plan K5 (kaggle_mode=batch, default): ensure_worker dispatches — batch mode
 stages the queued job's upload as the img2text-input dataset (delete+create),
 pushes the standalone script kernel (deploy/kaggle/img2text_batch.py), polls
 status, pulls result.json and ingests it into the job. No public URL needed.
-Runs live in the in-memory _batch_runs map (restart = orphan kernel ceiling —
-no DB column); "loop" keeps the Plan K2 branch above untouched.
+Runs live in the in-memory _batch_runs map; the kernel ref is ALSO persisted
+in jobs.kaggle_ref (spec 2026-10-09) so _ensure_batch_runs re-adopts an
+"extracting" job after a restart — the poll loop resumes, no orphan kernel.
 """
 
 import asyncio
@@ -52,8 +53,10 @@ DATASET_SLUG = "img2text-worker-files"
 INPUT_SLUG = "img2text-input"  # batch input dataset (run_one.py K4, shared slug)
 # kernel statuses meaning "run in progress" (case-insensitive match)
 _ACTIVE_STATUSES = frozenset({"running", "pending", "queued"})
-# batch statuses meaning "terminal" (normalized lowercase)
-_FAILED_STATUSES = frozenset({"failed", "error", "cancelled"})
+# batch statuses meaning "terminal" (normalized lowercase). P2: literal
+# kernel status "timeout" is terminal too (spec: timeout → failed+extracting,
+# replaces the revert-and-respawn of 2263d24).
+_FAILED_STATUSES = frozenset({"failed", "error", "cancelled", "timeout"})
 # mirrors kernel VL_MODEL / worker build_result default (result.json has no version)
 BATCH_MODEL_VERSION = "PaddleOCR-VL-1.5-0.9B"
 # per-block markdown prefixes (batch doc_title → H1, paragraph_title → H2;
@@ -64,7 +67,8 @@ _last_spawn = 0.0
 # ceiling: persistent ingest failures for one ref → drop instead of looping
 _INGEST_MAX_FAILURES = 3
 # Plan K5 batch runs: {job_id: {"ref": str, "pushed_at": monotonic}}.
-# In-memory only (non-goal: no DB column) — restart orphans a running kernel.
+# In-memory hot index; jobs.kaggle_ref is the durable copy — a restart
+# re-adopts extracting jobs each tick (see _ensure_batch_runs).
 _batch_runs: dict[int, dict] = {}
 # input-dataset freshness verify before kernels_push (stale-dataset guard)
 _INPUT_VERIFY_TIMEOUT = 60.0
@@ -399,7 +403,7 @@ async def _spawn_batch_run(api, session_factory, job: Job) -> bool:
     concurrent runs would overwrite each other's input: _ensure_batch_runs
     enforces a single-active-run guard before every spawn.
 
-    True = job marked running + tracked in _batch_runs. False = the UPDATE
+    True = job marked extracting + tracked in _batch_runs. False = the UPDATE
     matched 0 rows (an HTTP worker claimed the job mid-push): warning, no
     tracking — the caller must not start a second run this tick."""
     global _last_spawn
@@ -435,16 +439,18 @@ async def _spawn_batch_run(api, session_factory, job: Job) -> bool:
             _verify_input_dataset, api, input_ref, Path(job.storage_key).name
         )
         await asyncio.to_thread(api.kernels_push, str(kernel_stage))
-        # D1: push OK → job visibly running (UI "Đang xử lý" instead of
-        # "Chờ xử lý" for the whole run); lease = now + kaggle_timeout so
-        # the reaper never requeues mid-run. started_at kept if already set.
+        # D1: push OK → job enters the "extracting" phase with the kernel
+        # ref persisted (kaggle_ref = restart adoption; UI shows the phase
+        # for the whole run); lease = now + kaggle_timeout so the reaper
+        # never requeues mid-run. started_at kept if already set.
         now = datetime.now(timezone.utc)
         async with session_factory() as session:
             result = await session.execute(
                 update(Job)
                 .where(Job.id == job.id, Job.status == "queued")
                 .values(
-                    status="running",
+                    status="extracting",
+                    kaggle_ref=ref,
                     started_at=func.coalesce(Job.started_at, now),
                     lease_expires_at=now
                     + timedelta(seconds=settings.kaggle_timeout),
@@ -455,15 +461,16 @@ async def _spawn_batch_run(api, session_factory, job: Job) -> bool:
         _last_spawn = time.monotonic()  # kernel pushed either way — gap applies
         if claimed:
             logger.warning(
-                "kaggle batch: job %s claimed before running-mark "
+                "kaggle batch: job %s claimed before extracting-mark "
                 "(UPDATE rowcount 0) — run not tracked",
                 job.id,
             )
             return False
         logger.info(
-            "kaggle batch: job %s → running (lease +%ds)",
+            "kaggle batch: job %s → extracting (lease +%ds, ref %s)",
             job.id,
             settings.kaggle_timeout,
+            ref,
         )
     finally:
         shutil.rmtree(build, ignore_errors=True)
@@ -471,18 +478,18 @@ async def _spawn_batch_run(api, session_factory, job: Job) -> bool:
     return True
 
 async def _revert_job_queued(session_factory, job_id: int, why: str) -> None:
-    """D1 failure path: kernel failed/error/timeout or ingest give-up →
-    job back to queued with the lease cleared so the gap-guarded respawn
-    picks it up next round (reaper must not also touch it).
+    """D1 failure path: kernel timeout or ingest give-up → job back to
+    queued with the lease cleared so the gap-guarded respawn picks it up
+    next round (reaper must not also touch it).
 
-    Rider guard: worker_token IS NULL — a running job claimed by an HTTP
-    worker (claim raced the failure) is left alone, not clobbered."""
+    Rider guard: worker_token IS NULL — an extracting job claimed by an
+    HTTP worker (claim raced the failure) is left alone, not clobbered."""
     async with session_factory() as session:
         result = await session.execute(
             update(Job)
             .where(
                 Job.id == job_id,
-                Job.status == "running",
+                Job.status == "extracting",
                 Job.worker_token.is_(None),
             )
             .values(status="queued", lease_expires_at=None)
@@ -491,7 +498,7 @@ async def _revert_job_queued(session_factory, job_id: int, why: str) -> None:
         reverted = result.rowcount > 0
     if not reverted:
         logger.warning(
-            "kaggle batch: job %s revert skipped — claimed or not running "
+            "kaggle batch: job %s revert skipped — claimed or not extracting "
             "(%s)",
             job_id, why,
         )
@@ -537,9 +544,10 @@ async def _poll_batch_run(api, session_factory, job_id: int, run: dict) -> None:
     a successful pull+validate — a transient kernels_output/ValidationError
     failure retries next tick; _INGEST_MAX_FAILURES persistent failures drop
     the ref so a deterministic poison result can't loop forever);
-    failed/error → drop ref + revert job to queued (respawn next tick,
-    gap-guarded); ref older than kaggle_timeout → drop ref + revert +
-    warning."""
+    failed/error/cancelled/timeout → drop ref + fail the job at step
+    "extracting" (owner retries via POST /retry; job.error names the kernel
+    status); ref older than kaggle_timeout → drop
+    ref + revert to queued + warning."""
     ref = str(run["ref"])
     status = _norm_status(await asyncio.to_thread(api.kernels_status, ref))
     if status == "complete":
@@ -567,11 +575,38 @@ async def _poll_batch_run(api, session_factory, job_id: int, run: dict) -> None:
     if status in _FAILED_STATUSES:
         _batch_runs.pop(job_id, None)
         logger.warning(
-            "kaggle batch: kernel %s %s — ref dropped, job %s stays queued "
-            "(respawn next tick after gap)",
-            ref, status, job_id,
+            "kaggle batch: kernel %s %s — ref dropped, job %s failed at step "
+            "extracting (retry via POST /api/jobs/%s/retry)",
+            ref, status, job_id, job_id,
         )
-        await _revert_job_queued(session_factory, job_id, f"kernel {status}")
+        # spec 2026-10-09: terminal kernel failure fails the job at step
+        # "extracting" (supersedes the revert-and-respawn of 2263d24 —
+        # the owner retries explicitly). Rider guard kept: a worker-claimed
+        # job is not clobbered.
+        async with session_factory() as session:
+            result = await session.execute(
+                update(Job)
+                .where(
+                    Job.id == job_id,
+                    Job.status == "extracting",
+                    Job.worker_token.is_(None),
+                )
+                .values(
+                    status="failed",
+                    failed_step="extracting",
+                    # P2: the owner sees WHY — error names the kernel status
+                    error=f"Kaggle kernel {status}",
+                    finished_at=datetime.now(timezone.utc),
+                    lease_expires_at=None,
+                )
+            )
+            await session.commit()
+            if result.rowcount == 0:
+                logger.warning(
+                    "kaggle batch: fail mark skipped job %s — claimed or not "
+                    "extracting",
+                    job_id,
+                )
         return
     if time.monotonic() - run["pushed_at"] > settings.kaggle_timeout:
         _batch_runs.pop(job_id, None)
@@ -592,6 +627,30 @@ async def _ensure_batch_runs(api, session_factory) -> bool:
     failure logs + moves to the NEXT queued candidate this tick instead of
     head-of-line blocking the queue. Never raises (ensure_worker caller)."""
     global _last_spawn
+    # Restart recovery (spec 2026-10-09): an "extracting" job with a
+    # persisted ref whose run is no longer tracked (server restart) is
+    # re-adopted → poll resumes → ingest runs. worker_token IS NULL keeps
+    # HTTP-claimed jobs (stale ref) out of the map.
+    async with session_factory() as session:
+        orphans = (
+            await session.execute(
+                select(Job).where(
+                    Job.status == "extracting",
+                    Job.kaggle_ref.isnot(None),
+                    Job.worker_token.is_(None),
+                )
+            )
+        ).scalars().all()
+    for job in orphans:
+        if job.id not in _batch_runs:
+            _batch_runs[job.id] = {
+                "ref": str(job.kaggle_ref),
+                "pushed_at": time.monotonic(),
+            }
+            logger.info(
+                "kaggle batch: job %s adopted ref %s (restart recovery)",
+                job.id, job.kaggle_ref,
+            )
     for job_id, run in list(_batch_runs.items()):
         await _poll_batch_run(api, session_factory, job_id, run)
     if _batch_runs:  # active run(s) — shared input slug: never overlap

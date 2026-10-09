@@ -7,6 +7,7 @@ sides here + in test_kaggle_orchestrator.py). Storage is the moto driver
 from the conftest app fixture, injected through the orch._get_storage seam.
 """
 
+import asyncio
 import json
 import hashlib
 import time
@@ -23,7 +24,7 @@ from app.core.db import SessionLocal
 from app.core.models import Job, User
 from app.core.schemas import ResultBody
 from app.services import kaggle_orchestrator as orch
-from app.services.job_results import store_batch_result
+from app.services.job_results import drain_auto_output, store_batch_result
 from tests.conftest import PNG_1PX
 
 DEPLOY_KAGGLE = Path(__file__).parents[2] / "deploy" / "kaggle"
@@ -217,7 +218,7 @@ async def test_batch_verifies_input_files_before_kernel_push(
     assert staged in api.dataset_files  # served file == the staged upload
 
 async def test_batch_happy_flow_spawn_then_complete_ingest(
-    kaggle_batch_env, api, storage_env, seed_job, db_session
+    kaggle_batch_env, api, storage_env, seed_job, db_session, monkeypatch
 ):
     api.result_doc = RESULT_DOC
     # tick 1: queued → stage input → dataset delete+create → push
@@ -238,11 +239,16 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
     assert meta["enable_gpu"] is True
     assert "img2text_batch.py" in files and "kernel-metadata.json" in files
     assert seed_job in orch._batch_runs
-    # D1: push OK → job visibly running with a full-run lease (UI "Đang xử lý")
+    # spec 2026-10-09: push OK → status "extracting" + kernel ref persisted
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
-    assert job.status == "running" and job.started_at is not None
+    assert job.status == "extracting" and job.started_at is not None
+    assert job.kaggle_ref == "testuser/img2text-batch"
     assert job.lease_expires_at is not None and job.worker_token is None
+    # one layout OK → the auto-output completion rule ends at done
+    async def _md_ok(*args, **kwargs):
+        return "# layout md"
+    monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
     # tick 2: enum-shaped status → complete → output pulled → ingest
     assert await orch.ensure_worker(SessionLocal) is False
     assert any(
@@ -250,6 +256,7 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
         for c in api.calls
     )
     assert orch._batch_runs == {}
+    await drain_auto_output()  # rendering → done only after the auto-output task
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
     assert job.status == "done" and job.finished_at is not None
@@ -284,30 +291,63 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
     ResultBody.model_validate(res)
 
 async def test_batch_preprocess_ceiling_warns_and_ingests_whole_file(
-    kaggle_batch_env, api, storage_env, seed_job, db_session, caplog
+    kaggle_batch_env, api, storage_env, seed_job, db_session, caplog, monkeypatch
 ):
     api.result_doc = RESULT_DOC
     job = await db_session.get(Job, seed_job)
     job.preprocess = '{"pages": [1], "rotate": {"1": 90}}'
     await db_session.commit()
+    async def _md_ok(*args, **kwargs):
+        return "# layout md"
+    monkeypatch.setattr("app.routers.exports.build_md", _md_ok)  # before ingest
     assert await orch.ensure_worker(SessionLocal) is True  # spawn
     with caplog.at_level("WARNING", logger=orch.logger.name):
         assert await orch.ensure_worker(SessionLocal) is False  # complete → ingest
     assert any("bỏ qua preprocess" in r.getMessage() for r in caplog.records)
+    # ingest → rendering; one layout OK → done after the auto-output task
+    await drain_auto_output()
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
     assert job.status == "done"
     assert len(job.result["pages"]) == 2  # whole file, selection ignored
 
-async def test_batch_spawn_marks_job_running_with_lease(
+async def test_batch_ingest_marks_rendering_then_done_after_auto_output(
+    kaggle_batch_env, api, storage_env, seed_job, db_session, monkeypatch
+):
+    """spec 2026-10-09: ingest success → status "rendering" (result stored,
+    layout still in flight); auto-output OK → "done"."""
+    api.result_doc = RESULT_DOC
+    gate = asyncio.Event()
+
+    async def _gated_auto(job, storage):
+        await gate.wait()  # holds the job in "rendering" deterministically
+        return True
+
+    monkeypatch.setattr("app.routers.exports.auto_generate_output", _gated_auto)
+    assert await orch.ensure_worker(SessionLocal) is True  # spawn → extracting
+    assert await orch.ensure_worker(SessionLocal) is False  # complete → ingest
+    try:
+        db_session.expire_all()
+        job = await db_session.get(Job, seed_job)
+        assert job.status == "rendering" and job.result is not None
+    finally:
+        gate.set()  # never leak a gated task past a failing assertion
+        await drain_auto_output()
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.status == "done" and job.failed_step is None
+
+async def test_batch_spawn_marks_job_extracting_with_kaggle_ref(
     kaggle_batch_env, api, storage_env, seed_job, db_session
 ):
-    """D1: kernels_push OK → status=running, started_at=now,
+    """spec 2026-10-09: kernels_push OK → status=extracting,
+    kaggle_ref persisted (restart adoption), started_at=now,
     lease_expires_at=now+kaggle_timeout (reaper must not requeue mid-run)."""
     assert await orch.ensure_worker(SessionLocal) is True
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
-    assert job.status == "running"
+    assert job.status == "extracting"
+    assert job.kaggle_ref == "testuser/img2text-batch"
     assert job.started_at is not None and job.worker_token is None
     expected = datetime.now(timezone.utc) + timedelta(
         seconds=settings.kaggle_timeout
@@ -315,43 +355,44 @@ async def test_batch_spawn_marks_job_running_with_lease(
     assert abs((job.lease_expires_at - expected).total_seconds()) < 60
     assert job.lease_expires_at > datetime.now(timezone.utc)
 
-async def test_batch_failed_drops_ref_and_respawns_after_gap(
+async def test_batch_failed_marks_failed_with_extracting_step(
     kaggle_batch_env, api, storage_env, seed_job, db_session, caplog, monkeypatch
 ):
+    """spec 2026-10-09 (supersedes the revert-and-respawn of 2263d24): a
+    FAILED kernel fails the job at step "extracting" — no silent respawn;
+    the owner retries through POST /api/jobs/{id}/retry."""
     assert await orch.ensure_worker(SessionLocal) is True
     api.status = {"status": SimpleNamespace(name="FAILED")}
     with caplog.at_level("WARNING", logger=orch.logger.name):
         assert await orch.ensure_worker(SessionLocal) is False  # poll drops ref
     assert orch._batch_runs == {}  # ref deleted
-    assert any("stays queued" in r.getMessage() for r in caplog.records)
+    assert any("failed at step extracting" in r.getMessage() for r in caplog.records)
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
-    # D1: revert → queued + lease cleared → respawn candidate
-    assert job.status == "queued" and job.lease_expires_at is None
-    # gap guard still blocks (default 600s since first spawn)
+    assert job.status == "failed" and job.failed_step == "extracting"
+    assert job.lease_expires_at is None and job.finished_at is not None
+    # P2-3: the owner sees WHY — error names the kernel status
+    assert job.error == "Kaggle kernel failed"
+    # no auto-respawn: only queued jobs are spawn candidates (even gapless)
+    monkeypatch.setattr(settings, "kaggle_min_gap_seconds", 0)
     assert await orch.ensure_worker(SessionLocal) is False
     assert len(_pushes(api)) == 1
-    # gap elapsed → respawn next tick
-    monkeypatch.setattr(settings, "kaggle_min_gap_seconds", 0)
-    assert await orch.ensure_worker(SessionLocal) is True
-    assert len(_pushes(api)) == 2
-    assert seed_job in orch._batch_runs
 
-async def test_batch_cancelled_drops_ref_and_reverts_to_queued(
+async def test_batch_cancelled_marks_failed_with_extracting_step(
     kaggle_batch_env, api, storage_env, seed_job, db_session, caplog
 ):
     """cancelled kernel (user cancel on Kaggle UI / auto-cancel) → ref dropped
-    + job reverted to queued, same as failed/error (no 3h timeout hang)."""
+    + failed + failed_step=extracting, same as failed/error (no 3h hang)."""
     assert await orch.ensure_worker(SessionLocal) is True
     api.status = {"status": SimpleNamespace(name="CANCELLED")}
     with caplog.at_level("WARNING", logger=orch.logger.name):
         assert await orch.ensure_worker(SessionLocal) is False  # poll drops ref
     assert orch._batch_runs == {}  # ref deleted
-    assert any("stays queued" in r.getMessage() for r in caplog.records)
+    assert any("failed at step extracting" in r.getMessage() for r in caplog.records)
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
-    # revert → queued + lease cleared → respawn candidate
-    assert job.status == "queued" and job.lease_expires_at is None
+    assert job.status == "failed" and job.failed_step == "extracting"
+    assert job.lease_expires_at is None
 
 async def test_batch_timeout_drops_ref_with_warning(
     kaggle_batch_env, api, storage_env, seed_job, db_session, caplog
@@ -369,6 +410,26 @@ async def test_batch_timeout_drops_ref_with_warning(
     # D1: timeout path reverts running → queued, lease cleared
     assert job.status == "queued" and job.lease_expires_at is None
 
+async def test_batch_timeout_status_marks_failed_with_extracting_step(
+    kaggle_batch_env, api, storage_env, seed_job, db_session, monkeypatch
+):
+    """P2-2 (spec: timeout → failed+extracting, replaces the 2263d24 revert):
+    literal kernel status TIMEOUT is terminal — ref dropped, failed +
+    failed_step=extracting + error naming the status, NO queued revert,
+    NO respawn."""
+    assert await orch.ensure_worker(SessionLocal) is True
+    api.status = {"status": SimpleNamespace(name="TIMEOUT")}
+    assert await orch.ensure_worker(SessionLocal) is False  # poll drops ref
+    assert orch._batch_runs == {}
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.status == "failed" and job.failed_step == "extracting"
+    assert job.error == "Kaggle kernel timeout"
+    assert job.lease_expires_at is None and job.finished_at is not None
+    monkeypatch.setattr(settings, "kaggle_min_gap_seconds", 0)
+    assert await orch.ensure_worker(SessionLocal) is False  # not respawned
+    assert len(_pushes(api)) == 1
+
 async def _extra_queued_job(auth_client) -> int:
     """Second real upload — different bytes → different sha256 storage key."""
     r = await auth_client.post(
@@ -377,31 +438,31 @@ async def _extra_queued_job(auth_client) -> int:
     assert r.status_code == 201, r.text
     return r.json()["id"]
 
-async def test_revert_skips_worker_claimed_running_job(
+async def test_revert_skips_worker_claimed_extracting_job(
     kaggle_batch_env, api, storage_env, seed_job, db_session
 ):
-    """Rider: revert guard (status=running AND worker_token IS NULL) — a job
-    claimed by an HTTP worker is NOT clobbered back to queued."""
-    assert await orch.ensure_worker(SessionLocal) is True  # job → running
+    """Rider: revert guard (status=extracting AND worker_token IS NULL) — a
+    job claimed by an HTTP worker is NOT clobbered back to queued."""
+    assert await orch.ensure_worker(SessionLocal) is True  # job → extracting
     job = await db_session.get(Job, seed_job)
     job.worker_token = "claimed-tok"
     await db_session.commit()
     await orch._revert_job_queued(SessionLocal, seed_job, "kernel failed")
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
-    assert job.status == "running" and job.worker_token == "claimed-tok"
+    assert job.status == "extracting" and job.worker_token == "claimed-tok"
     assert job.lease_expires_at is not None  # lease untouched too
 
 async def test_spawn_rowcount_zero_warns_and_skips_tracking(
     kaggle_batch_env, api, storage_env, seed_job, db_session, caplog
 ):
-    """Rider: job claimed between the candidate select and the running-mark
+    """Rider: job claimed between the candidate select and the extracting-mark
     UPDATE (rowcount 0) → warning + no _batch_runs entry (untracked)."""
     job = await db_session.get(Job, seed_job)  # queued candidate
     await db_session.execute(
         update(Job)
         .where(Job.id == seed_job)
-        .values(status="running", worker_token="claimed-tok")
+        .values(status="extracting", worker_token="claimed-tok")
     )
     await db_session.commit()  # claimed by an "HTTP worker" before spawn
     with caplog.at_level("WARNING", logger=orch.logger.name):
@@ -411,7 +472,7 @@ async def test_spawn_rowcount_zero_warns_and_skips_tracking(
     assert len(_pushes(api)) == 1  # push happened, tracking skipped
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
-    assert job.status == "running" and job.worker_token == "claimed-tok"
+    assert job.status == "extracting" and job.worker_token == "claimed-tok"
 
 async def test_batch_single_active_run_blocks_new_spawn(
     kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session, monkeypatch
@@ -448,7 +509,7 @@ async def test_batch_poison_job_does_not_block_queue(
     assert len(_pushes(api)) == 1
 
 async def test_batch_output_failure_keeps_ref_and_retries(
-    kaggle_batch_env, api, storage_env, seed_job, db_session, caplog
+    kaggle_batch_env, api, storage_env, seed_job, db_session, caplog, monkeypatch
 ):
     """P2-5: transient kernels_output failure → ref kept (no GPU re-run),
     pull retried next tick, success ingests."""
@@ -460,8 +521,13 @@ async def test_batch_output_failure_keeps_ref_and_retries(
     assert seed_job in orch._batch_runs  # ref KEPT
     assert any("retry next tick" in r.getMessage() for r in caplog.records)
     api.output_error = None
+    # fake BEFORE the pull tick: the completion task may start mid-tick
+    async def _md_ok(*args, **kwargs):
+        return "# layout md"
+    monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
     assert await orch.ensure_worker(SessionLocal) is False  # pull succeeds
     assert orch._batch_runs == {}
+    await drain_auto_output()  # rendering → done after the auto-output task
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
     assert job.status == "done"
@@ -486,52 +552,94 @@ async def test_batch_ingest_failure_ceiling_drops_ref(
     assert job.status == "queued" and job.lease_expires_at is None
     assert len(_pushes(api)) == 1  # gap still blocks a re-spawn this tick
 
-async def test_reaper_does_not_requeue_batch_running_job(
+async def test_restart_adopts_extracting_job_with_kaggle_ref(
+    kaggle_batch_env, api, storage_env, seed_job, db_session, monkeypatch
+):
+    """spec 2026-10-09 restart recovery: _batch_runs empty (server restart)
+    + job row "extracting" with kaggle_ref → adopted back into the map →
+    poll resumes and ingest completes."""
+    api.result_doc = RESULT_DOC
+    async def _md_ok(*args, **kwargs):
+        return "# layout md"
+    monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
+    assert await orch.ensure_worker(SessionLocal) is True  # spawn
+    ref = orch._batch_runs[seed_job]["ref"]
+    orch._batch_runs.clear()  # simulate restart: hot index lost
+    api.status = {"status": SimpleNamespace(name="RUNNING")}
+    assert await orch.ensure_worker(SessionLocal) is False  # adopt + poll
+    assert orch._batch_runs[seed_job]["ref"] == ref  # poll resumes
+    api.status = {"status": SimpleNamespace(name="COMPLETE")}
+    assert await orch.ensure_worker(SessionLocal) is False  # pull + ingest
+    assert orch._batch_runs == {}
+    await drain_auto_output()
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.status == "done"
+
+async def test_reaper_requeues_extracting_job_without_kaggle_ref(
+    db_session, seed_job
+):
+    """spec 2026-10-09: "extracting" WITHOUT kaggle_ref (spawn died
+    halfway) + expired lease → the reaper reverts it to queued."""
+    from app.services.jobs_requeue import reap_leases
+
+    job = await db_session.get(Job, seed_job)
+    job.status = "extracting"
+    job.lease_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    await db_session.commit()
+    assert await reap_leases(db_session) == 1
+    await db_session.refresh(job)
+    assert job.status == "queued" and job.lease_expires_at is None
+    assert job.kaggle_ref is None
+
+async def test_reaper_does_not_requeue_batch_extracting_job(
     kaggle_batch_env, api, storage_env, seed_job, db_session
 ):
     """D1: spawn lease = now+kaggle_timeout → reap_leases sees an active
-    lease and must leave the batch-running job alone (reaper wiring pattern)."""
+    lease and must leave the batch-extracting job alone (reaper wiring)."""
     from app.services.jobs_requeue import reap_leases
 
     assert await orch.ensure_worker(SessionLocal) is True
     assert await reap_leases(db_session) == 0
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
-    assert job.status == "running"
+    assert job.status == "extracting"
     assert job.lease_expires_at > datetime.now(timezone.utc)
 
 async def test_store_batch_result_guard_cases(
     db_session, seed_job, VALID_RESULT_JSONB
 ):
-    """D1 guard: queued+unclaimed OR running+unclaimed+active lease → done;
-    running+worker-token (claimed) or running+expired lease → reject."""
+    """D1 guard: queued+unclaimed OR extracting+unclaimed+active lease →
+    accepted (ingest stores the result + rendering); extracting+worker-token
+    (claimed) or extracting+expired lease → reject."""
     body = ResultBody.model_validate(VALID_RESULT_JSONB)
     now = datetime.now(timezone.utc)
     job = await db_session.get(Job, seed_job)
 
-    # running + token set → worker-claimed: reject, nothing written
-    job.status = "running"
+    # extracting + token set → worker-claimed: reject, nothing written
+    job.status = "extracting"
     job.worker_token = "claimed-tok"
     job.lease_expires_at = now + timedelta(seconds=60)
     await db_session.commit()
     assert await store_batch_result(db_session, seed_job, body, now=now) is False
     await db_session.refresh(job)
-    assert job.status == "running" and job.result is None
+    assert job.status == "extracting" and job.result is None
 
-    # running + lease expired → reject (reaper owns it now)
+    # extracting + lease expired → reject (reaper owns it now)
     job.worker_token = None
     job.lease_expires_at = now - timedelta(seconds=1)
     await db_session.commit()
     assert await store_batch_result(db_session, seed_job, body, now=now) is False
     await db_session.refresh(job)
-    assert job.status == "running" and job.result is None
+    assert job.status == "extracting" and job.result is None
 
-    # running + unclaimed + active lease → accepted (D1 batch path)
+    # extracting + unclaimed + active lease → accepted (D1 batch path);
+    # storage=None → no auto-output task, status stays at the ingest phase
     job.lease_expires_at = now + timedelta(seconds=60)
     await db_session.commit()
     assert await store_batch_result(db_session, seed_job, body, now=now) is True
     await db_session.refresh(job)
-    assert job.status == "done" and job.lease_expires_at is None
+    assert job.status == "rendering" and job.lease_expires_at is None
 
 async def test_mode_loop_dispatches_to_k2_branch(
     kaggle_batch_env, api, storage_env, seed_job, monkeypatch

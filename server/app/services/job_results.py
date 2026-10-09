@@ -8,8 +8,10 @@ rowcount 0 = caller maps to 409 / skip; never raises on conflict.
 
 Plan D4: after a successful store the chosen `job.output_format` export is
 scheduled fire-and-forget (asyncio.create_task — the /result response and
-the batch ingest must not wait on pandoc/LLM). Any generation failure only
-logs a warning: the job is already done and ExportBar can export by hand.
+the batch ingest must not wait on pandoc/LLM). spec 2026-10-09: the store
+enters phase "rendering"; the completion task flips the job to done
+(≥1 layout OK) or failed + failed_step="rendering" (both layouts fail).
+Any generation failure only logs a warning.
 
 Plan proofread: `_schedule_proofread` rides the same task set — OCR done →
 LLM proofread best-effort (LLM down → warning, job stays done).
@@ -17,7 +19,7 @@ LLM proofread best-effort (LLM down → warning, job stays done).
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import and_, or_, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,22 +32,60 @@ logger = logging.getLogger(__name__)
 
 # Strong refs: create_task tasks are otherwise GC-eligible while pending.
 _pending_output: set[asyncio.Task] = set()
+# P1: job_id → live auto-output task. Single-flight guard (one task per job
+# on the single loop) + the stale-rendering sweep's in-process registry.
+_active_outputs: dict[int, asyncio.Task] = {}
 
 async def _auto_output(job: Job, storage: StorageDriver) -> None:
     try:
         # lazy import: exports → jobs → job_results (cycle if eager)
         from app.routers.exports import auto_generate_output
-        await auto_generate_output(job, storage)
+        ok = bool(await auto_generate_output(job, storage))
     except Exception as exc:
         logger.warning(
             "auto output failed job=%s fmt=%s: %s",
             job.id, job.output_format, exc,
         )
+        ok = False
+    # spec 2026-10-09 completion rule: ≥1 layout OK → done; both fail →
+    # failed + failed_step="rendering" (the retry re-runs this step).
+    # Own session (the task outlives the request); conditional UPDATE
+    # re-checks the phase at commit time — a racing retry task that
+    # already flipped the row turns this into a no-op (rowcount 0).
+    from app.core.db import SessionLocal  # task-local, as in _proofread
+    async with SessionLocal() as session:
+        now = datetime.now(timezone.utc)
+        values = (
+            {"status": "done", "failed_step": None, "finished_at": now}
+            if ok
+            else {
+                "status": "failed",
+                "failed_step": "rendering",
+                "finished_at": now,
+            }
+        )
+        await session.execute(
+            update(Job)
+            .where(Job.id == job.id, Job.status.in_(("rendering", "failed")))
+            .values(**values)
+        )
+        await session.commit()
 
 def _schedule_auto_output(job: Job, storage: StorageDriver) -> None:
+    running = _active_outputs.get(job.id)
+    if running is not None and not running.done():
+        logger.warning("auto output job=%s already running — skip", job.id)
+        return
     task = asyncio.create_task(_auto_output(job, storage))
     _pending_output.add(task)
-    task.add_done_callback(_pending_output.discard)
+    _active_outputs[job.id] = task
+
+    def _forget(t: asyncio.Task, job_id: int = job.id) -> None:
+        _pending_output.discard(t)
+        if _active_outputs.get(job_id) is t:
+            del _active_outputs[job_id]
+
+    task.add_done_callback(_forget)
 
 async def _proofread(job: Job) -> None:
     try:
@@ -83,8 +123,10 @@ async def _store(
             .where(Job.id == job_id, *conds)
             .values(
                 result=body.model_dump(),
-                status="done",
-                finished_at=now,
+                # spec 2026-10-09: ingest stores the result and enters the
+                # "rendering" phase; the auto-output task flips to done /
+                # failed+failed_step=rendering and stamps finished_at.
+                status="rendering",
                 worker_token=None,
                 lease_expires_at=None,
             )
@@ -114,12 +156,13 @@ async def store_worker_result(
     now: datetime,
     storage: StorageDriver | None = None,
 ) -> bool:
-    """Worker protocol: running + active lease + token claim → done."""
+    """Worker protocol: extracting + active lease + token claim → result
+    stored (phase "rendering", completion task runs after)."""
     return await _store(
         session,
         job_id,
         body,
-        Job.status == "running",
+        Job.status == "extracting",
         Job.lease_expires_at > now,
         Job.worker_token == token,
         now=now,
@@ -134,12 +177,13 @@ async def store_batch_result(
     now: datetime,
     storage: StorageDriver | None = None,
 ) -> bool:
-    """Kaggle batch run finished → done. D1 guard (K5 review nới):
-    (queued + unclaimed) OR (running + unclaimed + active lease).
+    """Kaggle batch run finished → result stored ("rendering"). D1 guard
+    (K5 review nới): (queued + unclaimed) OR (extracting + unclaimed +
+    active lease).
 
-    Batch spawn marks the job running (D1), so the old queued-only guard
-    would reject the normal path; running is accepted only while the spawn
-    lease is still valid. queued/running jobs never carry a worker_token;
+    Batch spawn marks the job extracting (D1), so the old queued-only guard
+    would reject the normal path; extracting is accepted only while the spawn
+    lease is still valid. queued/extracting jobs never carry a worker_token;
     a worker claim or an expired lease (reaper's turn) flips rowcount to 0
     (caller logs and drops the run)."""
     return await _store(
@@ -149,7 +193,7 @@ async def store_batch_result(
         or_(
             and_(Job.status == "queued", Job.worker_token.is_(None)),
             and_(
-                Job.status == "running",
+                Job.status == "extracting",
                 Job.worker_token.is_(None),
                 Job.lease_expires_at > now,
             ),

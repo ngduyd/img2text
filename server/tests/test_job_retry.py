@@ -43,8 +43,12 @@ async def failed_job(worker_client, seed_job) -> int:
     return seed_job
 
 @pytest_asyncio.fixture
-async def done_job_with_result(worker_client, seed_job, VALID_RESULT_JSONB) -> int:
-    """Owner-uploaded job completed with a spec-shaped result."""
+async def done_job_with_result(worker_client, seed_job, VALID_RESULT_JSONB, monkeypatch) -> int:
+    """Owner-uploaded job completed via the worker protocol → done
+    (auto-output drained; one layout OK per the completion rule)."""
+    async def _md_ok(*args, **kwargs):
+        return "# layout md"
+    monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
     claim = await worker_client.get("/api/jobs/next")
     assert claim.status_code == 200 and claim.json()["job_id"] == seed_job
     r = await worker_client.post(
@@ -53,13 +57,17 @@ async def done_job_with_result(worker_client, seed_job, VALID_RESULT_JSONB) -> i
         headers={"Authorization": f"Bearer {claim.json()['worker_token']}"},
     )
     assert r.status_code == 200, r.text
+    from app.services.job_results import drain_auto_output
+    await drain_auto_output()
     return seed_job
 
 async def test_retry_failed_requeues(auth_client, failed_job, db_session):
+    # spec 2026-10-09: success is 204 (no body) — was 200 + {id, status}
     r = await auth_client.post(f"/api/jobs/{failed_job}/retry")
-    assert r.status_code == 200 and r.json() == {"id": failed_job, "status": "queued"}
+    assert r.status_code == 204 and r.content == b""
     job = await db_session.get(Job, failed_job)
     assert job.status == "queued" and job.error is None
+    assert job.failed_step is None  # retry target cleared with the requeue
     assert job.worker_token is None and job.lease_expires_at is None
     assert job.started_at is None and job.finished_at is None
 
@@ -75,14 +83,14 @@ async def test_retry_other_user_403(other_client, failed_job):
 
 async def test_retried_job_claimable(auth_client, worker_client, failed_job):
     r = await auth_client.post(f"/api/jobs/{failed_job}/retry")
-    assert r.status_code == 200
+    assert r.status_code == 204
     r = await worker_client.get("/api/jobs/next")
     assert r.status_code == 200 and r.json()["job_id"] == failed_job
 
 async def test_retry_invalidates_both_prefixes(auth_client, failed_job, storage_spy):
     """Binding (Plan D): BOTH exports/{id}/ and crops/{id}/ deleted on retry."""
     r = await auth_client.post(f"/api/jobs/{failed_job}/retry")
-    assert r.status_code == 200
+    assert r.status_code == 204
     storage_spy.delete_prefix.assert_any_call(f"exports/{failed_job}/")
     storage_spy.delete_prefix.assert_any_call(f"crops/{failed_job}/")
 
