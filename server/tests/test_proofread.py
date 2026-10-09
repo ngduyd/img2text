@@ -315,6 +315,9 @@ async def test_store_schedules_proofread(
     assert stored is True
     await drain_auto_output()
     assert calls == [seed_job]
+    # completion task commit trong session RIÊNG (fire-and-forget) — expire cache
+    # để đọc status done vừa commit (không stale rendering).
+    db_session.expire_all()
     job = await db_session.get(Job, seed_job)
     assert job.status == "done"  # proofread never flips job status
 
