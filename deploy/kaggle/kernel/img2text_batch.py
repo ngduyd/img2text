@@ -132,7 +132,8 @@ PADDLE_PPU_INDEX = "https://www.paddlepaddle.org.cn/packages/stable/cu126/"
 # saved per run. Deps list = wheelbuild build set.
 WHEELHOUSE_DEPS = [
     "pillow", "numpy", "opencv-python-headless", "rapidfuzz",
-    "pymupdf", "paddlepaddle-gpu", "paddleocr", "paddlex[ocr]",
+    "pymupdf", "paddlepaddle-gpu==3.2.1", "paddleocr[doc-parser]>=3.6.0",
+    "safetensors", "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
 ]
 
 def _find_wheelhouse() -> str | None:
@@ -188,6 +189,17 @@ if __name__ == "__main__":
                  *WHEELHOUSE_DEPS],
                 check=False,
             )
+            # Repair: dataset wheelhouse drift (thiếu paddle GPU wheel) →
+            # cài nốt từ index cu126 chính thức (recipe đã chạy được).
+            if subprocess.run(
+                [VENV_PY, "-c", "import paddle"], capture_output=True
+            ).returncode != 0:
+                print("[batch] wheelhouse thiếu paddle — repair từ cu126 index", flush=True)
+                subprocess.run(
+                    ["uv", "pip", "install", "--python", VENV_PY,
+                     "paddlepaddle-gpu==3.2.1", "--extra-index-url", PADDLE_PPU_INDEX],
+                    check=False,
+                )
         else:
             # fallback: wheel dataset chưa mount → pip network như cũ
             for cmd in (

@@ -87,14 +87,16 @@ Thay cho `pip install` network mỗi run (hoặc đóng gói cả conda env — 
    from kaggle.api.kaggle_api_extended import KaggleApi; a=KaggleApi(); a.authenticate();\
    print(a.kernels_push('/app/deploy/kaggle/wheelbuild-kernel').version_number)"
    ```
-   Kernel `jhandf/img2text-wheelbuild` chạy `pip download` cp312 manylinux (pillow, numpy, opencv-python-headless, rapidfuzz, pymupdf, paddlepaddle-gpu, paddleocr) → 75 wheels / ~992MB vào `/kaggle/working/wheels`.
+   Kernel `jhandf/img2text-wheelbuild` chạy `pip download` cp312 manylinux (pillow, numpy, opencv-python-headless, rapidfuzz, pymupdf) + **paddle 3.2.1 từ cu126 index** + `paddleocr[doc-parser]` deps → wheels vào `/kaggle/working/wheels`. Recipe paddle này đã chạy được trên Colab.
 2. **Tạo Dataset từ Output** (tay, 1 lần): kernel page → tab **Output** → **Create Dataset**. Đã tạo: **`jhandf/img2text-wheelbuild-env`**.
 3. **Cài offline trong pipeline**:
    ```bash
    uv venv /tmp/paddle-venv --python 3.12          # py3.13 Kaggle không có paddle wheel
    uv pip install --python /tmp/paddle-venv/bin/python \
      --no-index --find-links /kaggle/input/img2text-wheelbuild-env/wheels \
-     pillow numpy opencv-python-headless rapidfuzz pymupdf paddlepaddle-gpu paddleocr "paddlex[ocr]"
+     pillow numpy opencv-python-headless rapidfuzz pymupdf \
+     paddlepaddle-gpu==3.2.1 "paddleocr[doc-parser]>=3.6.0" \
+     safetensors tokenizers==0.22.2 "huggingface-hub>=0.25.0,<1.0"
    ```
    `img2text_batch.py` đã dùng đúng pattern này (fallback `pip install` network nếu wheel dataset chưa mount).
 4. **Verify (tuỳ chọn)** — `deploy/kaggle/wheeltest-kernel/` (kernel `jhandf/img2text-wheeltest`, GPU): mount wheel dataset → `uv pip install --no-index` → verify imports (`paddle cuda=True`) → OCR smoke → in `REPORT {install_s, verify_s, ocr_s, total_s}`. Push:

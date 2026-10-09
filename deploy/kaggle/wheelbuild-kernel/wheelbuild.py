@@ -12,8 +12,12 @@ import sys
 
 DEPS = [
     "pillow", "numpy", "opencv-python-headless", "rapidfuzz", "pymupdf",
-    "paddlepaddle-gpu", "paddleocr", "paddlex[ocr]",
+    # recipe đã chạy được (Colab): paddle 3.2.1 cu126 + paddleocr[doc-parser]
+    "paddlepaddle-gpu==3.2.1", "paddleocr[doc-parser]>=3.6.0",
+    "safetensors", "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
 ]
+# paddle GPU wheel KHÔNG có trên PyPI → index cu126 chính thức
+PADDLE_CU126 = "https://www.paddlepaddle.org.cn/packages/stable/cu126/"
 WHEELS = "/kaggle/working/wheels"
 
 
@@ -33,6 +37,7 @@ def main() -> int:
         "--platform", "manylinux2014_x86_64",
         "--platform", "manylinux_2_17_x86_64",
         "--implementation", "cp",
+        "--extra-index-url", PADDLE_CU126,
         *DEPS,
     ]
     # uv pip download không có --platform flags → dùng pip cho cross-version
