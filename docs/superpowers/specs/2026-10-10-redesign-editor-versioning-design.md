@@ -94,7 +94,7 @@ Khi lưu text gốc (accept suggestion hoặc edit):
 
 ## Sub-system C: Job detail split-view + gỡ component (Phase 3)
 
-- Split-view: trái = **bản có layout** (sửa được: MDEditor/Tiptap như hiện tại) | phải = **bản gốc** (ảnh/OCR text để đối chiếu). Tỷ lệ: trái rộng (7/12) + phải hẹp (5/12) — override nếu bạn muốn 50/50.
+- Split-view: trái = **bản có layout** (sửa được: MDEditor/Tiptap như hiện tại) | phải = **bản gốc** (ảnh/OCR text để đối chiếu). Tỷ lệ **7/5** (layout 7 cột, gốc 5 cột).
 - **Gỡ**: badge "Đầu ra: Word"; statsLine "Tổng 21 vùng · ..."; component 2 nút tải rời.
 - **Gộp nút tải**: 1 cụm duy nhất trong rail (`ExportBar` giữ, bỏ card bọc ngoài thừa).
 - Sửa layout trực tiếp → set `detached=true` + version row kind=layout.
@@ -149,8 +149,8 @@ Dev + test DB apply trước khi test.
 
 Mỗi phase = 1 plan + review loop + merge, như pipeline hiện tại.
 
-## Câu hỏi mở (cần user trước khi implement)
+## Quyết định mở (đã chốt)
 
-1. Split-view tỷ lệ: 7/5 (layout rộng) hay 50/50?
-2. Bulk retry: chạy lại OCR (extracting) hay cả layout? (default: chạy lại toàn bộ job như retry hiện tại)
-3. Sync incremental mặc định tự động khi accept, hay cần bấm "Đồng bộ layout"? (trước nói lưu text = bắt đầu đồng bộ → auto. confirm.)
+1. Split-view tỷ lệ: **7/5** (layout 7 cột, gốc 5 cột).
+2. Bulk retry: **chạy lại cả job** (OCR + layout, như retry hiện tại).
+3. Sync incremental: **auto ngay khi accept suggestion** (lưu text = bắt đầu đồng bộ).
