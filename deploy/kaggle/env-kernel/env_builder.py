@@ -77,10 +77,20 @@ def main() -> int:
 
     # 2.5 Copy dataset-metadata.json to output folder
     import shutil
-    metadata_src = os.path.join(os.path.dirname(__file__), "dataset-metadata.json")
+    # Kaggle kernel chạy từ /kaggle/src/ → copy metadata vào đó
+    metadata_src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dataset-metadata.json")
+    if not os.path.exists(metadata_src):
+        # Fallback: tìm trong parent folders
+        for parent in [os.path.dirname(metadata_src), os.path.dirname(os.path.dirname(metadata_src))]:
+            candidate = os.path.join(parent, "dataset-metadata.json")
+            if os.path.exists(candidate):
+                metadata_src = candidate
+                break
     if os.path.exists(metadata_src):
         shutil.copy(metadata_src, os.path.dirname(OUTPUT_TAR))
-        print("copied dataset-metadata.json", flush=True)
+        print(f"copied dataset-metadata.json from {metadata_src}", flush=True)
+    else:
+        print("WARNING: dataset-metadata.json not found", flush=True)
 
     # 3. Upload Dataset
     os.environ.setdefault("KAGGLE_CONFIG_DIR", "/root/.kaggle")
