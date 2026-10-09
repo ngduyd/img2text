@@ -248,7 +248,7 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
     assert len(pushes) == 1
     _method, _path, meta, files = pushes[0]
     assert meta["id"] == "testuser/img2text-batch"
-    assert meta["dataset_sources"] == ["testuser/img2text-input"]  # input dataset ONLY
+    assert meta["dataset_sources"] == ["testuser/img2text-input", "jhandf/img2text-wheelbuild-env"]  # input + wheelhouse
     assert meta["kernel_type"] == "script"
     assert meta["enable_gpu"] is True
     assert "img2text_batch.py" in files and "kernel-metadata.json" in files

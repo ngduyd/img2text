@@ -127,6 +127,27 @@ def _ocr_phase(argv: list[str]) -> int:
 VENV_DIR = "/tmp/paddle-venv"
 VENV_PY = os.path.join(VENV_DIR, "bin", "python")
 PADDLE_PPU_INDEX = "https://www.paddlepaddle.org.cn/packages/stable/cu126/"
+# wheelhouse dataset jhandf/img2text-wheelbuild-env (75 cp312 manylinux
+# wheels): install the venv with --no-index --find-links → ~1GB network
+# saved per run. Deps list = wheelbuild build set.
+WHEELHOUSE_DEPS = [
+    "pillow", "numpy", "opencv-python-headless", "rapidfuzz",
+    "pymupdf", "paddlepaddle-gpu", "paddleocr",
+]
+
+def _find_wheelhouse() -> str | None:
+    """Mounted wheel dataset → its wheels dir (…/img2text-wheelbuild-env/**/
+    wheels or a flat …/wheels); None = not mounted → caller falls back to
+    the network pip installs (spawn must not crash on a missing dataset)."""
+    hits = [
+        d
+        for d in glob.glob("/kaggle/input/**/wheels", recursive=True)
+        if os.path.isdir(d)
+    ]
+    for d in hits:  # prefer the wheelbuild dataset if other dirs mount too
+        if "img2text-wheelbuild-env" in d:
+            return d
+    return hits[0] if hits else None
 
 if __name__ == "__main__":
     # --ocr re-exec dispatch (OCR phase, venv) — BEFORE the heavy bootstrap
@@ -155,19 +176,32 @@ if __name__ == "__main__":
 
     # Idempotent: venv đã có → bỏ qua cài (notebook pattern), chỉ verify import.
     if not os.path.exists(VENV_PY):
-        for cmd in (
-            ["uv", "venv", VENV_DIR, "--python", "3.12"],
-            [
-                "uv", "pip", "install", "--python", VENV_PY,
-                "paddlepaddle-gpu==3.2.1", "--extra-index-url", PADDLE_PPU_INDEX,
-            ],
-            [
-                "uv", "pip", "install", "--python", VENV_PY,
-                "paddleocr[doc-parser]>=3.6.0", "safetensors",
-                "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
-            ],
-        ):
-            subprocess.run(cmd, check=False)
+        subprocess.run(["uv", "venv", VENV_DIR, "--python", "3.12"], check=False)
+        wheels_dir = _find_wheelhouse()
+        if wheels_dir:
+            # wheelhouse no-index (dataset đã mount): cài từ wheels, không
+            # network — verify import ở dưới vẫn bắt mọi lỗi install.
+            print(f"[batch] wheelhouse: {wheels_dir}", flush=True)
+            subprocess.run(
+                ["uv", "pip", "install", "--python", VENV_PY,
+                 "--no-index", "--find-links", wheels_dir,
+                 *WHEELHOUSE_DEPS],
+                check=False,
+            )
+        else:
+            # fallback: wheel dataset chưa mount → pip network như cũ
+            for cmd in (
+                [
+                    "uv", "pip", "install", "--python", VENV_PY,
+                    "paddlepaddle-gpu==3.2.1", "--extra-index-url", PADDLE_PPU_INDEX,
+                ],
+                [
+                    "uv", "pip", "install", "--python", VENV_PY,
+                    "paddleocr[doc-parser]>=3.6.0", "safetensors",
+                    "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
+                ],
+            ):
+                subprocess.run(cmd, check=False)
 
     if not os.path.exists(VENV_PY):
         # uv venv failed (no network/quota/python) — hint thay vì FileNotFoundError thô

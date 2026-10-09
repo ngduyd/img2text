@@ -384,7 +384,9 @@ def _ensure_input_dataset(api, owner: str, folder: Path) -> None:
 def _stage_batch_kernel(dest: Path) -> str:
     """Stage the batch script kernel from read-only templates: img2text_batch.py
     + kernel-batch-metadata.json (OWNER substituted; dataset_sources = the
-    img2text-input dataset ONLY — the script carries all code). Returns the
+    img2text-input dataset + the img2text-wheelbuild-env wheelhouse — the
+    script carries all code, the wheelhouse feeds its --no-index venv
+    install). Returns the
     kernel ref (metadata id) the run is tracked under."""
     src = _stage_src()
     dest.mkdir(parents=True, exist_ok=True)
