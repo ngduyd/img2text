@@ -5,15 +5,18 @@ import { ApiError, api } from "../api/client";
 import { mapApiError } from "../lib/errors";
 import PdfWizard from "./wizard/PdfWizard";
 import ImageCropWizard from "./wizard/ImageCropWizard";
-import Button from "./ui/Button";
+import FormatSplitButton, { type OutputFormat } from "./FormatSplitButton";
 
 /** POST /api/jobs returns a partial job; callers only need `id` for routing. */
 export default function Dropzone({
   outputFormat = "md",
+  onFormatChange,
   onUploaded,
 }: {
   /** Plan D4: export format chosen on the Jobs page — appended as multipart output_format. */
   outputFormat?: string;
+  /** Format combo: caret menu writes back to the Jobs page state (single source of truth). */
+  onFormatChange: (format: OutputFormat) => void;
   onUploaded: (job: { id: number; status: string }) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -104,6 +107,7 @@ export default function Dropzone({
             key={wizardKey}
             file={wizardFile}
             outputFormat={outputFormat}
+            onFormatChange={onFormatChange}
             onCancel={() => setWizardFile(null)}
             onUploaded={onUploaded}
           />
@@ -112,6 +116,7 @@ export default function Dropzone({
             key={wizardKey}
             file={wizardFile}
             outputFormat={outputFormat}
+            onFormatChange={onFormatChange}
             onCancel={() => setWizardFile(null)}
             onUploaded={onUploaded}
           />
@@ -132,14 +137,15 @@ export default function Dropzone({
               e.target.value = "";
             }}
           />
-          <Button
+          <FormatSplitButton
             testid="btn-upload"
+            label="Tải file lên"
+            format={outputFormat}
+            onFormatChange={onFormatChange}
+            onClick={() => inputRef.current?.click()}
             disabled={disabled}
             loading={busy}
-            onClick={() => inputRef.current?.click()}
-          >
-            Tải file lên
-          </Button>
+          />
         </>
       )}
     </div>

@@ -78,27 +78,47 @@ it("upload button enabled and calls api when granted", async () => {
   await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs"));
 });
 
-it("output-format select renders with Markdown as default", async () => {
+// Format combo: the toolbar <select> is gone — the upload button is a split button.
+it("split upload button renders with Markdown default; no format select in toolbar", async () => {
   vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Jobs />);
-  const select = await screen.findByTestId("select-output-format");
-  expect(select).toHaveValue("md");
-  expect(screen.getByRole("option", { name: "Markdown" })).toBeInTheDocument();
-  expect(screen.getByRole("option", { name: "Word (.docx)" })).toBeInTheDocument();
+  const btn = await screen.findByTestId("btn-upload");
+  expect(btn).toHaveTextContent("Tải file lên · Markdown");
+  expect(screen.getByTestId("btn-format-toggle")).toBeInTheDocument();
+  expect(screen.queryByTestId("select-output-format")).not.toBeInTheDocument();
 });
 
-it("choosing Word passes output_format docx to uploadJob", async () => {
+it("format menu: caret opens, Word→docx, Markdown→md, outside click closes", async () => {
   vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   vi.mocked(api.uploadJob).mockResolvedValue({ id: 42, status: "queued" } as Job);
   renderWithRouter(<Jobs />);
   await screen.findByTestId("btn-upload");
   const user = userEvent.setup({ applyAccept: false });
-  await user.selectOptions(screen.getByTestId("select-output-format"), "docx");
   const file = new File(["x"], "a.txt", { type: "text/plain" });
+
+  // caret → menu with both options
+  await user.click(screen.getByTestId("btn-format-toggle"));
+  expect(screen.getByTestId("format-opt-md")).toBeInTheDocument();
+  expect(screen.getByTestId("format-opt-docx")).toBeInTheDocument();
+  // choose Word → menu closes, label reflects state, upload sends docx
+  await user.click(screen.getByTestId("format-opt-docx"));
+  expect(screen.queryByTestId("format-opt-docx")).not.toBeInTheDocument();
+  expect(screen.getByTestId("btn-upload")).toHaveTextContent("Tải file lên · Word");
   await user.upload(screen.getByTestId("input-file"), file);
-  expect(api.uploadJob).toHaveBeenCalledWith(file, { output_format: "docx" });
+  expect(api.uploadJob).toHaveBeenLastCalledWith(file, { output_format: "docx" });
+  // choose Markdown again → upload sends md
+  await user.click(screen.getByTestId("btn-format-toggle"));
+  await user.click(screen.getByTestId("format-opt-md"));
+  expect(screen.getByTestId("btn-upload")).toHaveTextContent("Tải file lên · Markdown");
+  await user.upload(screen.getByTestId("input-file"), file);
+  expect(api.uploadJob).toHaveBeenLastCalledWith(file, { output_format: "md" });
+  // click outside → menu closes
+  await user.click(screen.getByTestId("btn-format-toggle"));
+  expect(screen.getByTestId("format-opt-md")).toBeInTheDocument();
+  await user.click(screen.getByRole("heading", { name: "Công việc" }));
+  expect(screen.queryByTestId("format-opt-md")).not.toBeInTheDocument();
 });
 
 it("upload error surfaces server detail", async () => {
@@ -230,14 +250,15 @@ it("header shows job stats (total, pending, done)", async () => {
   expect(screen.getByTestId("stats-done")).toHaveTextContent("1");
 });
 
-it("toolbar shows format select and filter tabs together", async () => {
+it("toolbar shows filter tabs without an output-format select", async () => {
   vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Jobs />);
   await screen.findByTestId("empty-state");
-  expect(screen.getByTestId("select-output-format")).toBeInTheDocument();
+  expect(screen.queryByTestId("select-output-format")).not.toBeInTheDocument();
   expect(screen.getByTestId("filter-all")).toBeInTheDocument();
   expect(screen.getByTestId("filter-done")).toBeInTheDocument();
+  expect(screen.getByTestId("btn-format-toggle")).toBeInTheDocument();
 });
 
 it("empty state shows CTA hint", async () => {

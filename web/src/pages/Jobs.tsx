@@ -59,29 +59,15 @@ export default function Jobs() {
         </dl>
       </header>
 
-      {/* Toolbar: format select left, filter tabs right — single wrapped row. */}
+      {/* Toolbar: filter tabs — the format picker moved into the upload split button. */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <label htmlFor="output-format" className="text-sm text-muted">
-            Đầu ra
-          </label>
-          <select
-            id="output-format"
-            data-testid="select-output-format"
-            value={outputFormat}
-            onChange={(e) => setOutputFormat(e.target.value as "md" | "docx")}
-            className="rounded-sm border border-border bg-surface px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-accent"
-          >
-            <option value="md">Markdown</option>
-            <option value="docx">Word (.docx)</option>
-          </select>
-        </div>
         <StatusFilterTabs items={items} value={filter} onChange={setFilter} />
       </div>
 
       {/* R59: invalidate so the new job shows; navigate to the /jobs list route. */}
       <Dropzone
         outputFormat={outputFormat}
+        onFormatChange={setOutputFormat}
         onUploaded={() => {
           queryClient.invalidateQueries({ queryKey: ["jobs"] });
           navigate("/jobs");

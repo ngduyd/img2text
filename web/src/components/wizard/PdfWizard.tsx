@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { ApiError, api } from "../../api/client";
 import { mapApiError } from "../../lib/errors";
 import { loadPdf } from "../../lib/pdfjs";
+import FormatSplitButton, { type OutputFormat } from "../FormatSplitButton";
 import Button from "../ui/Button";
 
 /** Max pages per upload — server rejects more; client blocks before the call. */
@@ -18,12 +19,15 @@ interface PageState {
 export default function PdfWizard({
   file,
   outputFormat = "md",
+  onFormatChange,
   onCancel,
   onUploaded,
 }: {
   file: File;
   /** Plan D4: multipart output_format — chosen on the Jobs page. */
   outputFormat?: string;
+  /** Format combo: caret menu writes back to the Jobs page state. */
+  onFormatChange: (format: OutputFormat) => void;
   onCancel: () => void;
   onUploaded: (job: { id: number; status: string }) => void;
 }) {
@@ -178,9 +182,14 @@ export default function PdfWizard({
         </div>
       )}
       <div className="flex items-center gap-2">
-        <Button testid="wizard-submit" loading={busy} onClick={submit}>
-          Gửi lên
-        </Button>
+        <FormatSplitButton
+          testid="wizard-submit"
+          label="Gửi lên"
+          format={outputFormat}
+          onFormatChange={onFormatChange}
+          onClick={submit}
+          loading={busy}
+        />
         <Button testid="wizard-cancel" variant="ghost" onClick={onCancel}>
           Hủy
         </Button>

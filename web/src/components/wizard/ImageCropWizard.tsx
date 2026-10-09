@@ -1,8 +1,9 @@
-import { Eraser, RotateCw, Send } from "lucide-react";
+import { Eraser, RotateCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ApiError, api } from "../../api/client";
 import { mapApiError } from "../../lib/errors";
+import FormatSplitButton, { type OutputFormat } from "../FormatSplitButton";
 import Button from "../ui/Button";
 
 interface Rect {
@@ -38,12 +39,15 @@ const ICON_BTN = "min-h-10 min-w-10 px-2";
 export default function ImageCropWizard({
   file,
   outputFormat = "md",
+  onFormatChange,
   onCancel,
   onUploaded,
 }: {
   file: File;
   /** Plan D4: multipart output_format — chosen on the Jobs page. */
   outputFormat?: string;
+  /** Format combo: caret menu writes back to the Jobs page state. */
+  onFormatChange: (format: OutputFormat) => void;
   onCancel: () => void;
   onUploaded: (job: { id: number; status: string }) => void;
 }) {
@@ -115,8 +119,8 @@ export default function ImageCropWizard({
   return (
     <div data-testid="wizard-crop" className="text-left">
       <p className="mb-2 text-sm font-medium">Chọn vùng cần cắt</p>
-      {/* R61: toolbar ABOVE canvas */}
-      <div className="mb-2 flex items-center gap-2">
+      {/* R61: toolbar ABOVE canvas — wraps on narrow screens (split submit is wide). */}
+      <div className="mb-2 flex flex-wrap items-center gap-2">
         <Button
           testid="btn-crop-rotate"
           variant="ghost"
@@ -147,12 +151,12 @@ export default function ImageCropWizard({
         >
           <Eraser size={18} aria-hidden="true" />
         </Button>
-        <Button
+        <FormatSplitButton
           testid="wizard-submit"
+          label="Gửi lên"
+          format={outputFormat}
+          onFormatChange={onFormatChange}
           loading={busy}
-          className={ICON_BTN}
-          title="Gửi lên"
-          aria-label="Gửi lên"
           onClick={async () => {
             if (!view.rect || !dims || !imgRef.current) {
               // R62: no rect → submit the ORIGINAL File untouched; no crop, no error.
@@ -205,9 +209,7 @@ export default function ImageCropWizard({
               setBusy(false);
             }
           }}
-        >
-          <Send size={18} aria-hidden="true" />
-        </Button>
+        />
       </div>
       {/* R51: measurement-only — hidden; canvas is the sole visible surface */}
       <img

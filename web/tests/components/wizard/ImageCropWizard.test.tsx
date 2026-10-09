@@ -29,9 +29,16 @@ vi.mock("../../../src/api/client", async (importOriginal) => {
 
 const file = new File(["img"], "photo.png", { type: "image/png" });
 
-function renderWizard(onCancel = vi.fn(), onUploaded = vi.fn()) {
-  render(<ImageCropWizard file={file} onCancel={onCancel} onUploaded={onUploaded} />);
-  return { onCancel, onUploaded };
+function renderWizard(onCancel = vi.fn(), onUploaded = vi.fn(), onFormatChange = vi.fn()) {
+  render(
+    <ImageCropWizard
+      file={file}
+      onCancel={onCancel}
+      onUploaded={onUploaded}
+      onFormatChange={onFormatChange}
+    />,
+  );
+  return { onCancel, onUploaded, onFormatChange };
 }
 
 /** jsdom imgs never load — set natural dims then fire load. */
@@ -99,16 +106,18 @@ it("renders hidden measurement img + canvas sole surface; icon toolbar ABOVE can
   expect(ctx.drawImage).toHaveBeenCalled();
 });
 
-it("icon buttons carry title + aria-label tooltips (R61)", () => {
+it("icon buttons carry title + aria-label tooltips (R61); submit shows format label", () => {
   renderWizard();
   for (const [id, title] of [
     ["btn-crop-rotate", "Xoay 90°"],
     ["btn-crop-reset", "Xóa vùng chọn"],
-    ["wizard-submit", "Gửi lên"],
   ] as const) {
     expect(screen.getByTestId(id)).toHaveAttribute("title", title);
     expect(screen.getByTestId(id)).toHaveAttribute("aria-label", title);
   }
+  // Format combo: submit is now a split button with the format in its label.
+  expect(screen.getByTestId("wizard-submit")).toHaveTextContent("Gửi lên · Markdown");
+  expect(screen.getByTestId("btn-format-toggle")).toBeInTheDocument();
 });
 
 it("pointer drag draws rect overlay in image px (display scaled 2x)", () => {
@@ -142,9 +151,18 @@ it("submit uploads cropped JPEG blob with -crop.jpg filename, NOT the original F
 });
 
 it("outputFormat prop passes through to uploadJob (Plan D4)", async () => {
-  render(<ImageCropWizard file={file} outputFormat="docx" onCancel={vi.fn()} onUploaded={vi.fn()} />);
+  render(
+    <ImageCropWizard
+      file={file}
+      outputFormat="docx"
+      onFormatChange={vi.fn()}
+      onCancel={vi.fn()}
+      onUploaded={vi.fn()}
+    />,
+  );
   vi.mocked(api.uploadJob).mockResolvedValue({ id: 7, status: "queued" });
   loadImage();
+  expect(screen.getByTestId("wizard-submit")).toHaveTextContent("Gửi lên · Word");
   fireEvent.click(screen.getByTestId("wizard-submit")); // no rect → original File path
   await waitFor(() => expect(api.uploadJob).toHaveBeenCalledTimes(1));
   expect(vi.mocked(api.uploadJob).mock.calls[0][1]?.output_format).toBe("docx");

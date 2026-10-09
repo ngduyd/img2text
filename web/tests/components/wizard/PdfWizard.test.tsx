@@ -21,9 +21,16 @@ vi.mock("../../../src/api/client", async (importOriginal) => {
 
 const file = new File(["%PDF-1.7"], "doc.pdf", { type: "application/pdf" });
 
-function renderWizard(onCancel = vi.fn(), onUploaded = vi.fn()) {
-  render(<PdfWizard file={file} onCancel={onCancel} onUploaded={onUploaded} />);
-  return { onCancel, onUploaded };
+function renderWizard(onCancel = vi.fn(), onUploaded = vi.fn(), onFormatChange = vi.fn()) {
+  render(
+    <PdfWizard
+      file={file}
+      onCancel={onCancel}
+      onUploaded={onUploaded}
+      onFormatChange={onFormatChange}
+    />,
+  );
+  return { onCancel, onUploaded, onFormatChange };
 }
 
 beforeEach(() => {
@@ -98,6 +105,39 @@ it("cancel calls onCancel", async () => {
   fireEvent.click(screen.getByTestId("wizard-cancel"));
   expect(onCancel).toHaveBeenCalledTimes(1);
   expect(api.uploadJob).not.toHaveBeenCalled();
+});
+
+it("split submit: label reflects outputFormat prop, submit sends that format", async () => {
+  render(
+    <PdfWizard
+      file={file}
+      outputFormat="docx"
+      onFormatChange={vi.fn()}
+      onCancel={vi.fn()}
+      onUploaded={vi.fn()}
+    />,
+  );
+  vi.mocked(api.uploadJob).mockResolvedValue({ id: 7, status: "queued" });
+  await screen.findByTestId("wizard-page-1");
+  expect(screen.getByTestId("wizard-submit")).toHaveTextContent("Gửi lên · Word");
+  fireEvent.click(screen.getByTestId("wizard-submit"));
+  await waitFor(() =>
+    expect(api.uploadJob).toHaveBeenCalledWith(file, {
+      preprocess: { pages: [1, 2, 3], rotate: {} },
+      output_format: "docx",
+    }),
+  );
+});
+
+it("caret menu: default label Markdown, choosing Word calls onFormatChange and closes menu", async () => {
+  const { onFormatChange } = renderWizard();
+  await screen.findByTestId("wizard-page-1");
+  expect(screen.getByTestId("wizard-submit")).toHaveTextContent("Gửi lên · Markdown");
+  fireEvent.click(screen.getByTestId("btn-format-toggle"));
+  expect(screen.getByTestId("format-opt-docx")).toBeInTheDocument();
+  fireEvent.click(screen.getByTestId("format-opt-docx"));
+  expect(onFormatChange).toHaveBeenCalledWith("docx");
+  expect(screen.queryByTestId("format-opt-docx")).not.toBeInTheDocument();
 });
 
 // Last test — overrides the shared loadPdf mock with a 51-page doc.

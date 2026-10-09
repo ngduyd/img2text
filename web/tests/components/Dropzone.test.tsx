@@ -29,13 +29,13 @@ vi.mock("../../src/api/client", async (importOriginal) => {
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-function renderDropzone(onUploaded = vi.fn()) {
+function renderDropzone(onUploaded = vi.fn(), onFormatChange = vi.fn()) {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <Dropzone onUploaded={onUploaded} />
+      <Dropzone onUploaded={onUploaded} onFormatChange={onFormatChange} />
     </QueryClientProvider>,
   );
-  return onUploaded;
+  return { onUploaded, onFormatChange };
 }
 
 beforeEach(() => {
@@ -45,7 +45,7 @@ beforeEach(() => {
 it("dragover preventDefault and drop triggers uploadJob", async () => {
   vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
   vi.mocked(api.uploadJob).mockResolvedValue({ id: 42, status: "queued" });
-  const onUploaded = renderDropzone();
+  const { onUploaded } = renderDropzone();
   await screen.findByTestId("btn-upload");
   const file = new File(["x"], "a.txt", { type: "text/plain" });
   const dz = screen.getByTestId("dropzone");
