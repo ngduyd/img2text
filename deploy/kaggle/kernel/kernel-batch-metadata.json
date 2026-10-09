@@ -8,7 +8,8 @@
   "enable_gpu": true,
   "enable_internet": true,
   "dataset_sources": [
-    "OWNER/img2text-input"
+    "OWNER/img2text-input",
+    "jhandf/img2text-wheelbuild-env"
   ],
   "machine_shape": "NvidiaTeslaT4"
 }

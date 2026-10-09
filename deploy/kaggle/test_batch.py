@@ -200,7 +200,7 @@ def test_kernel_metadata_contents(fake_api, input_file):
     assert "OWNER" not in built
     assert meta["id"] == KERNEL_REF
     # script kernel, input dataset ONLY (worker code lives in the .py)
-    assert meta["dataset_sources"] == [INPUT_REF]
+    assert meta["dataset_sources"] == [INPUT_REF, "jhandf/img2text-wheelbuild-env"]  # input + wheelhouse
     assert meta["kernel_type"] == "script"
     assert meta["enable_gpu"] is True
     assert meta["enable_internet"] is True
@@ -220,7 +220,7 @@ def test_batch_metadata_template_shape():
     assert tpl["enable_gpu"] is True
     assert tpl["enable_internet"] is True
     assert tpl["machine_shape"] == "NvidiaTeslaT4"
-    assert tpl["dataset_sources"] == ["OWNER/img2text-input"]
+    assert tpl["dataset_sources"] == ["OWNER/img2text-input", "jhandf/img2text-wheelbuild-env"]
 
 def test_status_loop_running_then_complete(fake_api, input_file, monkeypatch):
     fake_api.statuses = [_RUNNING, _RUNNING, _COMPLETE]
