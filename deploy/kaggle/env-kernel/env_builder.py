@@ -75,20 +75,20 @@ def main() -> int:
     size_mb = os.path.getsize(OUTPUT_TAR) / 1024 / 1024
     print(f"packed: {OUTPUT_TAR} ({size_mb:.1f} MB)", flush=True)
 
-    # 2.5 Ensure dataset-metadata.json in script folder (/kaggle/src/)
+    # 2.5 Ensure dataset-metadata.json in writable folder (/kaggle/working/)
     import shutil
     import json
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    metadata_path = os.path.join(script_dir, "dataset-metadata.json")
+    upload_dir = "/kaggle/working"
+    metadata_path = os.path.join(upload_dir, "dataset-metadata.json")
     if not os.path.exists(metadata_path):
-        # Tìm trong các vị trí khác
+        # Tìm trong script folder hoặc git folder
         for candidate in [
-            "/kaggle/working/dataset-metadata.json",
-            os.path.join(script_dir, "..", "dataset-metadata.json"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "dataset-metadata.json"),
+            "/kaggle/src/dataset-metadata.json",
         ]:
             if os.path.exists(candidate):
                 shutil.copy(candidate, metadata_path)
-                print(f"copied dataset-metadata.json from {candidate}", flush=True)
+                print(f"copied dataset-metadata.json from {candidate} to {upload_dir}", flush=True)
                 break
         else:
             # Tạo mới
@@ -103,14 +103,14 @@ def main() -> int:
     else:
         print(f"dataset-metadata.json already at {metadata_path}", flush=True)
 
-    # 3. Upload Dataset (folder = script_dir, chứa dataset-metadata.json)
+    # 3. Upload Dataset (folder = /kaggle/working, chứa dataset-metadata.json)
     os.environ.setdefault("KAGGLE_CONFIG_DIR", "/root/.kaggle")
     from kaggle.api.kaggle_api_extended import KaggleApi
 
     api = KaggleApi()
     api.authenticate()
 
-    upload_folder = os.path.dirname(os.path.abspath(__file__))
+    upload_folder = "/kaggle/working"
 
     try:
         api.dataset_create_new(
