@@ -218,7 +218,7 @@ async def test_run_proofread_no_result_returns_zero(db_session, done_job_with_re
 # --- hook: schedule after store (job_results pattern) ---
 
 async def test_store_schedules_proofread(
-    db_session, seed_job, storage_spy, VALID_RESULT_JSONB, md_llm_down, monkeypatch
+    db_session, seed_job, storage_spy, VALID_RESULT_JSONB, monkeypatch
 ):
     """_store schedules proofread fire-and-forget; drain awaits it."""
     calls: list = []
@@ -227,6 +227,10 @@ async def test_store_schedules_proofread(
         calls.append(job.id)
 
     monkeypatch.setattr("app.services.proofread.run_proofread", _rec)
+    # one layout OK → completion rule reaches done (proofread must not flip it)
+    async def _md_ok(*args, **kwargs):
+        return "# layout md"
+    monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
     body = ResultBody.model_validate(VALID_RESULT_JSONB)
     stored = await store_batch_result(
         db_session,

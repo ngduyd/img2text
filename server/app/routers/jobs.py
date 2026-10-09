@@ -26,7 +26,7 @@ from app.core.limiter import DailyCounter
 from app.core.models import Job, OcrSuggestion, User
 from app.core.schemas import PreprocessIn, ResultBody
 from app.services import proofread
-from app.services.job_results import store_worker_result
+from app.services.job_results import _schedule_auto_output, store_worker_result
 from app.services.storage import StorageDriver, get_storage
 
 UPLOAD_DAILY_LIMIT = 20
@@ -291,13 +291,13 @@ async def next_job(
         return Response(status_code=204)
     now = _utcnow()
     token = secrets.token_urlsafe(32)
-    job.status = "running"
+    job.status = "extracting"
     job.started_at = now
     job.lease_expires_at = now + timedelta(minutes=LEASE_MINUTES)
     job.worker_token = token
     # presign BEFORE commit: storage_key is known pre-commit; a presign
-    # failure must leave the job queued, not running with an undiscoverable
-    # worker_token (fix round 1).
+    # failure must leave the job queued, not extracting with an
+    # undiscoverable worker_token (fix round 1).
     file_url = await storage.presign_get(job.storage_key, PRESIGN_EXPIRES_SECONDS)
     await session.commit()
     return {
@@ -456,30 +456,40 @@ async def download_job_file(
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
-# --- Owner retry: POST /api/jobs/{id}/retry (Plan D: no stale artifacts) ---
+# --- Per-step retry: POST /api/jobs/{id}/retry (spec 2026-10-09) ---
 
-@router.post("/api/jobs/{id}/retry")
+@router.post("/api/jobs/{id}/retry", status_code=204)
 async def retry_job(
     id: int,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     storage: StorageDriver = Depends(get_storage),
-) -> dict:
-    """Requeue a failed job for its owner.
+) -> Response:
+    """Unified per-step retry: failed ONLY (else 409), owner-strict.
 
     OWNER semantics (contract): strict ownership — no admin bypass, unlike
     _job_or_403. Unknown → 404; other user → 403; not failed → 409.
-    Deletes BOTH exports/{id}/ and crops/{id}/ prefixes BEFORE commit: a
-    re-run may produce different regions/bboxes, so stale export bytes and
-    old-bbox crops must not survive (Plan D final review, binding). Delete
-    failure leaves the job failed (owner retries again) instead of queued
-    with stale bytes.
+    Branch on failed_step (NULL = legacy failed row → extracting path):
+    - "rendering": keep `failed` while the layout re-run is in flight; the
+      auto-output completion flips it to done / failed+rendering (same
+      rule as ingest). OCR result untouched — no cache deletion.
+    - "extracting" (or NULL): back to queued (respawn on the next
+      orchestrator tick) and BOTH exports/{id}/ and crops/{id}/ prefixes
+      are deleted BEFORE commit: a re-run may produce different
+      regions/bboxes, so stale export bytes and old-bbox crops must not
+      survive (Plan D final review, binding). Delete failure leaves the
+      job failed (owner retries again) instead of queued with stale bytes.
     """
     job = await session.get(Job, id)
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
     if job.user_id != user.id:
         raise HTTPException(status_code=403, detail="forbidden")
+    if job.status != "failed":
+        raise HTTPException(status_code=409, detail="job not retryable")
+    if job.failed_step == "rendering":
+        _schedule_auto_output(job, storage)  # fire-and-forget; 204 now
+        return Response(status_code=204)
     rowcount = (
         await session.execute(
             update(Job)
@@ -491,6 +501,7 @@ async def retry_job(
                 lease_expires_at=None,
                 started_at=None,
                 finished_at=None,
+                failed_step=None,
             )
         )
     ).rowcount
@@ -499,8 +510,7 @@ async def retry_job(
     await storage.delete_prefix(f"exports/{id}/")
     await storage.delete_prefix(f"crops/{id}/")
     await session.commit()
-    # ORM instance not expired (expire_on_commit=False): return known values
-    return {"id": id, "status": "queued"}
+    return Response(status_code=204)
 
 # --- Retry layout gen: POST /api/jobs/{id}/retry-layout (LLM re-run) ---
 
@@ -667,7 +677,7 @@ async def heartbeat_job(
             update(Job)
             .where(
                 Job.id == id,
-                Job.status == "running",
+                Job.status == "extracting",
                 Job.lease_expires_at > now,
                 Job.worker_token == token,
             )
@@ -700,7 +710,7 @@ async def submit_result(
     # Hardening path: per-runner keys + internet exposure → move token
     # check first (consistent with heartbeat).
     if (
-        job.status != "running"
+        job.status != "extracting"
         or job.lease_expires_at is None
         or job.lease_expires_at <= now
     ):
@@ -742,12 +752,13 @@ async def fail_job(
             update(Job)
             .where(
                 Job.id == id,
-                Job.status == "running",
+                Job.status == "extracting",
                 Job.lease_expires_at > now,
                 Job.worker_token == token,
             )
             .values(
                 status="failed",
+                failed_step="extracting",
                 error=body.error[:ERROR_MAX_CHARS],
                 finished_at=now,
                 worker_token=None,

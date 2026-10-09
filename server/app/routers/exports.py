@@ -438,22 +438,28 @@ async def _docx_html_export(job_id: int, storage: StorageDriver) -> bytes | None
         return None
     return html_to_docx((await storage.get(key)).decode("utf-8"))
 
-async def auto_generate_output(job: Job, storage: StorageDriver) -> None:
+async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
     """Generate BOTH md-layout and docx-layout eagerly after OCR.
 
     User request: both formats ready before viewing — no LLM wait at view
     time. Each format is independent: one failing logs a warning, the
-    other still generates. Job stays done (best-effort).
+    other still generates.
+    Returns True iff ≥1 LAYOUT artifact (md-layout / docx-layout) was
+    written — the spec 2026-10-09 completion rule the caller applies:
+    at least one OK → done, both fail → failed + failed_step="rendering"
+    (the plain-md fallback is a degraded artifact, not a layout success).
     The IR from either build (single LLM call each) fills job.ir_json
     for GET /api/jobs/{id}/ir — no separate generate_ir round-trip.
     Reuses the export_job internals (NO HTTP round-trip); scheduled
     fire-and-forget by job_results AFTER the result commit.
     """
     ir_sink: dict = {}
+    md_ok = False
     # md-layout (LLM) — failure → warning + fallback plain md at exports/{id}/md
     try:
         data = await _llm_md_export(job.id, job, ir_sink)
         await storage.put(f"exports/{job.id}/md-layout", data)
+        md_ok = True
     except HTTPException as exc:
         logger.warning(
             "md-layout auto-gen failed job=%s: %s — fallback plain md",
@@ -467,9 +473,11 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> None:
             )
         await storage.put(f"exports/{job.id}/md", markdown.encode("utf-8"))
     # docx-layout (LLM) — failure → warning (independent of md above)
+    docx_ok = False
     try:
         data = await _llm_docx_export(job.id, job, ir_sink)
         await storage.put(f"exports/{job.id}/docx-layout", data)
+        docx_ok = True
     except HTTPException as exc:
         logger.warning(
             "docx-layout auto-gen failed job=%s: %s", job.id, exc.detail
@@ -484,6 +492,7 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> None:
                     await session.commit()
         except Exception as exc:
             logger.warning("IR save failed job=%s: %s", job.id, exc)
+    return md_ok or docx_ok
 
 @router.post("/api/jobs/{id}/export")
 async def export_job(

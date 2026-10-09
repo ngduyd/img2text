@@ -140,6 +140,14 @@ class Job(Base):
     # Readers parse via json.loads (broken JSON → None + warning).
     layout_style: Mapped[str | None] = mapped_column(Text, nullable=True)
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Job status phases (spec 2026-10-09): queued | extracting | rendering |
+    # done | failed ("running" eliminated). ALTER-only migration:
+    #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS kaggle_ref TEXT;
+    #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS failed_step TEXT;
+    # kaggle_ref persists the batch kernel ref so a restart re-adopts the
+    # run; failed_step is the retry target ("extracting" | "rendering").
+    kaggle_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failed_step: Mapped[str | None] = mapped_column(Text, nullable=True)
     # IR rewrite: LLM-produced Document IR JSON (nullable, ALTER-only)
     ir_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
