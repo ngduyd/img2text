@@ -75,24 +75,33 @@ def main() -> int:
     size_mb = os.path.getsize(OUTPUT_TAR) / 1024 / 1024
     print(f"packed: {OUTPUT_TAR} ({size_mb:.1f} MB)", flush=True)
 
-    # 2.5 Copy dataset-metadata.json to script folder (/kaggle/src/)
+    # 2.5 Ensure dataset-metadata.json in script folder (/kaggle/src/)
     import shutil
-    # Tìm dataset-metadata.json trong git folder (deploy/kaggle/env-kernel/)
-    metadata_src = None
-    for candidate in [
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "dataset-metadata.json"),
-        "/kaggle/src/dataset-metadata.json",
-        "/kaggle/working/dataset-metadata.json",
-    ]:
-        if os.path.exists(candidate):
-            metadata_src = candidate
-            break
-    if metadata_src:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        shutil.copy(metadata_src, script_dir)
-        print(f"copied dataset-metadata.json from {metadata_src} to {script_dir}", flush=True)
+    import json
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    metadata_path = os.path.join(script_dir, "dataset-metadata.json")
+    if not os.path.exists(metadata_path):
+        # Tìm trong các vị trí khác
+        for candidate in [
+            "/kaggle/working/dataset-metadata.json",
+            os.path.join(script_dir, "..", "dataset-metadata.json"),
+        ]:
+            if os.path.exists(candidate):
+                shutil.copy(candidate, metadata_path)
+                print(f"copied dataset-metadata.json from {candidate}", flush=True)
+                break
+        else:
+            # Tạo mới
+            metadata = {
+                "id": "jhandf/img2text-env",
+                "title": "img2text-env",
+                "licenses": [{"name": "MIT"}],
+            }
+            with open(metadata_path, "w") as f:
+                json.dump(metadata, f, indent=2)
+            print(f"created dataset-metadata.json at {metadata_path}", flush=True)
     else:
-        print("WARNING: dataset-metadata.json not found", flush=True)
+        print(f"dataset-metadata.json already at {metadata_path}", flush=True)
 
     # 3. Upload Dataset (folder = script_dir, chứa dataset-metadata.json)
     os.environ.setdefault("KAGGLE_CONFIG_DIR", "/root/.kaggle")
