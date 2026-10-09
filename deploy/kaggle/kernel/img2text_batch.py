@@ -130,6 +130,7 @@ subprocess.run([sys.executable, "-m", "pip", "install", "-q", "uv"], check=False
 _local_bin = os.path.expanduser("~/.local/bin")
 if _local_bin not in os.environ.get("PATH", "").split(os.pathsep):
     os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + _local_bin
+subprocess.run(["apt-get", "-qq", "update"], check=False)
 subprocess.run(["apt-get", "-qq", "install", "-y", "poppler-utils"], check=False)
 if shutil.which("pdftoppm") is None:
     raise SystemExit(
