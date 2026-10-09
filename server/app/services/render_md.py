@@ -404,6 +404,10 @@ async def llm_render_md(ir_doc: DocumentIR, result: dict) -> str:
         text = m.group(1).strip()
     if not text:
         raise LLMError("LLM render trả về rỗng")
+    # LLM thỉnh thoảng echo lại IR JSON thay vì render → coi là fail, rơi
+    # về heuristic (render thủ công). Markdown không bao giờ bắt đầu bằng {.
+    if text.startswith("{") and ('"document_id"' in text or '"pages"' in text):
+        raise LLMError("LLM render trả về IR JSON, không phải markdown")
     return text
 
 

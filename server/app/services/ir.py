@@ -134,6 +134,13 @@ def _union_bbox(ocr_result: dict, block_ids: list[str]) -> list[int] | None:
         max(b[2] for b in boxes), max(b[3] for b in boxes),
     ]
 
+def _block_text(ocr_result: dict, block_id: str) -> str:
+    for page in ocr_result.get("pages", []):
+        for region in page.get("regions", []):
+            if str(region.get("id")) == block_id:
+                return (region.get("text") or "").strip()
+    return ""
+
 def _fill_bbox(nodes: list[NodeIR], ocr_result: dict) -> None:
     """LLM bỏ trống bbox → union từ source_block_ids.
 
@@ -144,6 +151,19 @@ def _fill_bbox(nodes: list[NodeIR], ocr_result: dict) -> None:
             node.bbox = _union_bbox(ocr_result, node.source_block_ids)
         if node.children:
             _fill_bbox(node.children, ocr_result)
+
+def _fill_text(nodes: list[NodeIR], ocr_result: dict) -> None:
+    """LLM structurize KHÔNG viết lại text (spec) → node.text luôn rỗng.
+    Renderer (LLM render) cần text thật → join text từ OCR qua
+    source_block_ids. Giống _fill_bbox: populate từ nguồn, không sửa LLM.
+    """
+    for node in nodes:
+        if not node.text:
+            parts = [t for bid in node.source_block_ids
+                     if (t := _block_text(ocr_result, bid))]
+            node.text = "\n".join(parts)
+        if node.children:
+            _fill_text(node.children, ocr_result)
 
 def _assign_missing_ids(nodes: list[NodeIR], counter: list[int]) -> None:
     """LLM thiếu id/node_id → auto-assign (spec: id do program assign)."""
@@ -220,10 +240,14 @@ def validate_ir(ir: dict, ocr_result: dict) -> DocumentIR:
     # Check source_block_ids exist in OCR
     valid_ocr_ids = _collect_ocr_block_ids(ocr_result)
     # bbox: LLM gán hoặc union từ source_block_ids (renderer dùng trực tiếp)
+    # text: LLM không viết lại text → join từ OCR qua source_block_ids (render cần)
     for page in doc.pages:
         _fill_bbox(page.header, ocr_result)
         _fill_bbox(page.content, ocr_result)
         _fill_bbox(page.footer, ocr_result)
+        _fill_text(page.header, ocr_result)
+        _fill_text(page.content, ocr_result)
+        _fill_text(page.footer, ocr_result)
     for page in doc.pages:
         _check_source_ids(page.header, valid_ocr_ids)
         _check_source_ids(page.content, valid_ocr_ids)

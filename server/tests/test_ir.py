@@ -147,6 +147,16 @@ class TestValidateIR:
         result = validate_ir(ir, _ocr_result())
         assert result.pages == []
 
+    def test_fill_text_from_ocr_when_llm_omits(self):
+        """LLM structurize không viết lại text → node.text rỗng. validate_ir
+        phải join text từ OCR qua source_block_ids (render cần text thật)."""
+        ir = _valid_ir()
+        node = ir["pages"][0]["content"][0]
+        node["text"] = ""  # LLM bỏ trống
+        node["source_block_ids"] = ["r0", "r1"]
+        result = validate_ir(ir, _ocr_result())
+        assert result.pages[0].content[0].text == "Hello\nWorld"
+
     def test_all_valid_types_accepted(self):
         valid_types = [
             "heading", "paragraph", "list", "poem", "table", "figure",
