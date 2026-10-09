@@ -100,6 +100,10 @@ it("save sends int values via PUT and toasts success", async () => {
       scheduler_interval_seconds: 30,
       kaggle_min_queue: 2,
       kaggle_min_gap_seconds: 300,
+      // Admin LLM settings (merged in c9cb90a) are part of the save payload.
+      llm_base_url: "http://localhost:20128/v1",
+      llm_model: "oc/muse-spark-1.3-contributor-free",
+      proofread_llm_model: "oc/fledge-alpha-free",
     }),
   );
   expect(toast.success).toHaveBeenCalledWith("Đã lưu.");
@@ -138,6 +142,10 @@ it("server-side floor error maps inline + error toast", async () => {
       scheduler_interval_seconds: 60,
       kaggle_min_queue: 1,
       kaggle_min_gap_seconds: 600,
+      // Admin LLM settings (merged in c9cb90a) are part of the save payload.
+      llm_base_url: "http://localhost:20128/v1",
+      llm_model: "oc/muse-spark-1.3-contributor-free",
+      proofread_llm_model: "oc/fledge-alpha-free",
     }),
   );
   expect(
