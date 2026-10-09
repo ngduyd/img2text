@@ -42,11 +42,8 @@ def ensure_micromamba() -> str:
         return mmamba
     os.makedirs(os.path.dirname(mmamba), exist_ok=True)
     subprocess.run(
-        [
-            "curl", "-Ls", "https://micro.mamba.pm/api/micromamba/linux-64/latest",
-            "|", "tar", "-xj", "-C", "/kaggle/working/micromamba",
-            "--strip-components=1",
-        ],
+        "curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | "
+        "tar -xj -C /kaggle/working/micromamba",
         check=True,
         shell=True,
     )
