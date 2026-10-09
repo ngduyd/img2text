@@ -27,7 +27,7 @@ from docx.table import _Cell
 
 from app.core.config import settings
 from app.core.db import SessionLocal
-from app.services.ir import validate_ir, IRValidationError
+from app.services.ir import IR_PROMPT, validate_ir, IRValidationError
 from app.services.runtime_settings import get_runtime_setting
 
 logger = logging.getLogger("app.services.render_docx")
@@ -45,24 +45,6 @@ _TABLE_CELL_RE = re.compile(r"<t[dh][^>]*>(.*?)</t[dh]>", re.DOTALL | re.IGNOREC
 _TABLE_ROW_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.DOTALL | re.IGNORECASE)
 _TAG_RE = re.compile(r"<[^>]+>")
 _FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
-
-IR_PROMPT = (
-    "You are a document structure analyzer. Given OCR output (blocks with bbox, text), "
-    "produce a Document IR following this schema:\n"
-    '{"document_id": "...", "schema_version": "1.0", "pages": [{"page_id": "...", "page_number": 1, "header": [], "content": [], "footer": []}]}\n\n'
-    "Rules:\n"
-    "- header: blocks at top of page (y0 < 15% page height)\n"
-    "- footer: blocks at bottom of page (y0 > 85% page height)\n"
-    "- content: everything else\n"
-    "- type: heading, paragraph, list, poem, table, figure, caption, formula, quote, "
-    "footnote, page_number, form_field, separator, unknown\n"
-    "- role: document_title, section_heading, running_header, running_footer, question, answer, ...\n"
-    "- source_block_ids: map to OCR block IDs (p1_b0, p1_b1, ...)\n"
-    "- bbox: [x1, y1, x2, y2] mỗi node, lấy từ OCR block bbox; "
-    "nhiều source_block_ids → union (x1=min, y1=min, x2=max, y2=max)\n"
-    "- children: for tables, lists, poems (group related blocks)\n\n"
-    "OCR output:\n{ocr_json}"
-)
 
 
 # ---------------------------------------------------------------- dataclasses (heuristic fallback)
@@ -312,8 +294,13 @@ async def llm_ir(result: dict) -> dict:
     m = _FENCE_RE.match(text)
     if m:
         text = m.group(1)
+    start = text.find("{")
+    if start == -1:
+        raise LLMError("IR không chứa JSON object")
     try:
-        return json.loads(text)
+        # raw_decode: lấy object JSON đầu tiên, bỏ phần thừa LLM nối sau
+        obj, _ = json.JSONDecoder().raw_decode(text[start:])
+        return obj
     except (ValueError, TypeError) as exc:
         raise LLMError(f"IR không phải JSON: {exc}") from exc
 

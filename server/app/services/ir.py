@@ -11,9 +11,38 @@ import logging
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
+
+IR_PROMPT = (
+    "You are a document structure analyzer. Given OCR output (blocks with bbox, text), "
+    "produce a Document IR following this schema:\n"
+    '{"document_id": "...", "schema_version": "1.0", "pages": [{"page_id": "...", "page_number": 1, "header": [], "content": [], "footer": []}]}\n\n'
+    "Rules:\n"
+    "- COVERAGE: every OCR block id must appear in exactly one node's source_block_ids "
+    "(root or child). Never drop a block, never reuse a block in two nodes.\n"
+    "- header: page heading blocks at top of page (y0 < 15% page height): logo, institution, "
+    "exam title.\n"
+    "- footer: only page furniture at the bottom: page numbers, form fields (name/id boxes), "
+    "separators. If a bottom block is normal reading content (verse line, paragraph, citation), "
+    "keep it in content with its group.\n"
+    "- content: everything else\n"
+    "- type: MUST be exactly one of: heading, paragraph, list, poem, table, figure, caption, "
+    "formula, quote, footnote, page_number, form_field, separator, unknown. "
+    "Role words (citation, passage, line, instruction, ...) belong in role, NEVER in type.\n"
+    "- role: document_title, section_heading, running_header, running_footer, question, answer, "
+    "passage, line, citation, instruction, prompt, form_field, ...\n"
+    "- source_block_ids: map to OCR block IDs (p1_b0, p1_b1, ...)\n"
+    "- bbox: [x1, y1, x2, y2] per node, from OCR block bbox; "
+    "many source_block_ids → union (x1=min, y1=min, x2=max, y2=max)\n"
+    "- children: group related blocks — a poem node contains ALL its consecutive verse lines "
+    "as children; a list node contains ALL its items (a., b., c., ...). The source note/citation "
+    "after a poem or passage is a separate node, never a poem line.\n"
+    "- merge only blocks that are continuations of the same sentence/paragraph; never merge "
+    "unrelated blocks (e.g. an instruction line) into a citation node.\n\n"
+    "OCR output:\n{ocr_json}"
+)
 
 
 class NodeType(str, Enum):
@@ -34,7 +63,11 @@ class NodeType(str, Enum):
 
 
 class NodeIR(BaseModel):
-    id: str
+    model_config = ConfigDict(populate_by_name=True)
+
+    # id optional: program auto-assign khi LLM thiếu (spec: id do program assign),
+    # chấp nhận cả "node_id" alias vì LLM hay ghi sai tên field.
+    id: str = Field(default="", validation_alias=AliasChoices("id", "node_id"))
     type: NodeType
     role: str = "unknown"
     text: str = ""
@@ -112,6 +145,15 @@ def _fill_bbox(nodes: list[NodeIR], ocr_result: dict) -> None:
         if node.children:
             _fill_bbox(node.children, ocr_result)
 
+def _assign_missing_ids(nodes: list[NodeIR], counter: list[int]) -> None:
+    """LLM thiếu id/node_id → auto-assign (spec: id do program assign)."""
+    for node in nodes:
+        if not node.id:
+            counter[0] += 1
+            node.id = f"auto_n{counter[0]}"
+        if node.children:
+            _assign_missing_ids(node.children, counter)
+
 def _check_unique_ids(nodes: list[NodeIR], seen: set[str], path: str = "") -> None:
     """Recursively check all node IDs are unique across the document."""
     for node in nodes:
@@ -154,6 +196,13 @@ def validate_ir(ir: dict, ocr_result: dict) -> DocumentIR:
         doc = DocumentIR.model_validate(ir)
     except Exception as exc:
         raise IRValidationError(f"IR schema invalid: {exc}") from exc
+
+    # Auto-assign id cho node thiếu id (trước unique check)
+    counter = [0]
+    for page in doc.pages:
+        _assign_missing_ids(page.header, counter)
+        _assign_missing_ids(page.content, counter)
+        _assign_missing_ids(page.footer, counter)
 
     # Collect all node IDs across all pages/sections
     all_ids: set[str] = set()
