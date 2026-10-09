@@ -94,6 +94,7 @@ class BatchStubKaggleApi:
         self.dataset_exists = True  # private dataset present (prod state)
         self.dataset_files = ["TA.jpg"]  # OLD input served by list_files
         self.stale_after_create = False  # create OK but files stay old
+        self.omit_file: str | None = None  # staged file HIDDEN from list_files
 
     def dataset_list(self, search=None):
         self.calls.append(("dataset_list", search))
@@ -124,7 +125,10 @@ class BatchStubKaggleApi:
         self.calls.append(("dataset_create_new", meta["id"], files))
         self.dataset_exists = True
         if not self.stale_after_create:
-            self.dataset_files = [f for f in files if f != "dataset-metadata.json"]
+            kept = [f for f in files if f != "dataset-metadata.json"]
+            if self.omit_file and self.omit_file in kept:
+                kept.remove(self.omit_file)  # verify must see the WHOLE batch
+            self.dataset_files = kept
         return {"ref": meta["id"]}
 
     def kernels_push(self, path):
@@ -211,7 +215,8 @@ async def test_batch_verifies_input_files_before_kernel_push(
     returns []), so delete runs and the verify call precedes kernels_push."""
     assert await orch.ensure_worker(SessionLocal) is True
     job = await db_session.get(Job, seed_job)
-    staged = Path(job.storage_key).name  # sha.<ext>
+    # staging prefix (Task 2): {job_id}__{sha}.<ext>
+    staged = f"{seed_job}__{Path(job.storage_key).name}"
     assert ("dataset_status", "testuser/img2text-input") in api.calls
     assert ("dataset_delete", "testuser/img2text-input") in api.calls
     files_checks = [c for c in api.calls if c[0] == "dataset_list_files"]
@@ -231,7 +236,7 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
     storage_env.get.assert_awaited_with(job.storage_key)  # staged from storage
     creates = [c for c in api.calls if c[0] == "dataset_create_new"]
     assert creates[0][1] == "testuser/img2text-input"
-    assert f"{job.storage_key.rsplit('/', 1)[-1]}" in creates[0][2]  # sha.<ext> staged
+    assert f"{job.id}__{job.storage_key.rsplit('/', 1)[-1]}" in creates[0][2]  # {job_id}__sha.<ext> staged
     assert "dataset-metadata.json" in creates[0][2]
     pushes = _pushes(api)
     assert len(pushes) == 1
@@ -361,6 +366,68 @@ async def test_batch_spawn_marks_job_extracting_with_kaggle_ref(
     assert abs((job.lease_expires_at - expected).total_seconds()) < 60
     assert job.lease_expires_at > datetime.now(timezone.utc)
 
+async def test_batch_spawn_stages_all_queued_jobs_under_one_run(
+    kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session
+):
+    """Task 2(a): ONE tick stages EVERY queued job (cap 20) as
+    {job_id}__{name}; all marked extracting with the SAME ref; a single
+    _batch_runs entry lists the whole batch."""
+    job2 = await _extra_queued_job(auth_client, "seed2")
+    job3 = await _extra_queued_job(auth_client, "seed3")
+    assert await orch.ensure_worker(SessionLocal) is True
+    creates = [c for c in api.calls if c[0] == "dataset_create_new"]
+    assert len(creates) == 1
+    staged = creates[0][2]
+    db_session.expire_all()
+    for jid in (seed_job, job2, job3):
+        job = await db_session.get(Job, jid)
+        assert f"{jid}__{Path(job.storage_key).name}" in staged
+        assert job.status == "extracting"
+        assert job.kaggle_ref == BATCH_REF
+    assert list(orch._batch_runs) == [BATCH_REF]
+    assert orch._batch_runs[BATCH_REF]["job_ids"] == [seed_job, job2, job3]
+    assert len(_pushes(api)) == 1
+
+async def test_batch_verify_missing_one_file_blocks_whole_spawn(
+    kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session,
+    monkeypatch,
+):
+    """Task 2(b): verify-before-push requires the FULL batch — one staged
+    filename missing from dataset_list_files → no push, no map entry, NO
+    job touched (whole batch retried next tick)."""
+    monkeypatch.setattr(orch, "_INPUT_VERIFY_TIMEOUT", 0.05)
+    monkeypatch.setattr(orch, "_INPUT_VERIFY_INTERVAL", 0.01)
+    job2 = await _extra_queued_job(auth_client, "seed2")
+    sha2 = hashlib.sha256(PNG_1PX + b"seed2").hexdigest()
+    api.omit_file = f"{job2}__{sha2}.png"
+    assert await orch.ensure_worker(SessionLocal) is False
+    assert _pushes(api) == []  # NEVER pushed with a file missing
+    assert orch._batch_runs == {}
+    db_session.expire_all()
+    for jid in (seed_job, job2):
+        job = await db_session.get(Job, jid)
+        assert job.status == "queued" and job.kaggle_ref is None
+
+async def test_batch_spawn_caps_staged_jobs_at_config(
+    kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session,
+    monkeypatch,
+):
+    """Task 2(c): queue > kaggle_batch_max_jobs → only cap jobs staged and
+    marked extracting; the rest stay queued for the next tick."""
+    monkeypatch.setattr(settings, "kaggle_batch_max_jobs", 2)
+    job2 = await _extra_queued_job(auth_client, "seed2")
+    job3 = await _extra_queued_job(auth_client, "seed3")
+    assert await orch.ensure_worker(SessionLocal) is True
+    creates = [c for c in api.calls if c[0] == "dataset_create_new"]
+    assert len(creates) == 1
+    assert not any(n.startswith(f"{job3}__") for n in creates[0][2])
+    db_session.expire_all()
+    assert (await db_session.get(Job, seed_job)).status == "extracting"
+    assert (await db_session.get(Job, job2)).status == "extracting"
+    job3_row = await db_session.get(Job, job3)
+    assert job3_row.status == "queued" and job3_row.kaggle_ref is None
+    assert orch._batch_runs[BATCH_REF]["job_ids"] == [seed_job, job2]
+
 async def test_batch_failed_marks_failed_with_extracting_step(
     kaggle_batch_env, api, storage_env, seed_job, db_session, caplog, monkeypatch
 ):
@@ -436,10 +503,10 @@ async def test_batch_timeout_status_marks_failed_with_extracting_step(
     assert await orch.ensure_worker(SessionLocal) is False  # not respawned
     assert len(_pushes(api)) == 1
 
-async def _extra_queued_job(auth_client) -> int:
-    """Second real upload — different bytes → different sha256 storage key."""
+async def _extra_queued_job(auth_client, tag: str = "seed2") -> int:
+    """Extra real upload — tag → different bytes → different sha256 key."""
     r = await auth_client.post(
-        "/api/jobs", files={"file": ("t2.png", PNG_1PX + b"seed2", "image/png")}
+        "/api/jobs", files={"file": ("t2.png", PNG_1PX + tag.encode(), "image/png")}
     )
     assert r.status_code == 201, r.text
     return r.json()["id"]
@@ -472,7 +539,7 @@ async def test_spawn_rowcount_zero_warns_and_skips_tracking(
     )
     await db_session.commit()  # claimed by an "HTTP worker" before spawn
     with caplog.at_level("WARNING", logger=orch.logger.name):
-        assert await orch._spawn_batch_run(api, SessionLocal, job) is False
+        assert await orch._spawn_batch_run(api, SessionLocal, [job]) is False
     assert any("run not tracked" in r.getMessage() for r in caplog.records)
     assert orch._batch_runs == {}  # not tracked
     assert len(_pushes(api)) == 1  # push happened, tracking skipped
@@ -512,8 +579,8 @@ async def test_batch_poison_job_does_not_block_queue(
     assert orch._batch_runs[BATCH_REF]["job_ids"] == [job2]  # job2 spawned, job1 skipped
     creates = [c for c in api.calls if c[0] == "dataset_create_new"]
     assert len(creates) == 1
-    staged_name = hashlib.sha256(PNG_1PX + b"seed2").hexdigest() + ".png"
-    assert staged_name in creates[0][2]  # job2's file, not job1's
+    staged_name = f"{job2}__" + hashlib.sha256(PNG_1PX + b"seed2").hexdigest() + ".png"
+    assert staged_name in creates[0][2]  # job2's prefixed file, not job1's
     assert len(_pushes(api)) == 1
 
 async def test_batch_output_failure_keeps_ref_and_retries(
