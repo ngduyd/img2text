@@ -16,6 +16,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     Uuid,
     text,
 )
@@ -139,6 +140,12 @@ class Job(Base):
     #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS layout_style TEXT;
     # Readers parse via json.loads (broken JSON → None + warning).
     layout_style: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase 1 (plan 2026-10-10): text-edit counter, optimistic lock for
+    # POST /extraction. ALTER-only migration:
+    #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS text_version INT NOT NULL DEFAULT 0;
+    text_version: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0"), nullable=False
+    )
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # Job status phases (spec 2026-10-09): queued | extracting | rendering |
     # done | failed ("running" eliminated). ALTER-only migration:
@@ -165,6 +172,45 @@ class Job(Base):
     )
     finished_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+class DocumentVersion(Base):
+    """Phase 1 (spec Sub-system A): per-(job, kind) snapshot row.
+
+    kind: 'text' | 'md-layout' | 'docx-layout'; storage_key points at the
+    S3 snapshot object (versions/{job_id}/{kind}/{version}); N=20 newest
+    per (job, kind) kept (service prunes). Hand-applied migration:
+      CREATE TABLE document_versions (
+        id BIGSERIAL PRIMARY KEY,
+        job_id BIGINT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL,
+        storage_key TEXT NOT NULL,
+        version INT NOT NULL,
+        based_on_text_version INT NOT NULL DEFAULT 0,
+        detached BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE (job_id, kind, version)
+      );
+    """
+
+    __tablename__ = "document_versions"
+    __table_args__ = (
+        UniqueConstraint("job_id", "kind", "version", name="uq_dv_job_kind_version"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    job_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("jobs.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(Text)
+    storage_key: Mapped[str] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer)
+    based_on_text_version: Mapped[int] = mapped_column(Integer, default=0)
+    detached: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=text("now()"),
     )
 
 class OcrSuggestion(Base):
