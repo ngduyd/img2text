@@ -1,0 +1,16 @@
+{
+  "id": "jhandf/img2text-env",
+  "title": "img2text-env",
+  "code_file": "env_builder.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": [],
+  "category_ids": ["data-processing"]
+}
