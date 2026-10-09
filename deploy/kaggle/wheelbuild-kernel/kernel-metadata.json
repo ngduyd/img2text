@@ -1,7 +1,7 @@
 {
-  "id": "jhandf/img2text-env",
-  "title": "img2text-env",
-  "code_file": "env_builder.py",
+  "id": "jhandf/img2text-wheelbuild",
+  "title": "img2text-wheelbuild",
+  "code_file": "wheelbuild.py",
   "language": "python",
   "kernel_type": "script",
   "is_private": true,

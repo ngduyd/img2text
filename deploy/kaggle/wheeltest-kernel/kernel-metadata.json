@@ -1,0 +1,16 @@
+{
+  "id": "jhandf/img2text-wheeltest",
+  "title": "img2text-wheeltest",
+  "code_file": "wheeltest.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": ["jhandf/img2text-wheelbuild-env"],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": [],
+  "category_ids": ["data-processing"]
+}

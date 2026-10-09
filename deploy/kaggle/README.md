@@ -74,3 +74,40 @@ Lưu ý capture: `kernel_type: script` chỉ capture output từ **`/kaggle/work
 Paddle trên Kaggle: kernel Kaggle mặc định Python 3.13 (không có paddle wheel) → script tạo venv py3.12 riêng bằng `uv` (`uv venv /tmp/paddle-venv --python 3.12` + `paddlepaddle-gpu==3.2.1` index cu126) rồi re-exec chính nó (`--ocr`) dưới venv đó. **Nếu `uv venv --python 3.12` fail**: kiểm tra kernel `internet=true` (Settings) + GPU quota; cài xong đã verify `import paddle, paddleocr` (fail → SystemExit rõ). Chạy CPU-only = chậm, chỉ để test.
 
 Giới hạn (ponytail): **1 file/lần** (thư mục → báo lỗi), **1 slug input dataset dùng chung** — mỗi run ghi đè (`delete+recreate`) input dataset, song song sẽ đè nhau; `--poll` tối thiểu 1s; output vào `./out/<timestamp-micros>/` riêng mỗi run; quota GPU free ~30h/tuần. K2 polling-backend mode (`push.py`) giữ nguyên cho production.
+
+## 7. Wheelhouse (đóng gói deps offline — khuyến nghị)
+
+Thay cho `pip install` network mỗi run (hoặc đóng gói cả conda env — đã **gỡ bỏ**, chậm do bz2 đơn luồng + hàng chục nghìn file nhỏ), deps được **download 1 lần thành wheels** rồi cài `--no-index` khỏi Kaggle Dataset. Measured trên Kaggle: **~22s install + ~9.6s import ≈ 32s** thay vì vài phút pip network.
+
+### Flow
+
+1. **Build wheels (1 lần)** — `deploy/kaggle/wheelbuild-kernel/`:
+   ```bash
+   docker exec img2text-dev-server-1 python -c "\
+   from kaggle.api.kaggle_api_extended import KaggleApi; a=KaggleApi(); a.authenticate();\
+   print(a.kernels_push('/app/deploy/kaggle/wheelbuild-kernel').version_number)"
+   ```
+   Kernel `jhandf/img2text-wheelbuild` chạy `pip download` cp312 manylinux (pillow, numpy, opencv-python-headless, rapidfuzz, pymupdf, paddlepaddle-gpu, paddleocr) → 75 wheels / ~992MB vào `/kaggle/working/wheels`.
+2. **Tạo Dataset từ Output** (tay, 1 lần): kernel page → tab **Output** → **Create Dataset**. Đã tạo: **`jhandf/img2text-wheelbuild-env`**.
+3. **Cài offline trong pipeline**:
+   ```bash
+   uv venv /tmp/paddle-venv --python 3.12          # py3.13 Kaggle không có paddle wheel
+   uv pip install --python /tmp/paddle-venv/bin/python \
+     --no-index --find-links /kaggle/input/img2text-wheelbuild-env/wheels \
+     pillow numpy opencv-python-headless rapidfuzz pymupdf paddlepaddle-gpu paddleocr
+   ```
+   `img2text_batch.py` đã dùng đúng pattern này (fallback `pip install` network nếu wheel dataset chưa mount).
+4. **Verify (tuỳ chọn)** — `deploy/kaggle/wheeltest-kernel/` (kernel `jhandf/img2text-wheeltest`, GPU): mount wheel dataset → `uv pip install --no-index` → verify imports (`paddle cuda=True`) → OCR smoke → in `REPORT {install_s, verify_s, ocr_s, total_s}`. Push:
+   ```bash
+   docker exec img2text-dev-server-1 python -c "from kaggle.api.kaggle_api_extended import KaggleApi; a=KaggleApi(); a.authenticate(); print(a.kernels_push('/app/deploy/kaggle/wheeltest-kernel').version_number)"
+   ```
+
+### Rebuild wheels
+
+Khi đổi version deps: sửa `DEPS` trong `wheelbuild.py` → push lại kernel `img2text-wheelbuild` → Run → **New Version** trên Dataset `img2text-wheelbuild-env` (không cần Create Dataset mới) → kernel dùng lại `--find-links` path cũ, tự lấy wheels mới nhất.
+
+### Lưu ý
+
+- Wheels tải cp312/manylinux — phải khớp `--python 3.12` của venv. Đổi Python → download lại với `--python-version` tương ứng.
+- `enable_internet` chỉ cần cho bước tạo venv (`uv` tải Python 3.12); **bước install deps chạy offline** (`--no-index`). Muốn fully-offline: nhúng Python 3.12 standalone vào dataset.
+- Dataset wheel private, ~1GB — không public để tránh bandwidth quota Kaggle.
