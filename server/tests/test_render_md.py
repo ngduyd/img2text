@@ -102,8 +102,17 @@ class TestBuildMDFromIR:
             FakeResponse(_md_response()),
         ])
         out = await build_md(_ocr_result())
-        assert "Tiêu đề" in out
-        assert "Nội dung đoạn văn" in out
+        assert out == _md_response()  # render markdown tốt giữ nguyên
+
+    async def test_build_md_render_echo_ir_json_fallback(self, monkeypatch):
+        """Render LLM echo IR JSON → LLMError → heuristic (chứa text OCR)."""
+        fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(_ir_response())),
+            FakeResponse('{"document_id":"x","pages":[]}'),
+        ])
+        out = await build_md(_ocr_result())
+        assert "chú thích" in out  # text OCR thật từ heuristic
+        assert not out.lstrip().startswith("{")
 
     async def test_build_md_heading_rendered(self, monkeypatch):
         fake_llm(monkeypatch, [

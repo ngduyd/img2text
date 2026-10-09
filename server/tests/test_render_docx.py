@@ -111,6 +111,19 @@ class TestBuildDocxFromIR:
         assert "Tiêu đề" in texts
         assert "Nội dung đoạn văn" in texts
 
+    async def test_build_docx_render_echo_ir_json_fallback(self, monkeypatch):
+        """Render LLM echo IR JSON → LLMError → heuristic (chứa text OCR)."""
+        fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(_ir_response())),
+            FakeResponse('{"document_id":"x","pages":[]}'),
+        ])
+        data = await build_docx(_ocr_result())
+        assert data[:2] == b"PK"
+        doc = Document(io.BytesIO(data))
+        all_text = "\n".join(p.text for p in doc.paragraphs)
+        assert "chú thích ảnh" in all_text  # text OCR thật từ heuristic
+        assert not all_text.lstrip().startswith("{")
+
     async def test_build_docx_heading_style(self, monkeypatch):
         fake_llm(monkeypatch, [
             FakeResponse(json.dumps(_ir_response())),

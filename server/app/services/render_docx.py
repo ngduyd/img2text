@@ -404,6 +404,10 @@ async def llm_render_docx(ir_doc: DocumentIR, result: dict) -> str:
         html = m.group(1).strip()
     if not html:
         raise LLMError("LLM render trả về rỗng")
+    # LLM thỉnh thoảng echo lại IR JSON thay vì render HTML → coi là fail,
+    # rơi về heuristic (render thủ công). HTML không bao giờ bắt đầu bằng {.
+    if html.startswith("{") and ('"document_id"' in html or '"pages"' in html):
+        raise LLMError("LLM render trả về IR JSON, không phải HTML")
     return html
 
 _BLOCK_HTML_RE = re.compile(
