@@ -97,6 +97,31 @@ async def test_sweep_rendering_reschedules_stale_job(
     job = await db_session.get(Job, job_id)
     assert job.status == "done" and job.failed_step is None
 
+async def test_sweep_rendering_covers_null_started_at(
+    app, db_session, seed_job, VALID_RESULT_JSONB, monkeypatch
+):
+    """Batch ingest từ queued → started_at NULL → SQL NULL < cutoff never
+    true → MUST still sweep (cùng class bug P1: kẹt forever)."""
+    from app.services import job_results
+    from app.services.scheduler import _run_jobs_once
+
+    job_id = await _stale_rendering_job(
+        db_session, seed_job, VALID_RESULT_JSONB, age=timedelta(minutes=10)
+    )
+    job = await db_session.get(Job, job_id)
+    job.started_at = None  # queued-direct ingest path
+    await db_session.commit()
+
+    async def _md_ok(*args, **kwargs):
+        return "# layout md"
+    monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
+    await _run_jobs_once(app.state.storage)
+    assert job_id in job_results._active_outputs  # swept despite NULL
+    await job_results.drain_auto_output()
+    db_session.expire_all()
+    job = await db_session.get(Job, job_id)
+    assert job.status == "done"
+
 async def test_sweep_rendering_one_task_per_job_and_skips_fresh(
     app, db_session, seed_job, VALID_RESULT_JSONB, monkeypatch
 ):

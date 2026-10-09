@@ -54,7 +54,12 @@ async def sweep_rendering(session, storage) -> int:
         await session.execute(
             select(Job).where(
                 Job.status == "rendering",
-                Job.started_at < datetime.now(timezone.utc) - _STALE_RENDERING,
+                # started_at IS NULL = batch ingest từ queued (không qua
+                # claim) — cũng phải sweep, SQL NULL < cutoff never true
+                (
+                    Job.started_at.is_(None)
+                    | (Job.started_at < datetime.now(timezone.utc) - _STALE_RENDERING)
+                ),
             )
         )
     ).scalars().all()
