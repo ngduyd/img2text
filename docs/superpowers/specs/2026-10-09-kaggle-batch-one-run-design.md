@@ -34,9 +34,7 @@ Một kernel run xử lý TOÀN BỘ job queued. Setup trả 1 lần cho cả l�
 
 - `find_input()` → `find_inputs()`: glob `/kaggle/input/**/*`, filter
   file thường, **sorted**, trả list (job_id parse từ prefix `{id}__`).
-- Loop mỗi input: pages → OCR → ghi output **per job**:
-  `{job_id}_result.json` (+ md nếu pipeline đang ghi) vào
-  `/kaggle/working` (script-kernel capture).
+- Loop mỗi input: pages → OCR → ghi output **per job**: `{job_id}_result.json` (JSON) + `{job_id}_result.md` (markdown) — job_id parse từ input prefix `{job_id}__`. KHÔNG dùng tên chung `result.json` (sẽ bị N job ghi đè).
 - 1 input fail (exception/OCR crash) → log + **tiếp tục input kế** (không
   SystemExit giữa lô); cuối run exit 0 miễn ≥1 output ghi được; 0 output →
   exit 1.
@@ -48,7 +46,8 @@ Một kernel run xử lý TOÀN BỘ job queued. Setup trả 1 lần cho cả l�
 - Spawn: UPDATE TẤT CẢ job trong lô → `extracting` + `kaggle_ref=ref`
   (1 transaction); ref sinh 1 lần cho run.
 - Poll (mỗi tick, mỗi ref 1 lần):
-  - kernel `success` → ingest per job: pull `{job_id}_result.json`. Job có
+  - kernel `success` → ingest per job: pull output từ ref, đọc
+    `{job_id}_result.json` (mỗi job 1 file riêng, không overlap). Job có
     output → `_store` (→ rendering,auto-gen…). Job **thiếu output** →
     `failed` + `failed_step=extracting` + `error="kernel thiếu output"`,
     các job khác vẫn ingest bình thường (partial-fail policy).
