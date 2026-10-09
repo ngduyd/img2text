@@ -530,6 +530,46 @@ async def test_batch_ingest_failure_ceiling_drops_ref(
     assert job.status == "queued" and job.lease_expires_at is None
     assert len(_pushes(api)) == 1  # gap still blocks a re-spawn this tick
 
+async def test_restart_adopts_extracting_job_with_kaggle_ref(
+    kaggle_batch_env, api, storage_env, seed_job, db_session, monkeypatch
+):
+    """spec 2026-10-09 restart recovery: _batch_runs empty (server restart)
+    + job row "extracting" with kaggle_ref → adopted back into the map →
+    poll resumes and ingest completes."""
+    api.result_doc = RESULT_DOC
+    async def _md_ok(*args, **kwargs):
+        return "# layout md"
+    monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
+    assert await orch.ensure_worker(SessionLocal) is True  # spawn
+    ref = orch._batch_runs[seed_job]["ref"]
+    orch._batch_runs.clear()  # simulate restart: hot index lost
+    api.status = {"status": SimpleNamespace(name="RUNNING")}
+    assert await orch.ensure_worker(SessionLocal) is False  # adopt + poll
+    assert orch._batch_runs[seed_job]["ref"] == ref  # poll resumes
+    api.status = {"status": SimpleNamespace(name="COMPLETE")}
+    assert await orch.ensure_worker(SessionLocal) is False  # pull + ingest
+    assert orch._batch_runs == {}
+    await drain_auto_output()
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.status == "done"
+
+async def test_reaper_requeues_extracting_job_without_kaggle_ref(
+    db_session, seed_job
+):
+    """spec 2026-10-09: "extracting" WITHOUT kaggle_ref (spawn died
+    halfway) + expired lease → the reaper reverts it to queued."""
+    from app.services.jobs_requeue import reap_leases
+
+    job = await db_session.get(Job, seed_job)
+    job.status = "extracting"
+    job.lease_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    await db_session.commit()
+    assert await reap_leases(db_session) == 1
+    await db_session.refresh(job)
+    assert job.status == "queued" and job.lease_expires_at is None
+    assert job.kaggle_ref is None
+
 async def test_reaper_does_not_requeue_batch_extracting_job(
     kaggle_batch_env, api, storage_env, seed_job, db_session
 ):
