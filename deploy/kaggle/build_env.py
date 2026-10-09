@@ -22,10 +22,10 @@ import sys
 
 ENV_NAME = "img2text"
 ENV_PREFIX = os.path.expanduser(f"~/micromamba/envs/{ENV_NAME}")
-OUTPUT_TAR = "/kaggle/working/img2text-env.tar.gz"
+OUTPUT_TAR = "/tmp/img2text-env.tar.gz"
 DATASET_SLUG = "jhandf/img2text-env"
 
-DEPS = [
+CONDA_DEPS = [
     "python=3.10",
     "pillow",
     "numpy",
@@ -33,6 +33,8 @@ DEPS = [
     "rapidfuzz",
     "pymupdf",
     "pip",
+]
+PIP_DEPS = [
     "paddlepaddle-gpu",
     "paddleocr",
 ]
@@ -49,15 +51,16 @@ def ensure_micromamba() -> str:
     if os.path.exists(mmamba):
         return mmamba
     os.makedirs(os.path.dirname(mmamba), exist_ok=True)
+    tarball = "/tmp/micromamba.tar.bz2"
     subprocess.run(
-        [
-            "curl", "-Ls", "https://micro.mamba.pm/api/micromamba/linux-64/latest",
-            "|", "tar", "-xj", "-C", os.path.dirname(mmamba), "--strip-components=1",
-        ],
+        ["curl", "-Ls", "-o", tarball, "https://micro.mamba.pm/api/micromamba/linux-64/latest"],
         check=True,
-        shell=True,
     )
-    return mmamba
+    import tarfile
+    with tarfile.open(tarball, "r:bz2") as tf:
+        tf.extractall(os.path.expanduser("~"))
+    # micromamba at bin/micromamba
+    return os.path.join(os.path.expanduser("~"), "bin", "micromamba")
 
 
 def create_env(mmamba: str) -> None:
@@ -65,16 +68,16 @@ def create_env(mmamba: str) -> None:
     run([
         mmamba, "create", "-y", "-p", ENV_PREFIX,
         "-c", "conda-forge",
-    ] + DEPS)
+    ] + CONDA_DEPS)
+    # paddle not in conda-forge → pip install
+    pip_path = os.path.join(ENV_PREFIX, "bin", "pip")
+    run([pip_path, "install"] + PIP_DEPS)
 
 
 def pack_env(mmamba: str) -> None:
     """Pack env into tarball."""
-    os.makedirs(os.path.dirname(OUTPUT_TAR), exist_ok=True)
     run([
-        mmamba, "pack", "-p", ENV_PREFIX,
-        "-o", OUTPUT_TAR,
-        "--compress-level", "9",
+        mmamba, "package", "compress", ENV_PREFIX, OUTPUT_TAR,
     ])
 
 
@@ -86,22 +89,31 @@ def upload_dataset() -> None:
     api = KaggleApi()
     api.authenticate()
 
+    # Prepare upload folder with metadata + tarball
+    upload_dir = os.path.expanduser("~/kaggle_upload")
+    os.makedirs(upload_dir, exist_ok=True)
+    metadata = {"id": DATASET_SLUG, "title": "img2text-env", "licenses": [{"name": "MIT"}]}
+    with open(f"{upload_dir}/dataset-metadata.json", "w") as f:
+        json.dump(metadata, f)
+    import shutil
+    shutil.copy(OUTPUT_TAR.replace('.gz', '.bz2'), upload_dir)
+
     # Create dataset if not exists
     try:
-        api.dataset_create_new(
-            slug=DATASET_SLUG.split("/")[1],
-            title="img2text-env",
-            is_private=True,
-        )
+        api.dataset_create_new(folder=upload_dir, public=False)
+        print("dataset created")
     except Exception as e:
         print(f"dataset create (may already exist): {e}")
 
     # Upload files as new version
-    api.dataset_create_version(
-        folder=os.path.dirname(OUTPUT_TAR),
-        version_notes="img2text env",
-        dataset_slug=DATASET_SLUG,
-    )
+    try:
+        api.dataset_create_version(
+            folder=upload_dir,
+            version_notes="img2text env",
+        )
+        print("version uploaded")
+    except Exception as e:
+        print(f"version upload failed: {e}")
 
 
 def main() -> int:
