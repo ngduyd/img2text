@@ -25,6 +25,8 @@ DEPS = [
     "rapidfuzz",
     "pymupdf",
     "pip",
+]
+PIP_DEPS = [
     "paddlepaddle-gpu",
     "paddleocr",
 ]
@@ -56,12 +58,17 @@ def main() -> int:
     mmamba = ensure_micromamba()
     print(f"micromamba: {mmamba}", flush=True)
 
-    # 1. Create env
+    # 1. Create env (conda deps only)
     run([
         mmamba, "create", "-y", "-p", ENV_PREFIX,
         "-c", "conda-forge",
     ] + DEPS)
     print("env created", flush=True)
+
+    # 2. Install paddlepaddle-gpu + paddleocr via pip
+    pip = os.path.join(ENV_PREFIX, "bin", "pip")
+    run([pip, "install", "-q"] + PIP_DEPS)
+    print("pip deps installed", flush=True)
 
     # 2. Pack
     run(["tar", "-czf", OUTPUT_TAR, "-C", ENV_PREFIX, "."])
