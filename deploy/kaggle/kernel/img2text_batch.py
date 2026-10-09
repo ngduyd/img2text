@@ -131,16 +131,10 @@ _local_bin = os.path.expanduser("~/.local/bin")
 if _local_bin not in os.environ.get("PATH", "").split(os.pathsep):
     os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + _local_bin
 subprocess.run(["apt-get", "-qq", "update"], check=False)
-subprocess.run(["apt-get", "-qq", "install", "-y", "poppler-utils"], check=False)
-if shutil.which("pdftoppm") is None:
-    raise SystemExit(
-        "pdftoppm không có — poppler-utils cài không được "
-        "(pdftoppm bắt buộc để rasterize pdf)"
-    )
 subprocess.run(
     [
         sys.executable, "-m", "pip", "install", "-q",
-        "pillow", "numpy", "opencv-python-headless", "rapidfuzz",
+        "pillow", "numpy", "opencv-python-headless", "rapidfuzz", "PyMuPDF",
     ],
     check=False,
 )
@@ -286,22 +280,15 @@ def resolve(region: Region, page_flag: str) -> str:
 
 
 def default_pdftoppm(pdf_bytes: bytes, file_type: str) -> list:
-    """pdftoppm -r 200 -png into tempdir → [(png_bytes, width, height), ...]."""
-    with tempfile.TemporaryDirectory() as td:
-        src = os.path.join(td, "input.pdf")
-        with open(src, "wb") as f:
-            f.write(pdf_bytes)
-        subprocess.run(["pdftoppm", "-r", "200", "-png", src, os.path.join(td, "page")],
-                       check=True, capture_output=True)
-        out = []
-        names = sorted(glob.glob(os.path.join(td, "page-*.png")),
-                       key=lambda p: int(os.path.basename(p).rsplit("-", 1)[1].split(".")[0]))
-        for name in names:
-            with open(name, "rb") as f:
-                data = f.read()
-            w, h = Image.open(io.BytesIO(data)).size
-            out.append((data, w, h))
-        return out
+    """PyMuPDF rasterize → [(png_bytes, width, height), ...]."""
+    import fitz
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    out = []
+    for page in doc:
+        pix = page.get_pixmap(dpi=200)
+        data = pix.tobytes("png")
+        out.append((data, pix.width, pix.height))
+    return out
 
 
 # ===========================================================================
