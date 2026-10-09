@@ -23,10 +23,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.deps import get_current_user, get_runner_key, require_ocr
 from app.core.limiter import DailyCounter
-from app.core.models import Job, OcrSuggestion, User
+from app.core.models import DocumentVersion, Job, OcrSuggestion, User
 from app.core.schemas import PreprocessIn, ResultBody
 from app.services import proofread
+from app.services.doc_versions import (
+    latest_version,
+    read_version,
+    save_version,
+    seed_current,
+    snapshot_current_layout,
+)
 from app.services.job_results import _schedule_auto_output, store_worker_result
+from app.services.layout_sync import (
+    DOCX_HTML_KEY,
+    MD_LAYOUT_KEY,
+    sync_job_layouts,
+)
 from app.services.storage import StorageDriver, get_storage
 
 UPLOAD_DAILY_LIMIT = 20
@@ -618,6 +630,253 @@ async def proofread_job(
     job = await _job_or_403(session, id, user)
     count = await proofread.run_proofread(session, job)
     return {"count": count}
+
+# --- Phase 1 (spec Sub-system A): extraction save + incremental sync ---
+
+MAX_EXTRACTION_CHARS = 2_000_000
+
+class ExtractionBody(BaseModel):
+    text: str
+    old_phrase: str | None = None
+    new_phrase: str | None = None
+    expected_text_version: int
+    # spec conflict flow: detached layout → 409 → UI confirms → force=True
+    # overwrites (version history holds the pre-overwrite snapshot).
+    force: bool = False
+
+def _extraction_text(result: dict) -> str:
+    """Derived text gốc: regions join \n, pages join \n\n (pre-edit jobs)."""
+    pages = result.get("pages") or []
+    return "\n\n".join(
+        "\n".join(r.get("text") or "" for r in p.get("regions", []))
+        for p in pages
+    )
+
+async def _detached_kinds(
+    session: AsyncSession, job_id: int, storage: StorageDriver
+) -> set[str]:
+    """Layout kinds whose latest version is a direct-edit (detached) snapshot."""
+    out: set[str] = set()
+    for kind in ("md-layout", "docx-layout"):
+        row = await latest_version(session, job_id, kind)
+        if row is not None and row.detached:
+            out.add(kind)
+    return out
+
+async def _seed_versions(
+    session: AsyncSession, job: Job, storage: StorageDriver
+) -> None:
+    """Lazy-seed version 1 for text + existing layouts on first access."""
+    text = (job.result or {}).get("extraction_text") or _extraction_text(
+        job.result or {}
+    )
+    if await latest_version(session, job.id, "text") is None:
+        await seed_current(
+            storage, job.id, "text", text.encode("utf-8"), job.text_version,
+            session=session,
+        )
+    for kind, key in (
+        ("md-layout", MD_LAYOUT_KEY.format(job_id=job.id)),
+        ("docx-layout", DOCX_HTML_KEY.format(job_id=job.id)),
+    ):
+        if await latest_version(session, job.id, kind) is not None:
+            continue
+        if await storage.exists(key):
+            await seed_current(
+                storage, job.id, kind, await storage.get(key),
+                job.text_version, session=session,
+            )
+
+@router.get("/api/jobs/{id}/extraction")
+async def get_extraction(
+    id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> dict:
+    """text gốc (result extraction_text, else derived from regions) + version."""
+    job = await _job_or_403(session, id, user)
+    if job.status != "done":
+        raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
+    await _seed_versions(session, job, storage)
+    result = job.result or {}
+    return {
+        "text": result.get("extraction_text") or _extraction_text(result),
+        "text_version": job.text_version,
+    }
+
+@router.post("/api/jobs/{id}/extraction")
+async def post_extraction(
+    id: int,
+    body: ExtractionBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> dict:
+    """Save text gốc + bump text_version + incremental layout sync (0 LLM).
+
+    Optimistic lock: expected_text_version mismatch → 409. Detached layout
+    (direct edit) → 409 conflict unless force (UI-confirm overwrite).
+    Per-layout atomic: phrase not found / artifact missing → layout NOT
+    touched → needs_render entry, other layouts still synced.
+    """
+    job = await _job_or_403(session, id, user)
+    if job.status != "done":
+        raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
+    if not body.text.strip():
+        raise HTTPException(status_code=422, detail="Nội dung trống.")
+    if len(body.text) > MAX_EXTRACTION_CHARS:
+        raise HTTPException(status_code=422, detail="Nội dung quá dài.")
+    if body.expected_text_version != job.text_version:
+        raise HTTPException(
+            status_code=409, detail="Nội dung đã thay đổi ở nơi khác. Tải lại trang."
+        )
+    detached = await _detached_kinds(session, id, storage)
+    if detached and not body.force:
+        raise HTTPException(
+            status_code=409, detail="Layout có chỉnh tay. Đồng bộ sẽ ghi đè."
+        )
+    # 1) persist text + bump + snapshot — P1-4: ONE conditional UPDATE
+    #    re-checks expected_text_version at commit time (atomic; closes the
+    #    check-then-set race: loser gets rowcount=0 → 409, never a silent
+    #    last-win overwrite nor a UNIQUE version clash).
+    result = dict(job.result or {})
+    result["extraction_text"] = body.text
+    new_version = body.expected_text_version + 1
+    rowcount = (
+        await session.execute(
+            update(Job)
+            .where(
+                Job.id == id,
+                Job.status == "done",
+                Job.text_version == body.expected_text_version,
+            )
+            .values(result=result, text_version=new_version)
+        )
+    ).rowcount
+    if rowcount == 0:
+        raise HTTPException(
+            status_code=409, detail="Nội dung đã thay đổi ở nơi khác. Tải lại trang."
+        )
+    job.text_version = new_version
+    await session.commit()
+    await save_version(
+        storage, id, "text", body.text.encode("utf-8"), job.text_version,
+        session=session,
+    )
+    # 2) per-layout incremental sync (skip detached unless force); snapshot
+    #    synced artifact (based_on = new text_version, detached cleared)
+    synced: dict[str, bool] = {"md": False, "docx": False}
+    exists = {
+        "md": await storage.exists(MD_LAYOUT_KEY.format(job_id=id)),
+        "docx": await storage.exists(DOCX_HTML_KEY.format(job_id=id)),
+    }
+    needs_render: list[str] = []
+    # P1-1: empty/None old OR new → skip sync entirely (old="" would
+    # "replace" between every character and corrupt the artifact)
+    if body.old_phrase and body.new_phrase:
+        # detached kinds 409'd above unless force → force overwrites them
+        synced = await sync_job_layouts(
+            storage, id, body.old_phrase, body.new_phrase
+        )
+        for kind, flag in (("md-layout", "md"), ("docx-layout", "docx")):
+            if not synced[flag]:
+                continue
+            key = (
+                MD_LAYOUT_KEY.format(job_id=id)
+                if flag == "md"
+                else DOCX_HTML_KEY.format(job_id=id)
+            )
+            await save_version(
+                storage, id, kind, await storage.get(key), job.text_version,
+                session=session,
+            )
+        needs_render = [
+            kind
+            for kind, flag in (("md-layout", "md"), ("docx-layout", "docx"))
+            if exists[flag] and not synced[flag] and kind not in detached
+        ]
+    return {
+        "synced": synced,
+        "needs_render": needs_render,
+        "text_version": job.text_version,
+    }
+
+@router.get("/api/jobs/{id}/versions")
+async def list_versions(
+    id: int,
+    kind: str | None = None,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Version metadata (never storage keys); newest first."""
+    await _job_or_403(session, id, user)
+    stmt = select(DocumentVersion).where(DocumentVersion.job_id == id)
+    if kind is not None:
+        stmt = stmt.where(DocumentVersion.kind == kind)
+    rows = (
+        await session.execute(stmt.order_by(DocumentVersion.version.desc()))
+    ).scalars().all()
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "kind": r.kind,
+                "version": r.version,
+                "based_on_text_version": r.based_on_text_version,
+                "detached": r.detached,
+                "created_at": r.created_at,
+            }
+            for r in rows
+        ]
+    }
+
+@router.post("/api/jobs/{id}/versions/{vid}/restore", status_code=204)
+async def restore_version(
+    id: int,
+    vid: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> Response:
+    """Restore = snapshot written as a NEW version (history append-only)."""
+    await _job_or_403(session, id, user)
+    row = await session.get(DocumentVersion, vid)
+    if row is None or row.job_id != id:
+        raise HTTPException(status_code=404, detail="version not found")
+    data = await read_version(storage, row)
+    job = await session.get(Job, id)
+    if row.kind == "text":
+        result = dict(job.result or {})
+        result["extraction_text"] = data.decode("utf-8")
+        job.result = result
+        job.text_version += 1
+        await session.commit()
+        await save_version(
+            storage, id, "text", data, job.text_version, session=session
+        )
+        return Response(status_code=204)
+    key = (
+        MD_LAYOUT_KEY.format(job_id=id)
+        if row.kind == "md-layout"
+        else DOCX_HTML_KEY.format(job_id=id)
+    )
+    # P2: snapshot the current artifact BEFORE the overwrite — crash-safe
+    # provenance (pre-restore bytes stay in version history).
+    await snapshot_current_layout(
+        storage, session, id, row.kind, job.text_version
+    )
+    if row.kind == "docx-layout":
+        # supersede rule: derived exports/{id}/docx* die with the html edit
+        await storage.delete_prefix(f"exports/{id}/docx")
+    else:
+        await storage.delete_prefix(key)
+    await storage.put(key, data)
+    await save_version(
+        storage, id, row.kind, data, row.based_on_text_version,
+        detached=False, session=session,
+    )
+    return Response(status_code=204)
 
 # --- Worker protocol: heartbeat / result / fail (Task 4) ---
 

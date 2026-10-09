@@ -1,0 +1,312 @@
+"""Phase 1 Task 4: extraction API (save text + sync + conflict + restore)."""
+
+import asyncio
+
+from app.services.doc_versions import save_version
+
+
+async def _seed_layouts(app, job_id: int) -> None:
+    s = app.state.storage
+    await s.put(f"exports/{job_id}/md-layout", b"# Tieu de\n\nXin chao the gioi")
+    await s.put(f"exports/{job_id}/docx.html", b"<p>Xin chao <b>the gioi</b></p>")
+
+
+async def test_get_extraction_lazy_seed(auth_client, app, done_job_with_result):
+    jid = done_job_with_result
+    r = await auth_client.get(f"/api/jobs/{jid}/extraction")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["text"] == "Xin chào\n"
+    assert body["text_version"] == 0
+    r2 = await auth_client.get(f"/api/jobs/{jid}/versions?kind=text")
+    assert len(r2.json()["items"]) == 1  # lazy-seeded v1
+    assert r2.json()["items"][0]["version"] == 1
+
+
+async def test_post_extraction_save_sync_200(auth_client, app, done_job_with_result):
+    jid = done_job_with_result
+    await _seed_layouts(app, jid)
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={
+            "text": "Xin chao ban",
+            "old_phrase": "Xin chao",
+            "new_phrase": "Xin chao ban",
+            "expected_text_version": 0,
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["synced"] == {"md": True, "docx": True}
+    assert body["needs_render"] == []
+    assert body["text_version"] == 1
+    st = app.state.storage
+    assert b"Xin chao ban" in await st.get(f"exports/{jid}/md-layout")
+    assert b"<b>the gioi</b>" in await st.get(f"exports/{jid}/docx.html")
+    r2 = await auth_client.get(f"/api/jobs/{jid}/extraction")
+    assert r2.json() == {"text": "Xin chao ban", "text_version": 1}
+
+
+async def test_post_extraction_version_mismatch_409(auth_client, done_job_with_result):
+    jid = done_job_with_result
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={"text": "x", "expected_text_version": 5},
+    )
+    assert r.status_code == 409
+
+
+async def test_post_extraction_detached_conflict_409(auth_client, app, done_job_with_result):
+    jid = done_job_with_result
+    await _seed_layouts(app, jid)
+    await save_version(
+        app.state.storage, jid, "md-layout", b"# mine", 0, detached=True
+    )
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={
+            "text": "text moi",
+            "old_phrase": "Xin chao",
+            "new_phrase": "text",
+            "expected_text_version": 0,
+        },
+    )
+    assert r.status_code == 409
+    st = app.state.storage
+    assert await st.get(f"exports/{jid}/md-layout") == b"# Tieu de\n\nXin chao the gioi"
+    # user confirms → force overwrites, detached cleared
+    r2 = await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={
+            "text": "text moi",
+            "old_phrase": "Xin chao",
+            "new_phrase": "text moi",
+            "expected_text_version": 0,
+            "force": True,
+        },
+    )
+    assert r2.status_code == 200, r2.text
+    assert b"text moi" in await st.get(f"exports/{jid}/md-layout")
+    r3 = await auth_client.get(f"/api/jobs/{jid}/versions?kind=md-layout")
+    newest = r3.json()["items"][0]
+    assert newest["detached"] is False
+
+
+async def test_post_extraction_needs_render(auth_client, app, done_job_with_result):
+    jid = done_job_with_result
+    await app.state.storage.put(f"exports/{jid}/md-layout", b"# Tieu de")
+    await app.state.storage.put(f"exports/{jid}/docx.html", b"<p>doc dac biet</p>")
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={
+            "text": "dac biet",
+            "old_phrase": "dac biet",
+            "new_phrase": "x",
+            "expected_text_version": 0,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["synced"] == {"md": False, "docx": True}
+    assert r.json()["needs_render"] == ["md-layout"]
+
+
+async def test_post_extraction_empty_old_phrase_skips_sync(
+    auth_client, app, done_job_with_result
+):
+    """P1-1: empty old_phrase → sync skipped, artifact never corrupted."""
+    jid = done_job_with_result
+    await _seed_layouts(app, jid)
+    st = app.state.storage
+    md_before = await st.get(f"exports/{jid}/md-layout")
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={
+            "text": "Xin chao",
+            "old_phrase": "",
+            "new_phrase": "y",
+            "expected_text_version": 0,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["synced"] == {"md": False, "docx": False}
+    assert r.json()["needs_render"] == []
+    # "".replace inserts new between EVERY char — artifact must be untouched
+    assert await st.get(f"exports/{jid}/md-layout") == md_before
+    got = (await auth_client.get(f"/api/jobs/{jid}/extraction")).json()
+    assert got["text"] == "Xin chao"  # text still saved
+    assert got["text_version"] == 1
+
+async def test_post_extraction_empty_new_phrase_skips_sync(
+    auth_client, app, done_job_with_result
+):
+    """P1-1: empty new_phrase → sync skipped, artifact untouched."""
+    jid = done_job_with_result
+    await _seed_layouts(app, jid)
+    st = app.state.storage
+    md_before = await st.get(f"exports/{jid}/md-layout")
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={
+            "text": "Xin chao",
+            "old_phrase": "Xin chao",
+            "new_phrase": "",
+            "expected_text_version": 0,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["synced"] == {"md": False, "docx": False}
+    assert r.json()["needs_render"] == []
+    assert await st.get(f"exports/{jid}/md-layout") == md_before
+
+async def test_post_extraction_concurrent_expected_one_409(
+    auth_client, done_job_with_result
+):
+    """P1-4: conditional UPDATE (rowcount check) — 1 succeed, 1 stale 409."""
+    jid = done_job_with_result
+    payload = {"text": "ban mot", "expected_text_version": 0}
+    r1, r2 = await asyncio.gather(
+        auth_client.post(f"/api/jobs/{jid}/extraction", json=payload),
+        auth_client.post(f"/api/jobs/{jid}/extraction", json=payload),
+    )
+    assert sorted([r1.status_code, r2.status_code]) == [200, 409]
+
+async def test_patch_content_snapshots_layouts_before_wipe(
+    auth_client, app, done_job_with_result
+):
+    """P1-3: PATCH /content wipe keeps layout bytes in version history."""
+    jid = done_job_with_result
+    await _seed_layouts(app, jid)
+    r = await auth_client.patch(
+        f"/api/jobs/{jid}/content", json={"markdown": "# moi"}
+    )
+    assert r.status_code == 200, r.text
+    for kind, expect in (
+        ("md-layout", b"# Tieu de\n\nXin chao the gioi"),
+        ("docx-layout", b"<p>Xin chao <b>the gioi</b></p>"),
+    ):
+        items = (
+            await auth_client.get(f"/api/jobs/{jid}/versions?kind={kind}")
+        ).json()["items"]
+        assert len(items) == 1 and items[0]["detached"] is True
+        assert await app.state.storage.get(
+            f"versions/{jid}/{kind}/1"
+        ) == expect
+    assert not await app.state.storage.exists(f"exports/{jid}/md-layout")
+
+async def test_auto_gen_snapshots_previous_md_layout(
+    auth_client, app, done_job_with_result, db_session, monkeypatch
+):
+    """P1-3: LLM overwrite snapshots previous artifact (auto-gen/retry-layout)."""
+    from app.core.models import Job
+    from app.routers import exports
+
+    jid = done_job_with_result
+    st = app.state.storage
+    await st.put(f"exports/{jid}/md-layout", b"# ban cu")
+
+    async def fake_md(job_id, job, ir_sink=None):
+        return b"# ban moi"
+
+    async def fake_docx(job_id, job, ir_sink=None):
+        return b"docx bytes"
+
+    monkeypatch.setattr(exports, "_llm_md_export", fake_md)
+    monkeypatch.setattr(exports, "_llm_docx_export", fake_docx)
+    job = await db_session.get(Job, jid)
+    assert await exports.auto_generate_output(job, st) is True
+    # S3Driver.put dedupes existing keys → artifact keeps old bytes;
+    # the snapshot is what preserves them in version history
+    assert await st.get(f"exports/{jid}/md-layout") == b"# ban cu"
+    items = (
+        await auth_client.get(f"/api/jobs/{jid}/versions?kind=md-layout")
+    ).json()["items"]
+    assert [i["version"] for i in items] == [1]  # pre-overwrite snapshot
+    assert await st.get(f"versions/{jid}/md-layout/1") == b"# ban cu"
+
+async def test_restore_layout_snapshots_pre_overwrite(
+    auth_client, app, done_job_with_result
+):
+    """P2: current artifact snapshotted before restore overwrite (crash-safe)."""
+    jid = done_job_with_result
+    st = app.state.storage
+    await _seed_layouts(app, jid)
+    await auth_client.get(f"/api/jobs/{jid}/extraction")  # lazy-seed v1
+    # artifact drifts WITHOUT its own version (crash/legacy state);
+    # put dedupes → delete first to simulate the drift
+    await st.delete_prefix(f"exports/{jid}/md-layout")
+    await st.put(f"exports/{jid}/md-layout", b"# loi khong co version")
+    v1 = (
+        await auth_client.get(f"/api/jobs/{jid}/versions?kind=md-layout")
+    ).json()["items"][0]
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/versions/{v1['id']}/restore"
+    )
+    assert r.status_code == 204, r.text
+    assert await st.get(f"exports/{jid}/md-layout") == b"# Tieu de\n\nXin chao the gioi"
+    assert await st.get(f"versions/{jid}/md-layout/2") == b"# loi khong co version"
+    items = (
+        await auth_client.get(f"/api/jobs/{jid}/versions?kind=md-layout")
+    ).json()["items"]
+    assert [i["version"] for i in items] == [3, 2, 1]
+
+async def test_restore_text_appends_version(auth_client, app, done_job_with_result):
+    jid = done_job_with_result
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={"text": "ban 1", "expected_text_version": 0},
+    )
+    assert r.status_code == 200, r.text
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={"text": "ban 2", "expected_text_version": 1},
+    )
+    assert r.status_code == 200, r.text
+    items = (await auth_client.get(f"/api/jobs/{jid}/versions?kind=text")).json()["items"]
+    v1 = [i for i in items if i["version"] == 1][0]
+    r = await auth_client.post(f"/api/jobs/{jid}/versions/{v1['id']}/restore")
+    assert r.status_code == 204, r.text
+    got = (await auth_client.get(f"/api/jobs/{jid}/extraction")).json()
+    assert got == {"text": "ban 1", "text_version": 3}  # restore bumps
+    items = (await auth_client.get(f"/api/jobs/{jid}/versions?kind=text")).json()["items"]
+    assert [i["version"] for i in items] == [3, 2, 1]  # append-only
+
+
+async def test_restore_layout_writes_artifact(auth_client, app, done_job_with_result):
+    jid = done_job_with_result
+    await _seed_layouts(app, jid)
+    # GET first → lazy-seed v1 = original artifact, sync below makes v2
+    assert (await auth_client.get(f"/api/jobs/{jid}/extraction")).status_code == 200
+    await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={
+            "text": "sua md",
+            "old_phrase": "Xin chao the gioi",
+            "new_phrase": "sua md",
+            "expected_text_version": 0,
+        },
+    )
+    items = (await auth_client.get(f"/api/jobs/{jid}/versions?kind=md-layout")).json()["items"]
+    v1 = [i for i in items if i["version"] == 1][0]
+    r = await auth_client.post(f"/api/jobs/{jid}/versions/{v1['id']}/restore")
+    assert r.status_code == 204, r.text
+    assert await app.state.storage.get(f"exports/{jid}/md-layout") == \
+        b"# Tieu de\n\nXin chao the gioi"
+    items = (await auth_client.get(f"/api/jobs/{jid}/versions?kind=md-layout")).json()["items"]
+    assert [i["version"] for i in items] == [3, 2, 1]  # seed v1, sync v2, restore v3
+
+
+async def test_put_layout_marks_detached(auth_client, done_job_with_result):
+    """Task 6: direct layout edit → latest snapshot detached=True."""
+    jid = done_job_with_result
+    r = await auth_client.put(
+        f"/api/jobs/{jid}/export/md-layout/content", json={"markdown": "# sua tay"}
+    )
+    assert r.status_code == 204, r.text
+    r = await auth_client.put(
+        f"/api/jobs/{jid}/export/docx-layout/html", json={"html": "<p>sua tay</p>"}
+    )
+    assert r.status_code == 204, r.text
+    items = (await auth_client.get(f"/api/jobs/{jid}/versions?kind=md-layout")).json()["items"]
+    assert items[0]["detached"] is True
+    items = (await auth_client.get(f"/api/jobs/{jid}/versions?kind=docx-layout")).json()["items"]
+    assert items[0]["detached"] is True
