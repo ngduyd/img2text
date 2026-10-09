@@ -41,7 +41,16 @@ class NodeIR(BaseModel):
     align: Literal["left", "center", "right", "justify", "unknown"] = "unknown"
     indent: int = 0
     source_block_ids: list[str] = Field(default_factory=list)
+    bbox: list[int] | None = None
     children: list["NodeIR"] = Field(default_factory=list)
+
+    @field_validator("bbox")
+    @classmethod
+    def _bbox_shape(cls, v: list[int] | None) -> list[int] | None:
+        # spec §4: bbox là [x1, y1, x2, y2]; Plan D PIL-crops cần len==4.
+        if v is not None and len(v) != 4:
+            raise ValueError("bbox phải có đúng 4 phần tử [x1, y1, x2, y2].")
+        return v
 
 
 class PageIR(BaseModel):
@@ -72,6 +81,36 @@ def _collect_ocr_block_ids(ocr_result: dict) -> set[str]:
                 ids.add(rid)
     return ids
 
+
+def _block_bbox(ocr_result: dict, block_id: str) -> list[int] | None:
+    for page in ocr_result.get("pages", []):
+        for region in page.get("regions", []):
+            if str(region.get("id")) == block_id:
+                bbox = region.get("bbox")
+                if bbox and len(bbox) == 4:
+                    return list(bbox)
+    return None
+
+def _union_bbox(ocr_result: dict, block_ids: list[str]) -> list[int] | None:
+    """Union nhiều block bbox: x1=min, y1=min, x2=max, y2=max."""
+    boxes = [b for bid in block_ids if (b := _block_bbox(ocr_result, bid)) is not None]
+    if not boxes:
+        return None
+    return [
+        min(b[0] for b in boxes), min(b[1] for b in boxes),
+        max(b[2] for b in boxes), max(b[3] for b in boxes),
+    ]
+
+def _fill_bbox(nodes: list[NodeIR], ocr_result: dict) -> None:
+    """LLM bỏ trống bbox → union từ source_block_ids.
+
+    Renderer dùng node.bbox trực tiếp, không cần lookup OCR result.
+    """
+    for node in nodes:
+        if node.bbox is None:
+            node.bbox = _union_bbox(ocr_result, node.source_block_ids)
+        if node.children:
+            _fill_bbox(node.children, ocr_result)
 
 def _check_unique_ids(nodes: list[NodeIR], seen: set[str], path: str = "") -> None:
     """Recursively check all node IDs are unique across the document."""
@@ -131,6 +170,11 @@ def validate_ir(ir: dict, ocr_result: dict) -> DocumentIR:
 
     # Check source_block_ids exist in OCR
     valid_ocr_ids = _collect_ocr_block_ids(ocr_result)
+    # bbox: LLM gán hoặc union từ source_block_ids (renderer dùng trực tiếp)
+    for page in doc.pages:
+        _fill_bbox(page.header, ocr_result)
+        _fill_bbox(page.content, ocr_result)
+        _fill_bbox(page.footer, ocr_result)
     for page in doc.pages:
         _check_source_ids(page.header, valid_ocr_ids)
         _check_source_ids(page.content, valid_ocr_ids)

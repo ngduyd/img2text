@@ -1,4 +1,4 @@
-"""render_docx tests: build_docx from IR (mock LLM) + fallback."""
+"""render_docx tests: IR → LLM render (HTML) → DOCX + fallback."""
 
 import io
 import json
@@ -10,7 +10,6 @@ from docx import Document
 from app.services.render_docx import build_docx
 
 from tests.test_export_llm_docx import FakeResponse
-
 
 def _ocr_result() -> dict:
     return {
@@ -32,7 +31,6 @@ def _ocr_result() -> dict:
         ]
     }
 
-
 def _ir_response() -> dict:
     return {
         "document_id": "doc_001",
@@ -51,6 +49,7 @@ def _ir_response() -> dict:
                         "align": "left",
                         "indent": 0,
                         "source_block_ids": ["r0"],
+                        "bbox": [1, 2, 30, 40],
                         "children": [],
                     },
                     {
@@ -61,6 +60,7 @@ def _ir_response() -> dict:
                         "align": "left",
                         "indent": 0,
                         "source_block_ids": ["r1"],
+                        "bbox": [1, 50, 30, 80],
                         "children": [],
                     },
                 ],
@@ -69,6 +69,11 @@ def _ir_response() -> dict:
         ],
     }
 
+def _html_response() -> str:
+    return "<h2>Tiêu đề</h2><p>Nội dung đoạn văn</p>"
+
+def _html_table_response() -> str:
+    return "<table><tr><td>A</td><td>B</td></tr><tr><td>1</td><td>2</td></tr></table>"
 
 def fake_llm(monkeypatch, responses: list) -> list:
     calls: list = []
@@ -93,10 +98,12 @@ def fake_llm(monkeypatch, responses: list) -> list:
     monkeypatch.setattr(httpx, "AsyncClient", Client)
     return calls
 
-
 class TestBuildDocxFromIR:
     async def test_build_docx_ir_happy(self, monkeypatch):
-        fake_llm(monkeypatch, [FakeResponse(json.dumps(_ir_response()))])
+        fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(_ir_response())),
+            FakeResponse(_html_response()),
+        ])
         data = await build_docx(_ocr_result())
         assert data[:2] == b"PK"  # zip container
         doc = Document(io.BytesIO(data))
@@ -105,7 +112,10 @@ class TestBuildDocxFromIR:
         assert "Nội dung đoạn văn" in texts
 
     async def test_build_docx_heading_style(self, monkeypatch):
-        fake_llm(monkeypatch, [FakeResponse(json.dumps(_ir_response()))])
+        fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(_ir_response())),
+            FakeResponse(_html_response()),
+        ])
         data = await build_docx(_ocr_result())
         doc = Document(io.BytesIO(data))
         headings = [p for p in doc.paragraphs if p.style.name.startswith("Heading")]
@@ -125,6 +135,32 @@ class TestBuildDocxFromIR:
         data = await build_docx(_ocr_result(), use_llm=False)
         assert data[:2] == b"PK"
 
+    async def test_prompt_requests_bbox(self, monkeypatch):
+        """Cả structurize lẫn render prompt đều chỉ định bbox."""
+        calls = fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(_ir_response())),
+            FakeResponse(_html_response()),
+        ])
+        await build_docx(_ocr_result())
+        assert "bbox" in json.dumps(calls[0][1])
+        # render prompt: bbox + page width trong page_dims
+        assert "bbox" in json.dumps(calls[1][1])
+        assert "800" in json.dumps(calls[1][1])
+
+    async def test_build_docx_bbox_filled_when_missing(self, monkeypatch):
+        """Node thiếu bbox → validator union từ source_block_ids → render OK."""
+        ir = _ir_response()
+        del ir["pages"][0]["content"][0]["bbox"]
+        fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(ir)),
+            FakeResponse(_html_response()),
+        ])
+        data = await build_docx(_ocr_result())
+        doc = Document(io.BytesIO(data))
+        texts = [p.text for p in doc.paragraphs]
+        assert "Tiêu đề" in texts
+        assert "Nội dung đoạn văn" in texts
+
     async def test_build_docx_table_block(self, monkeypatch):
         """HTML table in OCR → docx table."""
         ir = _ir_response()
@@ -138,10 +174,14 @@ class TestBuildDocxFromIR:
                 "align": "left",
                 "indent": 0,
                 "source_block_ids": ["r0"],
+                "bbox": [1, 2, 30, 40],
                 "children": [],
             }
         ]
-        fake_llm(monkeypatch, [FakeResponse(json.dumps(ir))])
+        fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(ir)),
+            FakeResponse(_html_table_response()),
+        ])
         data = await build_docx(_ocr_result())
         doc = Document(io.BytesIO(data))
         assert len(doc.tables) == 1

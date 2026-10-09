@@ -173,7 +173,10 @@ async def test_auto_docx_success_stores_docx_layout_key(
             "footer": [],
         }],
     })
-    fake_llm(monkeypatch, [FakeResponse(ir_response)])
+    fake_llm(monkeypatch, [
+        FakeResponse(ir_response),
+        FakeResponse("<h2>Xin chào</h2>"),
+    ])
     r = await auth_client.post(
         "/api/jobs",
         files={"file": ("a.jpg", TEST_JPEG, "image/png")},
@@ -234,7 +237,10 @@ async def test_auto_generates_both_formats(
         }],
     })
     monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
-    fake_llm(monkeypatch, [FakeResponse(ir_response)])
+    fake_llm(monkeypatch, [
+        FakeResponse(ir_response),
+        FakeResponse("<h2>Xin chào</h2>"),
+    ])
     r = await auth_client.post(
         "/api/jobs",
         files={"file": ("a.jpg", TEST_JPEG, "image/png")},

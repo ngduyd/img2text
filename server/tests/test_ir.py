@@ -159,6 +159,48 @@ class TestValidateIR:
             result = validate_ir(ir, _ocr_result())
             assert result.pages[0].content[0].type == t
 
+    def test_bbox_len_4_required(self):
+        ir = _valid_ir()
+        ir["pages"][0]["content"][0]["bbox"] = [1, 2, 3]
+        with pytest.raises(IRValidationError, match="bbox"):
+            validate_ir(ir, _ocr_result())
+
+    def test_bbox_valid_passes(self):
+        ir = _valid_ir()
+        ir["pages"][0]["content"][0]["bbox"] = [1, 2, 30, 40]
+        result = validate_ir(ir, _ocr_result())
+        assert result.pages[0].content[0].bbox == [1, 2, 30, 40]
+
+    def test_bbox_auto_union_from_source_ids(self):
+        """Thiếu bbox → union từ source_block_ids (x1=min, y1=min, x2=max, y2=max)."""
+        ir = _valid_ir()
+        ir["pages"][0]["content"][0]["source_block_ids"] = ["r0", "r1"]
+        result = validate_ir(ir, _ocr_result())
+        assert result.pages[0].content[0].bbox == [1, 2, 70, 80]
+
+    def test_bbox_none_when_no_source_ids(self):
+        ir = _valid_ir()
+        ir["pages"][0]["content"][0]["source_block_ids"] = []
+        result = validate_ir(ir, _ocr_result())
+        assert result.pages[0].content[0].bbox is None
+
+    def test_bbox_children_filled(self):
+        ir = _valid_ir()
+        ir["pages"][0]["content"][0]["children"] = [
+            {
+                "id": "node_011",
+                "type": "paragraph",
+                "role": "body",
+                "text": "child",
+                "align": "left",
+                "indent": 0,
+                "source_block_ids": ["r1"],
+                "children": [],
+            }
+        ]
+        result = validate_ir(ir, _ocr_result())
+        assert result.pages[0].content[0].children[0].bbox == [5, 6, 70, 80]
+
     def test_children_validated_recursively(self):
         ir = _valid_ir()
         ir["pages"][0]["content"][0]["children"] = [

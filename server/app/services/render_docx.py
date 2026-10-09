@@ -58,6 +58,8 @@ IR_PROMPT = (
     "footnote, page_number, form_field, separator, unknown\n"
     "- role: document_title, section_heading, running_header, running_footer, question, answer, ...\n"
     "- source_block_ids: map to OCR block IDs (p1_b0, p1_b1, ...)\n"
+    "- bbox: [x1, y1, x2, y2] mỗi node, lấy từ OCR block bbox; "
+    "nhiều source_block_ids → union (x1=min, y1=min, x2=max, y2=max)\n"
     "- children: for tables, lists, poems (group related blocks)\n\n"
     "OCR output:\n{ocr_json}"
 )
@@ -340,11 +342,6 @@ def _borderless(table, margin_zero: bool = False) -> None:
         )
 
 
-def _cell_paragraph(cell: _Cell):
-    if len(cell.paragraphs) == 1 and not cell.paragraphs[0].text:
-        return cell.paragraphs[0]
-    return cell.add_paragraph()
-
 
 def _html_table_rows(text: str) -> list[list[str]]:
     rows = []
@@ -384,57 +381,85 @@ _ALIGN_MAP = {
 _INDENT_INCHES = 0.5
 
 
-def _emit_node(doc, container, node) -> None:
-    """Render a NodeIR to docx paragraphs/tables."""
-    t = node.type
-    text = node.text
-    para = None
+# ---------------------------------------------------------------- render via LLM
+RENDER_DOCX_PROMPT = (
+    "You are a document layout renderer. Given a Document IR (nodes with bbox, "
+    "type, role, align, indent) and page dimensions, render HTML for DOCX.\n"
+    "Use bbox for layout: alignment, indentation, spacing.\n"
+    "Map IR type → HTML: heading → h1 (document_title) / h2, paragraph → p, "
+    "list → <ul><li>item</li></ul>, poem → p with lines separated by <br>, "
+    "table → <table> HTML, quote → <blockquote>, caption → <p><em>text</em></p>, "
+    "figure → <p>[ảnh]</p>, formula → <pre>text</pre>, separator → <hr>, "
+    "footnote → <p>text</p>, form_field → <p>text</p>, page_number → skip.\n"
+    "Mỗi page IR → thẻ <page-break/> giữa các page.\n"
+    "Align/indent khác mặc định → style=\"text-align:center|right|justify\" "
+    "và style=\"padding-left: Nem\" (1em = 0.5 inch).\n"
+    "Output raw HTML only (no code fences).\n\n"
+    "Pages (index → width/height): {page_dims}\n"
+    "Document IR:\n{ir_json}"
+)
 
-    if t == "heading":
-        level = 0 if node.role == "document_title" else 1
-        if hasattr(container, "add_heading"):
-            container.add_heading(text, level=level)
-        else:
-            para = _cell_paragraph(container)
-            para.style = doc.styles["Title" if level == 0 else "Heading 1"]
-            para.add_run(text)
-    elif t == "table":
-        _add_html_table(container, text)
-    elif t == "figure":
-        para = container.add_paragraph() if hasattr(container, "add_paragraph") else _cell_paragraph(container)
-        run = para.add_run(IMAGE_PLACEHOLDER)
-        run.italic = True
-    elif t == "separator":
-        para = container.add_paragraph() if hasattr(container, "add_paragraph") else _cell_paragraph(container)
-        run = para.add_run("---")
-    elif t == "page_number":
-        pass  # skip
-    else:
-        para = container.add_paragraph() if hasattr(container, "add_paragraph") else _cell_paragraph(container)
-        run = para.add_run(text)
-        if t == "caption":
-            run.italic = True
-            run.font.size = Pt(9)
-        elif t == "quote":
-            run.italic = True
+def _page_dims(result: dict) -> list[dict]:
+    return [
+        {"index": i, "width": pg.get("width"), "height": pg.get("height")}
+        for i, pg in enumerate(result.get("pages", []))
+    ]
 
-    # Alignment
-    if para is not None and hasattr(container, "add_paragraph") and node.align in _ALIGN_MAP:
-        para.alignment = _ALIGN_MAP[node.align]
+async def llm_render_docx(ir_doc: DocumentIR, result: dict) -> str:
+    """Render DocumentIR → HTML via LLM (dùng bbox cho layout)."""
+    content = RENDER_DOCX_PROMPT.replace(
+        "{page_dims}", json.dumps(_page_dims(result), ensure_ascii=False)
+    ).replace("{ir_json}", ir_doc.model_dump_json())
+    raw = await _chat(content)
+    html = raw.strip()
+    m = _FENCE_RE.match(html)
+    if m:
+        html = m.group(1).strip()
+    if not html:
+        raise LLMError("LLM render trả về rỗng")
+    return html
 
-    # Indent
-    if para is not None and node.indent and hasattr(container, "add_paragraph"):
-        para.paragraph_format.left_indent = Inches(_INDENT_INCHES * node.indent)
+_BLOCK_HTML_RE = re.compile(
+    r"<(h1|h2|h3|p|blockquote)\b([^>]*)>(.*?)</\1>", re.DOTALL | re.IGNORECASE
+)
+_TABLE_HTML_RE = re.compile(r"<table[^>]*>(.*?)</table>", re.DOTALL | re.IGNORECASE)
+_PAGE_BREAK_RE = re.compile(r"<page-break\s*/?>|<!--\s*page-break\s*-->", re.IGNORECASE)
 
-    # Children
-    for child in node.children:
-        _emit_node(doc, container, child)
-
-
-def _render_section(doc, container, nodes: list) -> None:
-    for node in nodes:
-        _emit_node(doc, container, node)
-
+def _html_to_docx(html: str, style_overrides: dict | None = None) -> bytes:
+    """HTML (từ LLM render) → DOCX bytes."""
+    doc = Document()
+    chunks = _PAGE_BREAK_RE.split(html)
+    for ci, chunk in enumerate(chunks):
+        if ci > 0:
+            doc.add_page_break()
+        for m in _BLOCK_HTML_RE.finditer(chunk):
+            tag = m.group(1).lower()
+            attrs = m.group(2)
+            inner = re.sub(r"<[^>]+>", "", m.group(3)).strip()
+            if tag == "h1":
+                doc.add_heading(inner, level=0)
+            elif tag == "h2":
+                doc.add_heading(inner, level=1)
+            elif tag == "h3":
+                doc.add_heading(inner, level=2)
+            elif inner:
+                para = doc.add_paragraph(inner)
+                align = re.search(r"text-align:\s*(center|right|justify)", attrs)
+                if align:
+                    para.alignment = _ALIGN_MAP[align.group(1)]
+                pl = re.search(r"padding-left:\s*([\d.]+)\s*em", attrs)
+                if pl:
+                    para.paragraph_format.left_indent = Inches(0.5 * float(pl.group(1)))
+                if tag == "blockquote":
+                    for run in para.runs:
+                        run.italic = True
+        for tbl in _TABLE_HTML_RE.findall(chunk):
+            _add_html_table(doc, tbl)
+    if style_overrides:
+        _apply_style_overrides(doc, style_overrides)
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
 
 def _all_paragraphs(container):
     """Body + table-cell paragraphs (merged cells repeat in row.cells — idempotent)."""
@@ -468,29 +493,6 @@ def _apply_style_overrides(doc, ov: dict) -> None:
             if underline is not None:
                 run.underline = underline
 
-def render_from_ir(ir_doc, style_overrides: dict | None = None) -> bytes:
-    """Render DocumentIR to DOCX bytes."""
-    doc = Document()
-    for page in ir_doc.pages:
-        # Header
-        if page.header:
-            _render_section(doc, doc, page.header)
-            doc.add_paragraph()
-        # Content
-        if page.content:
-            _render_section(doc, doc, page.content)
-            doc.add_paragraph()
-        # Footer
-        if page.footer:
-            _render_section(doc, doc, page.footer)
-        # Page break (except last page)
-        if page != ir_doc.pages[-1]:
-            doc.add_page_break()
-    if style_overrides:
-        _apply_style_overrides(doc, style_overrides)
-    buf = io.BytesIO()
-    doc.save(buf)
-    return buf.getvalue()
 
 
 # ---------------------------------------------------------------- render from heuristic
@@ -578,7 +580,8 @@ async def build_docx(
             ir_doc = validate_ir(ir_dict, result)
             if ir_sink is not None:
                 ir_sink.update(ir_dict)
-            return render_from_ir(ir_doc, style_overrides)
+            html = await llm_render_docx(ir_doc, result)
+            return _html_to_docx(html, style_overrides)
         except (LLMError, IRValidationError) as exc:
             logger.warning("LLM IR failed, using heuristic fallback: %s", exc)
 

@@ -24,7 +24,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.db import SessionLocal
-from app.services.ir import validate_ir, IRValidationError
+from app.services.ir import DocumentIR, validate_ir, IRValidationError
 from app.services.runtime_settings import get_runtime_setting
 
 logger = logging.getLogger("render_md")
@@ -57,6 +57,8 @@ IR_PROMPT = (
     "footnote, page_number, form_field, separator, unknown\n"
     "- role: document_title, section_heading, running_header, running_footer, question, answer, ...\n"
     "- source_block_ids: map to OCR block IDs (p1_b0, p1_b1, ...)\n"
+    "- bbox: [x1, y1, x2, y2] mỗi node, lấy từ OCR block bbox; "
+    "nhiều source_block_ids → union (x1=min, y1=min, x2=max, y2=max)\n"
     "- children: for tables, lists, poems (group related blocks)\n\n"
     "OCR output:\n{ocr_json}"
 )
@@ -383,80 +385,41 @@ def _table_md(html_text: str) -> list[str]:
     return out
 
 
-def _render_node(node) -> list[str]:
-    """Render a NodeIR to markdown lines."""
-    lines: list[str] = []
-    t = node.type
-    text = node.text
+RENDER_MD_PROMPT = (
+    "You are a document layout renderer. Given a Document IR (nodes with bbox, "
+    "type, role, align, indent) and page dimensions, render Markdown.\n"
+    "Use bbox for layout: alignment, indentation, spacing.\n"
+    "Map IR type → markdown: heading → # (document_title → #, else ##), "
+    "paragraph → text, list → - item, poem → indented lines (4 spaces), "
+    "table → markdown table (parse <table> HTML), quote → >, caption → *italic*, "
+    "figure → [figure: text], formula → ```\\n...\\n```, separator → ---, "
+    "footnote → [text], form_field → [form: text], page_number → skip.\n"
+    "Output raw markdown only (no code fences).\n\n"
+    "Pages (index → width/height): {page_dims}\n"
+    "Document IR:\n{ir_json}"
+)
 
-    if t == "heading":
-        level = 1 if node.role == "document_title" else 2
-        lines.append(f"{'#' * level} {text}")
-    elif t == "paragraph":
-        lines.append(text)
-    elif t == "list":
-        lines.append(f"- {text}")
-    elif t == "poem":
-        for ln in text.splitlines():
-            lines.append(f"    {ln}")
-    elif t == "table":
-        lines.extend(_table_md(text))
-    elif t == "quote":
-        lines.append(f"> {text}")
-    elif t == "caption":
-        lines.append(f"*{text}*")
-    elif t == "figure":
-        lines.append(f"[figure: {text}]")
-    elif t == "formula":
-        lines.append(f"```\n{text}\n```")
-    elif t == "separator":
-        lines.append("---")
-    elif t == "page_number":
-        pass  # skip page numbers in content
-    elif t == "footnote":
-        lines.append(f"[^{text}]")
-    elif t == "form_field":
-        lines.append(f"[form: {text}]")
-    else:
-        lines.append(text)
+def _page_dims(result: dict) -> list[dict]:
+    return [
+        {"index": i, "width": pg.get("width"), "height": pg.get("height")}
+        for i, pg in enumerate(result.get("pages", []))
+    ]
 
-    # Render children
-    for child in node.children:
-        lines.extend(_render_node(child))
-
-    return lines
+async def llm_render_md(ir_doc: DocumentIR, result: dict) -> str:
+    """Render DocumentIR → markdown via LLM (dùng bbox cho layout)."""
+    content = RENDER_MD_PROMPT.replace(
+        "{page_dims}", json.dumps(_page_dims(result), ensure_ascii=False)
+    ).replace("{ir_json}", ir_doc.model_dump_json())
+    raw = await _chat(content)
+    text = raw.strip()
+    m = _FENCE_RE.match(text)
+    if m:
+        text = m.group(1).strip()
+    if not text:
+        raise LLMError("LLM render trả về rỗng")
+    return text
 
 
-def _render_section(nodes: list) -> list[str]:
-    """Render a list of nodes (header/content/footer) to markdown lines."""
-    lines: list[str] = []
-    for node in nodes:
-        lines.extend(_render_node(node))
-    return lines
-
-
-def render_from_ir(ir_doc) -> str:
-    """Render DocumentIR to markdown string."""
-    pages_out: list[str] = []
-    for page in ir_doc.pages:
-        page_lines: list[str] = []
-        # Header
-        header_lines = _render_section(page.header)
-        if header_lines:
-            page_lines.extend(header_lines)
-            page_lines.append("")
-        # Content
-        content_lines = _render_section(page.content)
-        if content_lines:
-            page_lines.extend(content_lines)
-            page_lines.append("")
-        # Footer
-        footer_lines = _render_section(page.footer)
-        if footer_lines:
-            page_lines.extend(footer_lines)
-        if page_lines:
-            pages_out.append("\n".join(page_lines))
-    return "\n\n".join(pages_out)
 
 
 # ---------------------------------------------------------------- render from heuristic
@@ -583,7 +546,7 @@ async def build_md(
             ir_doc = validate_ir(ir_dict, result)
             if ir_sink is not None:
                 ir_sink.update(ir_dict)
-            return render_from_ir(ir_doc)
+            return await llm_render_md(ir_doc, result)
         except (LLMError, IRValidationError) as exc:
             logger.warning("LLM IR failed, using heuristic fallback: %s", exc)
 

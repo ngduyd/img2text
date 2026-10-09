@@ -272,7 +272,10 @@ async def test_export_docx_layout_applies_style_overrides(
     auth_client, done_job_with_result, storage, db_session, monkeypatch
 ):
     await _set_style(db_session, done_job_with_result, json.dumps(FULL_STYLE))
-    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
+    fake_llm(monkeypatch, [
+        FakeResponse(json.dumps(FAKE_IR)),
+        FakeResponse("<h2>Xin chào</h2><p>Nội dung</p>"),
+    ])
     r = await auth_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "docx-layout"}
     )
@@ -303,7 +306,11 @@ async def test_build_docx_overrides_reach_table_cells(
         "source_block_ids": ["r1"],
         "children": [],
     })
-    fake_llm(monkeypatch, [FakeResponse(json.dumps(ir))])
+    fake_llm(monkeypatch, [
+        FakeResponse(json.dumps(ir)),
+        FakeResponse("<h2>Xin chào</h2><p>Nội dung</p>"
+                     "<table><tr><td>A</td><td>B</td></tr></table>"),
+    ])
     data = await build_docx(
         VALID_RESULT_JSONB,
         style_overrides={"fontFamily": "Arial"},

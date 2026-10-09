@@ -1,15 +1,13 @@
-"""render_md tests: build_md from IR (mock LLM) + fallback geometry-aware."""
+"""render_md tests: IR → LLM render → markdown + fallback geometry-aware."""
 
 import json
 
 import httpx
 import pytest
 
-from app.services import render_md
 from app.services.render_md import build_md
 
 from tests.test_export_llm_docx import FakeResponse
-
 
 def _ocr_result() -> dict:
     return {
@@ -30,7 +28,6 @@ def _ocr_result() -> dict:
         ]
     }
 
-
 def _ir_response() -> dict:
     return {
         "document_id": "doc_001",
@@ -49,6 +46,7 @@ def _ir_response() -> dict:
                         "align": "left",
                         "indent": 0,
                         "source_block_ids": ["r0"],
+                        "bbox": [1, 2, 798, 40],
                         "children": [],
                     },
                     {
@@ -59,6 +57,7 @@ def _ir_response() -> dict:
                         "align": "left",
                         "indent": 0,
                         "source_block_ids": ["r1"],
+                        "bbox": [1, 60, 798, 100],
                         "children": [],
                     },
                 ],
@@ -67,6 +66,11 @@ def _ir_response() -> dict:
         ],
     }
 
+def _md_response() -> str:
+    return "# Tiêu đề\n\nNội dung đoạn văn"
+
+def _md_table_response() -> str:
+    return "| A | B |\n| --- | --- |\n| 1 | 2 |"
 
 def fake_llm(monkeypatch, responses: list) -> list:
     calls: list = []
@@ -91,16 +95,21 @@ def fake_llm(monkeypatch, responses: list) -> list:
     monkeypatch.setattr(httpx, "AsyncClient", Client)
     return calls
 
-
 class TestBuildMDFromIR:
     async def test_build_md_ir_happy(self, monkeypatch):
-        fake_llm(monkeypatch, [FakeResponse(json.dumps(_ir_response()))])
+        fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(_ir_response())),
+            FakeResponse(_md_response()),
+        ])
         out = await build_md(_ocr_result())
         assert "Tiêu đề" in out
         assert "Nội dung đoạn văn" in out
 
     async def test_build_md_heading_rendered(self, monkeypatch):
-        fake_llm(monkeypatch, [FakeResponse(json.dumps(_ir_response()))])
+        fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(_ir_response())),
+            FakeResponse(_md_response()),
+        ])
         out = await build_md(_ocr_result())
         assert "# Tiêu đề" in out
 
@@ -118,6 +127,30 @@ class TestBuildMDFromIR:
         out = await build_md(_ocr_result(), use_llm=False)
         assert out
 
+    async def test_prompt_requests_bbox(self, monkeypatch):
+        """Cả structurize lẫn render prompt đều chỉ định bbox."""
+        calls = fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(_ir_response())),
+            FakeResponse(_md_response()),
+        ])
+        await build_md(_ocr_result())
+        assert "bbox" in json.dumps(calls[0][1])
+        # render prompt: bbox + page width trong page_dims
+        assert "bbox" in json.dumps(calls[1][1])
+        assert "800" in json.dumps(calls[1][1])
+
+    async def test_build_md_bbox_filled_when_missing(self, monkeypatch):
+        """Node thiếu bbox → validator union từ source_block_ids → render OK."""
+        ir = _ir_response()
+        del ir["pages"][0]["content"][0]["bbox"]
+        fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(ir)),
+            FakeResponse(_md_response()),
+        ])
+        out = await build_md(_ocr_result())
+        assert "Tiêu đề" in out
+        assert "Nội dung đoạn văn" in out
+
     async def test_build_md_table_block(self, monkeypatch):
         """HTML table in OCR → md table."""
         ir = _ir_response()
@@ -131,10 +164,14 @@ class TestBuildMDFromIR:
                 "align": "left",
                 "indent": 0,
                 "source_block_ids": ["r0"],
+                "bbox": [1, 2, 798, 40],
                 "children": [],
             }
         ]
-        fake_llm(monkeypatch, [FakeResponse(json.dumps(ir))])
+        fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(ir)),
+            FakeResponse(_md_table_response()),
+        ])
         out = await build_md(_ocr_result())
         assert "| A | B |" in out
         assert "| 1 | 2 |" in out

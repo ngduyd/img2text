@@ -109,7 +109,7 @@ GEOM_RESULT = _result([
 
 async def test_build_md_happy(monkeypatch, VALID_RESULT_JSONB, caplog):
     caplog.set_level("INFO", logger="render_md")
-    calls = fake_llm(monkeypatch, [_ir_response()])
+    calls = fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
     out = await build_md(VALID_RESULT_JSONB)
     assert "Xin chào" in out
     url, payload, _ = calls[0]
@@ -126,7 +126,7 @@ async def test_build_md_happy(monkeypatch, VALID_RESULT_JSONB, caplog):
 
 async def test_build_md_table_block_keeps_md_table(monkeypatch):
     """HTML table → real md table '| ... |'."""
-    fake_llm(monkeypatch, [_ir_response()])
+    fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
     out = await build_md(TABLE_RESULT)
     # IR response has heading "Xin chào" but table is in OCR — fallback handles it
     # Actually with use_llm=True and valid IR, it renders from IR
@@ -142,7 +142,7 @@ async def test_build_md_same_bbox_gets_tab_indent(monkeypatch):
         _region("r0", [10, 20, 390, 60], "lề trái"),
         _region("r1", [100, 80, 390, 120], "thụt vào"),
     ])
-    fake_llm(monkeypatch, [_ir_response()])
+    fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
     out = await build_md(result, use_llm=False)
     lines = out.splitlines()
     assert any(l.startswith("\t") for l in lines)
@@ -151,7 +151,7 @@ async def test_build_md_same_bbox_gets_tab_indent(monkeypatch):
 async def test_build_md_heading_from_ir(monkeypatch):
     """IR heading → '## ' prefix (section_heading = level 2)."""
     result = _result([_region("r0", [1, 2, 3, 4], "Xin chào")])
-    fake_llm(monkeypatch, [_ir_response()])
+    fake_llm(monkeypatch, [_ir_response(), FakeResponse("## Xin chào")])
     out = await build_md(result)
     assert out.startswith("## ")
 
@@ -176,6 +176,7 @@ async def test_build_md_retries_without_response_format(
         [
             FakeResponse(status_code=400, text="response_format unsupported"),
             _ir_response(),
+            FakeResponse("## Xin chào"),
         ],
     )
     await build_md(VALID_RESULT_JSONB)
@@ -192,20 +193,20 @@ async def test_build_md_bearer_header_key_set(monkeypatch, VALID_RESULT_JSONB, c
         [
             FakeResponse(status_code=400, text="response_format unsupported"),
             _ir_response(),
+            FakeResponse("## Xin chào"),
         ],
     )
     await build_md(VALID_RESULT_JSONB)
-    assert [c[2] for c in calls] == [
-        {"Authorization": "Bearer sk-test-2"},
-        {"Authorization": "Bearer sk-test-2"},
-    ]
+    assert all(
+        c[2] == {"Authorization": "Bearer sk-test-2"} for c in calls
+    )
     assert not any("sk-test-2" in r.getMessage() for r in caplog.records)
 
 
 async def test_build_md_no_auth_header_key_empty(monkeypatch, VALID_RESULT_JSONB):
     """Empty key → no Authorization header."""
     monkeypatch.setattr(settings, "llm_api_key", "")
-    calls = fake_llm(monkeypatch, [_ir_response()])
+    calls = fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
     await build_md(VALID_RESULT_JSONB)
     assert "Authorization" not in calls[0][2]
 
@@ -215,7 +216,7 @@ async def test_build_md_no_auth_header_key_empty(monkeypatch, VALID_RESULT_JSONB
 async def test_export_md_layout_happy(
     auth_client, done_job_with_result, storage, monkeypatch
 ):
-    fake_llm(monkeypatch, [_ir_response()])
+    fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
     r = await auth_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "md-layout"}
     )
@@ -228,7 +229,7 @@ async def test_export_md_layout_happy(
 async def test_export_md_layout_download_content_type(
     auth_client, done_job_with_result, storage, monkeypatch
 ):
-    fake_llm(monkeypatch, [_ir_response()])
+    fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
     r = await auth_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "md-layout"}
     )
@@ -280,7 +281,7 @@ async def test_export_md_layout_missing_result_409(auth_client, db_session):
 async def test_export_md_layout_other_user_403(
     auth_client, other_client, done_job_with_result, monkeypatch
 ):
-    fake_llm(monkeypatch, [_ir_response()])
+    fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
     r = await other_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "md-layout"}
     )
@@ -300,7 +301,7 @@ async def test_auto_md_llm_ok_stores_md_layout(
         raise DocxLLMError("LLM down (test)")
 
     monkeypatch.setattr("app.routers.exports.build_docx", _docx_down)
-    fake_llm(monkeypatch, [_ir_response()])
+    fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
     claim = await worker_client.get("/api/jobs/next")
     tok = claim.json()["worker_token"]
     r = await worker_client.post(

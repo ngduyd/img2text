@@ -63,6 +63,8 @@ FAKE_IR = {
 }
 
 
+FAKE_IR_HTML = "<h2>Xin chào</h2><p>Nội dung</p>"
+
 class FakeResponse:
     def __init__(self, content: str | None = None, status_code: int = 200,
                  text: str = ""):
@@ -117,7 +119,7 @@ async def test_build_docx_renders_ir(
     monkeypatch, VALID_RESULT_JSONB, caplog
 ):
     caplog.set_level("INFO", logger="app.services.render_docx")
-    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
+    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR)), FakeResponse(FAKE_IR_HTML)])
     data = await build_docx(VALID_RESULT_JSONB)
     assert data[:2] == b"PK"
     doc = Document(io.BytesIO(data))
@@ -152,20 +154,20 @@ async def test_render_docx_bearer_header_key_set(
         [
             FakeResponse(status_code=400, text="response_format unsupported"),
             FakeResponse(json.dumps(FAKE_IR)),
+            FakeResponse(FAKE_IR_HTML),
         ],
     )
     data = await build_docx(VALID_RESULT_JSONB)
     assert data[:2] == b"PK"
-    assert [c[2] for c in calls] == [
-        {"Authorization": "Bearer sk-test-1"},
-        {"Authorization": "Bearer sk-test-1"},
-    ]
+    assert all(
+        c[2] == {"Authorization": "Bearer sk-test-1"} for c in calls
+    )
     assert not any("sk-test-1" in r.getMessage() for r in caplog.records)
 
 async def test_render_docx_no_auth_header_key_empty(monkeypatch, VALID_RESULT_JSONB):
     """Empty key → no Authorization header (local server, no auth)."""
     monkeypatch.setattr(settings, "llm_api_key", "")
-    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
+    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR)), FakeResponse(FAKE_IR_HTML)])
     await build_docx(VALID_RESULT_JSONB)
     assert "Authorization" not in calls[0][2]
 
@@ -176,7 +178,7 @@ async def test_build_docx_reads_db_model_override(
     from app.core.models import Setting
     db_session.add(Setting(key="ir_llm_model", value="db-override-model"))
     await db_session.commit()
-    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
+    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR)), FakeResponse(FAKE_IR_HTML)])
     await build_docx(VALID_RESULT_JSONB)
     assert calls[0][1]["model"] == "db-override-model"
 
@@ -187,7 +189,7 @@ async def test_build_docx_reads_db_base_url_override(
     from app.core.models import Setting
     db_session.add(Setting(key="llm_base_url", value="http://db-llm:9999/v1"))
     await db_session.commit()
-    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
+    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR)), FakeResponse(FAKE_IR_HTML)])
     await build_docx(VALID_RESULT_JSONB)
     assert calls[0][0].startswith("http://db-llm:9999/v1")
 
@@ -198,7 +200,7 @@ async def test_build_docx_reads_db_api_key_override(
     from app.core.models import Setting
     db_session.add(Setting(key="llm_api_key", value="sk-db-key"))
     await db_session.commit()
-    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
+    calls = fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR)), FakeResponse(FAKE_IR_HTML)])
     await build_docx(VALID_RESULT_JSONB)
     assert calls[0][2] == {"Authorization": "Bearer sk-db-key"}
 
@@ -227,6 +229,7 @@ async def test_build_docx_retries_without_response_format(
         [
             FakeResponse(status_code=400, text="response_format unsupported"),
             FakeResponse(json.dumps(FAKE_IR)),
+            FakeResponse(FAKE_IR_HTML),
         ],
     )
     data = await build_docx(VALID_RESULT_JSONB)
@@ -288,7 +291,11 @@ async def test_build_docx_table_block(monkeypatch):
             "footer": [],
         }],
     }
-    fake_llm(monkeypatch, [FakeResponse(json.dumps(ir))])
+    fake_llm(monkeypatch, [
+        FakeResponse(json.dumps(ir)),
+        FakeResponse("<table><tr><td>A</td><td>B</td></tr>"
+                     "<tr><td>1</td><td>2</td></tr></table>"),
+    ])
     data = await build_docx(_styled_result())
     assert data[:2] == b"PK"
     doc = Document(io.BytesIO(data))
@@ -299,7 +306,7 @@ async def test_build_docx_table_block(monkeypatch):
 async def test_export_docx_layout_happy(
     auth_client, done_job_with_result, storage, monkeypatch
 ):
-    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
+    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR)), FakeResponse(FAKE_IR_HTML)])
     r = await auth_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "docx-layout"}
     )
@@ -351,7 +358,7 @@ async def test_export_docx_layout_missing_result_409(auth_client, done_job_no_re
 async def test_download_docx_layout_content_type(
     auth_client, done_job_with_result, storage, monkeypatch
 ):
-    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
+    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR)), FakeResponse(FAKE_IR_HTML)])
     r = await auth_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "docx-layout"}
     )
@@ -366,7 +373,7 @@ async def test_download_docx_layout_content_type(
 async def test_export_docx_layout_other_user_403(
     auth_client, other_client, done_job_with_result, monkeypatch
 ):
-    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR))])
+    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR)), FakeResponse(FAKE_IR_HTML)])
     r = await other_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "docx-layout"}
     )
