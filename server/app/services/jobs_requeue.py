@@ -6,12 +6,18 @@ is "extracting" (both HTTP claim and batch spawn set it; "running" gone).
 """
 
 import logging
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, update
+from sqlalchemy import func, select, update
 
 from app.core.models import Job
+from app.services import job_results
 
 logger = logging.getLogger(__name__)
+
+# P1: a rendering job this old with no live in-process task lost its
+# fire-and-forget completion (server death mid auto_generate_output).
+_STALE_RENDERING = timedelta(minutes=5)
 
 async def reap_leases(session) -> int:
     """Requeue expired-lease extracting jobs; returns rows requeued.
@@ -36,3 +42,31 @@ async def reap_leases(session) -> int:
     if result.rowcount:
         logger.info("reap-leases: requeued %d expired lease(s)", result.rowcount)
     return result.rowcount
+
+async def sweep_rendering(session, storage) -> int:
+    """P1: re-schedule auto-output for jobs stuck in "rendering" with no
+    live task (task died with the process; started_at is the last phase
+    marker, so older than _STALE_RENDERING = stuck). Returns tasks started.
+
+    In-process registry (_active_outputs) owns the one-task-per-job guard;
+    the sweep never double-schedules a live render."""
+    stale = (
+        await session.execute(
+            select(Job).where(
+                Job.status == "rendering",
+                Job.started_at < datetime.now(timezone.utc) - _STALE_RENDERING,
+            )
+        )
+    ).scalars().all()
+    n = 0
+    for job in stale:
+        task = job_results._active_outputs.get(job.id)
+        if task is not None and not task.done():
+            continue  # live render — not stale
+        logger.warning(
+            "sweep-rendering: job %s stuck in rendering — reschedule auto "
+            "output", job.id,
+        )
+        job_results._schedule_auto_output(job, storage)
+        n += 1
+    return n

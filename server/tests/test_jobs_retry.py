@@ -53,7 +53,7 @@ async def test_retry_rendering_reruns_layout_to_done(
 
     monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
     r = await auth_client.post(f"/api/jobs/{failed_rendering_job}/retry")
-    assert r.status_code == 204
+    assert r.status_code == 204 and r.content == b""  # bare 204, no body
     from app.services.job_results import drain_auto_output
     await drain_auto_output()
     db_session.expire_all()
@@ -62,15 +62,16 @@ async def test_retry_rendering_reruns_layout_to_done(
     assert job.finished_at is not None
 
 async def test_retry_queued_409(auth_client, seed_job):
-    assert (await auth_client.post(f"/api/jobs/{seed_job}/retry")).status_code == 409
+    r = await auth_client.post(f"/api/jobs/{seed_job}/retry")
+    assert r.status_code == 409 and r.json()["detail"] == "job not retryable"
 
 async def test_retry_done_409(auth_client, done_job_with_result):
-    assert (
-        await auth_client.post(f"/api/jobs/{done_job_with_result}/retry")
-    ).status_code == 409
+    r = await auth_client.post(f"/api/jobs/{done_job_with_result}/retry")
+    assert r.status_code == 409 and r.json()["detail"] == "job not retryable"
 
 async def test_retry_unknown_404(auth_client):
-    assert (await auth_client.post("/api/jobs/999999/retry")).status_code == 404
+    r = await auth_client.post("/api/jobs/999999/retry")
+    assert r.status_code == 404 and r.json()["detail"] == "job not found"
 
 async def test_retry_other_user_403(other_client, failed_extracting_job):
     assert (

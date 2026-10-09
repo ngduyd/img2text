@@ -371,6 +371,8 @@ async def test_batch_failed_marks_failed_with_extracting_step(
     job = await db_session.get(Job, seed_job)
     assert job.status == "failed" and job.failed_step == "extracting"
     assert job.lease_expires_at is None and job.finished_at is not None
+    # P2-3: the owner sees WHY — error names the kernel status
+    assert job.error == "Kaggle kernel failed"
     # no auto-respawn: only queued jobs are spawn candidates (even gapless)
     monkeypatch.setattr(settings, "kaggle_min_gap_seconds", 0)
     assert await orch.ensure_worker(SessionLocal) is False
@@ -407,6 +409,26 @@ async def test_batch_timeout_drops_ref_with_warning(
     job = await db_session.get(Job, seed_job)
     # D1: timeout path reverts running → queued, lease cleared
     assert job.status == "queued" and job.lease_expires_at is None
+
+async def test_batch_timeout_status_marks_failed_with_extracting_step(
+    kaggle_batch_env, api, storage_env, seed_job, db_session, monkeypatch
+):
+    """P2-2 (spec: timeout → failed+extracting, replaces the 2263d24 revert):
+    literal kernel status TIMEOUT is terminal — ref dropped, failed +
+    failed_step=extracting + error naming the status, NO queued revert,
+    NO respawn."""
+    assert await orch.ensure_worker(SessionLocal) is True
+    api.status = {"status": SimpleNamespace(name="TIMEOUT")}
+    assert await orch.ensure_worker(SessionLocal) is False  # poll drops ref
+    assert orch._batch_runs == {}
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.status == "failed" and job.failed_step == "extracting"
+    assert job.error == "Kaggle kernel timeout"
+    assert job.lease_expires_at is None and job.finished_at is not None
+    monkeypatch.setattr(settings, "kaggle_min_gap_seconds", 0)
+    assert await orch.ensure_worker(SessionLocal) is False  # not respawned
+    assert len(_pushes(api)) == 1
 
 async def _extra_queued_job(auth_client) -> int:
     """Second real upload — different bytes → different sha256 storage key."""

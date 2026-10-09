@@ -53,8 +53,10 @@ DATASET_SLUG = "img2text-worker-files"
 INPUT_SLUG = "img2text-input"  # batch input dataset (run_one.py K4, shared slug)
 # kernel statuses meaning "run in progress" (case-insensitive match)
 _ACTIVE_STATUSES = frozenset({"running", "pending", "queued"})
-# batch statuses meaning "terminal" (normalized lowercase)
-_FAILED_STATUSES = frozenset({"failed", "error", "cancelled"})
+# batch statuses meaning "terminal" (normalized lowercase). P2: literal
+# kernel status "timeout" is terminal too (spec: timeout → failed+extracting,
+# replaces the revert-and-respawn of 2263d24).
+_FAILED_STATUSES = frozenset({"failed", "error", "cancelled", "timeout"})
 # mirrors kernel VL_MODEL / worker build_result default (result.json has no version)
 BATCH_MODEL_VERSION = "PaddleOCR-VL-1.5-0.9B"
 # per-block markdown prefixes (batch doc_title → H1, paragraph_title → H2;
@@ -542,8 +544,9 @@ async def _poll_batch_run(api, session_factory, job_id: int, run: dict) -> None:
     a successful pull+validate — a transient kernels_output/ValidationError
     failure retries next tick; _INGEST_MAX_FAILURES persistent failures drop
     the ref so a deterministic poison result can't loop forever);
-    failed/error/cancelled → drop ref + fail the job at step "extracting"
-    (owner retries via POST /retry); ref older than kaggle_timeout → drop
+    failed/error/cancelled/timeout → drop ref + fail the job at step
+    "extracting" (owner retries via POST /retry; job.error names the kernel
+    status); ref older than kaggle_timeout → drop
     ref + revert to queued + warning."""
     ref = str(run["ref"])
     status = _norm_status(await asyncio.to_thread(api.kernels_status, ref))
@@ -591,6 +594,8 @@ async def _poll_batch_run(api, session_factory, job_id: int, run: dict) -> None:
                 .values(
                     status="failed",
                     failed_step="extracting",
+                    # P2: the owner sees WHY — error names the kernel status
+                    error=f"Kaggle kernel {status}",
                     finished_at=datetime.now(timezone.utc),
                     lease_expires_at=None,
                 )

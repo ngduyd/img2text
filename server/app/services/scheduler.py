@@ -21,15 +21,17 @@ from app.services.runtime_settings import get_runtime_setting
 
 logger = logging.getLogger(__name__)
 
-async def _run_jobs_once() -> None:
+async def _run_jobs_once(storage) -> None:
     """One claim pass: requeue expired leases (only server-side job advance;
-    fresh queued jobs are claimed by workers polling GET /api/jobs/next)."""
+    fresh queued jobs are claimed by workers polling GET /api/jobs/next) +
+    P1 sweep of stale rendering jobs."""
     from app.core.db import SessionLocal
-    from app.services.jobs_requeue import reap_leases
+    from app.services.jobs_requeue import reap_leases, sweep_rendering
 
     async with SessionLocal() as session:
         n = await reap_leases(session)
-    logger.info("reap-leases: requeued %d", n)
+        m = await sweep_rendering(session, storage)
+    logger.info("reap-leases: requeued %d; sweep-rendering: %d", n, m)
 
 
 def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
@@ -57,7 +59,7 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
         except Exception:  # one failing check must not kill the pass
             logger.warning("scheduler interval override check failed", exc_info=True)
         try:
-            await _run_jobs_once()
+            await _run_jobs_once(app.state.storage)
         except Exception:  # one failing pass must not kill the job
             logger.warning("scheduler claim pass failed", exc_info=True)
         try:

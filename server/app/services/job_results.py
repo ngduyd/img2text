@@ -32,6 +32,9 @@ logger = logging.getLogger(__name__)
 
 # Strong refs: create_task tasks are otherwise GC-eligible while pending.
 _pending_output: set[asyncio.Task] = set()
+# P1: job_id → live auto-output task. Single-flight guard (one task per job
+# on the single loop) + the stale-rendering sweep's in-process registry.
+_active_outputs: dict[int, asyncio.Task] = {}
 
 async def _auto_output(job: Job, storage: StorageDriver) -> None:
     try:
@@ -69,9 +72,20 @@ async def _auto_output(job: Job, storage: StorageDriver) -> None:
         await session.commit()
 
 def _schedule_auto_output(job: Job, storage: StorageDriver) -> None:
+    running = _active_outputs.get(job.id)
+    if running is not None and not running.done():
+        logger.warning("auto output job=%s already running — skip", job.id)
+        return
     task = asyncio.create_task(_auto_output(job, storage))
     _pending_output.add(task)
-    task.add_done_callback(_pending_output.discard)
+    _active_outputs[job.id] = task
+
+    def _forget(t: asyncio.Task, job_id: int = job.id) -> None:
+        _pending_output.discard(t)
+        if _active_outputs.get(job_id) is t:
+            del _active_outputs[job_id]
+
+    task.add_done_callback(_forget)
 
 async def _proofread(job: Job) -> None:
     try:
