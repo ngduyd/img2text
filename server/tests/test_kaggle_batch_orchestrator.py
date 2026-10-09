@@ -520,6 +520,75 @@ async def test_batch_cancelled_fails_every_job_in_run(
         assert job.lease_expires_at is None and job.finished_at is not None
     assert len(_pushes(api)) == 1
 
+async def test_adopt_groups_extracting_jobs_by_ref(
+    kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session,
+    monkeypatch,
+):
+    """Task 4(a): restart recovery groups ALL extracting jobs of one ref into
+    ONE map entry (spawn-crash recovery); a LIVE ref blocks any new spawn
+    (single-active-run, shared img2text-input slug)."""
+    monkeypatch.setattr(settings, "kaggle_min_gap_seconds", 0)
+    job2 = await _extra_queued_job(auth_client, "seed2")
+    assert await orch.ensure_worker(SessionLocal) is True  # both in one run
+    orch._batch_runs.clear()  # restart: hot index lost
+    api.status = {"status": SimpleNamespace(name="RUNNING")}
+    assert await orch.ensure_worker(SessionLocal) is False  # adopt + poll
+    assert list(orch._batch_runs) == [BATCH_REF]
+    assert orch._batch_runs[BATCH_REF]["job_ids"] == [seed_job, job2]
+    assert len(_pushes(api)) == 1  # live ref → NO second run, even gapless
+
+async def test_batch_timeout_reverts_every_job_in_run(
+    kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session
+):
+    """Task 4(b): kaggle_timeout drops the ref and reverts EVERY job_ids
+    entry back to queued (lease cleared), not just the first."""
+    job2 = await _extra_queued_job(auth_client, "seed2")
+    assert await orch.ensure_worker(SessionLocal) is True  # 1 run, 2 jobs
+    orch._batch_runs[BATCH_REF]["pushed_at"] = (
+        time.monotonic() - settings.kaggle_timeout - 1
+    )
+    api.status = {"status": SimpleNamespace(name="RUNNING")}
+    assert await orch.ensure_worker(SessionLocal) is False
+    assert orch._batch_runs == {}
+    db_session.expire_all()
+    for jid in (seed_job, job2):
+        job = await db_session.get(Job, jid)
+        assert job.status == "queued" and job.lease_expires_at is None
+
+async def test_batch_ingest_giveup_reverts_every_job_in_run(
+    kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session
+):
+    """Task 4(c): persistent pull failure → after _INGEST_MAX_FAILURES the
+    ref is dropped and EVERY job in the run reverts to queued."""
+    api.result_doc = RESULT_DOC
+    job2 = await _extra_queued_job(auth_client, "seed2")
+    assert await orch.ensure_worker(SessionLocal) is True  # 1 run, 2 jobs
+    api.output_error = RuntimeError("broken output")
+    for _ in range(orch._INGEST_MAX_FAILURES):
+        assert await orch.ensure_worker(SessionLocal) is False
+    assert orch._batch_runs == {}
+    db_session.expire_all()
+    for jid in (seed_job, job2):
+        job = await db_session.get(Job, jid)
+        assert job.status == "queued" and job.lease_expires_at is None
+    assert len(_pushes(api)) == 1  # gap still blocks a re-spawn this tick
+
+async def test_adopt_skips_done_and_failed_jobs_with_stale_ref(
+    kaggle_batch_env, api, storage_env, seed_job, db_session
+):
+    """Task 4(d): kaggle_ref survives on finished rows — the adopt SELECT
+    gates on status='extracting', so done/failed rows with a stale ref never
+    re-enter the map (and never fake a live run)."""
+    job = await db_session.get(Job, seed_job)
+    for status in ("done", "failed"):
+        job.status = status
+        job.kaggle_ref = BATCH_REF
+        job.failed_step = "extracting" if status == "failed" else None
+        await db_session.commit()
+        assert await orch.ensure_worker(SessionLocal) is False
+        assert orch._batch_runs == {}
+    assert len(_pushes(api)) == 0  # no queued jobs → nothing spawned
+
 async def test_batch_failed_marks_failed_with_extracting_step(
     kaggle_batch_env, api, storage_env, seed_job, db_session, caplog, monkeypatch
 ):
