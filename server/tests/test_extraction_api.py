@@ -152,3 +152,20 @@ async def test_restore_layout_writes_artifact(auth_client, app, done_job_with_re
         b"# Tieu de\n\nXin chao the gioi"
     items = (await auth_client.get(f"/api/jobs/{jid}/versions?kind=md-layout")).json()["items"]
     assert [i["version"] for i in items] == [3, 2, 1]  # seed v1, sync v2, restore v3
+
+
+async def test_put_layout_marks_detached(auth_client, done_job_with_result):
+    """Task 6: direct layout edit → latest snapshot detached=True."""
+    jid = done_job_with_result
+    r = await auth_client.put(
+        f"/api/jobs/{jid}/export/md-layout/content", json={"markdown": "# sua tay"}
+    )
+    assert r.status_code == 204, r.text
+    r = await auth_client.put(
+        f"/api/jobs/{jid}/export/docx-layout/html", json={"html": "<p>sua tay</p>"}
+    )
+    assert r.status_code == 204, r.text
+    items = (await auth_client.get(f"/api/jobs/{jid}/versions?kind=md-layout")).json()["items"]
+    assert items[0]["detached"] is True
+    items = (await auth_client.get(f"/api/jobs/{jid}/versions?kind=docx-layout")).json()["items"]
+    assert items[0]["detached"] is True

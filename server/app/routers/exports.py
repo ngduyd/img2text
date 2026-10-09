@@ -30,6 +30,7 @@ from app.core.models import Job, User
 from app.routers.jobs import _job_or_403
 from app.services.render_docx import LLMError as DocxLLMError, build_docx
 from app.services.render_md import LLMError, build_md
+from app.services.doc_versions import save_version
 from app.services.html_to_docx import html_to_docx
 from app.services.storage import StorageDriver, get_storage
 
@@ -322,6 +323,11 @@ async def put_md_layout_content(
     # S3Driver.put dedupes existing keys → delete first for upsert
     await storage.delete_prefix(key)
     await storage.put(key, body.markdown.encode("utf-8"))
+    # Phase 1 T6 (Task 6): direct layout edit → mark detached + snapshot
+    await save_version(
+        storage, id, "md-layout", body.markdown.encode("utf-8"),
+        job.text_version, detached=True, session=session,
+    )
     return Response(status_code=204)
 
 class DocxHtmlBody(BaseModel):
@@ -353,6 +359,11 @@ async def put_docx_layout_html(
         raise HTTPException(status_code=422, detail="Nội dung quá dài.")
     await storage.delete_prefix(f"exports/{id}/docx")
     await storage.put(f"exports/{id}/docx.html", body.html.encode("utf-8"))
+    # Phase 1 T6 (Task 6): direct layout edit → mark detached + snapshot
+    await save_version(
+        storage, id, "docx-layout", body.html.encode("utf-8"),
+        job.text_version, detached=True, session=session,
+    )
     return Response(status_code=204)
 
 @router.patch("/api/jobs/{id}/content")
