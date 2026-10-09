@@ -117,13 +117,21 @@ def main() -> int:
             folder=upload_folder,
             public=False,
         )
+        print("dataset created (or already exists)", flush=True)
     except Exception as e:
-        print(f"dataset create (may already exist): {e}")
+        print(f"dataset create ERROR: {type(e).__name__}: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
 
-    api.dataset_create_version(
-        folder=upload_folder,
-        version_notes="img2text env",
-    )
+    # Tạo version mới (dataset có thể đã có version từ lần trước → bỏ qua lỗi)
+    try:
+        api.dataset_create_version(
+            folder=upload_folder,
+            version_notes="img2text env",
+        )
+        print("version created", flush=True)
+    except Exception as e:
+        print(f"version create skipped (dataset may already have version): {e}", flush=True)
     print(f"uploaded to Kaggle Dataset: {DATASET_SLUG}", flush=True)
 
     print("=== done ===", flush=True)
