@@ -189,17 +189,20 @@ if __name__ == "__main__":
                  *WHEELHOUSE_DEPS],
                 check=False,
             )
-            # Repair: dataset wheelhouse drift (thiếu paddle GPU wheel) →
-            # cài nốt từ index cu126 chính thức (recipe đã chạy được).
+            # Repair: wheelhouse drift (thiếu paddle/doc-parser extras) →
+            # cài full recipe proven từ network (paddle cu126 + doc-parser stack).
             if subprocess.run(
-                [VENV_PY, "-c", "import paddle"], capture_output=True
+                [VENV_PY, "-c", "import paddle, paddleocr"], capture_output=True
             ).returncode != 0:
-                print("[batch] wheelhouse thiếu paddle — repair từ cu126 index", flush=True)
-                subprocess.run(
+                print("[batch] wheelhouse thiếu deps — repair full recipe từ network", flush=True)
+                for cmd in (
                     ["uv", "pip", "install", "--python", VENV_PY,
                      "paddlepaddle-gpu==3.2.1", "--extra-index-url", PADDLE_PPU_INDEX],
-                    check=False,
-                )
+                    ["uv", "pip", "install", "--python", VENV_PY,
+                     "paddleocr[doc-parser]>=3.6.0", "safetensors",
+                     "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0"],
+                ):
+                    subprocess.run(cmd, check=False)
         else:
             # fallback: wheel dataset chưa mount → pip network như cũ
             for cmd in (
