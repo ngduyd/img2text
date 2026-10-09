@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     kaggle_timeout: int = 10800
     kaggle_min_queue: int = 1
     kaggle_min_gap_seconds: int = 600
+    # Batch one-run (spec 2026-10-09): max queued jobs staged into ONE kernel
+    # run (env KAGGLE_BATCH_MAX_JOBS; extra jobs wait for the next tick).
+    kaggle_batch_max_jobs: int = 20
     kaggle_stage_src: str = "deploy/kaggle"
     kaggle_stage_dir: str = "/tmp/img2text-kaggle-kernel"
     # Plan K5: orchestration mode. "batch" (default) = backend drives the
