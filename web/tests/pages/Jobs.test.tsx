@@ -18,6 +18,7 @@ vi.mock("../../src/api/client", async (importOriginal) => {
       me: vi.fn(),
       listJobs: vi.fn(),
       uploadJob: vi.fn(),
+      retryJobs: vi.fn(),
     },
   };
 });
@@ -247,6 +248,63 @@ it("pagination shows page controls and click page 2 refetches the list", async (
   await screen.findByTestId("job-row-21");
   expect(api.listJobs).toHaveBeenCalledWith(2);
   await waitFor(() => expect(screen.getByTestId("btn-page-2")).toHaveAttribute("aria-current", "page"));
+});
+
+// Phase 4 Task 3: checkbox select + sticky bulk bar + bulk retry.
+const failed = (id: number) =>
+  ({ id, status: "failed", page_count: 1, file_type: "jpg", created_at: "2026-10-04T00:00:00Z", error: "boom" }) as Job;
+const doneJ = (id: number) =>
+  ({ id, status: "done", page_count: 1, file_type: "jpg", created_at: "2026-10-04T00:00:00Z", error: null }) as Job;
+
+it("checkbox select shows bulk bar count; select-all toggles the whole page", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [failed(1), failed(2), doneJ(3)], total: 3, page: 1, page_size: 10 });
+  renderWithRouter(<Jobs />);
+  await screen.findByTestId("job-row-1");
+  // Chưa chọn → không có bulk bar.
+  expect(screen.queryByTestId("bulk-bar")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByTestId("row-select-1"));
+  await userEvent.click(screen.getByTestId("row-select-2"));
+  expect(screen.getByTestId("bulk-count")).toHaveTextContent("2 đã chọn");
+  // select-all-page: chọn cả trang, bấm lại → bỏ chọn tất cả.
+  await userEvent.click(screen.getByTestId("select-all-page"));
+  expect(screen.getByTestId("bulk-count")).toHaveTextContent("3 đã chọn");
+  await userEvent.click(screen.getByTestId("select-all-page"));
+  expect(screen.queryByTestId("bulk-bar")).not.toBeInTheDocument();
+});
+
+it("bulk-retry disabled until a failed job is selected", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [doneJ(3)], total: 1, page: 1, page_size: 10 });
+  renderWithRouter(<Jobs />);
+  await userEvent.click(await screen.findByTestId("row-select-3"));
+  expect(screen.getByTestId("bulk-retry")).toBeDisabled();
+});
+
+it("bulk retry calls retryJobs per selected failed job, toasts, clears selection", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [failed(1), failed(2), doneJ(3)], total: 3, page: 1, page_size: 10 });
+  vi.mocked(api.retryJobs).mockResolvedValue({ ok: 2, errors: [] });
+  renderWithRouter(<Jobs />);
+  await screen.findByTestId("job-row-1");
+  await userEvent.click(screen.getByTestId("select-all-page")); // 3 selected (done 3 excluded from retries)
+  await userEvent.click(screen.getByTestId("bulk-retry"));
+  await waitFor(() => expect(api.retryJobs).toHaveBeenCalledWith([1, 2]));
+  // R59: success toast + invalidate → selection cleared.
+  expect(toast.success).toHaveBeenCalledWith("Đã lên lịch chạy lại");
+  await waitFor(() => expect(screen.queryByTestId("bulk-bar")).not.toBeInTheDocument());
+});
+
+it("bulk retry partial failure: error toast fires, batch not aborted", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [failed(1), failed(2)], total: 2, page: 1, page_size: 10 });
+  vi.mocked(api.retryJobs).mockResolvedValue({ ok: 1, errors: ["job not retryable"] });
+  renderWithRouter(<Jobs />);
+  await screen.findByTestId("job-row-1");
+  await userEvent.click(screen.getByTestId("select-all-page"));
+  await userEvent.click(screen.getByTestId("bulk-retry"));
+  await waitFor(() => expect(toast.error).toHaveBeenCalledWith("job not retryable"));
+  expect(toast.success).toHaveBeenCalledWith("Đã lên lịch chạy lại");
 });
 
 it("header shows job stats (total, pending, done)", async () => {

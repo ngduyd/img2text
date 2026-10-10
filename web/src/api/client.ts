@@ -86,6 +86,16 @@ export const api = {
   },
   retryJob: (id: number | string) =>
     request<void>(`/api/jobs/${id}/retry`, { method: "POST" }),
+  // Phase 4: bulk retry — per-job settle; một job fail KHÔNG abort cả batch.
+  retryJobs: async (ids: Array<number | string>): Promise<{ ok: number; errors: string[] }> => {
+    const results = await Promise.allSettled(ids.map((id) => api.retryJob(id)));
+    const errors = results.flatMap((r) =>
+      r.status === "rejected"
+        ? [r.reason instanceof Error ? r.reason.message : String(r.reason)]
+        : [],
+    );
+    return { ok: results.length - errors.length, errors };
+  },
   retryLayout: (id: number | string) =>
     request<{ md: boolean; docx: boolean }>(`/api/jobs/${id}/retry-layout`, { method: "POST" }),
   getJobFile: (id: number | string) => request<{ url: string }>(`/api/jobs/${id}/file`),

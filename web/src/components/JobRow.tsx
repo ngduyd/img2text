@@ -17,8 +17,18 @@ function formatDuration(ms: number): string {
   return s < 60 ? `${s} giây` : `${Math.round(s / 60)} phút`;
 }
 
-/** File-centric list row (R52): server list has NO storage_key → name line from id/type/pages. */
-export default function JobRow({ job }: { job: JobListItem }) {
+/** File-centric list row (R52): server list has NO storage_key → name line from id/type/pages.
+ *  Phase 4: `selected`/`onToggle` add the bulk-retry checkbox (no handler → no checkbox).
+ */
+export default function JobRow({
+  job,
+  selected = false,
+  onToggle,
+}: {
+  job: JobListItem;
+  selected?: boolean;
+  onToggle?: (id: number) => void;
+}) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const retry = useMutation({
@@ -44,6 +54,16 @@ export default function JobRow({ job }: { job: JobListItem }) {
       className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors duration-150 ease-out hover:bg-surface-2/50"
     >
       <div className="flex min-w-0 items-center gap-3">
+        {onToggle && (
+          <input
+            type="checkbox"
+            data-testid={`row-select-${job.id}`}
+            checked={selected}
+            onChange={() => onToggle(job.id)}
+            aria-label={`Chọn job ${job.id}`}
+            className="h-4 w-4 shrink-0 accent-accent"
+          />
+        )}
         <span
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-surface-2/60 text-muted"
           aria-hidden="true"

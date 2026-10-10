@@ -155,3 +155,19 @@ it("retry button rendered only when failed", () => {
   renderRow(job({ status: "done" }));
   expect(screen.queryByTestId("btn-retry-job-7")).not.toBeInTheDocument();
 });
+
+// Phase 4 Task 3: per-row checkbox (R51 testid row-select-{id}).
+it("renders row-select checkbox and fires onToggle with the job id", async () => {
+  const onToggle = vi.fn();
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter>
+        <JobRow job={job()} selected={false} onToggle={onToggle} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const box = screen.getByTestId("row-select-7") as HTMLInputElement;
+  expect(box).not.toBeChecked();
+  await userEvent.click(box);
+  expect(onToggle).toHaveBeenCalledWith(7);
+});
