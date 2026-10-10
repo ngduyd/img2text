@@ -68,6 +68,29 @@ export interface Suggestion {
   status: "pending" | "accepted" | "rejected";
 }
 
+/** Phase 1 (Sub-system A) API: text gốc + optimistic-lock version. */
+export interface Extraction {
+  text: string;
+  text_version: number;
+}
+
+/** POST /extraction response: per-layout sync flags + layouts cần render lại. */
+export interface ExtractionSaveResult {
+  synced: { md: boolean; docx: boolean };
+  needs_render: string[];
+  text_version: number;
+}
+
+/** GET /versions item (metadata only, newest first). */
+export interface DocumentVersion {
+  id: number;
+  kind: string;
+  version: number;
+  based_on_text_version: number;
+  detached: boolean;
+  created_at: string;
+}
+
 export interface Job {
   id: number;
   status: JobStatus;

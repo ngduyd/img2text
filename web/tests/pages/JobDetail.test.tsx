@@ -368,3 +368,21 @@ it("loading shows skeleton instead of blank page", () => {
   expect(screen.getByTestId("job-loading")).toBeInTheDocument();
   expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
 });
+
+// Phase 2 Task 4 (Sub-system B): link sang trang trích xuất (done jobs only).
+it("done renders link to extraction page", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await screen.findByTestId("panel-result");
+  expect(screen.getByTestId("link-extraction")).toHaveAttribute(
+    "href",
+    "/jobs/5/extraction",
+  );
+});
+
+it("pending job hides extraction link", async () => {
+  mockJob({ id: 5, status: "queued", page_count: 1, result: null } as Job);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await screen.findByTestId("job-header");
+  expect(screen.queryByTestId("link-extraction")).not.toBeInTheDocument();
+});

@@ -1,4 +1,4 @@
-import type { AdminStatsDay, Job, JobsPage, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion } from "./types";
+import type { AdminStatsDay, Job, JobsPage, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion } from "./types";
 
 /** Thrown for any non-2xx response; `detail` mirrors FastAPI {detail} bodies. */
 export class ApiError extends Error {
@@ -206,4 +206,24 @@ export const api = {
     request<{ status: string }>(`/api/jobs/${id}/suggestions/${sid}/reject`, { method: "POST" }),
   runProofread: (id: number | string) =>
     request<{ count: number }>(`/api/jobs/${id}/proofread`, { method: "POST" }),
+  // Phase 1 (Sub-system A): text gốc + incremental sync (optimistic lock qua expected_text_version).
+  getExtraction: (id: number | string) => request<Extraction>(`/api/jobs/${id}/extraction`),
+  saveExtraction: (
+    id: number | string,
+    body: {
+      text: string;
+      old_phrase?: string;
+      new_phrase?: string;
+      expected_text_version: number;
+      /** Detached layout 409 → UI confirm → overwrite. */
+      force?: boolean;
+    },
+  ) => request<ExtractionSaveResult>(`/api/jobs/${id}/extraction`, { method: "POST", body }),
+  listVersions: (id: number | string, kind?: string) =>
+    request<{ items: DocumentVersion[] }>(
+      `/api/jobs/${id}/versions${kind ? `?kind=${kind}` : ""}`,
+    ),
+  // 204 no body — request() đã xử lý.
+  restoreVersion: (id: number | string, vid: number) =>
+    request<unknown>(`/api/jobs/${id}/versions/${vid}/restore`, { method: "POST" }),
 };
