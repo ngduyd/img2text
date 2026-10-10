@@ -1,9 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "../../src/api/client";
+import type { Suggestion } from "../../src/api/types";
 import ExtractionPage from "../../src/pages/ExtractionPage";
 
 vi.mock("../../src/api/client", async (importOriginal) => {
@@ -16,6 +18,7 @@ vi.mock("../../src/api/client", async (importOriginal) => {
       getSuggestions: vi.fn(),
       saveExtraction: vi.fn(),
       retryLayout: vi.fn(),
+      rejectSuggestion: vi.fn(),
     },
   };
 });
@@ -43,6 +46,28 @@ beforeEach(() => {
   vi.mocked(api.getSuggestions).mockResolvedValue([]);
 });
 
+const TEXT = "Xin chao ban, chao nhe";
+
+function pendingSuggestion(over: Partial<Suggestion>): Suggestion {
+  return {
+    id: 11,
+    page_index: 0,
+    start: 4,
+    end: 9,
+    original: "chao",
+    suggestion: "chào",
+    reason: "thiếu dấu",
+    status: "pending",
+    ...over,
+  };
+}
+
+function renderWithSuggestions(items: Suggestion[]) {
+  vi.mocked(api.getExtraction).mockResolvedValue({ text: TEXT, text_version: 3 });
+  vi.mocked(api.getSuggestions).mockResolvedValue(items);
+  renderRoute(<ExtractionPage />);
+}
+
 it("renders extraction text from API + back link to job detail", async () => {
   vi.mocked(api.getExtraction).mockResolvedValue({ text: "Đoạn văn gốc", text_version: 2 });
   renderRoute(<ExtractionPage />);
@@ -61,4 +86,70 @@ it("shows error state when extraction fetch fails", async () => {
   vi.mocked(api.getExtraction).mockRejectedValue(new Error("boom"));
   renderRoute(<ExtractionPage />);
   expect(await screen.findByTestId("extraction-error")).toBeInTheDocument();
+});
+
+// --- Task 3: highlight + popover + accept (save-sync) ---
+
+it("marks pending suggestion phrases in the text", async () => {
+  renderWithSuggestions([pendingSuggestion({})]);
+  const mark = await screen.findByTestId("suggestion-mark-11");
+  expect(mark).toHaveTextContent("chao");
+  // cả 2 occurrence đều được mark
+  expect(screen.getByTestId("suggestion-mark-11-1")).toBeInTheDocument();
+});
+
+it("clicking mark opens popover with Áp dụng / Bỏ qua", async () => {
+  const user = userEvent.setup();
+  renderWithSuggestions([pendingSuggestion({})]);
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  const popover = screen.getByTestId("suggestion-popover-11");
+  expect(within(popover).getByText("thiếu dấu")).toBeInTheDocument();
+  expect(within(popover).getByTestId("btn-apply-11")).toBeInTheDocument();
+  expect(within(popover).getByTestId("btn-reject-11")).toBeInTheDocument();
+});
+
+it("Áp dụng calls saveExtraction with replaced text + expected_text_version + invalidates", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.saveExtraction).mockResolvedValue({
+    synced: { md: true, docx: true },
+    needs_render: [],
+    text_version: 4,
+  });
+  renderWithSuggestions([pendingSuggestion({})]);
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  await user.click(screen.getByTestId("btn-apply-11"));
+  await waitFor(() => expect(api.saveExtraction).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(api.saveExtraction).mock.calls[0]).toEqual([
+    "5",
+    {
+      text: "Xin chào ban, chào nhe",
+      old_phrase: "chao",
+      new_phrase: "chào",
+      expected_text_version: 3,
+    },
+  ]);
+  await waitFor(() => expect(api.getExtraction).toHaveBeenCalledTimes(2)); // invalidate → refetch
+});
+
+it("409 conflict → toast error + refetch extraction (refresh optimistic lock)", async () => {
+  const user = userEvent.setup();
+  const { ApiError } = await import("../../src/api/client");
+  const { toast } = await import("sonner");
+  vi.mocked(api.saveExtraction).mockRejectedValue(
+    new ApiError("Nội dung đã thay đổi ở nơi khác. Tải lại trang."),
+  );
+  renderWithSuggestions([pendingSuggestion({})]);
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  await user.click(screen.getByTestId("btn-apply-11"));
+  await waitFor(() => expect(toast.error).toHaveBeenCalled());
+  await waitFor(() => expect(api.getExtraction).toHaveBeenCalledTimes(2));
+});
+
+it("Bỏ qua calls rejectSuggestion + refreshes suggestions", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.rejectSuggestion).mockResolvedValue({ status: "rejected" });
+  renderWithSuggestions([pendingSuggestion({})]);
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  await user.click(screen.getByTestId("btn-reject-11"));
+  await waitFor(() => expect(api.rejectSuggestion).toHaveBeenCalledWith("5", 11));
 });
