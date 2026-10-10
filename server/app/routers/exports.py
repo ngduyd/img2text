@@ -471,7 +471,12 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
     for GET /api/jobs/{id}/ir — no separate generate_ir round-trip.
     Reuses the export_job internals (NO HTTP round-trip); scheduled
     fire-and-forget by job_results AFTER the result commit.
+    Phase 5: extract_only jobs return False immediately — no layout
+    artifacts (covers retry_layout path; the auto-output task short-
+    circuits on mode and marks the job done itself).
     """
+    if job.mode == "extract_only":
+        return False
     ir_sink: dict = {}
     md_ok = False
     # md-layout (LLM) — failure → warning + fallback plain md at exports/{id}/md

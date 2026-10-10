@@ -46,6 +46,9 @@ export interface RegionPatchOut {
 
 export type JobStatus = "queued" | "extracting" | "rendering" | "done" | "failed";
 
+/** Phase 5 (spec E): layout (gen md/docx layout) | extract_only (text only, no auto-gen). */
+export type JobMode = "layout" | "extract_only";
+
 /** Plan M: word style overrides (PUT /layout-style) — server enum-validates keys. */
 export interface LayoutStyle {
   fontFamily?: string;

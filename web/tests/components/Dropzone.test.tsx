@@ -53,7 +53,7 @@ it("dragover preventDefault and drop triggers uploadJob", async () => {
   fireEvent(dz, over);
   expect(over.defaultPrevented).toBe(true);
   fireEvent.drop(dz, { dataTransfer: { files: [file] } });
-  await waitFor(() => expect(api.uploadJob).toHaveBeenCalledWith(file, { output_format: "md" }));
+  await waitFor(() => expect(api.uploadJob).toHaveBeenCalledWith(file, { output_format: "md", mode: "layout" }));
   await waitFor(() => expect(onUploaded).toHaveBeenCalledWith({ id: 42, status: "queued" }));
   // R59: upload success toast fires alongside inline behaviors.
   expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý.");
@@ -187,5 +187,38 @@ it("selecting pdf B while pdf wizard holds A reloads the document — pages come
   expect(vi.mocked(api.uploadJob).mock.calls[0][1]).toEqual({
     preprocess: { pages: [1], rotate: {} },
     output_format: "md",
+    mode: "layout",
   });
+});
+
+// Phase 5 (spec E): mode radios + [mode selector | Tải file lên] cluster at top; extract_only hides format picker.
+it("mode radios render (layout default); cluster row sits at top of frame", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  renderDropzone();
+  const dz = await screen.findByTestId("dropzone");
+  const cluster = screen.getByTestId("mode-selector").parentElement!;
+  expect(cluster).toContainElement(screen.getByTestId("btn-upload"));
+  // cluster = first row of the upload frame; button pinned right (spec E)
+  expect(cluster).toBe(dz.firstElementChild);
+  expect(cluster.className).toContain("justify-between");
+  // format picker sits in the right-hand group beside the upload button
+  expect(cluster).toContainElement(screen.getByTestId("btn-format-toggle"));
+  expect(screen.getByTestId("mode-layout")).toBeChecked();
+  expect(screen.getByTestId("mode-extract-only")).not.toBeChecked();
+});
+
+it("extract_only hides format picker and upload sends mode", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.uploadJob).mockResolvedValue({ id: 42, status: "queued" });
+  renderDropzone();
+  await screen.findByTestId("btn-upload");
+  expect(screen.getByTestId("btn-format-toggle")).toBeInTheDocument();
+  fireEvent.click(screen.getByTestId("mode-extract-only"));
+  expect(screen.queryByTestId("btn-format-toggle")).not.toBeInTheDocument();
+  expect(screen.getByTestId("mode-extract-only")).toBeChecked();
+  const file = new File(["x"], "a.txt", { type: "text/plain" });
+  fireEvent.drop(screen.getByTestId("dropzone"), { dataTransfer: { files: [file] } });
+  await waitFor(() =>
+    expect(api.uploadJob).toHaveBeenCalledWith(file, { output_format: "md", mode: "extract_only" }),
+  );
 });

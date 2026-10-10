@@ -4,7 +4,9 @@ import { toast } from "sonner";
 import { ApiError, api } from "../../api/client";
 import { mapApiError } from "../../lib/errors";
 import FormatSplitButton, { type OutputFormat } from "../FormatSplitButton";
+import ModeSelector from "../ModeSelector";
 import Button from "../ui/Button";
+import type { JobMode } from "../../api/types";
 
 interface Rect {
   x: number;
@@ -40,6 +42,8 @@ export default function ImageCropWizard({
   file,
   outputFormat = "md",
   onFormatChange,
+  mode = "layout",
+  onModeChange,
   onCancel,
   onUploaded,
 }: {
@@ -48,6 +52,9 @@ export default function ImageCropWizard({
   outputFormat?: string;
   /** Format combo: caret menu writes back to the Jobs page state. */
   onFormatChange: (format: OutputFormat) => void;
+  /** Phase 5: upload mode — "layout" (default) | "extract_only" (hides format picker). */
+  mode?: JobMode;
+  onModeChange?: (mode: JobMode) => void;
   onCancel: () => void;
   onUploaded: (job: { id: number; status: string }) => void;
 }) {
@@ -116,8 +123,86 @@ export default function ImageCropWizard({
     };
   };
 
+  // Phase 5: one submit for both modes (format/mode picked in the top cluster).
+  const submit = async () => {
+    if (!view.rect || !dims || !imgRef.current) {
+      // R62: no rect → submit the ORIGINAL File untouched; no crop, no error.
+      setBusy(true);
+      try {
+        const job = await api.uploadJob(file, { output_format: outputFormat, mode });
+        toast.success("Không có vùng chọn — gửi ảnh gốc");
+        onUploaded(job);
+      } catch (err) {
+        setError(err instanceof ApiError ? err.detail : "Không tải được ảnh.");
+        toast.error(mapApiError(err));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      const rect = view.rect;
+      const img = imgRef.current;
+      // Crop on the ROTATED bitmap: one canvas, transform then drawImage.
+      const out = document.createElement("canvas");
+      out.width = rect.w;
+      out.height = rect.h;
+      const ctx = out.getContext("2d");
+      if (!ctx) throw new Error("canvas unavailable");
+      ctx.save();
+      ctx.translate(-rect.x, -rect.y);
+      ctx.translate(frameW / 2, frameH / 2);
+      ctx.rotate((view.rotation * Math.PI) / 180);
+      ctx.drawImage(img, -dims.w / 2, -dims.h / 2);
+      ctx.restore();
+      const blob = await new Promise<Blob | null>((res) =>
+        out.toBlob(res, "image/jpeg", 0.92),
+      );
+      if (!blob) throw new Error("toBlob failed");
+      const base = file.name.replace(/\.[^.]+$/, "") || "image";
+      const job = await api.uploadJob(blob, {
+        filename: `${base}-crop.jpg`,
+        output_format: outputFormat,
+        mode,
+      });
+      toast.success("Đã tải lên — đang chờ xử lý.");
+      onUploaded(job);
+    } catch (err) {
+      // R51: inline wizard-error kept; toast mirrors it (R59).
+      setError(err instanceof ApiError ? err.detail : "Không cắt được ảnh.");
+      toast.error(mapApiError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div data-testid="wizard-crop" className="text-left">
+      {/* Phase 5 (spec E): cluster top-right — [mode radios | Hủy][Gửi lên · format ▾]. */}
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <ModeSelector mode={mode} onModeChange={onModeChange} />
+        <div className="ml-auto flex items-center gap-2">
+          <Button testid="wizard-cancel" variant="ghost" onClick={onCancel}>
+            Hủy
+          </Button>
+          {mode === "extract_only" ? (
+            <Button testid="wizard-submit" loading={busy} onClick={submit}>
+              Gửi lên
+            </Button>
+          ) : (
+            <FormatSplitButton
+              testid="wizard-submit"
+              label="Gửi lên"
+              format={outputFormat}
+              onFormatChange={onFormatChange}
+              loading={busy}
+              onClick={submit}
+            />
+          )}
+        </div>
+      </div>
       <p className="mb-2 text-sm font-medium">Chọn vùng cần cắt</p>
       {/* R61: toolbar ABOVE canvas — wraps on narrow screens (split submit is wide). */}
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -151,65 +236,6 @@ export default function ImageCropWizard({
         >
           <Eraser size={18} aria-hidden="true" />
         </Button>
-        <FormatSplitButton
-          testid="wizard-submit"
-          label="Gửi lên"
-          format={outputFormat}
-          onFormatChange={onFormatChange}
-          loading={busy}
-          onClick={async () => {
-            if (!view.rect || !dims || !imgRef.current) {
-              // R62: no rect → submit the ORIGINAL File untouched; no crop, no error.
-              setBusy(true);
-              try {
-                const job = await api.uploadJob(file, { output_format: outputFormat });
-                toast.success("Không có vùng chọn — gửi ảnh gốc");
-                onUploaded(job);
-              } catch (err) {
-                setError(err instanceof ApiError ? err.detail : "Không tải được ảnh.");
-                toast.error(mapApiError(err));
-              } finally {
-                setBusy(false);
-              }
-              return;
-            }
-            setError(null);
-            setBusy(true);
-            try {
-              const rect = view.rect;
-              const img = imgRef.current;
-              // Crop on the ROTATED bitmap: one canvas, transform then drawImage.
-              const out = document.createElement("canvas");
-              out.width = rect.w;
-              out.height = rect.h;
-              const ctx = out.getContext("2d");
-              if (!ctx) throw new Error("canvas unavailable");
-              ctx.save();
-              ctx.translate(-rect.x, -rect.y);
-              ctx.translate(frameW / 2, frameH / 2);
-              ctx.rotate((view.rotation * Math.PI) / 180);
-              ctx.drawImage(img, -dims.w / 2, -dims.h / 2);
-              ctx.restore();
-              const blob = await new Promise<Blob | null>((res) =>
-                out.toBlob(res, "image/jpeg", 0.92),
-              );
-              if (!blob) throw new Error("toBlob failed");
-              const base = file.name.replace(/\.[^.]+$/, "") || "image";
-              const job = await api.uploadJob(blob, {
-                filename: `${base}-crop.jpg`,
-                output_format: outputFormat,
-              });
-              toast.success("Đã tải lên — đang chờ xử lý.");
-              onUploaded(job);
-            } catch (err) {
-              // R51: inline wizard-error kept; toast mirrors it (R59).
-              setError(err instanceof ApiError ? err.detail : "Không cắt được ảnh.");
-              toast.error(mapApiError(err));
-            } finally {
-              setBusy(false);
-            }
-          }}
-        />
       </div>
       {/* R51: measurement-only — hidden; canvas is the sole visible surface */}
       <img
@@ -258,11 +284,6 @@ export default function ImageCropWizard({
           {error}
         </div>
       )}
-      <div className="mt-2 flex items-center gap-2">
-        <Button testid="wizard-cancel" variant="ghost" onClick={onCancel}>
-          Hủy
-        </Button>
-      </div>
     </div>
   );
 }

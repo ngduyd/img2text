@@ -4,7 +4,9 @@ import { ApiError, api } from "../../api/client";
 import { mapApiError } from "../../lib/errors";
 import { loadPdf } from "../../lib/pdfjs";
 import FormatSplitButton, { type OutputFormat } from "../FormatSplitButton";
+import ModeSelector from "../ModeSelector";
 import Button from "../ui/Button";
+import type { JobMode } from "../../api/types";
 
 /** Max pages per upload — server rejects more; client blocks before the call. */
 const MAX_PAGES = 50;
@@ -20,6 +22,8 @@ export default function PdfWizard({
   file,
   outputFormat = "md",
   onFormatChange,
+  mode = "layout",
+  onModeChange,
   onCancel,
   onUploaded,
 }: {
@@ -28,6 +32,9 @@ export default function PdfWizard({
   outputFormat?: string;
   /** Format combo: caret menu writes back to the Jobs page state. */
   onFormatChange: (format: OutputFormat) => void;
+  /** Phase 5: upload mode — "layout" (default) | "extract_only" (hides format picker). */
+  mode?: JobMode;
+  onModeChange?: (mode: JobMode) => void;
   onCancel: () => void;
   onUploaded: (job: { id: number; status: string }) => void;
 }) {
@@ -109,6 +116,7 @@ export default function PdfWizard({
       const job = await api.uploadJob(file, {
         preprocess: { pages: chosen, rotate },
         output_format: outputFormat,
+        mode,
       });
       toast.success("Đã tải lên — đang chờ xử lý.");
       onUploaded(job);
@@ -123,6 +131,29 @@ export default function PdfWizard({
 
   return (
     <div data-testid="wizard-pdf" className="text-left">
+      {/* Phase 5 (spec E): cluster top-right — [mode radios | Hủy][Gửi lên · format ▾]. */}
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <ModeSelector mode={mode} onModeChange={onModeChange} />
+        <div className="ml-auto flex items-center gap-2">
+          <Button testid="wizard-cancel" variant="ghost" onClick={onCancel}>
+            Hủy
+          </Button>
+          {mode === "extract_only" ? (
+            <Button testid="wizard-submit" loading={busy} onClick={submit}>
+              Gửi lên
+            </Button>
+          ) : (
+            <FormatSplitButton
+              testid="wizard-submit"
+              label="Gửi lên"
+              format={outputFormat}
+              onFormatChange={onFormatChange}
+              onClick={submit}
+              loading={busy}
+            />
+          )}
+        </div>
+      </div>
       <p className="mb-2 text-sm font-medium">Chọn trang cần xử lý (tối đa {MAX_PAGES} trang)</p>
       {loading ? (
         <p data-testid="wizard-loading" className="mb-2 text-sm text-muted">
@@ -181,19 +212,6 @@ export default function PdfWizard({
           {error}
         </div>
       )}
-      <div className="flex items-center gap-2">
-        <FormatSplitButton
-          testid="wizard-submit"
-          label="Gửi lên"
-          format={outputFormat}
-          onFormatChange={onFormatChange}
-          onClick={submit}
-          loading={busy}
-        />
-        <Button testid="wizard-cancel" variant="ghost" onClick={onCancel}>
-          Hủy
-        </Button>
-      </div>
     </div>
   );
 }

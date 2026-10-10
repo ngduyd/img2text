@@ -6,6 +6,9 @@ import { mapApiError } from "../lib/errors";
 import PdfWizard from "./wizard/PdfWizard";
 import ImageCropWizard from "./wizard/ImageCropWizard";
 import FormatSplitButton, { type OutputFormat } from "./FormatSplitButton";
+import ModeSelector from "./ModeSelector";
+import type { JobMode } from "../api/types";
+import Button from "./ui/Button";
 
 /** POST /api/jobs returns a partial job; callers only need `id` for routing. */
 export default function Dropzone({
@@ -23,6 +26,8 @@ export default function Dropzone({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  // Phase 5 (spec E): "layout" (default) | "extract_only" — extract_only hides the format picker.
+  const [mode, setMode] = useState<JobMode>("layout");
   // pdf/image selection defers to a wizard; other files upload immediately.
   const [wizardFile, setWizardFile] = useState<File | null>(null);
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
@@ -35,7 +40,7 @@ export default function Dropzone({
   const wizardKey = wizardFile ? `${wizardFile.name}-${wizardFile.size}-${wizardFile.lastModified}` : null;
 
   const upload = useMutation({
-    mutationFn: (file: File) => api.uploadJob(file, { output_format: outputFormat }),
+    mutationFn: (file: File) => api.uploadJob(file, { output_format: outputFormat, mode }),
     onMutate: () => {
       setError(null);
       setBusy(true);
@@ -108,6 +113,8 @@ export default function Dropzone({
             file={wizardFile}
             outputFormat={outputFormat}
             onFormatChange={onFormatChange}
+            mode={mode}
+            onModeChange={setMode}
             onCancel={() => setWizardFile(null)}
             onUploaded={onUploaded}
           />
@@ -117,12 +124,43 @@ export default function Dropzone({
             file={wizardFile}
             outputFormat={outputFormat}
             onFormatChange={onFormatChange}
+            mode={mode}
+            onModeChange={setMode}
             onCancel={() => setWizardFile(null)}
             onUploaded={onUploaded}
           />
         )
       ) : (
         <>
+          {/* Phase 5 (spec E): cluster row top-right — [mode radios | Gửi lên · format ▾]. */}
+          <div
+            data-testid="upload-cluster"
+            className="mb-2 flex flex-wrap items-center justify-between gap-2"
+          >
+            <ModeSelector mode={mode} onModeChange={setMode} />
+            <div className="ml-auto flex items-center gap-2">
+              {mode === "extract_only" ? (
+                <Button
+                  testid="btn-upload"
+                  disabled={disabled}
+                  loading={busy}
+                  onClick={() => inputRef.current?.click()}
+                >
+                  Tải file lên
+                </Button>
+              ) : (
+                <FormatSplitButton
+                  testid="btn-upload"
+                  label="Tải file lên"
+                  format={outputFormat}
+                  onFormatChange={onFormatChange}
+                  onClick={() => inputRef.current?.click()}
+                  disabled={disabled}
+                  loading={busy}
+                />
+              )}
+            </div>
+          </div>
           <p className="mb-2 text-sm text-muted">Kéo thả file vào đây hoặc chọn từ máy</p>
           <input
             ref={inputRef}
@@ -136,15 +174,6 @@ export default function Dropzone({
               handleFile(e.target.files?.[0]);
               e.target.value = "";
             }}
-          />
-          <FormatSplitButton
-            testid="btn-upload"
-            label="Tải file lên"
-            format={outputFormat}
-            onFormatChange={onFormatChange}
-            onClick={() => inputRef.current?.click()}
-            disabled={disabled}
-            loading={busy}
           />
         </>
       )}

@@ -70,6 +70,7 @@ it("uncheck page 2 → submit uploads original File with preprocess pages [1,3]"
     expect(api.uploadJob).toHaveBeenCalledWith(file, {
       preprocess: { pages: [1, 3], rotate: {} },
       output_format: "md",
+      mode: "layout",
     }),
   );
   await waitFor(() => expect(onUploaded).toHaveBeenCalledWith({ id: 7, status: "queued" }));
@@ -84,6 +85,7 @@ it("rotate page 3 to 90 → submit preprocess rotate {3:90}", async () => {
     expect(api.uploadJob).toHaveBeenCalledWith(file, {
       preprocess: { pages: [1, 2, 3], rotate: { "3": 90 } },
       output_format: "md",
+      mode: "layout",
     }),
   );
 });
@@ -125,6 +127,7 @@ it("split submit: label reflects outputFormat prop, submit sends that format", a
     expect(api.uploadJob).toHaveBeenCalledWith(file, {
       preprocess: { pages: [1, 2, 3], rotate: {} },
       output_format: "docx",
+      mode: "layout",
     }),
   );
 });
@@ -153,4 +156,55 @@ it("more than 50 pages selected → error, uploadJob NOT called", async () => {
     "Tối đa 50 trang mỗi lần gửi.",
   );
   expect(api.uploadJob).not.toHaveBeenCalled();
+});
+
+// Phase 5 (spec E): mode radios + [Hủy][Gửi lên·format▾] cluster top-right; extract_only hides format picker.
+it("cluster [Hủy][Gửi lên] sits top-right above the page list; mode radios render", async () => {
+  renderWizard();
+  await screen.findByTestId("wizard-page-1");
+  const cluster = screen.getByTestId("mode-selector").parentElement!;
+  expect(cluster).toBe(screen.getByTestId("wizard-pdf").firstElementChild);
+  expect(cluster.className).toContain("justify-between");
+  expect(cluster).toContainElement(screen.getByTestId("wizard-cancel"));
+  expect(cluster).toContainElement(screen.getByTestId("wizard-submit"));
+  expect(cluster).toContainElement(screen.getByTestId("btn-format-toggle"));
+  // cancel LEFT of submit in the cluster (spec: [Hủy][Gửi lên · format ▾])
+  expect(
+    screen.getByTestId("wizard-cancel").compareDocumentPosition(screen.getByTestId("wizard-submit")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  // page list BELOW the cluster
+  expect(cluster.compareDocumentPosition(screen.getByTestId("wizard-page-1")) &
+    Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
+it("extract_only: format picker hidden, submit sends mode", async () => {
+  // reset the 51-page doc left by the previous test (clearAllMocks keeps implementations)
+  vi.mocked(loadPdf).mockResolvedValue({
+    numPages: 3,
+    getPage: vi.fn(async () => ({ viewport: { width: 60, height: 80 }, renderCanvas })),
+  } as never);
+  // controlled: mode owned by the parent Dropzone — render with the prop set
+  const onModeChange = vi.fn();
+  render(
+    <PdfWizard
+      file={file}
+      mode="extract_only"
+      onModeChange={onModeChange}
+      onCancel={vi.fn()}
+      onUploaded={vi.fn()}
+      onFormatChange={vi.fn()}
+    />,
+  );
+  await screen.findByTestId("wizard-page-1");
+  expect(screen.getByTestId("mode-extract-only")).toBeChecked();
+  expect(screen.queryByTestId("btn-format-toggle")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByTestId("wizard-submit"));
+  await waitFor(() =>
+    expect(api.uploadJob).toHaveBeenCalledWith(file, {
+      preprocess: { pages: [1, 2, 3], rotate: {} },
+      output_format: "md",
+      mode: "extract_only",
+    }),
+  );
 });

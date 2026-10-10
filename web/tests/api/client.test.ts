@@ -64,6 +64,22 @@ describe("api client", () => {
     expect((opts.body as FormData).get("output_format")).toBeNull();
   });
 
+  it("uploadJob appends mode field when opts.mode present", async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1, status: "queued" }), { status: 200 }));
+    vi.stubGlobal("fetch", spy);
+    await api.uploadJob(new File(["x"], "a.jpg", { type: "image/jpeg" }), { mode: "extract_only" });
+    const [, opts] = spy.mock.calls[0];
+    expect((opts.body as FormData).get("mode")).toBe("extract_only");
+  });
+
+  it("uploadJob omits mode field when opts absent", async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1, status: "queued" }), { status: 200 }));
+    vi.stubGlobal("fetch", spy);
+    await api.uploadJob(new File(["x"], "a.jpg", { type: "image/jpeg" }));
+    const [, opts] = spy.mock.calls[0];
+    expect((opts.body as FormData).get("mode")).toBeNull();
+  });
+
   it("uploadJob accepts Blob + filename (cropped JPEG multipart name)", async () => {
     const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1, status: "queued" }), { status: 200 }));
     vi.stubGlobal("fetch", spy);
