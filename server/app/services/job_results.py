@@ -38,9 +38,14 @@ _active_outputs: dict[int, asyncio.Task] = {}
 
 async def _auto_output(job: Job, storage: StorageDriver) -> None:
     try:
-        # lazy import: exports → jobs → job_results (cycle if eager)
-        from app.routers.exports import auto_generate_output
-        ok = bool(await auto_generate_output(job, storage))
+        # Phase 5: extract_only — no layout requested; OCR result alone
+        # completes the job (no artifacts, no rendering phase failure).
+        if job.mode == "extract_only":
+            ok = True
+        else:
+            # lazy import: exports → jobs → job_results (cycle if eager)
+            from app.routers.exports import auto_generate_output
+            ok = bool(await auto_generate_output(job, storage))
     except Exception as exc:
         logger.warning(
             "auto output failed job=%s fmt=%s: %s",

@@ -135,6 +135,13 @@ class Job(Base):
     output_format: Mapped[str | None] = mapped_column(
         Text, nullable=True, default="md"
     )
+    # Phase 5 (plan 2026-10-10): "layout" (default) | "extract_only" —
+    # extract_only skips auto-gen layout. ALTER-only migration:
+    #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS mode TEXT DEFAULT 'layout';
+    # Readers use `job.mode or "layout"` (legacy NULL rows).
+    mode: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default="layout"
+    )
     # Plan M: word style overrides — JSON object (enum keys, typed values)
     # hoặc NULL. ALTER-only migration (create_all never ALTERs):
     #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS layout_style TEXT;

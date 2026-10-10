@@ -133,6 +133,7 @@ async def upload_job(
     file: UploadFile = File(...),
     preprocess: str | None = Form(None),
     output_format: str | None = Form(None),
+    mode: str | None = Form(None),
     user: User = Depends(_ocr_user),
     storage: StorageDriver = Depends(get_storage),
     session: AsyncSession = Depends(get_session),
@@ -154,6 +155,10 @@ async def upload_job(
     fmt = output_format or "md"
     if fmt not in ("md", "docx"):
         raise HTTPException(status_code=422, detail="Đầu ra không hợp lệ.")
+    # Phase 5: "layout" (default) | "extract_only"; invalid → 422 before any write
+    job_mode = mode or "layout"
+    if job_mode not in ("layout", "extract_only"):
+        raise HTTPException(status_code=422, detail="Chế độ xử lý không hợp lệ.")
 
     # hash while spooling to temp file; size cap enforced during the stream
     hasher = hashlib.sha256()
@@ -228,6 +233,7 @@ async def upload_job(
         page_count=page_count,
         preprocess=preprocess_json,
         output_format=fmt,
+        mode=job_mode,
     )
     session.add(job)
     await session.commit()
@@ -238,6 +244,7 @@ async def upload_job(
         "page_count": job.page_count,
         "file_type": job.file_type,
         "output_format": fmt,
+        "mode": job_mode,
     }
 
 # --- Owner reads: GET /api/jobs, /{id}, /{id}/file ---
