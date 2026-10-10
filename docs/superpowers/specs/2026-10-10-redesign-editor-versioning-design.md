@@ -108,7 +108,7 @@ Khi lưu text gốc (accept suggestion hoặc edit):
 
 ## Sub-system E: Upload mode selector + cụm nút (Phase 5)
 
-- Cụm [Hủy][Gửi lên · format ▾]移到 khung upload **góc trên bên phải**.
+- Cụm [Hủy][Gửi lên · format ▾] chuyển sang khung upload **góc trên bên phải**.
 - Wizard thêm **mode**: "Lấy layout" (+ format md/docx) | "Chỉ trich xuất văn bản".
 - `jobs.output_format` nullable + `mode` (extract_only | layout). extract_only → bỏ qua auto-gen layout.
 
