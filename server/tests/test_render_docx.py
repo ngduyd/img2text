@@ -7,7 +7,7 @@ import httpx
 import pytest
 from docx import Document
 
-from app.services.render_docx import build_docx
+from app.services.render_docx import RENDER_DOCX_PROMPT, build_docx
 
 from tests.test_export_llm_docx import FakeResponse
 
@@ -67,6 +67,32 @@ def _ir_response() -> dict:
                 "footer": [],
             }
         ],
+    }
+
+def _zones_result() -> dict:
+    """Trang 0 header+content (không footer), trang 1 content-only."""
+    return {
+        "pages": [
+            {
+                "index": 0, "width": 800, "height": 600,
+                "regions": [
+                    {"id": "h0", "bbox": [100, 5, 700, 30],
+                     "text": "TRƯỜNG THCS ABC", "verdict": "ok",
+                     "placeholder": False},
+                    {"id": "c0", "bbox": [50, 60, 750, 100],
+                     "text": "Nội dung phần một", "verdict": "ok",
+                     "placeholder": False},
+                ],
+            },
+            {
+                "index": 1, "width": 800, "height": 600,
+                "regions": [
+                    {"id": "c1", "bbox": [50, 60, 750, 100],
+                     "text": "Nội dung phần hai", "verdict": "ok",
+                     "placeholder": False},
+                ],
+            },
+        ]
     }
 
 def _html_response() -> str:
@@ -148,6 +174,21 @@ class TestBuildDocxFromIR:
         data = await build_docx(_ocr_result(), use_llm=False)
         assert data[:2] == b"PK"
 
+    async def test_variable_zones_content_only_page_no_invented_header_footer(self):
+        """Trang content-only → heuristic không nhân đôi header, không footer thừa."""
+        data = await build_docx(_zones_result(), use_llm=False)
+        texts = [p.text.strip() for p in Document(io.BytesIO(data)).paragraphs]
+        assert texts.count("TRƯỜNG THCS ABC") == 1
+        assert "Nội dung phần hai" in texts
+
+    async def test_variable_zones_header_content_no_empty_footer(self):
+        """Trang header+content (không footer) → không thêm footer rỗng."""
+        result = _zones_result()
+        result["pages"].pop(1)
+        data = await build_docx(result, use_llm=False)
+        texts = [p.text.strip() for p in Document(io.BytesIO(data)).paragraphs]
+        assert [t for t in texts if t] == ["TRƯỜNG THCS ABC", "Nội dung phần một"]
+
     async def test_prompt_requests_bbox(self, monkeypatch):
         """Cả structurize lẫn render prompt đều chỉ định bbox."""
         calls = fake_llm(monkeypatch, [
@@ -173,6 +214,13 @@ class TestBuildDocxFromIR:
         texts = [p.text for p in doc.paragraphs]
         assert "Tiêu đề" in texts
         assert "Nội dung đoạn văn" in texts
+
+def test_prompt_guards_empty_zones():
+    """Pin guard vào RENDER_DOCX_PROMPT (tránh ai đó xóa)."""
+    low = RENDER_DOCX_PROMPT.lower()
+    assert "empty zones" in low
+    assert "do not invent" in low
+    assert "render nothing" in low
 
     async def test_build_docx_table_block(self, monkeypatch):
         """HTML table in OCR → docx table."""
