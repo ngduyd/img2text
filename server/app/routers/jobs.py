@@ -15,9 +15,9 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 
 from pypdf import PdfReader
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
@@ -255,14 +255,26 @@ async def _job_or_403(
 
 @router.get("/api/jobs")
 async def list_jobs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    """Paginated owner list (Phase 4): page/page_size in, {items,total,page,page_size}.
+
+    total counts ALL owner jobs (unpaginated) so the UI can render page
+    numbers; id desc tiebreak keeps created_at ties from shuffling rows
+    across page boundaries (pages must partition cleanly).
+    """
+    base = select(Job).where(Job.user_id == user.id)
+    total = (
+        await session.execute(select(func.count()).select_from(base.subquery()))
+    ).scalar_one()
     rows = (
         await session.execute(
-            select(Job)
-            .where(Job.user_id == user.id)
-            .order_by(Job.created_at.desc())
+            base.order_by(Job.created_at.desc(), Job.id.desc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
         )
     ).scalars().all()
     items = [
@@ -276,7 +288,7 @@ async def list_jobs(
         }
         for j in rows
     ]
-    return {"items": items, "total": len(items)}
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 # --- Worker claim: GET /api/jobs/next (route defined BEFORE /{id}) ---
 
