@@ -230,6 +230,25 @@ it("loading state renders skeleton rows while the jobs list is pending", async (
   expect((await screen.findAllByTestId("skeleton")).length).toBeGreaterThan(0);
 });
 
+// Phase 4 Task 2: pagination controls render + click page 2 → refetch.
+it("pagination shows page controls and click page 2 refetches the list", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  const pageOne = { id: 11, status: "queued", page_count: 1, file_type: "pdf", created_at: "2026-10-04T00:00:00Z", error: null } as Job;
+  const pageTwo = { id: 21, status: "done", page_count: 2, file_type: "jpg", created_at: "2026-10-04T00:00:00Z", error: null } as Job;
+  vi.mocked(api.listJobs).mockImplementation((page = 1) =>
+    Promise.resolve({ items: page === 2 ? [pageTwo] : [pageOne], total: 12, page, page_size: 10 }),
+  );
+  renderWithRouter(<Jobs />);
+  expect(api.listJobs).toHaveBeenCalledWith(1);
+  await screen.findByTestId("job-row-11");
+  // Trang 1: prev disabled.
+  expect(screen.getByTestId("btn-page-prev")).toBeDisabled();
+  await userEvent.click(screen.getByTestId("btn-page-2"));
+  await screen.findByTestId("job-row-21");
+  expect(api.listJobs).toHaveBeenCalledWith(2);
+  await waitFor(() => expect(screen.getByTestId("btn-page-2")).toHaveAttribute("aria-current", "page"));
+});
+
 it("header shows job stats (total, pending, done)", async () => {
   vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
   vi.mocked(api.listJobs).mockResolvedValue({

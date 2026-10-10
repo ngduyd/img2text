@@ -1,4 +1,4 @@
-import type { AdminStatsDay, Job, JobListItem, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion } from "./types";
+import type { AdminStatsDay, Job, JobsPage, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion } from "./types";
 
 /** Thrown for any non-2xx response; `detail` mirrors FastAPI {detail} bodies. */
 export class ApiError extends Error {
@@ -66,7 +66,9 @@ export const api = {
     request<unknown>("/api/auth/password/forgot", { method: "POST", body: { email } }),
   resetPassword: (token: string, password: string) =>
     request<unknown>("/api/auth/password/reset", { method: "POST", body: { token, password } }),
-  listJobs: () => request<{ items: JobListItem[]; total: number }>("/api/jobs"),
+  // Phase 4: server-side pagination (page default 1, page_size default 10 max 100).
+  listJobs: (page = 1, page_size = 10) =>
+    request<JobsPage>(`/api/jobs?page=${page}&page_size=${page_size}`),
   getJob: (id: number | string) => request<Job>(`/api/jobs/${id}`),
   // Blob has no name — `filename` supplies the multipart filename (e.g. cropped JPEG).
   uploadJob: (

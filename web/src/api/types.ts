@@ -100,6 +100,14 @@ export interface JobListItem {
   finished_at?: string | null;
 }
 
+/** Phase 4: GET /api/jobs paginated envelope (page/page_size có từ Phase 4). */
+export interface JobsPage {
+  items: JobListItem[];
+  total: number;
+  page?: number;
+  page_size?: number;
+}
+
 export interface AdminStatsDay {
   date: string;
   users_registered: number;

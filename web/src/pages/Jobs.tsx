@@ -8,20 +8,30 @@ import JobRow from "../components/JobRow";
 import StatusFilterTabs from "../components/StatusFilterTabs";
 import type { StatusFilter } from "../components/StatusFilterTabs";
 import Card from "../components/ui/Card";
+import Button from "../components/ui/Button";
 import Skeleton from "../components/ui/Skeleton";
 import { PENDING_STATUSES } from "../lib/status";
 
 export default function Jobs() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { data: jobs, isLoading } = useQuery({ queryKey: ["jobs"], queryFn: api.listJobs });
+  // Phase 4: server-side page state — mỗi trang 10 job (mặc định server).
+  const [page, setPage] = useState(1);
+  const { data: jobs, isLoading } = useQuery({
+    queryKey: ["jobs", page],
+    queryFn: () => api.listJobs(page),
+  });
   const [filter, setFilter] = useState<StatusFilter>("all");
   // Plan D4: export format chosen BEFORE upload — stored on the job, auto-generated after OCR.
   const [outputFormat, setOutputFormat] = useState<"md" | "docx">("md");
   const items = jobs?.items ?? [];
+  // Stats + filter tabs are trang hiện tại (server total sống riêng ở stats-total + pagination).
   const visible = filter === "all" ? items : items.filter((j) => j.status === filter);
   const pending = items.filter((j) => PENDING_STATUSES.includes(j.status)).length;
   const done = items.filter((j) => j.status === "done").length;
+  // Server page_size hiện về trong response; mock/old-shape thiếu → 10 (default).
+  const pageSize = jobs?.page_size ?? 10;
+  const totalPages = Math.max(1, Math.ceil((jobs?.total ?? 0) / pageSize));
 
   return (
     <main id="main" className="mx-auto max-w-3xl p-4 sm:p-6">
@@ -35,7 +45,7 @@ export default function Jobs() {
           <div className="text-right">
             <dt className="text-xs text-muted">Tổng</dt>
             <dd data-testid="stats-total" className="font-mono text-lg font-semibold leading-tight">
-              {items.length}
+              {jobs?.total ?? items.length}
             </dd>
           </div>
           <div className="text-right">
@@ -91,7 +101,7 @@ export default function Jobs() {
               </li>
             ))}
           </ul>
-        ) : items.length === 0 ? (
+        ) : jobs && jobs.total === 0 ? (
           /* Composed empty state: icon + title + guidance + CTA hint (DESIGN.md §4). */
           <Card testid="empty-state">
             <div className="flex flex-col items-center px-2 py-6 text-center">
@@ -123,6 +133,47 @@ export default function Jobs() {
           </ul>
         )}
       </div>
+
+      {/* Phase 4: phân trang server-side — Trước/Sau + số trang (10 job/trang). */}
+      {!isLoading && (jobs?.total ?? 0) > pageSize && (
+        <nav
+          data-testid="pagination"
+          aria-label="Phân trang"
+          className="mt-4 flex flex-wrap items-center justify-center gap-2"
+        >
+          <Button
+            testid="btn-page-prev"
+            size="sm"
+            variant="secondary"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => p - 1)}
+          >
+            Trước
+          </Button>
+          {/* ponytail: list mọi số trang — nâng cấp khi total_pages > ~20 (windowed numbers). */}
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
+            <Button
+              key={n}
+              testid={`btn-page-${n}`}
+              size="sm"
+              variant={n === page ? "primary" : "ghost"}
+              aria-current={n === page ? "page" : undefined}
+              onClick={() => setPage(n)}
+            >
+              {n}
+            </Button>
+          ))}
+          <Button
+            testid="btn-page-next"
+            size="sm"
+            variant="secondary"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Sau
+          </Button>
+        </nav>
+      )}
     </main>
   );
 }

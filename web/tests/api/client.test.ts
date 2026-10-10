@@ -87,6 +87,16 @@ describe("api client", () => {
     expect(assign).toHaveBeenCalledWith("/signin");
   });
 
+  it("listJobs appends page + page_size params", async () => {
+    const spy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ items: [], total: 0, page: 2, page_size: 20 }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", spy);
+    await api.listJobs(2, 20);
+    const [url] = spy.mock.calls[0];
+    expect(url).toBe("/api/jobs?page=2&page_size=20");
+  });
+
   it("getJobFile GETs /api/jobs/{id}/file and returns {url}", async () => {
     const spy = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ url: "https://signed.example/f" }), { status: 200 }),
