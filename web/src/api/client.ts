@@ -88,6 +88,9 @@ export const api = {
   },
   retryJob: (id: number | string) =>
     request<void>(`/api/jobs/${id}/retry`, { method: "POST" }),
+  // Hủy job: queued|extracting|rendering → cancelled (204; terminal 409).
+  cancelJob: (id: number | string) =>
+    request<void>(`/api/jobs/${id}/cancel`, { method: "POST" }),
   // Phase 4: bulk retry — per-job settle; một job fail KHÔNG abort cả batch.
   retryJobs: async (ids: Array<number | string>): Promise<{ ok: number; errors: string[] }> => {
     const results = await Promise.allSettled(ids.map((id) => api.retryJob(id)));

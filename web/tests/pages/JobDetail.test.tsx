@@ -21,6 +21,7 @@ vi.mock("../../src/api/client", async (importOriginal) => {
       getJob: vi.fn(),
       retryJob: vi.fn(),
       retryLayout: vi.fn(),
+      cancelJob: vi.fn(),
       exportJob: vi.fn(),
       downloadExport: vi.fn(),
     },
@@ -172,6 +173,34 @@ it("retry failure shows retry-error with server detail", async () => {
   await user.click(screen.getByTestId("btn-retry-job"));
   expect(await screen.findByTestId("retry-error")).toHaveTextContent("Forbidden.");
 });
+
+// Hủy job: pending (queued|extracting|rendering) hiện btn-cancel-job.
+it.each(["queued", "extracting", "rendering"] as const)(
+  "%s shows cancel button and calls api.cancelJob",
+  async (status) => {
+    mockJob({ id: 5, status, error: null, result: null } as Job);
+    vi.mocked(api.cancelJob).mockResolvedValue(undefined);
+    renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+    expect(await screen.findByTestId("status-5")).toBeDefined();
+    const invalidate = vi.spyOn(lastQueryClient!, "invalidateQueries");
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("btn-cancel-job"));
+    expect(api.cancelJob).toHaveBeenCalledWith("5");
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Đã hủy job"));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["job", "5"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
+  },
+);
+
+it.each(["done", "failed", "cancelled"] as const)(
+  "%s hides cancel button",
+  async (status) => {
+    mockJob({ id: 5, status, error: null, result: null } as Job);
+    renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+    expect(await screen.findByTestId("status-5")).toBeDefined();
+    expect(screen.queryByTestId("btn-cancel-job")).not.toBeInTheDocument();
+  },
+);
 
 it("done without layout_cache shows retry-layout button and calls api", async () => {
   mockJob({ ...DONE_JOB, layout_cache: { md: false, docx: false } });

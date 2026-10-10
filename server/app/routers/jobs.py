@@ -1048,3 +1048,51 @@ async def fail_job(
         raise HTTPException(status_code=409, detail="job not runnable")
     await session.commit()
     return {}
+
+# --- Cancel: POST /api/jobs/{id}/cancel (Hủy job) ---------------------------
+
+@router.post("/api/jobs/{id}/cancel", status_code=204)
+async def cancel_job(
+    id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """Owner cancel, owner-strict (retry pattern): queued|extracting|
+    rendering → cancelled (terminal); done|failed|cancelled → 409
+    "Không hủy được". extracting also NULLs kaggle_ref so a restart never
+    re-adopts the batch run for this job; rendering cancels the live
+    auto-output task (job_results._active_outputs). The cancelled row is
+    inert everywhere else: ingest/sweep/reaper WHERE guards only match
+    queued/extracting/rendering, and the auto-output completion UPDATE is
+    WHERE status IN (rendering, failed)."""
+    from app.services import job_results  # lazy: append-only region (R2 lane)
+
+    job = await session.get(Job, id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    if job.user_id != user.id:
+        raise HTTPException(status_code=403, detail="forbidden")
+    if job.status not in {"queued", "extracting", "rendering"}:
+        raise HTTPException(status_code=409, detail="Không hủy được")
+    values: dict = {
+        "status": "cancelled",
+        "failed_step": None,
+        "finished_at": _utcnow(),
+    }
+    if job.status == "extracting":
+        values["kaggle_ref"] = None
+    if job.status == "rendering":
+        task = job_results._active_outputs.get(id)
+        if task is not None and not task.done():
+            task.cancel()
+    # R16 atomic guard (retry pattern): re-check the phase at commit time —
+    # a racing claim/result flips rowcount to 0 → same 409.
+    rowcount = (
+        await session.execute(
+            update(Job).where(Job.id == id, Job.status == job.status).values(**values)
+        )
+    ).rowcount
+    if rowcount == 0:
+        raise HTTPException(status_code=409, detail="Không hủy được")
+    await session.commit()
+    return Response(status_code=204)

@@ -135,6 +135,25 @@ export default function JobDetail() {
               Chạy lại OCR
             </Button>
           )}
+          {/* Hủy job: pending → cancelled (204); done|failed|cancelled ẩn nút. */}
+          {PENDING_STATUSES.includes(job.status) && (
+            <Button
+              testid="btn-cancel-job"
+              variant="secondary"
+              onClick={async () => {
+                try {
+                  await api.cancelJob(id!);
+                  toast.success("Đã hủy job");
+                  await queryClient.invalidateQueries({ queryKey: ["job", id] });
+                  await queryClient.invalidateQueries({ queryKey: ["jobs"] });
+                } catch (err) {
+                  toast.error(mapApiError(err));
+                }
+              }}
+            >
+              Hủy job
+            </Button>
+          )}
           {/* Layout gen failed (done but layout_cache miss): re-run LLM md+docx. */}
           {job.status === "done" && result && (!job.layout_cache?.md || !job.layout_cache?.docx) && (
             <Button

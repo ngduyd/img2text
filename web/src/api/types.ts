@@ -44,7 +44,7 @@ export interface RegionPatchOut {
   markdown_replaced: boolean;
 }
 
-export type JobStatus = "queued" | "extracting" | "rendering" | "done" | "failed";
+export type JobStatus = "queued" | "extracting" | "rendering" | "done" | "failed" | "cancelled";
 
 /** Phase 5 (spec E): layout (gen md/docx layout) | extract_only (text only, no auto-gen). */
 export type JobMode = "layout" | "extract_only";
