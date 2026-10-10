@@ -178,4 +178,73 @@ describe("api client", () => {
     expect(url).toBe("/api/jobs/5/proofread");
     expect(opts.method).toBe("POST");
   });
+
+  // --- Phase 2 (spec Sub-system B): extraction save + sync ---
+
+  it("getExtraction GETs text + text_version", async () => {
+    const spy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ text: "Xin chào", text_version: 3 }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", spy);
+    await expect(api.getExtraction(5)).resolves.toEqual({ text: "Xin chào", text_version: 3 });
+    const [url, opts] = spy.mock.calls[0];
+    expect(url).toBe("/api/jobs/5/extraction");
+    expect(opts.method).toBe("GET");
+  });
+
+  it("saveExtraction POSTs text + phrase pair + expected_text_version", async () => {
+    const spy = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ synced: { md: true, docx: false }, needs_render: ["docx-layout"], text_version: 4 }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", spy);
+    const result = await api.saveExtraction(5, {
+      text: "Xin cháo",
+      old_phrase: "chao",
+      new_phrase: "chào",
+      expected_text_version: 3,
+    });
+    expect(result).toEqual({ synced: { md: true, docx: false }, needs_render: ["docx-layout"], text_version: 4 });
+    const [url, opts] = spy.mock.calls[0];
+    expect(url).toBe("/api/jobs/5/extraction");
+    expect(opts.method).toBe("POST");
+    expect(JSON.parse(opts.body)).toEqual({
+      text: "Xin cháo",
+      old_phrase: "chao",
+      new_phrase: "chào",
+      expected_text_version: 3,
+    });
+  });
+
+  it("saveExtraction sends force flag when given (detached 409 retry)", async () => {
+    const spy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ synced: { md: true, docx: true }, needs_render: [], text_version: 4 }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", spy);
+    await api.saveExtraction(5, { text: "t", expected_text_version: 3, force: true });
+    expect(JSON.parse(spy.mock.calls[0][1].body).force).toBe(true);
+  });
+
+  it("listVersions GETs versions filtered by kind", async () => {
+    const items = [{ id: 1, kind: "text", version: 2, based_on_text_version: 2, detached: false, created_at: "2026-10-10T00:00:00Z" }];
+    const spy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ items }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", spy);
+    await expect(api.listVersions(5, "text")).resolves.toEqual({ items });
+    const [url, opts] = spy.mock.calls[0];
+    expect(url).toBe("/api/jobs/5/versions?kind=text");
+    expect(opts.method).toBe("GET");
+  });
+
+  it("restoreVersion POSTs restore (204 no body)", async () => {
+    const spy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", spy);
+    await expect(api.restoreVersion(5, 9)).resolves.toBeUndefined();
+    const [url, opts] = spy.mock.calls[0];
+    expect(url).toBe("/api/jobs/5/versions/9/restore");
+    expect(opts.method).toBe("POST");
+  });
 });
