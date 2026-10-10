@@ -71,7 +71,7 @@ Prod: điền R2 creds `.env` → presigned GET/POST thật → kernel tải t�
 - **F1** (presign_post + config) → **F2** (upload flow) → **F3** (pipeline manifest/kernel) → **F4** (artifacts, verify).
 - F1+F2 (server+web upload) song song được với F3 (kernel) — tách file. F3 cần F1 (presign_get đã có) nhưng tách kernel.
 
-## Open (cần user khi implement)
+## Quyết định mở (đã chốt)
 
-- Giữ multipart `UploadFile` làm fallback hay bỏ hẳn? (Khuyến nghị: bỏ, chuyển hết sang presigned POST.)
-- max_bytes cap: 50MB? 100MB?
+- Bỏ hẳn multipart `UploadFile` — chuyển hết sang presigned POST.
+- `max_bytes` cap = **50MB**.
