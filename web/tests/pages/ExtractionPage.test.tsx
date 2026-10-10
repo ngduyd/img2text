@@ -186,3 +186,67 @@ it("save fully synced → no needs-render hint", async () => {
   await waitFor(() => expect(api.saveExtraction).toHaveBeenCalled());
   expect(screen.queryByTestId("needs-render-hint")).not.toBeInTheDocument();
 });
+
+// --- Phase 2 review fixes: P1 repeat dead click, P2 detached confirm, P3 popover a11y ---
+
+it("clicking repeat occurrence mark opens the same popover (P1 dead click)", async () => {
+  const user = userEvent.setup();
+  renderWithSuggestions([pendingSuggestion({})]);
+  const repeat = await screen.findByTestId("suggestion-mark-11-1");
+  await user.click(within(repeat).getByRole("button"));
+  expect(screen.getByTestId("suggestion-popover-11")).toBeInTheDocument();
+});
+
+it("409 detached conflict → confirm dialog; confirmed → resend with force=true", async () => {
+  const user = userEvent.setup();
+  const { ApiError } = await import("../../src/api/client");
+  vi.mocked(api.saveExtraction)
+    .mockRejectedValueOnce(new ApiError("Layout có chỉnh tay. Đồng bộ sẽ ghi đè."))
+    .mockResolvedValueOnce({ synced: { md: true, docx: true }, needs_render: [], text_version: 4 });
+  const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  renderWithSuggestions([pendingSuggestion({})]);
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  await user.click(screen.getByTestId("btn-apply-11"));
+  expect(confirmSpy).toHaveBeenCalledWith("Layout có chỉnh tay. Đồng bộ sẽ ghi đè. Tiếp tục?");
+  await waitFor(() => expect(api.saveExtraction).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(api.saveExtraction).mock.calls[1][1]).toMatchObject({ force: true });
+  confirmSpy.mockRestore();
+});
+
+it("409 detached conflict → user cancels confirm → no force resend", async () => {
+  const user = userEvent.setup();
+  const { ApiError } = await import("../../src/api/client");
+  const { toast } = await import("sonner");
+  vi.mocked(api.saveExtraction).mockRejectedValue(
+    new ApiError("Layout có chỉnh tay. Đồng bộ sẽ ghi đè."),
+  );
+  const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+  renderWithSuggestions([pendingSuggestion({})]);
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  await user.click(screen.getByTestId("btn-apply-11"));
+  await waitFor(() => expect(toast.error).toHaveBeenCalled());
+  expect(api.saveExtraction).toHaveBeenCalledTimes(1);
+  confirmSpy.mockRestore();
+});
+
+it("Escape closes the popover (a11y)", async () => {
+  const user = userEvent.setup();
+  renderWithSuggestions([pendingSuggestion({})]);
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  expect(screen.getByTestId("suggestion-popover-11")).toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  await waitFor(() =>
+    expect(screen.queryByTestId("suggestion-popover-11")).not.toBeInTheDocument(),
+  );
+});
+
+it("click outside closes the popover (a11y)", async () => {
+  const user = userEvent.setup();
+  renderWithSuggestions([pendingSuggestion({})]);
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  expect(screen.getByTestId("suggestion-popover-11")).toBeInTheDocument();
+  await user.click(document.querySelector("h1")!);
+  await waitFor(() =>
+    expect(screen.queryByTestId("suggestion-popover-11")).not.toBeInTheDocument(),
+  );
+});

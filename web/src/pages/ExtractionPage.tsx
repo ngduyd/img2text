@@ -1,9 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, TriangleAlert } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { api } from "../api/client";
+import { api, ApiError } from "../api/client";
 import type { Suggestion } from "../api/types";
 import { mapApiError } from "../lib/errors";
 import { buildHighlights } from "../lib/highlight";
@@ -26,13 +26,33 @@ export default function ExtractionPage() {
     queryKey: ["suggestions", id],
     queryFn: () => api.getSuggestions(id!),
   });
-  const [openSid, setOpenSid] = useState<number | null>(null);
+  /** Mở theo đúng occurrence click (P1: repeat mark cũng mở được popover). */
+  const [open, setOpen] = useState<{ sid: number; occ: number } | null>(null);
   const [savingSid, setSavingSid] = useState<number | null>(null);
   /** Task 4: layouts không sync được trong lần save gần nhất → cần vẽ lại. */
   const [needsRender, setNeedsRender] = useState<string[]>([]);
   const [redrawing, setRedrawing] = useState(false);
 
-  const openSuggestion = suggestions.find((s) => s.id === openSid) ?? null;
+  const openSuggestion = suggestions.find((s) => s.id === open?.sid) ?? null;
+
+  // P3: Escape + click-outside đóng popover.
+  useEffect(() => {
+    if (!openSuggestion) return;
+    const close = () => setOpen(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    const onDown = (e: PointerEvent) => {
+      if (!(e.target as HTMLElement).closest("[data-suggestion-anchor]"))
+        close();
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onDown);
+    };
+  }, [openSuggestion]);
 
   const invalidate = async () => {
     await queryClient.invalidateQueries({ queryKey: ["extraction", id] });
@@ -43,17 +63,34 @@ export default function ExtractionPage() {
   const handleApply = async (s: Suggestion) => {
     if (!data) return;
     setSavingSid(s.id);
-    try {
-      // Server sync theo phrase (old→new, mọi occurrence) → text cũng replace
-      // mọi occurrence để khớp layout sau sync.
-      const newText = data.text.split(s.original).join(s.suggestion);
-      const result = await api.saveExtraction(id!, {
+    // Server sync theo phrase (old→new, mọi occurrence) → text cũng replace
+    // mọi occurrence để khớp layout sau sync.
+    const newText = data.text.split(s.original).join(s.suggestion);
+    const save = (force: boolean) =>
+      api.saveExtraction(id!, {
         text: newText,
         old_phrase: s.original,
         new_phrase: s.suggestion,
         expected_text_version: data.text_version,
+        ...(force ? { force: true } : {}),
       });
-      setOpenSid(null);
+    try {
+      let result;
+      try {
+        result = await save(false);
+      } catch (err) {
+        // P2: detached layout 409 → confirm ghi đè → resend force=true.
+        const detached =
+          err instanceof ApiError &&
+          err.detail === "Layout có chỉnh tay. Đồng bộ sẽ ghi đè.";
+        if (
+          !detached ||
+          !window.confirm("Layout có chỉnh tay. Đồng bộ sẽ ghi đè. Tiếp tục?")
+        )
+          throw err;
+        result = await save(true);
+      }
+      setOpen(null);
       setNeedsRender(result.needs_render);
       toast.success(
         result.needs_render.length > 0
@@ -64,7 +101,7 @@ export default function ExtractionPage() {
     } catch (err) {
       // R59: toast + refresh optimistic lock (409) — không giữ version cũ trong UI.
       toast.error(mapApiError(err));
-      setOpenSid(null);
+      setOpen(null);
       await invalidate();
     } finally {
       setSavingSid(null);
@@ -74,7 +111,7 @@ export default function ExtractionPage() {
   const handleReject = async (s: Suggestion) => {
     try {
       await api.rejectSuggestion(id!, s.id);
-      setOpenSid(null);
+      setOpen(null);
       await invalidate();
     } catch (err) {
       toast.error(mapApiError(err));
@@ -120,9 +157,13 @@ export default function ExtractionPage() {
           role="alert"
           className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
         >
-          <TriangleAlert className="h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+          <TriangleAlert
+            className="h-4 w-4 shrink-0 text-warning"
+            aria-hidden="true"
+          />
           <span className="min-w-0 flex-1">
-            Một số layout chưa đồng bộ được. Vẽ lại layout để cập nhật bản mới nhất.
+            Một số layout chưa đồng bộ được. Vẽ lại layout để cập nhật bản mới
+            nhất.
           </span>
           <Button
             testid="btn-redraw-layout"
@@ -143,7 +184,11 @@ export default function ExtractionPage() {
         </div>
       )}
       {isError && (
-        <p data-testid="extraction-error" role="alert" className="text-sm text-error">
+        <p
+          data-testid="extraction-error"
+          role="alert"
+          className="text-sm text-error"
+        >
           Không tải được văn bản trích xuất.
         </p>
       )}
@@ -157,7 +202,11 @@ export default function ExtractionPage() {
             seg.sid === null ? (
               <span key={i}>{seg.text}</span>
             ) : (
-              <span key={i} className="relative inline-block">
+              <span
+                key={i}
+                className="relative inline-block"
+                data-suggestion-anchor
+              >
                 <mark
                   data-testid={
                     seg.occurrence
@@ -168,50 +217,64 @@ export default function ExtractionPage() {
                 >
                   <button
                     type="button"
-                    aria-expanded={openSid === seg.sid}
+                    aria-expanded={
+                      open?.sid === seg.sid && open?.occ === seg.occurrence
+                    }
                     className="cursor-pointer bg-transparent px-0 text-inherit"
-                    onClick={() => setOpenSid(openSid === seg.sid ? null : seg.sid)}
+                    onClick={() =>
+                      setOpen(
+                        open?.sid === seg.sid && open?.occ === seg.occurrence
+                          ? null
+                          : { sid: seg.sid!, occ: seg.occurrence ?? 0 },
+                      )
+                    }
                   >
                     {seg.text}
                   </button>
                 </mark>
-                {openSid === seg.sid && !seg.occurrence && openSuggestion && (
-                  <span
-                    data-testid={`suggestion-popover-${seg.sid}`}
-                    role="group"
-                    aria-label="Gợi ý sửa"
-                    className="absolute left-0 top-full z-20 mt-1 flex w-64 flex-col gap-2 rounded-md border border-border bg-surface p-3 shadow-card"
-                  >
-                    <span className="flex items-baseline gap-2">
-                      <span className="text-sm line-through decoration-error text-error">
-                        {openSuggestion.original}
+                {open?.sid === seg.sid &&
+                  open?.occ === (seg.occurrence ?? 0) &&
+                  openSuggestion && (
+                    <span
+                      data-testid={`suggestion-popover-${seg.sid}`}
+                      role="group"
+                      aria-label="Gợi ý sửa"
+                      className="absolute left-0 top-full z-20 mt-1 flex w-64 flex-col gap-2 rounded-md border border-border bg-surface p-3 shadow-card"
+                    >
+                      <span className="flex items-baseline gap-2">
+                        <span className="text-sm line-through decoration-error text-error">
+                          {openSuggestion.original}
+                        </span>
+                        <span className="text-sm text-success">
+                          {openSuggestion.suggestion}
+                        </span>
                       </span>
-                      <span className="text-sm text-success">{openSuggestion.suggestion}</span>
+                      <span className="text-xs text-muted">
+                        {openSuggestion.reason}
+                      </span>
+                      <span className="flex gap-2">
+                        <Button
+                          testid={`btn-apply-${seg.sid}`}
+                          variant="primary"
+                          size="sm"
+                          loading={savingSid === seg.sid}
+                          disabled={savingSid !== null}
+                          onClick={() => void handleApply(openSuggestion)}
+                        >
+                          Áp dụng
+                        </Button>
+                        <Button
+                          testid={`btn-reject-${seg.sid}`}
+                          variant="ghost"
+                          size="sm"
+                          disabled={savingSid !== null}
+                          onClick={() => void handleReject(openSuggestion)}
+                        >
+                          Bỏ qua
+                        </Button>
+                      </span>
                     </span>
-                    <span className="text-xs text-muted">{openSuggestion.reason}</span>
-                    <span className="flex gap-2">
-                      <Button
-                        testid={`btn-apply-${seg.sid}`}
-                        variant="primary"
-                        size="sm"
-                        loading={savingSid === seg.sid}
-                        disabled={savingSid !== null}
-                        onClick={() => void handleApply(openSuggestion)}
-                      >
-                        Áp dụng
-                      </Button>
-                      <Button
-                        testid={`btn-reject-${seg.sid}`}
-                        variant="ghost"
-                        size="sm"
-                        disabled={savingSid !== null}
-                        onClick={() => void handleReject(openSuggestion)}
-                      >
-                        Bỏ qua
-                      </Button>
-                    </span>
-                  </span>
-                )}
+                  )}
               </span>
             ),
           )}
