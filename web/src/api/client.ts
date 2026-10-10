@@ -1,4 +1,5 @@
 import type { AdminStatsDay, Job, JobsPage, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion } from "./types";
+import { loadPdf } from "../lib/pdfjs";
 
 /** Thrown for any non-2xx response; `detail` mirrors FastAPI {detail} bodies. */
 export class ApiError extends Error {
@@ -52,6 +53,95 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   return (await res.json()) as T;
 }
 
+/** R2 presigned POST policy: upload thẳng browser → storage, không qua backend. */
+export interface PresignResponse {
+  storage_key: string;
+  url: string;
+  fields: Record<string, string>;
+  max_bytes: number;
+}
+
+const TYPE_BY_EXT: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  pdf: "application/pdf",
+};
+
+/** Content hash cho content-addressed key (uploads/{sha256}.{ext}). */
+export async function sha256Hex(blob: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** POST form (fields + file) thẳng tới storage qua XMLHttpRequest —
+ * upload.onprogress là chỉ có cách report upload progress. No credentials:
+ * cross-origin presigned endpoint, policy đã kí (R2/localstack). */
+export function postForm(
+  url: string,
+  fields: Record<string, string>,
+  file: Blob,
+  filename: string,
+  onProgress?: (percent: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress?.(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new ApiError(`HTTP ${xhr.status}`));
+    };
+    xhr.onerror = () => reject(new ApiError("Tải file thất bại."));
+    const form = new FormData();
+    for (const [k, v] of Object.entries(fields)) form.append(k, v);
+    form.append("file", file, filename);
+    xhr.send(form);
+  });
+}
+
+/** Presigned upload flow (spec 2026-10-10): presign → POST form → storage
+ * (progress) → pdf.js đếm trang (image = 1) → POST /api/jobs metadata-only. */
+async function uploadPresigned(
+  file: File | Blob,
+  opts?: {
+    filename?: string;
+    preprocess?: object;
+    output_format?: string;
+    mode?: string;
+    onProgress?: (percent: number) => void;
+    onPhase?: (phase: "uploading" | "counting") => void;
+  },
+): Promise<{ id: number; status: string }> {
+  const blob = file as Blob;
+  const filename = opts?.filename ?? (file as File).name;
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const content_type = blob.type || TYPE_BY_EXT[ext] || "application/octet-stream";
+  const sha256 = await sha256Hex(blob);
+  const presign = await api.presignUpload({
+    filename,
+    content_type,
+    size_bytes: blob.size,
+    sha256,
+    output_format: opts?.output_format,
+    mode: opts?.mode,
+  });
+  opts?.onPhase?.("uploading");
+  await postForm(presign.url, presign.fields, blob, filename, opts?.onProgress);
+  opts?.onPhase?.("counting");
+  // Page count client-side (spec): pdf.js; image luôn là 1.
+  const page_count =
+    content_type === "application/pdf" ? (await loadPdf(file as File)).numPages : 1;
+  const body: Record<string, unknown> = { storage_key: presign.storage_key, page_count };
+  if (opts?.preprocess !== undefined) body.preprocess = opts.preprocess;
+  if (opts?.output_format !== undefined) body.output_format = opts.output_format;
+  if (opts?.mode !== undefined) body.mode = opts.mode;
+  return request<{ id: number; status: string }>("/api/jobs", { method: "POST", body });
+}
+
 export const api = {
   register: (email: string, password: string) =>
     request<User>("/api/auth/register", { method: "POST", body: { email, password } }),
@@ -71,21 +161,29 @@ export const api = {
     request<JobsPage>(`/api/jobs?page=${page}&page_size=${page_size}`),
   getJob: (id: number | string) => request<Job>(`/api/jobs/${id}`),
   // Blob has no name — `filename` supplies the multipart filename (e.g. cropped JPEG).
+  // R2 presign: sanity-check metadata → policy {url, fields} — bytes goes
+  // browser → storage (không chạm backend).
+  presignUpload: (body: {
+    filename: string;
+    content_type: string;
+    size_bytes: number;
+    sha256: string;
+    output_format?: string;
+    mode?: string;
+  }) => request<PresignResponse>("/api/jobs/presign", { method: "POST", body }),
   uploadJob: (
     file: File | Blob,
-    opts?: { filename?: string; preprocess?: object; output_format?: string; mode?: string },
-  ) => {
-    const form = new FormData();
-    if (opts?.filename !== undefined) form.append("file", file, opts.filename);
-    else form.append("file", file);
-    // R56: optional multipart field "preprocess" (JSON string) — server validates shape.
-    if (opts?.preprocess !== undefined) form.append("preprocess", JSON.stringify(opts.preprocess));
-    // Plan D4: export format chosen at upload ("md" | "docx"); server defaults to md.
-    if (opts?.output_format !== undefined) form.append("output_format", opts.output_format);
-    // Phase 5: "layout" | "extract_only" — server defaults to layout when absent.
-    if (opts?.mode !== undefined) form.append("mode", opts.mode);
-    return request<{ id: number; status: string }>("/api/jobs", { method: "POST", body: form });
-  },
+    opts?: {
+      filename?: string;
+      preprocess?: object;
+      output_format?: string;
+      mode?: string;
+      /** 0-100% (XHR upload.onprogress — fetch không report upload progress). */
+      onProgress?: (percent: number) => void;
+      /** "uploading" = POST form → storage; "counting" = pdf.js đếm trang. */
+      onPhase?: (phase: "uploading" | "counting") => void;
+    },
+  ) => uploadPresigned(file, opts),
   retryJob: (id: number | string) =>
     request<void>(`/api/jobs/${id}/retry`, { method: "POST" }),
   // Phase 4: bulk retry — per-job settle; một job fail KHÔNG abort cả batch.
