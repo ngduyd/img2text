@@ -11,41 +11,39 @@ from app.core.models import Job
 from app.core.schemas import ResultBody
 from app.services.job_results import drain_auto_output, store_batch_result
 
-from tests.test_upload import TEST_JPEG  # noqa: F401 (reuses fixtures via conftest)
+from tests.conftest import TEST_JPEG  # noqa: F401
 
 
-async def _upload(auth_client, mode: str | None = None):
-    data = {"mode": mode} if mode else {}
-    return await auth_client.post(
-        "/api/jobs", files={"file": ("a.jpg", TEST_JPEG, "image/png")}, data=data
-    )
+async def _upload(upload, mode: str | None = None):
+    """Presigned flow (create enforces the mode enum)."""
+    return await upload(TEST_JPEG, "a.jpg", mode=mode)
 
 
-async def test_upload_defaults_to_layout_mode(auth_client, db_session):
-    r = await _upload(auth_client)
+async def test_upload_defaults_to_layout_mode(upload, db_session):
+    r = await _upload(upload)
     assert r.status_code == 201
     job = await db_session.get(Job, r.json()["id"])
     assert job.mode == "layout"
 
 
-async def test_upload_extract_only_stored(auth_client, db_session):
-    r = await _upload(auth_client, "extract_only")
+async def test_upload_extract_only_stored(upload, db_session):
+    r = await _upload(upload, "extract_only")
     assert r.status_code == 201
     job = await db_session.get(Job, r.json()["id"])
     assert job.mode == "extract_only"
 
 
-async def test_upload_invalid_mode_422(auth_client):
-    r = await _upload(auth_client, "pdf")
+async def test_upload_invalid_mode_422(upload):
+    r = await _upload(upload, "pdf")
     assert r.status_code == 422
     assert r.json()["detail"] == "Chế độ xử lý không hợp lệ."
 
 
 async def test_extract_only_result_skips_layout_gen(
-    auth_client, worker_client, storage_spy, db_session, VALID_RESULT_JSONB
+    upload, worker_client, storage_spy, db_session, VALID_RESULT_JSONB
 ):
     """Worker path: OCR done → job done, NO exports/{id}/ artifact."""
-    r = await _upload(auth_client, "extract_only")
+    r = await _upload(upload, "extract_only")
     jid = r.json()["id"]
     claim = await worker_client.get("/api/jobs/next")
     tok = claim.json()["worker_token"]
@@ -64,10 +62,10 @@ async def test_extract_only_result_skips_layout_gen(
 
 
 async def test_store_batch_result_extract_only_no_layout(
-    db_session, auth_client, storage_spy, VALID_RESULT_JSONB
+    db_session, upload, storage_spy, VALID_RESULT_JSONB
 ):
     """Kaggle ingest path: extract_only → done, no layout artifact."""
-    r = await _upload(auth_client, "extract_only")
+    r = await _upload(upload, "extract_only")
     jid = r.json()["id"]
     body = ResultBody.model_validate(VALID_RESULT_JSONB)
     assert (

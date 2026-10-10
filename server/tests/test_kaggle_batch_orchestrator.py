@@ -25,7 +25,7 @@ from app.core.models import Job, User
 from app.core.schemas import ResultBody
 from app.services import kaggle_orchestrator as orch
 from app.services.job_results import drain_auto_output, store_batch_result
-from tests.conftest import PNG_1PX
+from tests.conftest import PNG_1PX, upload_job
 
 DEPLOY_KAGGLE = Path(__file__).parents[2] / "deploy" / "kaggle"
 # kernel ref from kernel-batch-metadata.json (OWNER substituted) — the constant
@@ -378,8 +378,8 @@ async def test_batch_spawn_stages_all_queued_jobs_under_one_run(
     """Task 2(a): ONE tick stages EVERY queued job (cap 20) as
     {job_id}__{name}; all marked extracting with the SAME ref; a single
     _batch_runs entry lists the whole batch."""
-    job2 = await _extra_queued_job(auth_client, "seed2")
-    job3 = await _extra_queued_job(auth_client, "seed3")
+    job2 = await _extra_queued_job(auth_client, storage_env, "seed2")
+    job3 = await _extra_queued_job(auth_client, storage_env, "seed3")
     assert await orch.ensure_worker(SessionLocal) is True
     creates = [c for c in api.calls if c[0] == "dataset_create_new"]
     assert len(creates) == 1
@@ -403,7 +403,7 @@ async def test_batch_verify_missing_one_file_blocks_whole_spawn(
     job touched (whole batch retried next tick)."""
     monkeypatch.setattr(orch, "_INPUT_VERIFY_TIMEOUT", 0.05)
     monkeypatch.setattr(orch, "_INPUT_VERIFY_INTERVAL", 0.01)
-    job2 = await _extra_queued_job(auth_client, "seed2")
+    job2 = await _extra_queued_job(auth_client, storage_env, "seed2")
     sha2 = hashlib.sha256(PNG_1PX + b"seed2").hexdigest()
     api.omit_file = f"{job2}__{sha2}.png"
     assert await orch.ensure_worker(SessionLocal) is False
@@ -421,8 +421,8 @@ async def test_batch_spawn_caps_staged_jobs_at_config(
     """Task 2(c): queue > kaggle_batch_max_jobs → only cap jobs staged and
     marked extracting; the rest stay queued for the next tick."""
     monkeypatch.setattr(settings, "kaggle_batch_max_jobs", 2)
-    job2 = await _extra_queued_job(auth_client, "seed2")
-    job3 = await _extra_queued_job(auth_client, "seed3")
+    job2 = await _extra_queued_job(auth_client, storage_env, "seed2")
+    job3 = await _extra_queued_job(auth_client, storage_env, "seed3")
     assert await orch.ensure_worker(SessionLocal) is True
     creates = [c for c in api.calls if c[0] == "dataset_create_new"]
     assert len(creates) == 1
@@ -449,8 +449,8 @@ async def test_batch_ingests_every_jobs_own_output(
         return True
 
     monkeypatch.setattr("app.routers.exports.auto_generate_output", _gated_auto)
-    job2 = await _extra_queued_job(auth_client, "seed2")
-    job3 = await _extra_queued_job(auth_client, "seed3")
+    job2 = await _extra_queued_job(auth_client, storage_env, "seed2")
+    job3 = await _extra_queued_job(auth_client, storage_env, "seed3")
     assert await orch.ensure_worker(SessionLocal) is True  # 1 run, 3 jobs
     api.status = {"status": SimpleNamespace(name="COMPLETE")}
     try:
@@ -481,8 +481,8 @@ async def test_batch_missing_job_output_fails_only_that_job(
         return True
 
     monkeypatch.setattr("app.routers.exports.auto_generate_output", _gated_auto)
-    job2 = await _extra_queued_job(auth_client, "seed2")
-    job3 = await _extra_queued_job(auth_client, "seed3")
+    job2 = await _extra_queued_job(auth_client, storage_env, "seed2")
+    job3 = await _extra_queued_job(auth_client, storage_env, "seed3")
     assert await orch.ensure_worker(SessionLocal) is True  # 1 run, 3 jobs
     api.missing_outputs = {job2}  # kernel continue-on-error wrote nothing
     api.status = {"status": SimpleNamespace(name="COMPLETE")}
@@ -506,8 +506,8 @@ async def test_batch_cancelled_fails_every_job_in_run(
 ):
     """Task 3(c): run-level terminal status → EVERY job in the run failed +
     failed_step=extracting + error naming the kernel status (batch scope)."""
-    job2 = await _extra_queued_job(auth_client, "seed2")
-    job3 = await _extra_queued_job(auth_client, "seed3")
+    job2 = await _extra_queued_job(auth_client, storage_env, "seed2")
+    job3 = await _extra_queued_job(auth_client, storage_env, "seed3")
     assert await orch.ensure_worker(SessionLocal) is True  # 1 run, 3 jobs
     api.status = {"status": SimpleNamespace(name="CANCELLED")}
     assert await orch.ensure_worker(SessionLocal) is False  # poll drops ref
@@ -528,7 +528,7 @@ async def test_adopt_groups_extracting_jobs_by_ref(
     ONE map entry (spawn-crash recovery); a LIVE ref blocks any new spawn
     (single-active-run, shared img2text-input slug)."""
     monkeypatch.setattr(settings, "kaggle_min_gap_seconds", 0)
-    job2 = await _extra_queued_job(auth_client, "seed2")
+    job2 = await _extra_queued_job(auth_client, storage_env, "seed2")
     assert await orch.ensure_worker(SessionLocal) is True  # both in one run
     orch._batch_runs.clear()  # restart: hot index lost
     api.status = {"status": SimpleNamespace(name="RUNNING")}
@@ -542,7 +542,7 @@ async def test_batch_timeout_reverts_every_job_in_run(
 ):
     """Task 4(b): kaggle_timeout drops the ref and reverts EVERY job_ids
     entry back to queued (lease cleared), not just the first."""
-    job2 = await _extra_queued_job(auth_client, "seed2")
+    job2 = await _extra_queued_job(auth_client, storage_env, "seed2")
     assert await orch.ensure_worker(SessionLocal) is True  # 1 run, 2 jobs
     orch._batch_runs[BATCH_REF]["pushed_at"] = (
         time.monotonic() - settings.kaggle_timeout - 1
@@ -561,7 +561,7 @@ async def test_batch_ingest_giveup_reverts_every_job_in_run(
     """Task 4(c): persistent pull failure → after _INGEST_MAX_FAILURES the
     ref is dropped and EVERY job in the run reverts to queued."""
     api.result_doc = RESULT_DOC
-    job2 = await _extra_queued_job(auth_client, "seed2")
+    job2 = await _extra_queued_job(auth_client, storage_env, "seed2")
     assert await orch.ensure_worker(SessionLocal) is True  # 1 run, 2 jobs
     api.output_error = RuntimeError("broken output")
     for _ in range(orch._INGEST_MAX_FAILURES):
@@ -664,10 +664,10 @@ async def test_batch_timeout_status_marks_failed_with_extracting_step(
     assert await orch.ensure_worker(SessionLocal) is False  # not respawned
     assert len(_pushes(api)) == 1
 
-async def _extra_queued_job(auth_client, tag: str = "seed2") -> int:
-    """Extra real upload — tag → different bytes → different sha256 key."""
-    r = await auth_client.post(
-        "/api/jobs", files={"file": ("t2.png", PNG_1PX + tag.encode(), "image/png")}
+async def _extra_queued_job(auth_client, storage, tag: str = "seed2") -> int:
+    """Extra real presigned upload — tag → different bytes → different key."""
+    r = await upload_job(
+        auth_client, storage, PNG_1PX + tag.encode(), "t2.png"
     )
     assert r.status_code == 201, r.text
     return r.json()["id"]
@@ -715,7 +715,7 @@ async def test_batch_single_active_run_blocks_new_spawn(
     even when the gap has already elapsed (320s run + queue wait > 600s gap)."""
     monkeypatch.setattr(settings, "kaggle_min_gap_seconds", 0)
     assert await orch.ensure_worker(SessionLocal) is True  # job1 spawned
-    job2 = await _extra_queued_job(auth_client)
+    job2 = await _extra_queued_job(auth_client, storage_env)
     api.status = {"status": SimpleNamespace(name="RUNNING")}
     assert await orch.ensure_worker(SessionLocal) is False  # poll → still active
     assert len(_pushes(api)) == 1  # NO new kernels_push
@@ -728,7 +728,7 @@ async def test_batch_poison_job_does_not_block_queue(
 ):
     """P1-1/P1-2: first candidate's upload missing → spawn failure logs +
     moves to the NEXT queued candidate in the same tick."""
-    job2 = await _extra_queued_job(auth_client)
+    job2 = await _extra_queued_job(auth_client, storage_env)
     job1_key = (await db_session.get(Job, seed_job)).storage_key
     await storage_env.delete_prefix(job1_key)  # storage.get → KeyError
     with caplog.at_level("WARNING", logger=orch.logger.name):

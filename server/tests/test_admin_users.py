@@ -6,7 +6,7 @@ import httpx
 import pytest
 
 from app.core.models import Job, User
-from tests.conftest import PNG_1PX, grant_ocr
+from tests.conftest import PNG_1PX, grant_ocr, upload_job
 
 
 @pytest.fixture
@@ -61,7 +61,7 @@ async def test_patch_ocr_disable_keeps_queued_job_claimable(
     await grant_ocr(db_session, email)
     r = await c.post("/api/auth/login", json={"email": email, "password": "secret123"})
     assert r.status_code == 200, r.text
-    r = await c.post("/api/jobs", files={"file": ("t.png", PNG_1PX, "image/png")})
+    r = await upload_job(c, app.state.storage, PNG_1PX, "t.png")
     assert r.status_code == 201, r.text
     job_id = r.json()["id"]
     await c.aclose()
