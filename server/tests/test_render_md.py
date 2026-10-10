@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from app.services.render_md import build_md
+from app.services.render_md import RENDER_MD_PROMPT, build_md
 
 from tests.test_export_llm_docx import FakeResponse
 
@@ -184,3 +184,54 @@ class TestBuildMDFromIR:
         out = await build_md(_ocr_result())
         assert "| A | B |" in out
         assert "| 1 | 2 |" in out
+
+class TestVariableZonesHeuristic:
+    """Trang có zone biến thiên (header/content/footer khác nhau) → heuristic
+    không bịa zone thừa. Deterministic (use_llm=False)."""
+
+    def _result(self) -> dict:
+        return {
+            "pages": [
+                {
+                    "index": 0, "width": 800, "height": 600,
+                    "regions": [
+                        {"id": "h0", "bbox": [100, 5, 700, 30],
+                         "text": "TRƯỜNG THCS ABC", "verdict": "ok",
+                         "placeholder": False},
+                        {"id": "c0", "bbox": [50, 60, 750, 100],
+                         "text": "Nội dung phần một", "verdict": "ok",
+                         "placeholder": False},
+                    ],
+                },
+                {
+                    "index": 1, "width": 800, "height": 600,
+                    "regions": [
+                        {"id": "c1", "bbox": [50, 60, 750, 100],
+                         "text": "Nội dung phần hai", "verdict": "ok",
+                         "placeholder": False},
+                    ],
+                },
+            ]
+        }
+
+    async def test_content_only_page_no_invented_header_footer(self):
+        """Trang content-only (không header/footer) → không nhân đôi header,
+        không thêm footer."""
+        out = await build_md(self._result(), use_llm=False)
+        assert out.count("TRƯỜNG THCS ABC") == 1  # header trang 0, không lặp trang 1
+        assert "Nội dung phần hai" in out
+
+    async def test_header_content_no_empty_footer(self):
+        """Trang header+content (không footer) → không thêm footer rỗng/dấu thừa."""
+        result = self._result()
+        result["pages"].pop(1)
+        out = await build_md(result, use_llm=False)
+        lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
+        assert lines == ["TRƯỜNG THCS ABC", "Nội dung phần một"]  # đúng 2 dòng, không thừa
+
+def test_prompt_guards_empty_zones():
+    """Pin guard vào RENDER_MD_PROMPT (tránh ai đó xóa)."""
+    low = RENDER_MD_PROMPT.lower()
+    assert "empty zones" in low
+    assert "do not invent" in low
+    assert "render nothing" in low
