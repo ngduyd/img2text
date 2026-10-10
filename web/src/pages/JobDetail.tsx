@@ -32,6 +32,8 @@ export default function JobDetail() {
   const [retryError, setRetryError] = useState<string | null>(null);
   /** JD2: btn-edit-doc = inline edit ON THIS PAGE (không navigate /edit). */
   const [editing, setEditing] = useState(false);
+  /** Toggle "Bản gốc": default full-width; ON → split 7/5 với OriginalFilePanel (luôn mount, ẩn qua `hidden`). */
+  const [showOriginal, setShowOriginal] = useState(false);
   const editorHostRef = useRef<HTMLElement>(null);
 
   /* Plan M: scroll + focus nguồn md-layout do UnifiedEditor tự lo khi editing=true. */
@@ -163,6 +165,15 @@ export default function JobDetail() {
               Trích xuất văn bản
             </Link>
           )}
+          {/* R51: toggle "Bản gốc" — split-view đối chiếu file gốc. */}
+          <Button
+            testid="btn-toggle-original"
+            variant="secondary"
+            aria-pressed={showOriginal}
+            onClick={() => setShowOriginal((v) => !v)}
+          >
+            Bản gốc
+          </Button>
           {/* JD2 amendment: Edit = inline edit trên chính trang này (không còn navigate /edit). */}
           <Button
             testid="btn-edit-doc"
@@ -184,8 +195,8 @@ export default function JobDetail() {
       <div
         data-testid="detail-grid"
         className={`grid gap-4 lg:gap-6 ${
-          // Phase 3 split-view: trái = ResultPanel (layout sửa được) 7, phải = OriginalFilePanel đối chiếu 5.
-          result ? "lg:grid-cols-[7fr_5fr]" : ""
+          // R51 toggle: ON = ResultPanel 7 | OriginalFilePanel 5; OFF = full-width 1 cột.
+          showOriginal ? "lg:grid-cols-[7fr_5fr]" : ""
         }`}
       >
         {result && (
@@ -205,7 +216,10 @@ export default function JobDetail() {
           </div>
         )}
         <aside data-testid="detail-rail" className="flex min-w-0 flex-col gap-4">
-          <OriginalFilePanel jobId={id!} fileType={job.file_type} />
+          {/* Luôn mount (không re-fetch); ẩn qua hidden attribute khi toggle OFF. */}
+          <div data-testid="original-panel" hidden={!showOriginal}>
+            <OriginalFilePanel jobId={id!} fileType={job.file_type} />
+          </div>
           {/* Phase 3: bỏ job-meta card (badge "Đầu ra" + statsLine) — ExportBar 1 cụm trong rail. */}
           {result && (
             <Card testid="panel-export">

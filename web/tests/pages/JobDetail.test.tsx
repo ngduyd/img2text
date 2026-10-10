@@ -282,10 +282,34 @@ it("btn-edit-doc toggles inline edit: scroll + focus MDEditor textarea, no navig
   expect(mockNavigate).not.toHaveBeenCalled();
 });
 
-/** Phase 3 split-view: trái = ResultPanel (7), phải = OriginalFilePanel đối chiếu (5), mobile stack. */
-it("split-view: layout 7 cols | original 5 cols, mobile stacks", async () => {
+/** Toggle "Bản gốc": default full-width 1 cột, ON → split 7/5, OFF → full lại. */
+it("btn-toggle-original: default full-width + panel hidden → click splits 7/5 → click hides", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const grid = await screen.findByTestId("detail-grid");
+  const panel = await screen.findByTestId("original-panel");
+  const btn = screen.getByTestId("btn-toggle-original");
+  // Default: full-width (không có 7fr_5fr), original-panel ẩn, aria-pressed=false.
+  expect(grid.className).not.toContain("lg:grid-cols-[7fr_5fr]");
+  expect(panel).not.toBeVisible();
+  expect(btn).toHaveAttribute("aria-pressed", "false");
+  expect(btn).toHaveTextContent("Bản gốc");
+  const user = userEvent.setup();
+  await user.click(btn);
+  expect(btn).toHaveAttribute("aria-pressed", "true");
+  expect(panel).toBeVisible();
+  expect(grid.className).toContain("lg:grid-cols-[7fr_5fr]");
+  await user.click(btn);
+  expect(btn).toHaveAttribute("aria-pressed", "false");
+  expect(panel).not.toBeVisible();
+  expect(grid.className).not.toContain("lg:grid-cols-[7fr_5fr]");
+});
+
+/** Phase 3 split-view (bật toggle): trái = ResultPanel (7), phải = OriginalFilePanel (5), mobile stack. */
+it("split-view ON: layout 7 cols | original 5 cols, mobile stacks", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await userEvent.setup().click(await screen.findByTestId("btn-toggle-original"));
   const grid = await screen.findByTestId("detail-grid");
   expect(grid.className).toContain("lg:grid-cols-[7fr_5fr]");
   // Mobile stack: mọi grid-cols đều phải gắn tiền tố lg: (không có cột nào ở base).
@@ -299,9 +323,10 @@ it("split-view: layout 7 cols | original 5 cols, mobile stacks", async () => {
 });
 
 /** JD2 binding: desktop 2 cột GRID (không flex-percent) + rail chứa meta/export. */
-it("layout: 2-column grid, reading col + rail with file/meta/export/info", async () => {
+it("layout: toggle ON → 2-column grid, reading col + rail with file/meta/export/info", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await userEvent.setup().click(await screen.findByTestId("btn-toggle-original"));
   const grid = await screen.findByTestId("detail-grid");
   expect(grid.className).toContain("grid");
   expect(grid.className).toContain("lg:grid-cols-[7fr_5fr]");
