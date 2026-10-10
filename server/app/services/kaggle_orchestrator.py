@@ -563,6 +563,11 @@ async def _ingest_batch_result(session_factory, job_id: int, out_dir: Path) -> N
         if job is None:
             logger.warning("kaggle batch: job %s gone before ingest — drop", job_id)
             return
+        if job.status == "cancelled":
+            # Owner-cancelled (POST /api/jobs/{id}/cancel) — terminal, no
+            # ingest, no fail-mark, no requeue.
+            logger.info("kaggle batch: job %s cancelled — skip ingest", job_id)
+            return
         if job.preprocess:
             logger.warning(
                 "kaggle batch bỏ qua preprocess — dùng worker loop "

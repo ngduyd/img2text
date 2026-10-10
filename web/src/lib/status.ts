@@ -8,6 +8,7 @@ export const STATUS_TEXT: Record<Job["status"], string> = {
   rendering: "Đang dựng layout",
   failed: "Xử lý thất bại",
   done: "Hoàn tất",
+  cancelled: "Đã hủy",
 };
 
 /** Badge/chip hues from the DESIGN.md semantic palette only; extracting ≠ rendering. */
@@ -17,6 +18,7 @@ export const STATUS_TONE: Record<Job["status"], BadgeTone> = {
   rendering: "warning",
   failed: "error",
   done: "success",
+  cancelled: "neutral",
 };
 
 /** Plan job-phases: pending bucket = queued + extracting + rendering (Jobs stats). */

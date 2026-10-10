@@ -32,6 +32,8 @@ export default function StatusFilterTabs({
     rendering: 0,
     done: 0,
     failed: 0,
+    // Hủy job: cancelled rows count under "all" only (no new chip).
+    cancelled: 0,
   };
   for (const j of items) counts[j.status] += 1;
 

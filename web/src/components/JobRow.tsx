@@ -6,7 +6,7 @@ import { api } from "../api/client";
 import type { JobListItem } from "../api/types";
 import { mapApiError } from "../lib/errors";
 // Single spelling + tone per status (spec: shell, panels, badges share lib/status).
-import { STATUS_TEXT, STATUS_TONE } from "../lib/status";
+import { STATUS_TEXT, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
 
@@ -40,6 +40,16 @@ export default function JobRow({
     },
     onError: (err) => toast.error(mapApiError(err)),
   });
+  const cancel = useMutation({
+    mutationFn: () => api.cancelJob(job.id),
+    onSuccess: () => {
+      toast.success("Đã hủy job");
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (err) => toast.error(mapApiError(err)),
+  });
+  // Hủy job: pending bucket (queued|extracting|rendering) — lib/status single spelling.
+  const cancellable = PENDING_STATUSES.includes(job.status);
   // Duration only when both timestamps present — server list omits them today (R52).
   const doneOrFailed = job.status === "done" || job.status === "failed";
   const duration =
@@ -128,6 +138,17 @@ export default function JobRow({
             onClick={() => retry.mutate()}
           >
             Chạy lại
+          </Button>
+        )}
+        {cancellable && (
+          <Button
+            testid={`btn-cancel-job-${job.id}`}
+            size="sm"
+            variant="secondary"
+            disabled={cancel.isPending}
+            onClick={() => cancel.mutate()}
+          >
+            Hủy
           </Button>
         )}
       </div>

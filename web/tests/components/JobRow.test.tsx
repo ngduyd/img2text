@@ -16,6 +16,7 @@ vi.mock("../../src/api/client", async (importOriginal) => {
       ...actual.api,
       downloadJobFile: vi.fn(),
       retryJob: vi.fn(),
+      cancelJob: vi.fn(),
     },
   };
 });
@@ -154,6 +155,36 @@ it("dl-original failure toasts mapped error (no success toast)", async () => {
 it("retry button rendered only when failed", () => {
   renderRow(job({ status: "done" }));
   expect(screen.queryByTestId("btn-retry-job-7")).not.toBeInTheDocument();
+});
+
+// Hủy job: queued|extracting|rendering → cancel button; terminal statuses ẩn.
+it.each(["queued", "extracting", "rendering"] as const)(
+  "cancel button rendered when %s and calls cancelJob",
+  async (status) => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    vi.mocked(api.cancelJob).mockResolvedValue(undefined);
+    renderRow(job({ status }), queryClient);
+    await userEvent.click(screen.getByTestId("btn-cancel-job-7"));
+    expect(api.cancelJob).toHaveBeenCalledWith(7);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
+    expect(toast.success).toHaveBeenCalledWith("Đã hủy job");
+  },
+);
+
+it.each(["done", "failed", "cancelled"] as const)(
+  "cancel button hidden when %s",
+  (status) => {
+    renderRow(job({ status }));
+    expect(screen.queryByTestId("btn-cancel-job-7")).not.toBeInTheDocument();
+  },
+);
+
+it("cancel failure toasts mapped error (no success toast)", async () => {
+  vi.mocked(api.cancelJob).mockRejectedValue(new ApiError("Không hủy được"));
+  renderRow(job({ status: "rendering" }));
+  await userEvent.click(screen.getByTestId("btn-cancel-job-7"));
+  expect(toast.error).toHaveBeenCalledWith("Không hủy được");
 });
 
 // Phase 4 Task 3: per-row checkbox (R51 testid row-select-{id}).
