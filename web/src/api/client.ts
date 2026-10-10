@@ -73,7 +73,7 @@ export const api = {
   // Blob has no name — `filename` supplies the multipart filename (e.g. cropped JPEG).
   uploadJob: (
     file: File | Blob,
-    opts?: { filename?: string; preprocess?: object; output_format?: string },
+    opts?: { filename?: string; preprocess?: object; output_format?: string; mode?: string },
   ) => {
     const form = new FormData();
     if (opts?.filename !== undefined) form.append("file", file, opts.filename);
@@ -82,6 +82,8 @@ export const api = {
     if (opts?.preprocess !== undefined) form.append("preprocess", JSON.stringify(opts.preprocess));
     // Plan D4: export format chosen at upload ("md" | "docx"); server defaults to md.
     if (opts?.output_format !== undefined) form.append("output_format", opts.output_format);
+    // Phase 5: "layout" | "extract_only" — server defaults to layout when absent.
+    if (opts?.mode !== undefined) form.append("mode", opts.mode);
     return request<{ id: number; status: string }>("/api/jobs", { method: "POST", body: form });
   },
   retryJob: (id: number | string) =>

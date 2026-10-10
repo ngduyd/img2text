@@ -232,3 +232,46 @@ it("cancel calls onCancel, no api call", () => {
   expect(onCancel).toHaveBeenCalledTimes(1);
   expect(api.uploadJob).not.toHaveBeenCalled();
 });
+
+// Phase 5 (spec E): mode radios + [Hủy][Gửi lên·format▾] cluster top-right (above canvas).
+it("cluster [Hủy][Gửi lên] top-right above canvas; extract_only hides format picker and sends mode", async () => {
+  const onModeChange = vi.fn();
+  const { rerender } = render(
+    <ImageCropWizard
+      file={file}
+      onModeChange={onModeChange}
+      onCancel={vi.fn()}
+      onUploaded={vi.fn()}
+      onFormatChange={vi.fn()}
+    />,
+  );
+  const cluster = screen.getByTestId("mode-selector").parentElement!;
+  expect(cluster).toBe(screen.getByTestId("wizard-crop").firstElementChild);
+  expect(cluster.className).toContain("justify-between");
+  expect(cluster).toContainElement(screen.getByTestId("wizard-cancel"));
+  expect(cluster).toContainElement(screen.getByTestId("wizard-submit"));
+  const canvas = screen.getByTestId("crop-canvas");
+  expect(cluster.compareDocumentPosition(canvas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  // default layout still exposes the format caret
+  expect(screen.getByTestId("btn-format-toggle")).toBeInTheDocument();
+  // controlled mode (owned by Dropzone): re-render with extract_only
+  rerender(
+    <ImageCropWizard
+      file={file}
+      mode="extract_only"
+      onModeChange={onModeChange}
+      onCancel={vi.fn()}
+      onUploaded={vi.fn()}
+      onFormatChange={vi.fn()}
+    />,
+  );
+  expect(screen.getByTestId("mode-extract-only")).toBeChecked();
+  expect(screen.queryByTestId("btn-format-toggle")).not.toBeInTheDocument();
+  loadImage();
+  fireEvent.click(screen.getByTestId("wizard-submit")); // no rect → original File path
+  await waitFor(() => expect(api.uploadJob).toHaveBeenCalledTimes(1));
+  const [blob, opts] = vi.mocked(api.uploadJob).mock.calls[0];
+  expect(blob).toBe(file);
+  expect(opts?.mode).toBe("extract_only");
+  expect(opts?.output_format).toBe("md"); // format irrelevant but harmless; server skips auto-gen
+});

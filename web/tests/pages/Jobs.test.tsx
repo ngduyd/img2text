@@ -73,7 +73,7 @@ it("upload button enabled and calls api when granted", async () => {
   const file = new File(["x"], "a.txt", { type: "text/plain" });
   const user = userEvent.setup({ applyAccept: false });
   await user.upload(screen.getByTestId("input-file"), file);
-  expect(api.uploadJob).toHaveBeenCalledWith(file, { output_format: "md" });
+  expect(api.uploadJob).toHaveBeenCalledWith(file, { output_format: "md", mode: "layout" });
   // R59: upload success → toast + navigate to /jobs (the list route now).
   expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý.");
   await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs"));
@@ -108,13 +108,13 @@ it("format menu: caret opens, Word→docx, Markdown→md, outside click closes",
   expect(screen.queryByTestId("format-opt-docx")).not.toBeInTheDocument();
   expect(screen.getByTestId("btn-upload")).toHaveTextContent("Tải file lên · Word");
   await user.upload(screen.getByTestId("input-file"), file);
-  expect(api.uploadJob).toHaveBeenLastCalledWith(file, { output_format: "docx" });
+  expect(api.uploadJob).toHaveBeenLastCalledWith(file, { output_format: "docx", mode: "layout" });
   // choose Markdown again → upload sends md
   await user.click(screen.getByTestId("btn-format-toggle"));
   await user.click(screen.getByTestId("format-opt-md"));
   expect(screen.getByTestId("btn-upload")).toHaveTextContent("Tải file lên · Markdown");
   await user.upload(screen.getByTestId("input-file"), file);
-  expect(api.uploadJob).toHaveBeenLastCalledWith(file, { output_format: "md" });
+  expect(api.uploadJob).toHaveBeenLastCalledWith(file, { output_format: "md", mode: "layout" });
   // click outside → menu closes
   await user.click(screen.getByTestId("btn-format-toggle"));
   expect(screen.getByTestId("format-opt-md")).toBeInTheDocument();
@@ -136,7 +136,7 @@ it("upload error surfaces server detail", async () => {
   );
   // R59: failing upload also toasts mapped detail (inline block kept, R51).
   expect(toast.error).toHaveBeenCalledWith("Đã đạt giới hạn upload hôm nay.");
-  expect(api.uploadJob).toHaveBeenCalledWith(file, { output_format: "md" });
+  expect(api.uploadJob).toHaveBeenCalledWith(file, { output_format: "md", mode: "layout" });
 });
 
 it("job rows render status badge", async () => {
