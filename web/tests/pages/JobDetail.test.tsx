@@ -325,13 +325,29 @@ it("btn-edit-doc toggles inline edit: scroll + focus MDEditor textarea, no navig
   expect(mockNavigate).not.toHaveBeenCalled();
 });
 
+/** Phase 3 split-view: trái = ResultPanel (7), phải = OriginalFilePanel đối chiếu (5), mobile stack. */
+it("split-view: layout 7 cols | original 5 cols, mobile stacks", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const grid = await screen.findByTestId("detail-grid");
+  expect(grid.className).toContain("lg:grid-cols-[7fr_5fr]");
+  // Mobile stack: mọi grid-cols đều phải gắn tiền tố lg: (không có cột nào ở base).
+  const colClasses = grid.className.split(/\s+/).filter((c) => c.includes("grid-cols"));
+  expect(colClasses.length).toBeGreaterThan(0);
+  expect(colClasses.every((c) => c.startsWith("lg:"))).toBe(true);
+  const reading = screen.getByTestId("detail-reading");
+  expect(reading).toContainElement(screen.getByTestId("panel-result"));
+  const rail = screen.getByTestId("detail-rail");
+  expect(rail).toContainElement(screen.getByTestId("panel-original"));
+});
+
 /** JD2 binding: desktop 2 cột GRID (không flex-percent) + rail chứa meta/export. */
 it("layout: 2-column grid, reading col + rail with file/meta/export/info", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   const grid = await screen.findByTestId("detail-grid");
   expect(grid.className).toContain("grid");
-  expect(grid.className).toContain("lg:grid-cols-[minmax(0,1fr)_320px]");
+  expect(grid.className).toContain("lg:grid-cols-[7fr_5fr]");
   const reading = screen.getByTestId("detail-reading");
   expect(reading).toContainElement(screen.getByTestId("panel-result"));
   // Plan M: content area nằm trong panel-editor (fetch artifact xong mới render; M5: MDEditor)

@@ -194,7 +194,10 @@ export default function JobDetail() {
       )}
       <div
         data-testid="detail-grid"
-        className={`grid gap-4 lg:gap-6 ${result ? "lg:grid-cols-[minmax(0,1fr)_320px]" : ""}`}
+        className={`grid gap-4 lg:gap-6 ${
+          // Phase 3 split-view: trái = ResultPanel (layout sửa được) 7, phải = OriginalFilePanel đối chiếu 5.
+          result ? "lg:grid-cols-[7fr_5fr]" : ""
+        }`}
       >
         {result && (
           <div
