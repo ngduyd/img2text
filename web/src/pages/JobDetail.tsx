@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
-import type { Job, ResultPage, Verdict } from "../api/types";
+import type { Job } from "../api/types";
 import { mapApiError } from "../lib/errors";
 import { STATUS_TEXT, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
 import ExportBar from "../components/ExportBar";
@@ -20,17 +20,6 @@ import Skeleton from "../components/ui/Skeleton";
 /** Poll every 3s while pending (queued/extracting/rendering); stop once done/failed (binding, Task 4). */
 const jobRefetchInterval = (q: Query<Job>): number | false =>
   q.state.data && PENDING_STATUSES.includes(q.state.data.status) ? 3000 : false;
-
-/** Task 2 verdict stats — counts keyed by RegionOut.verdict (VERDICT_LABELS keys). */
-function statsLine(pages: ResultPage[]): string {
-  const regions = pages.flatMap((p) => p.regions);
-  const count = (v: Verdict) => regions.filter((r) => r.verdict === v).length;
-  return (
-    `Tổng ${regions.length} vùng · ${count("ok")} ok · ` +
-    `${count("image_unextractable")} hình ảnh · ${count("unreadable")} không trích xuất · ` +
-    `${count("low_confidence")} cần kiểm tra`
-  );
-}
 
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
@@ -217,18 +206,7 @@ export default function JobDetail() {
         )}
         <aside data-testid="detail-rail" className="flex min-w-0 flex-col gap-4">
           <OriginalFilePanel jobId={id!} fileType={job.file_type} />
-          {/* Meta compact (card rhythm px-4 py-3): output badge + stats thay vì trong reading column. */}
-          <div data-testid="job-meta" className="rounded-card border border-border bg-surface px-4 py-3 shadow-card">
-            {/* Plan D4: export format chosen at upload; legacy rows default to Markdown. */}
-            <Badge tone="info" testid="job-output-format">
-              Đầu ra: {job.output_format === "docx" ? "Word" : "Markdown"}
-            </Badge>
-            {result && (
-              <p data-testid="result-stats" className="mt-2 text-sm leading-[1.6] text-muted">
-                {statsLine(result.pages)}
-              </p>
-            )}
-          </div>
+          {/* Phase 3: bỏ job-meta card (badge "Đầu ra" + statsLine) — ExportBar 1 cụm trong rail. */}
           {result && (
             <Card testid="panel-export">
               <ExportBar jobId={id!} />

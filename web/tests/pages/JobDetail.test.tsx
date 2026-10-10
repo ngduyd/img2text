@@ -216,61 +216,18 @@ it("done renders 3 panels: original + result + info with status badge", async ()
   expect(screen.getByTestId("panel-result")).toBeInTheDocument();
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
   expect(screen.getByTestId("status-5")).toHaveTextContent("Hoàn tất");
-  expect(screen.getByTestId("result-stats")).toHaveTextContent(
-    "Tổng 0 vùng · 0 ok · 0 hình ảnh · 0 không trích xuất · 0 cần kiểm tra",
-  );
 });
 
-it("output-format badge defaults to Markdown (Plan D4)", async () => {
-  mockJob(DONE_JOB);
-  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  expect(await screen.findByTestId("job-output-format")).toHaveTextContent(
-    "Đầu ra: Markdown",
-  );
-});
-
-/** JD2: stats line moved from ResultPanel → rail meta (exact counts kept). */
-it("rail stats line counts verdicts exactly across pages", async () => {
-  mockJob({
-    ...DONE_JOB,
-    result: {
-      ...EMPTY_RESULT,
-      pages: [
-        {
-          index: 0,
-          width: 10,
-          height: 10,
-          page_flag: "ok",
-          markdown: "",
-          regions: [
-            { id: "a1", bbox: null, text: "", verdict: "ok", placeholder: false },
-            { id: "a2", bbox: null, text: "", verdict: "ok", placeholder: false },
-            { id: "a3", bbox: null, text: "", verdict: "image_unextractable", placeholder: false },
-            { id: "a4", bbox: null, text: "", verdict: "unreadable", placeholder: false },
-            { id: "a5", bbox: null, text: "", verdict: "low_confidence", placeholder: false },
-          ],
-        },
-        {
-          index: 1,
-          width: 10,
-          height: 10,
-          page_flag: "low_confidence",
-          markdown: "",
-          regions: [{ id: "b1", bbox: null, text: "", verdict: "low_confidence", placeholder: false }],
-        },
-      ],
-    },
-  });
-  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  expect(await screen.findByTestId("result-stats")).toHaveTextContent(
-    "Tổng 6 vùng · 2 ok · 1 hình ảnh · 1 không trích xuất · 2 cần kiểm tra",
-  );
-});
-
-it("output-format badge shows Word for docx jobs (Plan D4)", async () => {
+/** Phase 3 Task 2: gỡ badge "Đầu ra" + statsLine + job-meta card; ExportBar giữ. */
+it("done: no output-format badge / stats / job-meta in DOM, ExportBar renders", async () => {
   mockJob({ ...DONE_JOB, output_format: "docx" });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  expect(await screen.findByTestId("job-output-format")).toHaveTextContent("Đầu ra: Word");
+  await screen.findByTestId("panel-result");
+  expect(screen.queryByTestId("job-meta")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("job-output-format")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("result-stats")).not.toBeInTheDocument();
+  expect(screen.getByTestId("export-bar")).toBeInTheDocument();
+  expect(screen.getByTestId("export-md")).toBeInTheDocument();
 });
 
 it("not done shows status-only panels, ResultPanel hidden until done", async () => {
@@ -355,8 +312,6 @@ it("layout: 2-column grid, reading col + rail with file/meta/export/info", async
   expect(reading).toContainElement(screen.getByTestId("panel-editor"));
   const rail = screen.getByTestId("detail-rail");
   expect(rail).toContainElement(screen.getByTestId("panel-original"));
-  expect(rail).toContainElement(screen.getByTestId("job-output-format"));
-  expect(rail).toContainElement(screen.getByTestId("result-stats"));
   expect(rail).toContainElement(screen.getByTestId("export-md"));
   expect(rail).toContainElement(screen.getByTestId("panel-info"));
   // export disclosure: nút phụ ẩn sau "Định dạng khác"
