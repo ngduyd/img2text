@@ -45,6 +45,15 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 # the client counts pages with pdf.js; presign/create check the METADATA.
 MAX_PDF_PAGES = 100
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "pdf"}
+# ext → canonical Content-Type (R2): presign binds the declared type to the
+# extension allowlist; the Plan V download route reuses the same map.
+CONTENT_TYPE_BY_EXT = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "webp": "image/webp",
+    "pdf": "application/pdf",
+}
 # content-addressed keys ONLY (sha256 hex from presign; legacy multipart keys
 # were built the same way) — trust boundary: a crafted key must not point the
 # create head-check at arbitrary storage paths.
@@ -188,7 +197,7 @@ async def presign_upload(
         raise HTTPException(
             status_code=422, detail="Định dạng file không được hỗ trợ."
         )
-    if not body.content_type:
+    if body.content_type != CONTENT_TYPE_BY_EXT[ext]:
         raise HTTPException(
             status_code=422, detail="Định dạng file không được hỗ trợ."
         )
@@ -507,13 +516,7 @@ async def get_job_file(
 
 # --- Plan V (V2): same-origin original-file download (presign unreachable) ---
 
-DOWNLOAD_CONTENT_TYPES = {
-    "jpg": "image/jpeg",
-    "jpeg": "image/jpeg",
-    "png": "image/png",
-    "webp": "image/webp",
-    "pdf": "application/pdf",
-}
+DOWNLOAD_CONTENT_TYPES = CONTENT_TYPE_BY_EXT  # same ext→type map
 
 @router.get("/api/jobs/{id}/file/download")
 async def download_job_file(

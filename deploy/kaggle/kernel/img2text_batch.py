@@ -341,9 +341,15 @@ def resolve(region: Region, page_flag: str) -> str:
 
 
 def default_pdftoppm(pdf_bytes: bytes, file_type: str) -> list:
-    """PyMuPDF rasterize → [(png_bytes, width, height), ...]."""
+    """PyMuPDF rasterize → [(png_bytes, width, height), ...]. Real page
+    count > MAX_PDF_PAGES → raise BEFORE rasterizing (client page_count
+    untrusted; a 500-page PDF must not burn the GPU quota)."""
     import fitz
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    if doc.page_count > MAX_PDF_PAGES:
+        raise RuntimeError(
+            f"PDF {doc.page_count} trang — quá {MAX_PDF_PAGES}, bỏ qua"
+        )
     out = []
     for page in doc:
         pix = page.get_pixmap(dpi=200)
@@ -424,6 +430,10 @@ def preprocess(path, out_path):
 # ===========================================================================
 
 INPUT_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".pdf"}
+# R2 ceilings — mirror server MAX_UPLOAD_BYTES / MAX_PDF_PAGES: the
+# manifest/client metadata is NOT trusted at batch time.
+MAX_INPUT_BYTES = 50 * 1024 * 1024
+MAX_PDF_PAGES = 100
 WORK_DIR = "/tmp/img2text-batch"
 # kernel_type "script" captures output from /kaggle/working (NOT
 # /kaggle/outputs — that dir is only captured for notebook kernels).
@@ -484,18 +494,30 @@ def find_inputs(root: str = "/kaggle/input") -> list[tuple[int, str]]:
 def fetch_input(url: str, dest: str, sha256: str | None = None,
                 timeout: float = 120.0) -> None:
     """Manifest mode (spec 2026-10-10): download presigned url → dest,
-    verify sha256 WHILE streaming (file ≤50MB). Mismatch → dest removed +
-    RuntimeError (per-job partial-fail đã có)."""
+    verify sha256 WHILE streaming; >MAX_INPUT_BYTES mid-stream → dest
+    removed + RuntimeError (server content-length-range spirit, enforced
+    client-side too). Mismatch → same (per-job partial-fail đã có)."""
     os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
     digest = hashlib.sha256()
+    total = 0
     req = urllib.request.Request(url, headers={"User-Agent": "img2text-batch"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp, open(dest, "wb") as out:
-        while True:
-            chunk = resp.read(1024 * 1024)
-            if not chunk:
-                break
-            digest.update(chunk)
-            out.write(chunk)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp, open(dest, "wb") as out:
+            while True:
+                chunk = resp.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > MAX_INPUT_BYTES:
+                    raise RuntimeError(
+                        f"input quá {MAX_INPUT_BYTES // (1024 * 1024)}MB — bỏ qua {dest}"
+                    )
+                digest.update(chunk)
+                out.write(chunk)
+    except Exception:
+        if os.path.exists(dest):
+            os.remove(dest)
+        raise
     if sha256 is not None and digest.hexdigest() != sha256:
         os.remove(dest)
         raise RuntimeError(f"sha256 không khớp — bỏ qua {dest}")
@@ -507,7 +529,13 @@ def load_manifest(root: str = "/kaggle/input") -> list[dict] | None:
     if not hits:
         return None
     with open(hits[0], encoding="utf-8") as f:
-        return json.load(f).get("jobs") or []
+        data = json.load(f)
+    jobs = data.get("jobs") if isinstance(data, dict) else None
+    # malformed manifest (non-dict root / jobs not list-of-dict) → None =
+    # mount fallback; a corrupted manifest must not crash the batch.
+    if not isinstance(jobs, list) or not all(isinstance(j, dict) for j in jobs):
+        return None
+    return jobs
 
 def fetch_manifest_jobs(jobs: list[dict], dest_dir: str,
                         root: str = "/kaggle/input") -> list[tuple[int, str]]:

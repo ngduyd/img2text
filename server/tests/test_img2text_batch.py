@@ -12,6 +12,7 @@ import http.server
 import json
 import sys
 import threading
+import types
 from pathlib import Path
 
 import pytest
@@ -101,6 +102,60 @@ def test_fetch_input_sha256_mismatch_removes_dest(served_file, tmp_path):
     with pytest.raises(RuntimeError):
         kb.fetch_input(f"{base}/doc.pdf", str(dest), "0" * 64)
     assert not dest.exists()
+
+def test_fetch_input_aborts_oversize_stream(tmp_path, monkeypatch):
+    """R2: streaming size cap — >50MB mid-stream → dest removed + raise
+    (the presigned content-length-range spirit, enforced client-side too)."""
+    import urllib.request
+
+    class _Resp:  # infinite 1MB chunks — only the cap can stop it
+        def read(self, n):
+            return b"x" * n
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: _Resp())
+    dest = tmp_path / "big.pdf"
+    with pytest.raises(RuntimeError, match="quá 50MB"):
+        kb.fetch_input("http://x/big.pdf", str(dest))
+    assert not dest.exists()
+
+def test_default_pdftoppm_page_cap_skips_rasterize(monkeypatch):
+    """R2 P1 DoS: real page count > MAX_PDF_PAGES → raise BEFORE any
+    get_pixmap (client page_count untrusted)."""
+    fake = types.ModuleType("fitz")
+
+    class _Doc:
+        page_count = kb.MAX_PDF_PAGES + 1
+
+        def __iter__(self):
+            for _ in range(self.page_count):
+                page = types.SimpleNamespace()
+                page.get_pixmap = lambda dpi=0: (_ for _ in ()).throw(
+                    AssertionError("must not rasterize past the cap")
+                )
+                yield page
+
+    fake.open = lambda **kw: _Doc()
+    monkeypatch.setitem(sys.modules, "fitz", fake)
+    with pytest.raises(RuntimeError, match=f"quá {kb.MAX_PDF_PAGES}"):
+        kb.default_pdftoppm(b"%PDF-fake", "pdf")
+
+def test_load_manifest_malformed_falls_back_to_mount(tmp_path):
+    """R2: malformed manifest (non-dict root / jobs not list-of-dict) →
+    None = mount fallback, never a batch crash."""
+    mount = tmp_path / "input"
+    mount.mkdir()
+    manifest = mount / "manifest.json"
+    for bad in ('{"jobs": "nope"}', "[]", '{"jobs": [{"job_id": 1}, "junk"]}'):
+        manifest.write_text(bad, encoding="utf-8")
+        assert kb.load_manifest(str(mount)) is None, bad
+    manifest.write_text('{"jobs": [{"job_id": 1}]}', encoding="utf-8")
+    assert kb.load_manifest(str(mount)) == [{"job_id": 1}]
 
 def test_fetch_input_http_error_raises(tmp_path):
     with pytest.raises(Exception):

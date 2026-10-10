@@ -48,6 +48,30 @@ async def test_presign_rejects_oversize(auth_client):
     assert r.status_code == 422
     assert r.json()["detail"] == "File vượt quá 50MB."
 
+async def test_presign_rejects_mismatched_content_type(auth_client):
+    """R2: content_type must match the extension allowlist — a non-empty
+    arbitrary type is not enough."""
+    r = await auth_client.post(
+        "/api/jobs/presign", json=_presign_body(content_type="text/html")
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"] == "Định dạng file không được hỗ trợ."
+
+async def test_presign_rejects_missing_content_type(auth_client):
+    r = await auth_client.post(
+        "/api/jobs/presign", json=_presign_body(content_type="")
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"] == "Định dạng file không được hỗ trợ."
+
+async def test_presign_webp_allowed(auth_client):
+    r = await auth_client.post(
+        "/api/jobs/presign",
+        json=_presign_body(filename="t.webp", content_type="image/webp"),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["storage_key"].endswith(".webp")
+
 async def test_presign_rejects_bad_extension(auth_client):
     r = await auth_client.post(
         "/api/jobs/presign", json=_presign_body(filename="a.gif")
