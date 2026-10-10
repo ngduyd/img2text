@@ -56,7 +56,7 @@ export default function MultiFileUpload({
     if (!files) return;
     let running = total(entriesRef.current);
     for (const f of Array.from(files)) {
-      if (f.type.startsWith("image/")) {
+      if (f.type === "image/png" || f.type === "image/jpeg") {
         if (running + 1 > MAX_PAGES) {
           toast.error(`Tối đa ${MAX_PAGES} trang mỗi lần gửi.`);
           continue;
@@ -108,7 +108,13 @@ export default function MultiFileUpload({
   const crop = async (e: Entry) => {
     if (!onCrop) return;
     const out = await onCrop(e.blob, e.name);
-    if (out) commit(entriesRef.current.map((x) => (x.id === e.id ? { ...x, blob: out } : x)));
+    if (!out) return;
+    // Thumbnail cũ là blob URL của blob cũ → revoke + store url mới (P2 stale crop).
+    const old = urls.current.get(e.id);
+    if (old) URL.revokeObjectURL(old);
+    const url = URL.createObjectURL(out);
+    urls.current.set(e.id, url);
+    commit(entriesRef.current.map((x) => (x.id === e.id ? { ...x, blob: out, url } : x)));
   };
 
   const pickPages = async (e: Entry) => {
@@ -120,6 +126,11 @@ export default function MultiFileUpload({
     });
     if (!next) return;
     const filtered = next.filter((n) => n >= 1 && n <= e.numPages!);
+    // Chặn deselect-all (P2): luôn ≥1 trang, giữ selection cũ.
+    if (filtered.length === 0) {
+      toast.error("Chọn ít nhất 1 trang.");
+      return;
+    }
     if (total(entriesRef.current) - (e.pages?.length ?? 0) + filtered.length > MAX_PAGES) {
       toast.error(`Tối đa ${MAX_PAGES} trang mỗi lần gửi.`);
       return;
@@ -156,7 +167,7 @@ export default function MultiFileUpload({
         <Button
           testid="muf-submit"
           className="ml-auto"
-          disabled={entries.length === 0 || busy}
+          disabled={entries.length === 0 || total(entries) === 0 || busy}
           loading={busy}
           onClick={() => void submit()}
         >
@@ -178,7 +189,7 @@ export default function MultiFileUpload({
           data-testid="muf-input"
           type="file"
           multiple
-          accept="image/jpeg,image/png,image/webp,application/pdf"
+          accept="image/png,image/jpeg,application/pdf"
           className="hidden"
           onChange={(e) => {
             void addFiles(e.target.files);
@@ -191,12 +202,12 @@ export default function MultiFileUpload({
           <li
             key={e.id}
             data-testid={`muf-card-${i}`}
-            className="flex items-center gap-2 rounded-md border border-border bg-surface px-2 py-1 text-sm"
+            className="flex items-center gap-2 rounded-card border border-border bg-surface px-2 py-1 text-sm"
           >
             {e.kind === "image" ? (
               <img src={e.url} alt={e.name} className="h-8 w-8 rounded object-cover" />
             ) : (
-              <span className="rounded bg-surface-2 px-1.5 py-0.5 text-xs font-medium">PDF</span>
+              <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-xs font-medium">PDF</span>
             )}
             <span className="truncate">{e.name}</span>
             <span className="ml-auto text-xs text-muted">

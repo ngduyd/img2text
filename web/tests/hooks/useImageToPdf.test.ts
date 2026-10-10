@@ -45,6 +45,37 @@ describe("mergeToPdf", () => {
     expect(out.getPageCount()).toBe(3); // 1 ảnh + 2 trang đã chọn
   });
 
+  it("P1-2: pages:[] → 0 trang, không fallback all", async () => {
+    const blob = await mergeToPdf([
+      { kind: "image", blob: png(), name: "a.png" },
+      { kind: "pdf", blob: await makePdf(3), name: "b.pdf", pages: [] },
+    ]);
+    const out = await PDFDocument.load(await blob.arrayBuffer());
+    expect(out.getPageCount()).toBe(1); // ảnh 1 + PDF 0 trang (không phải 4)
+  });
+
+  it("P1-1: ảnh không phải PNG/JPG → ném lỗi rõ", async () => {
+    const webp = new Blob([new Uint8Array([0, 1, 2])], { type: "image/webp" });
+    await expect(mergeToPdf([{ kind: "image", blob: webp, name: "a.webp" }])).rejects.toThrow(
+      /PNG\/JPG/,
+    );
+  });
+
+  it("P2: cap check trước embed — over-cap pdf + ảnh lỗi → ném /25/ (không lỗi embed)", async () => {
+    const webp = new Blob([new Uint8Array([0, 1, 2])], { type: "image/webp" });
+    await expect(
+      mergeToPdf([
+        { kind: "image", blob: webp, name: "a.webp" },
+        {
+          kind: "pdf",
+          blob: await makePdf(30),
+          name: "b.pdf",
+          pages: Array.from({ length: 30 }, (_, i) => i + 1),
+        },
+      ]),
+    ).rejects.toThrow(/25/);
+  });
+
   it(`quá ${MAX_PAGES} trang → ném lỗi`, async () => {
     const entries = Array.from({ length: MAX_PAGES + 1 }, (_, i) => ({
       kind: "image" as const,
