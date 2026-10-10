@@ -11,6 +11,7 @@ import Button, { buttonClasses } from "./components/ui/Button";
 import Forgot from "./pages/Forgot";
 import Admin from "./pages/Admin";
 import JobDetail from "./pages/JobDetail";
+import ExtractionPage from "./pages/ExtractionPage";
 import Jobs from "./pages/Jobs";
 import Landing from "./pages/Landing";
 import Signin from "./pages/Signin";
@@ -319,6 +320,8 @@ export default function App() {
             <Route path="/landing" element={<Navigate to="/" replace />} />
             <Route path="/jobs" element={<Jobs />} />
             <Route path="/jobs/:id" element={<JobDetail />} />
+            {/* Phase 2 (Sub-system B): trang trích xuất — highlight + click-fix + save-sync. */}
+            <Route path="/jobs/:id/extraction" element={<ExtractionPage />} />
             {/* R51 exception (user: "không tách /edit nữa"): standalone /edit page
                 gộp vào /jobs/:id (JD2 mount) — bookmark cũ redirect trang chủ. */}
             <Route path="/edit" element={<Navigate to="/" replace />} />
