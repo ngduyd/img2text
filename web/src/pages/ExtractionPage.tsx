@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -28,6 +28,9 @@ export default function ExtractionPage() {
   });
   const [openSid, setOpenSid] = useState<number | null>(null);
   const [savingSid, setSavingSid] = useState<number | null>(null);
+  /** Task 4: layouts không sync được trong lần save gần nhất → cần vẽ lại. */
+  const [needsRender, setNeedsRender] = useState<string[]>([]);
+  const [redrawing, setRedrawing] = useState(false);
 
   const openSuggestion = suggestions.find((s) => s.id === openSid) ?? null;
 
@@ -51,6 +54,7 @@ export default function ExtractionPage() {
         expected_text_version: data.text_version,
       });
       setOpenSid(null);
+      setNeedsRender(result.needs_render);
       toast.success(
         result.needs_render.length > 0
           ? "Đã lưu. Có layout cần vẽ lại."
@@ -77,6 +81,20 @@ export default function ExtractionPage() {
     }
   };
 
+  const handleRedraw = async () => {
+    setRedrawing(true);
+    try {
+      await api.retryLayout(id!);
+      setNeedsRender([]);
+      toast.success("Đã tạo lại layout.");
+      await queryClient.invalidateQueries({ queryKey: ["job", id] });
+    } catch (err) {
+      toast.error(mapApiError(err));
+    } finally {
+      setRedrawing(false);
+    }
+  };
+
   return (
     <main id="main" className="mx-auto max-w-4xl p-4 sm:p-6">
       <header
@@ -96,6 +114,28 @@ export default function ExtractionPage() {
         </h1>
       </header>
 
+      {needsRender.length > 0 && (
+        <div
+          data-testid="needs-render-hint"
+          role="alert"
+          className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm"
+        >
+          <TriangleAlert className="h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+          <span className="min-w-0 flex-1">
+            Một số layout chưa đồng bộ được. Vẽ lại layout để cập nhật bản mới nhất.
+          </span>
+          <Button
+            testid="btn-redraw-layout"
+            variant="primary"
+            size="sm"
+            loading={redrawing}
+            disabled={redrawing}
+            onClick={() => void handleRedraw()}
+          >
+            Vẽ lại layout
+          </Button>
+        </div>
+      )}
       {isPending && (
         <div data-testid="extraction-loading" className="flex flex-col gap-3">
           <Skeleton className="h-8 w-2/3" />

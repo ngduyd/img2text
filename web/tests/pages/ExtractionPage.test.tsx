@@ -153,3 +153,36 @@ it("Bỏ qua calls rejectSuggestion + refreshes suggestions", async () => {
   await user.click(screen.getByTestId("btn-reject-11"));
   await waitFor(() => expect(api.rejectSuggestion).toHaveBeenCalledWith("5", 11));
 });
+
+// --- Task 4: needs_render hint + "Vẽ lại layout" ---
+
+it("save result with needs_render → hint + btn-redraw-layout; redraw calls retryLayout", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.saveExtraction).mockResolvedValue({
+    synced: { md: true, docx: false },
+    needs_render: ["docx-layout"],
+    text_version: 4,
+  });
+  vi.mocked(api.retryLayout).mockResolvedValue({ md: true, docx: true });
+  renderWithSuggestions([pendingSuggestion({})]);
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  await user.click(screen.getByTestId("btn-apply-11"));
+  expect(await screen.findByTestId("needs-render-hint")).toBeInTheDocument();
+  await user.click(screen.getByTestId("btn-redraw-layout"));
+  await waitFor(() => expect(api.retryLayout).toHaveBeenCalledWith("5"));
+  await waitFor(() => expect(screen.queryByTestId("needs-render-hint")).not.toBeInTheDocument());
+});
+
+it("save fully synced → no needs-render hint", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.saveExtraction).mockResolvedValue({
+    synced: { md: true, docx: true },
+    needs_render: [],
+    text_version: 4,
+  });
+  renderWithSuggestions([pendingSuggestion({})]);
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  await user.click(screen.getByTestId("btn-apply-11"));
+  await waitFor(() => expect(api.saveExtraction).toHaveBeenCalled());
+  expect(screen.queryByTestId("needs-render-hint")).not.toBeInTheDocument();
+});

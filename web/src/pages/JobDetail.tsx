@@ -13,7 +13,7 @@ import InfoPanel from "../components/panels/InfoPanel";
 import OriginalFilePanel from "../components/panels/OriginalFilePanel";
 import ResultPanel from "../components/panels/ResultPanel";
 import Badge from "../components/ui/Badge";
-import Button from "../components/ui/Button";
+import Button, { buttonClasses } from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import Skeleton from "../components/ui/Skeleton";
 
@@ -163,6 +163,16 @@ export default function JobDetail() {
             >
               Chạy lại layout
             </Button>
+          )}
+          {/* Phase 2 Task 4: sang trang trích xuất (highlight + click-fix) — done jobs only. */}
+          {job.status === "done" && result && (
+            <Link
+              to={`/jobs/${id}/extraction`}
+              data-testid="link-extraction"
+              className={buttonClasses("secondary", "md")}
+            >
+              Trích xuất văn bản
+            </Link>
           )}
           {/* JD2 amendment: Edit = inline edit trên chính trang này (không còn navigate /edit). */}
           <Button
