@@ -53,7 +53,12 @@ it("dragover preventDefault and drop triggers uploadJob", async () => {
   fireEvent(dz, over);
   expect(over.defaultPrevented).toBe(true);
   fireEvent.drop(dz, { dataTransfer: { files: [file] } });
-  await waitFor(() => expect(api.uploadJob).toHaveBeenCalledWith(file, { output_format: "md", mode: "layout" }));
+  await waitFor(() =>
+    expect(api.uploadJob).toHaveBeenCalledWith(
+      file,
+      expect.objectContaining({ output_format: "md", mode: "layout" }),
+    ),
+  );
   await waitFor(() => expect(onUploaded).toHaveBeenCalledWith({ id: 42, status: "queued" }));
   // R59: upload success toast fires alongside inline behaviors.
   expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý.");
@@ -219,6 +224,9 @@ it("extract_only hides format picker and upload sends mode", async () => {
   const file = new File(["x"], "a.txt", { type: "text/plain" });
   fireEvent.drop(screen.getByTestId("dropzone"), { dataTransfer: { files: [file] } });
   await waitFor(() =>
-    expect(api.uploadJob).toHaveBeenCalledWith(file, { output_format: "md", mode: "extract_only" }),
+    expect(api.uploadJob).toHaveBeenCalledWith(
+      file,
+      expect.objectContaining({ output_format: "md", mode: "extract_only" }),
+    ),
   );
 });

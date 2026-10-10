@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     smtp_pass: str = ""
     smtp_from: str = "noreply@example.com"
     r2_endpoint: str = ""
+    # R2 account id — endpoint auto-built https://{id}.r2.cloudflarestorage.com
+    # when R2_ENDPOINT is empty (prod: fill either one; dev keeps explicit
+    # localstack R2_ENDPOINT).
+    r2_account_id: str = ""
     r2_access_key_id: str = ""
     r2_secret_access_key: str = ""
     r2_bucket: str = ""
@@ -78,6 +82,16 @@ class Settings(BaseSettings):
     # Bearer token for remote /v1/chat/completions; empty = no Authorization
     # header (local servers without auth keep working unchanged).
     llm_api_key: str = ""
+
+    @property
+    def r2_endpoint_url(self) -> str:
+        """Effective storage endpoint: explicit R2_ENDPOINT wins; else build
+        from R2_ACCOUNT_ID; else empty (default AWS endpoint)."""
+        if self.r2_endpoint:
+            return self.r2_endpoint
+        if self.r2_account_id:
+            return f"https://{self.r2_account_id}.r2.cloudflarestorage.com"
+        return ""
 
     @property
     def kaggle_enabled(self) -> bool:

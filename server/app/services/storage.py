@@ -19,6 +19,9 @@ from app.core.config import settings
 class StorageDriver(Protocol):
     async def put(self, key: str, data: bytes) -> None: ...
     async def presign_get(self, key: str, expires: int) -> str: ...
+    async def presign_post(
+        self, key: str, expires: int, max_bytes: int, content_type: str
+    ) -> dict: ...
     async def exists(self, key: str) -> bool: ...
     async def get(self, key: str) -> bytes: ...
     async def delete_prefix(self, prefix: str) -> None: ...
@@ -81,6 +84,30 @@ class S3Driver:
             ExpiresIn=expires,
         )
 
+    async def presign_post(
+        self, key: str, expires: int, max_bytes: int, content_type: str
+    ) -> dict:
+        """Browser direct-upload policy: POST form → storage (bytes never
+        touch the backend). content-length-range [0, max_bytes] caps the
+        upload server-side; Content-Type pinned via field+condition pair
+        (botocore adds neither automatically — doc contract)."""
+
+        def _sign() -> dict:
+            return self.presign_client.generate_presigned_post(
+                Bucket=self.bucket,
+                Key=key,
+                ExpiresIn=expires,
+                Conditions=[
+                    ["content-length-range", 0, max_bytes],
+                    ["eq", "$Content-Type", content_type],
+                ],
+                Fields={"Content-Type": content_type},
+            )
+
+        # PUBLIC client (same rationale as presign_get): the browser posts
+        # the form from the host, so the URL must be host-reachable.
+        return await asyncio.to_thread(_sign)
+
     async def exists(self, key: str) -> bool:
         def _head() -> bool:
             try:
@@ -133,7 +160,7 @@ def get_storage(request: Request) -> StorageDriver:
 def build_storage() -> S3Driver:
     """Driver from current settings (create_app wiring helper)."""
     return S3Driver(
-        settings.r2_endpoint,
+        settings.r2_endpoint_url,
         settings.r2_access_key_id,
         settings.r2_secret_access_key,
         settings.r2_bucket,

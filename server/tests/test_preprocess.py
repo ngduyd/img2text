@@ -1,32 +1,26 @@
-"""Task 1 (Plan W): job preprocess — page selection + rotation metadata."""
+"""Task 1 (Plan W): job preprocess — page selection + rotation metadata.
 
-import io
+R2 flow: preprocess rides the metadata POST /api/jobs body (object, not a
+multipart JSON string). A create-side 422 happens AFTER the browser upload,
+so the invariant asserted here is "no job row", not "no storage write"."""
+
 import json
 
-from pypdf import PdfWriter
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.models import Job
-from tests.conftest import PNG_1PX
+from tests.conftest import PNG_1PX, TEST_PDF_3
 
-def _pdf_bytes(pages: int) -> bytes:
-    writer = PdfWriter()
-    for _ in range(pages):
-        writer.add_blank_page(width=72, height=72)
-    buf = io.BytesIO()
-    writer.write(buf)
-    return buf.getvalue()
+async def _no_job_rows(db_session) -> bool:
+    count = (
+        await db_session.execute(select(func.count()).select_from(Job))
+    ).scalar_one()
+    return count == 0
 
-TEST_PDF_3 = _pdf_bytes(3)
-
-async def test_preprocess_roundtrip(auth_client, worker_client, db_session):
+async def test_preprocess_roundtrip(upload, worker_client, db_session):
     """Valid preprocess stored as TEXT on Job; /jobs/next returns parsed dict."""
     preprocess = {"pages": [1, 3], "rotate": {"3": 90}}
-    r = await auth_client.post(
-        "/api/jobs",
-        files={"file": ("a.pdf", TEST_PDF_3, "application/pdf")},
-        data={"preprocess": json.dumps(preprocess)},
-    )
+    r = await upload(TEST_PDF_3, "a.pdf", preprocess=preprocess)
     assert r.status_code == 201, r.text
     job = (
         await db_session.execute(select(Job).where(Job.id == r.json()["id"]))
@@ -36,62 +30,48 @@ async def test_preprocess_roundtrip(auth_client, worker_client, db_session):
     assert r.status_code == 200, r.text
     assert r.json()["preprocess"] == preprocess
 
-async def test_preprocess_empty_pages_422(auth_client, storage_spy):
-    r = await auth_client.post(
-        "/api/jobs",
-        files={"file": ("a.pdf", TEST_PDF_3, "application/pdf")},
-        data={"preprocess": json.dumps({"pages": [], "rotate": {}})},
+async def test_preprocess_empty_pages_422(upload, db_session):
+    r = await upload(
+        TEST_PDF_3, "a.pdf", preprocess={"pages": [], "rotate": {}}
     )
     assert r.status_code == 422, r.text
     assert r.json()["detail"] == "Chưa chọn trang nào."
-    assert storage_spy.put.call_count == 0
+    assert await _no_job_rows(db_session)
 
-async def test_preprocess_page_out_of_range_422(auth_client, storage_spy):
-    r = await auth_client.post(
-        "/api/jobs",
-        files={"file": ("a.pdf", TEST_PDF_3, "application/pdf")},
-        data={"preprocess": json.dumps({"pages": [99], "rotate": {}})},
+async def test_preprocess_page_out_of_range_422(upload, db_session):
+    r = await upload(
+        TEST_PDF_3, "a.pdf", preprocess={"pages": [99], "rotate": {}}
     )
     assert r.status_code == 422, r.text
     assert r.json()["detail"] == "Trang chọn vượt quá số trang của file."
-    assert storage_spy.put.call_count == 0
+    assert await _no_job_rows(db_session)
 
-async def test_preprocess_rotate_key_not_selected_422(auth_client, storage_spy):
-    r = await auth_client.post(
-        "/api/jobs",
-        files={"file": ("a.pdf", TEST_PDF_3, "application/pdf")},
-        data={"preprocess": json.dumps({"pages": [1], "rotate": {"2": 90}})},
+async def test_preprocess_rotate_key_not_selected_422(upload, db_session):
+    r = await upload(
+        TEST_PDF_3, "a.pdf", preprocess={"pages": [1], "rotate": {"2": 90}}
     )
     assert r.status_code == 422, r.text
     assert r.json()["detail"] == "Xoay áp dụng cho trang đã chọn."
-    assert storage_spy.put.call_count == 0
+    assert await _no_job_rows(db_session)
 
-async def test_preprocess_rotate_value_invalid_422(auth_client, storage_spy):
-    r = await auth_client.post(
-        "/api/jobs",
-        files={"file": ("a.pdf", TEST_PDF_3, "application/pdf")},
-        data={"preprocess": json.dumps({"pages": [1], "rotate": {"1": 45}})},
+async def test_preprocess_rotate_value_invalid_422(upload, db_session):
+    r = await upload(
+        TEST_PDF_3, "a.pdf", preprocess={"pages": [1], "rotate": {"1": 45}}
     )
     assert r.status_code == 422, r.text
     assert r.json()["detail"] == "Góc xoay không hợp lệ."
-    assert storage_spy.put.call_count == 0
+    assert await _no_job_rows(db_session)
 
-async def test_preprocess_image_422(auth_client, storage_spy):
+async def test_preprocess_image_422(upload, db_session):
     """Non-null preprocess on image upload → PDF-only error."""
-    r = await auth_client.post(
-        "/api/jobs",
-        files={"file": ("a.png", PNG_1PX, "image/png")},
-        data={"preprocess": json.dumps({"pages": [1], "rotate": {}})},
-    )
+    r = await upload(PNG_1PX, "a.png", preprocess={"pages": [1], "rotate": {}})
     assert r.status_code == 422, r.text
     assert r.json()["detail"] == "Chỉ file PDF hỗ trợ chọn trang."
-    assert storage_spy.put.call_count == 0
+    assert await _no_job_rows(db_session)
 
-async def test_preprocess_absent_null(auth_client, worker_client):
+async def test_preprocess_absent_null(upload, worker_client):
     """No preprocess field → job.preprocess stays null; payload null."""
-    r = await auth_client.post(
-        "/api/jobs", files={"file": ("a.png", PNG_1PX, "image/png")}
-    )
+    r = await upload(PNG_1PX, "a.png")
     assert r.status_code == 201, r.text
     r = await worker_client.get("/api/jobs/next")
     assert r.status_code == 200, r.text

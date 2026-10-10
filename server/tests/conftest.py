@@ -9,6 +9,8 @@ would otherwise hit UndefinedTable.
 """
 
 import base64
+import hashlib
+import io
 import os
 import tempfile
 from unittest.mock import AsyncMock
@@ -32,6 +34,77 @@ from app.core.db import Base, SessionLocal, engine
 from app.main import create_app
 from app.core.models import Job, User
 from app.services.storage import S3Driver
+
+# Test payloads shared by tests (moved from the removed test_upload.py).
+def _jpeg_bytes() -> bytes:
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), "red").save(buf, format="JPEG")
+    return buf.getvalue()
+
+def _pdf_bytes(pages: int) -> bytes:
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    for _ in range(pages):
+        writer.add_blank_page(width=72, height=72)
+    buf = io.BytesIO()
+    writer.write(buf)
+    return buf.getvalue()
+
+TEST_JPEG = _jpeg_bytes()
+TEST_PDF_3 = _pdf_bytes(3)
+
+_CONTENT_TYPES = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "webp": "image/webp",
+    "pdf": "application/pdf",
+}
+
+async def upload_job(
+    client,
+    storage,
+    data: bytes,
+    filename: str,
+    *,
+    output_format: str | None = None,
+    mode: str | None = None,
+    preprocess: dict | None = None,
+    page_count: int | None = None,
+):
+    """Full presigned client flow: POST /api/jobs/presign → browser-style
+    upload (storage.put == the form POST to R2) → metadata POST /api/jobs."""
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    sha = hashlib.sha256(data).hexdigest()
+    r = await client.post(
+        "/api/jobs/presign",
+        json={
+            "filename": filename,
+            "content_type": _CONTENT_TYPES.get(ext, "application/octet-stream"),
+            "size_bytes": len(data),
+            "sha256": sha,
+        },
+    )
+    assert r.status_code == 200, r.text
+    key = r.json()["storage_key"]
+    await storage.put(key, data)  # == the browser's form POST to storage
+    if page_count is None:
+        from pypdf import PdfReader
+
+        page_count = (
+            len(PdfReader(io.BytesIO(data)).pages) if ext == "pdf" else 1
+        )
+    body: dict = {"storage_key": key, "page_count": page_count}
+    if output_format is not None:
+        body["output_format"] = output_format
+    if mode is not None:
+        body["mode"] = mode
+    if preprocess is not None:
+        body["preprocess"] = preprocess
+    return await client.post("/api/jobs", json=body)
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
@@ -197,11 +270,18 @@ async def client_no_runner_key(app):
         yield c
 
 @pytest_asyncio.fixture
-async def seed_job(auth_client) -> int:
-    """Real uploaded job (status queued); returns job id."""
-    r = await auth_client.post(
-        "/api/jobs", files={"file": ("t.png", PNG_1PX, "image/png")}
-    )
+async def upload(auth_client, app):
+    """Presigned upload flow against the auth_client + moto storage."""
+
+    async def _upload(data, filename, **kw):
+        return await upload_job(auth_client, app.state.storage, data, filename, **kw)
+
+    return _upload
+
+@pytest_asyncio.fixture
+async def seed_job(upload) -> int:
+    """Real presigned upload (status queued); returns job id."""
+    r = await upload(PNG_1PX, "t.png")
     assert r.status_code == 201, r.text
     return r.json()["id"]
 

@@ -26,6 +26,10 @@ export default function Dropzone({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  // R2 presigned upload states: "uploading" = POST form → storage (progress
+  // bar), "counting" = pdf.js đếm trang sau khi upload xong.
+  const [phase, setPhase] = useState<"idle" | "uploading" | "counting">("idle");
+  const [percent, setPercent] = useState(0);
   // Phase 5 (spec E): "layout" (default) | "extract_only" — extract_only hides the format picker.
   const [mode, setMode] = useState<JobMode>("layout");
   // pdf/image selection defers to a wizard; other files upload immediately.
@@ -40,10 +44,17 @@ export default function Dropzone({
   const wizardKey = wizardFile ? `${wizardFile.name}-${wizardFile.size}-${wizardFile.lastModified}` : null;
 
   const upload = useMutation({
-    mutationFn: (file: File) => api.uploadJob(file, { output_format: outputFormat, mode }),
+    mutationFn: (file: File) =>
+      api.uploadJob(file, {
+        output_format: outputFormat,
+        mode,
+        onPhase: setPhase,
+        onProgress: setPercent,
+      }),
     onMutate: () => {
       setError(null);
       setBusy(true);
+      setPercent(0);
     },
     onSuccess: (job) => {
       // R59: toast + parent navigates to the /jobs list route (see Jobs.tsx onUploaded).
@@ -55,7 +66,10 @@ export default function Dropzone({
       setError(err instanceof ApiError ? err.detail : "Tải file thất bại.");
       toast.error(mapApiError(err));
     },
-    onSettled: () => setBusy(false),
+    onSettled: () => {
+      setBusy(false);
+      setPhase("idle");
+    },
   });
 
   const handleFile = (file: File | undefined | null) => {
@@ -162,6 +176,28 @@ export default function Dropzone({
             </div>
           </div>
           <p className="mb-2 text-sm text-muted">Kéo thả file vào đây hoặc chọn từ máy</p>
+          {phase === "uploading" && (
+            <div data-testid="upload-progress" className="mb-2 space-y-1">
+              <div
+                role="progressbar"
+                aria-valuenow={percent}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                className="h-2 w-full overflow-hidden rounded-md bg-surface-2"
+              >
+                <div
+                  className="h-full rounded-md bg-accent transition-[width] duration-200"
+                  style={{ width: `${percent}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted">{percent}%</p>
+            </div>
+          )}
+          {phase === "counting" && (
+            <p data-testid="upload-counting" className="mb-2 text-sm text-muted">
+              Đang đếm trang...
+            </p>
+          )}
           <input
             ref={inputRef}
             type="file"

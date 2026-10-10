@@ -14,11 +14,9 @@ from tests.test_jobs_read import other_client  # noqa: F401
 
 
 @pytest_asyncio.fixture
-async def seeded_upload_job(auth_client) -> int:
-    """Real upload via auth_client → storage row + job row exist."""
-    r = await auth_client.post(
-        "/api/jobs", files={"file": ("t.png", PNG_1PX, "image/png")}
-    )
+async def seeded_upload_job(upload) -> int:
+    """Real presigned upload → storage row + job row exist."""
+    r = await upload(PNG_1PX, "t.png")
     assert r.status_code == 201, r.text
     return r.json()["id"]
 

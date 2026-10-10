@@ -1,21 +1,19 @@
 """Jobs router: upload, owner reads, worker claim/protocol, owner retry.
 
-Sections: upload (Tasks 2) → owner reads (Task 3) → worker claim
+Sections: presign + metadata create (R2, spec 2026-10-10) → owner reads (Task 3) → worker claim
 (GET /api/jobs/next; route MUST stay before /{id}) → owner retry (Plan E,
 Plan D binding: stale exports+crops deleted) → worker protocol (Task 4;
 R11 capability token, R16/R17 atomic conditional-UPDATE transitions).
 """
 
-import hashlib
 import hmac
 import json
 import logging
+import re
 import secrets
-import tempfile
 from datetime import datetime, timedelta, timezone
 
-from pypdf import PdfReader
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,9 +41,24 @@ from app.services.storage import StorageDriver, get_storage
 
 UPLOAD_DAILY_LIMIT = 20
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
-MAX_PDF_PAGES = 50
-CHUNK_BYTES = 1024 * 1024
+# Spec 2026-10-10 sanity bound (was 50 on the removed server-side parse):
+# the client counts pages with pdf.js; presign/create check the METADATA.
+MAX_PDF_PAGES = 100
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "pdf"}
+# ext → canonical Content-Type (R2): presign binds the declared type to the
+# extension allowlist; the Plan V download route reuses the same map.
+CONTENT_TYPE_BY_EXT = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "webp": "image/webp",
+    "pdf": "application/pdf",
+}
+# content-addressed keys ONLY (sha256 hex from presign; legacy multipart keys
+# were built the same way) — trust boundary: a crafted key must not point the
+# create head-check at arbitrary storage paths.
+STORAGE_KEY_RE = re.compile(r"uploads/[0-9a-f]{64}\.(?:jpg|jpeg|png|webp|pdf)")
+SHA256_RE = re.compile(r"[0-9a-f]{64}")
 PRESIGN_EXPIRES_SECONDS = 3600
 LEASE_MINUTES = 45
 ERROR_MAX_CHARS = 500
@@ -122,22 +135,110 @@ def _validate_layout_style(style: dict) -> None:
 def _ocr_user(user: User = Depends(get_current_user)) -> User:
     return require_ocr(user)
 
-def _pdf_page_count(tmp) -> int:
-    return len(PdfReader(tmp).pages)
+# --- Presign: POST /api/jobs/presign (spec 2026-10-10, R2 direct upload) ---
 
-# --- Upload: POST /api/jobs (validation, sha256 dedupe, create) ---
+class PresignBody(BaseModel):
+    filename: str
+    content_type: str
+    size_bytes: int
+    # Client-computed content hash: storage_key = uploads/{sha256}.{ext}
+    # (content-addressed → dedupe + the pipeline manifest carries it).
+    sha256: str
+    # Optional: the UI uploads FIRST (progress bar) and counts pages after
+    # with pdf.js → checked here when given, authoritatively at POST /api/jobs.
+    page_count: int | None = None
+    output_format: str = "md"
+    mode: str = "layout"
+
+class JobCreateBody(BaseModel):
+    """Metadata-only create — bytes already went browser → storage via the
+    presigned POST (the multipart UploadFile path is removed)."""
+
+    storage_key: str
+    page_count: int
+    output_format: str = "md"
+    mode: str = "layout"
+    # Plan W (wizard): page selection + rotation JSON object, not a string.
+    preprocess: dict | None = None
+
+def _file_ext(name: str) -> str:
+    return name.rsplit(".", 1)[-1].lower() if "." in name else ""
+
+def _validate_output_settings(output_format: str, mode: str) -> None:
+    """Plan D4 + Phase 5 enums; invalid → exact-VN 422 BEFORE any write."""
+    if output_format not in ("md", "docx"):
+        raise HTTPException(status_code=422, detail="Đầu ra không hợp lệ.")
+    if mode not in ("layout", "extract_only"):
+        raise HTTPException(status_code=422, detail="Chế độ xử lý không hợp lệ.")
+
+def _bad_page_count(ext: str, page_count: int) -> str | None:
+    """pdf → ≤ MAX_PDF_PAGES; image = 1 (rasterization always yields one
+    page). None = ok."""
+    if page_count < 1:
+        return "Số trang không hợp lệ."
+    if ext == "pdf":
+        if page_count > MAX_PDF_PAGES:
+            return f"File PDF quá {MAX_PDF_PAGES} trang."
+    elif page_count != 1:
+        return "Số trang không hợp lệ."
+    return None
+
+@router.post("/api/jobs/presign")
+async def presign_upload(
+    body: PresignBody,
+    user: User = Depends(_ocr_user),
+    storage: StorageDriver = Depends(get_storage),
+) -> dict:
+    """Presigned POST policy: sanity-check metadata (size cap, page bound,
+    enums) → content-addressed key → policy. The backend never touches the
+    bytes; S3 enforces the 50MB cap via content-length-range."""
+    ext = _file_ext(body.filename)
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=422, detail="Định dạng file không được hỗ trợ."
+        )
+    if body.content_type != CONTENT_TYPE_BY_EXT[ext]:
+        raise HTTPException(
+            status_code=422, detail="Định dạng file không được hỗ trợ."
+        )
+    if not 0 < body.size_bytes <= MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=422, detail="File vượt quá 50MB.")
+    _validate_output_settings(body.output_format, body.mode)
+    if body.page_count is not None:
+        bad = _bad_page_count(ext, body.page_count)
+        if bad is not None:
+            raise HTTPException(status_code=422, detail=bad)
+    sha = body.sha256.lower()
+    if not SHA256_RE.fullmatch(sha):
+        raise HTTPException(status_code=422, detail="sha256 không hợp lệ.")
+    key = f"uploads/{sha}.{ext}"
+    try:
+        signed = await storage.presign_post(
+            key, PRESIGN_EXPIRES_SECONDS, MAX_UPLOAD_BYTES, body.content_type
+        )
+    except Exception as exc:
+        logger.exception("presign_post failed key=%s", key)
+        raise HTTPException(
+            status_code=500, detail="Không tạo được link tải lên."
+        ) from exc
+    return {
+        "storage_key": key,
+        "url": signed["url"],
+        "fields": signed["fields"],
+        "max_bytes": MAX_UPLOAD_BYTES,
+    }
 
 @router.post("/api/jobs", status_code=201)
-async def upload_job(
+async def create_job(
     request: Request,
-    file: UploadFile = File(...),
-    preprocess: str | None = Form(None),
-    output_format: str | None = Form(None),
-    mode: str | None = Form(None),
+    body: JobCreateBody,
     user: User = Depends(_ocr_user),
     storage: StorageDriver = Depends(get_storage),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
+    """Metadata-only job create: verify the presigned upload EXISTS (head —
+    no byte read; missing → 404 "File chưa tải lên.") then store metadata.
+    Page count is client-side (pdf.js) — bounded here."""
     # lazy per-app instance; same pattern as auth SlidingWindow
     limiter = getattr(request.app.state, "upload_limiter", None)
     if limiter is None:
@@ -146,94 +247,60 @@ async def upload_job(
         raise HTTPException(
             status_code=429, detail="Đã đạt giới hạn upload hôm nay."
         )
-
-    name = file.filename or ""
-    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
-    if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=422, detail="Định dạng file không được hỗ trợ.")
-    # Plan D4: export format chosen at upload; invalid → 422 BEFORE any write
-    fmt = output_format or "md"
-    if fmt not in ("md", "docx"):
-        raise HTTPException(status_code=422, detail="Đầu ra không hợp lệ.")
-    # Phase 5: "layout" (default) | "extract_only"; invalid → 422 before any write
-    job_mode = mode or "layout"
-    if job_mode not in ("layout", "extract_only"):
-        raise HTTPException(status_code=422, detail="Chế độ xử lý không hợp lệ.")
-
-    # hash while spooling to temp file; size cap enforced during the stream
-    hasher = hashlib.sha256()
-    size = 0
-    with tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024) as tmp:
-        while chunk := await file.read(CHUNK_BYTES):
-            size += len(chunk)
-            if size > MAX_UPLOAD_BYTES:
-                raise HTTPException(status_code=422, detail="File vượt quá 50MB.")
-            hasher.update(chunk)
-            tmp.write(chunk)
-        if ext == "pdf":
-            try:
-                page_count = _pdf_page_count(tmp)
-            except Exception:
-                # spec §6: corrupt/encrypted PDF is a synchronous 422,
-                # never a 500, and no job row / storage write happens.
-                raise HTTPException(
-                    status_code=422, detail="File PDF không hợp lệ."
-                )
-            if page_count > MAX_PDF_PAGES:
-                raise HTTPException(
-                    status_code=422, detail="File PDF quá 50 trang."
-                )
-            file_type = "pdf"
-        else:
-            page_count = 1
-            file_type = "image"
-        # Plan W: preprocess validated AFTER page_count known, BEFORE storage.put
-        preprocess_json: str | None = None
-        if preprocess is not None:
-            try:
-                pp = PreprocessIn.model_validate(json.loads(preprocess))
-            except (json.JSONDecodeError, ValidationError):
-                raise HTTPException(422, detail="Preprocess không hợp lệ.")
-            if pp.pages == []:
-                raise HTTPException(422, detail="Chưa chọn trang nào.")
-            if pp.pages is not None and any(
-                p < 1 or p > page_count for p in pp.pages
-            ):
-                raise HTTPException(
-                    422, detail="Trang chọn vượt quá số trang của file."
-                )
-            if file_type != "pdf":
-                raise HTTPException(422, detail="Chỉ file PDF hỗ trợ chọn trang.")
-            # ponytail: pages=None means "all pages" — rotate keys then skip
-            # the selected-set check; add per-page bounds if wizard needs it.
-            if pp.pages is not None:
-                selected = set(pp.pages)
-                for key in pp.rotate:
-                    try:
-                        if int(key) not in selected:
-                            raise ValueError
-                    except ValueError:
-                        raise HTTPException(
-                            422, detail="Xoay áp dụng cho trang đã chọn."
-                        )
-            for angle in pp.rotate.values():
-                if angle not in ROTATE_ANGLES:
-                    raise HTTPException(422, detail="Góc xoay không hợp lệ.")
-            preprocess_json = json.dumps(pp.model_dump())
-        key = f"uploads/{hasher.hexdigest()}.{ext}"
-        # driver.put no-ops when the content-addressed key already exists
-        tmp.seek(0)
-        await storage.put(key, tmp.read())
-
+    _validate_output_settings(body.output_format, body.mode)
+    if not STORAGE_KEY_RE.fullmatch(body.storage_key):
+        raise HTTPException(
+            status_code=422, detail="Đường dẫn file không hợp lệ."
+        )
+    ext = body.storage_key.rsplit(".", 1)[-1].lower()
+    if not await storage.exists(body.storage_key):
+        raise HTTPException(status_code=404, detail="File chưa tải lên.")
+    bad = _bad_page_count(ext, body.page_count)
+    if bad is not None:
+        raise HTTPException(status_code=422, detail=bad)
+    file_type = "pdf" if ext == "pdf" else "image"
+    # Plan W: preprocess validated AFTER page_count known, BEFORE the row write
+    preprocess_json: str | None = None
+    if body.preprocess is not None:
+        try:
+            pp = PreprocessIn.model_validate(body.preprocess)
+        except ValidationError:
+            raise HTTPException(422, detail="Preprocess không hợp lệ.")
+        if pp.pages == []:
+            raise HTTPException(422, detail="Chưa chọn trang nào.")
+        if pp.pages is not None and any(
+            p < 1 or p > body.page_count for p in pp.pages
+        ):
+            raise HTTPException(
+                422, detail="Trang chọn vượt quá số trang của file."
+            )
+        if file_type != "pdf":
+            raise HTTPException(422, detail="Chỉ file PDF hỗ trợ chọn trang.")
+        # ponytail: pages=None means "all pages" — rotate keys then skip
+        # the selected-set check; add per-page bounds if wizard needs it.
+        if pp.pages is not None:
+            selected = set(pp.pages)
+            for key in pp.rotate:
+                try:
+                    if int(key) not in selected:
+                        raise ValueError
+                except ValueError:
+                    raise HTTPException(
+                        422, detail="Xoay áp dụng cho trang đã chọn."
+                    )
+        for angle in pp.rotate.values():
+            if angle not in ROTATE_ANGLES:
+                raise HTTPException(422, detail="Góc xoay không hợp lệ.")
+        preprocess_json = json.dumps(pp.model_dump())
     job = Job(
         user_id=user.id,
         status="queued",
-        storage_key=key,
+        storage_key=body.storage_key,
         file_type=file_type,
-        page_count=page_count,
+        page_count=body.page_count,
         preprocess=preprocess_json,
-        output_format=fmt,
-        mode=job_mode,
+        output_format=body.output_format,
+        mode=body.mode,
     )
     session.add(job)
     await session.commit()
@@ -243,8 +310,8 @@ async def upload_job(
         "status": job.status,
         "page_count": job.page_count,
         "file_type": job.file_type,
-        "output_format": fmt,
-        "mode": job_mode,
+        "output_format": body.output_format,
+        "mode": body.mode,
     }
 
 # --- Owner reads: GET /api/jobs, /{id}, /{id}/file ---
@@ -449,13 +516,7 @@ async def get_job_file(
 
 # --- Plan V (V2): same-origin original-file download (presign unreachable) ---
 
-DOWNLOAD_CONTENT_TYPES = {
-    "jpg": "image/jpeg",
-    "jpeg": "image/jpeg",
-    "png": "image/png",
-    "webp": "image/webp",
-    "pdf": "application/pdf",
-}
+DOWNLOAD_CONTENT_TYPES = CONTENT_TYPE_BY_EXT  # same ext→type map
 
 @router.get("/api/jobs/{id}/file/download")
 async def download_job_file(
@@ -467,7 +528,7 @@ async def download_job_file(
     """Stream original bytes same-origin (Plan V V2; binding spec).
 
     Presigned localhost:4566 URLs unreachable via VSCode port-forward.
-    storage_key already carries the "uploads/" prefix (upload_job builds
+    storage_key already carries the "uploads/" prefix (create_job builds
     the full key). Keys are hash.ext (ASCII-only) → job-{id}.{ext} filename;
     non-ascii never occurs, so no RFC 5987 filename* needed.
     """

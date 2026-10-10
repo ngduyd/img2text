@@ -14,7 +14,7 @@ from app.core.models import Job
 from app.services.job_results import drain_auto_output, store_batch_result
 from app.core.schemas import ResultBody
 
-from tests.test_upload import TEST_JPEG  # noqa: F401 (reuses fixtures via conftest)
+from tests.conftest import TEST_JPEG  # noqa: F401
 
 def _put_keys(storage_spy) -> list[str]:
     return [c.args[0] for c in storage_spy.put.await_args_list]
@@ -35,41 +35,27 @@ def docx_llm_down(monkeypatch):
         raise LLMError("LLM down (test)")
     monkeypatch.setattr("app.routers.exports.build_docx", _down)
 
-async def test_upload_defaults_to_md(auth_client, db_session):
-    r = await auth_client.post(
-        "/api/jobs", files={"file": ("a.jpg", TEST_JPEG, "image/png")}
-    )
+async def test_upload_defaults_to_md(upload, db_session):
+    r = await upload(TEST_JPEG, "a.jpg")
     assert r.status_code == 201
     assert r.json()["output_format"] == "md"
     job = await db_session.get(Job, r.json()["id"])
     assert job.output_format == "md"
 
-async def test_upload_docx_accepted(auth_client, db_session):
-    r = await auth_client.post(
-        "/api/jobs",
-        files={"file": ("a.jpg", TEST_JPEG, "image/png")},
-        data={"output_format": "docx"},
-    )
+async def test_upload_docx_accepted(upload, db_session):
+    r = await upload(TEST_JPEG, "a.jpg", output_format="docx")
     assert r.status_code == 201
     assert r.json()["output_format"] == "docx"
     job = await db_session.get(Job, r.json()["id"])
     assert job.output_format == "docx"
 
-async def test_upload_invalid_output_format_422(auth_client):
-    r = await auth_client.post(
-        "/api/jobs",
-        files={"file": ("a.jpg", TEST_JPEG, "image/png")},
-        data={"output_format": "pdf"},
-    )
+async def test_upload_invalid_output_format_422(upload):
+    r = await upload(TEST_JPEG, "a.jpg", output_format="pdf")
     assert r.status_code == 422
     assert r.json()["detail"] == "Đầu ra không hợp lệ."
 
-async def test_get_job_returns_output_format(auth_client, db_session):
-    r = await auth_client.post(
-        "/api/jobs",
-        files={"file": ("a.jpg", TEST_JPEG, "image/png")},
-        data={"output_format": "docx"},
-    )
+async def test_get_job_returns_output_format(upload, auth_client, db_session):
+    r = await upload(TEST_JPEG, "a.jpg", output_format="docx")
     jid = r.json()["id"]
     r = await auth_client.get(f"/api/jobs/{jid}")
     assert r.status_code == 200
@@ -104,7 +90,7 @@ async def test_worker_result_auto_generates_md(
     assert job.status == "failed" and job.failed_step == "rendering"
 
 async def test_auto_docx_llm_down_warns_and_job_stays_done(
-    auth_client,
+    upload,
     worker_client,
     storage_spy,
     db_session,
@@ -113,11 +99,7 @@ async def test_auto_docx_llm_down_warns_and_job_stays_done(
     caplog,
 ):
     """docx-layout LLM down + md-layout OK → spec partial-OK rule: done."""
-    r = await auth_client.post(
-        "/api/jobs",
-        files={"file": ("a.jpg", TEST_JPEG, "image/png")},
-        data={"output_format": "docx"},
-    )
+    r = await upload(TEST_JPEG, "a.jpg", output_format="docx")
     jid = r.json()["id"]
 
     def _llm_down(*args, **kwargs):
@@ -146,7 +128,7 @@ async def test_auto_docx_llm_down_warns_and_job_stays_done(
     assert job.status == "done"
 
 async def test_auto_docx_success_stores_docx_layout_key(
-    auth_client,
+    upload,
     worker_client,
     storage_spy,
     VALID_RESULT_JSONB,
@@ -184,11 +166,7 @@ async def test_auto_docx_success_stores_docx_layout_key(
         FakeResponse(ir_response),
         FakeResponse("<h2>Xin chào</h2>"),
     ])
-    r = await auth_client.post(
-        "/api/jobs",
-        files={"file": ("a.jpg", TEST_JPEG, "image/png")},
-        data={"output_format": "docx"},
-    )
+    r = await upload(TEST_JPEG, "a.jpg", output_format="docx")
     jid = r.json()["id"]
     claim = await worker_client.get("/api/jobs/next")
     tok = claim.json()["worker_token"]
@@ -206,7 +184,7 @@ async def test_auto_docx_success_stores_docx_layout_key(
     assert data[:2] == b"PK"
 
 async def test_auto_generates_both_formats(
-    auth_client,
+    upload,
     worker_client,
     storage_spy,
     VALID_RESULT_JSONB,
@@ -248,11 +226,7 @@ async def test_auto_generates_both_formats(
         FakeResponse(ir_response),
         FakeResponse("<h2>Xin chào</h2>"),
     ])
-    r = await auth_client.post(
-        "/api/jobs",
-        files={"file": ("a.jpg", TEST_JPEG, "image/png")},
-        data={"output_format": "md"},
-    )
+    r = await upload(TEST_JPEG, "a.jpg", output_format="md")
     jid = r.json()["id"]
     claim = await worker_client.get("/api/jobs/next")
     tok = claim.json()["worker_token"]

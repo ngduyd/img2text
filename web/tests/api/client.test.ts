@@ -1,10 +1,75 @@
 import { describe, it, expect, vi } from "vitest";
 import { api } from "../../src/api/client";
 
+// R30: pdfjs mocked at module boundary — uploadJob counts pages via loadPdf.
+vi.mock("../../src/lib/pdfjs", () => ({
+  loadPdf: vi.fn(async () => ({ numPages: 3, getPage: vi.fn() })),
+}));
+
 function stubLocationAssign() {
   const assign = vi.fn();
   vi.stubGlobal("location", { assign }); // jsdom location is not spy-able; documented approach
   return assign;
+}
+
+const PRESIGN = {
+  storage_key: `uploads/${"ab".repeat(32)}.jpg`,
+  url: "https://r2.example/bucket",
+  fields: { key: `uploads/${"ab".repeat(32)}.jpg`, "Content-Type": "image/jpeg" },
+  max_bytes: 52428800,
+};
+
+interface XhrState {
+  url: string;
+  form: FormData;
+  progress: number[];
+  fireProgress: (loaded: number, total: number) => void;
+  finish: (status?: number) => void;
+  error: () => void;
+}
+
+/** Fake XMLHttpRequest: captures the form POST, manual progress/load control. */
+function stubXHR(autoFinish = true): XhrState[] {
+  const calls: XhrState[] = [];
+  class FakeXHR {
+    upload = { onprogress: null as ((e: ProgressEvent) => void) | null };
+    status = 200;
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    private url = "";
+    open(_method: string, url: string) {
+      this.url = url;
+    }
+    send(form: FormData) {
+      const state: XhrState = {
+        url: this.url,
+        form,
+        progress: [],
+        fireProgress: (loaded, total) => {
+          state.progress.push(Math.round((loaded / total) * 100));
+          this.upload.onprogress?.({ loaded, total, lengthComputable: true } as ProgressEvent);
+        },
+        finish: (status) => {
+          if (status !== undefined) this.status = status;
+          this.onload?.();
+        },
+        error: () => this.onerror?.(),
+      };
+      calls.push(state);
+      if (autoFinish) queueMicrotask(() => this.onload?.());
+    }
+  }
+  vi.stubGlobal("XMLHttpRequest", FakeXHR);
+  return calls;
+}
+
+/** fetch router: URL → JSON body (200). */
+function stubFetchRoutes(routes: Record<string, unknown>) {
+  const spy = vi.fn(async (url: string, _opts?: { method?: string; body?: string }) =>
+    new Response(JSON.stringify(routes[String(url)] ?? {}), { status: 200 }),
+  );
+  vi.stubGlobal("fetch", spy);
+  return spy;
 }
 
 describe("api client", () => {
@@ -28,65 +93,114 @@ describe("api client", () => {
     await expect(api.uploadJob(new File([], "a.jpg"))).rejects.toThrow("Chưa được cấp quyền OCR.");
   });
 
-  it("uploadJob appends preprocess JSON field when opts.preprocess present", async () => {
-    const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1, status: "queued" }), { status: 200 }));
-    vi.stubGlobal("fetch", spy);
-    const file = new File(["%PDF"], "a.pdf", { type: "application/pdf" });
-    await api.uploadJob(file, { preprocess: { pages: [1, 3], rotate: { "2": 90 } } });
-    const [, opts] = spy.mock.calls[0];
-    const form = opts.body as FormData;
-    expect(form.get("file")).toBe(file);
-    expect(form.get("preprocess")).toBe(JSON.stringify({ pages: [1, 3], rotate: { "2": 90 } }));
-  });
-
-  it("uploadJob omits preprocess field when opts absent", async () => {
-    const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1, status: "queued" }), { status: 200 }));
-    vi.stubGlobal("fetch", spy);
-    await api.uploadJob(new File(["x"], "a.jpg", { type: "image/jpeg" }));
-    const [, opts] = spy.mock.calls[0];
-    expect((opts.body as FormData).get("preprocess")).toBeNull();
-  });
-
-  it("uploadJob appends output_format field when opts.output_format present", async () => {
-    const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1, status: "queued" }), { status: 200 }));
-    vi.stubGlobal("fetch", spy);
+  it("uploadJob presigns, POSTs the form straight to storage, then creates metadata-only", async () => {
+    const xhrs = stubXHR();
+    const spy = stubFetchRoutes({ "/api/jobs/presign": PRESIGN, "/api/jobs": { id: 1, status: "queued" } });
     const file = new File(["x"], "a.jpg", { type: "image/jpeg" });
-    await api.uploadJob(file, { output_format: "docx" });
-    const [, opts] = spy.mock.calls[0];
-    expect((opts.body as FormData).get("output_format")).toBe("docx");
+    await api.uploadJob(file, {
+      output_format: "docx",
+      mode: "extract_only",
+      preprocess: { pages: [1, 3], rotate: { "2": 90 } },
+    });
+    const presignCall = spy.mock.calls.find(([url]) => String(url) === "/api/jobs/presign");
+    // content-addressed key: client-computed sha256 ("x")
+    expect(JSON.parse(String(presignCall?.[1]?.body))).toEqual({
+      filename: "a.jpg",
+      content_type: "image/jpeg",
+      size_bytes: 1,
+      sha256: "2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881",
+      output_format: "docx",
+      mode: "extract_only",
+    });
+    // form → storage (KHÔNG qua backend): policy fields + file
+    expect(xhrs).toHaveLength(1);
+    expect(xhrs[0].url).toBe(PRESIGN.url);
+    expect(xhrs[0].form.get("key")).toBe(PRESIGN.storage_key);
+    expect((xhrs[0].form.get("file") as File).name).toBe("a.jpg");
+    // create = metadata-only
+    const createCall = spy.mock.calls.find(
+      ([url, opts]) => String(url) === "/api/jobs" && opts?.method === "POST",
+    );
+    expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
+      storage_key: PRESIGN.storage_key,
+      page_count: 1,
+      output_format: "docx",
+      mode: "extract_only",
+      preprocess: { pages: [1, 3], rotate: { "2": 90 } },
+    });
   });
 
-  it("uploadJob omits output_format field when opts absent", async () => {
-    const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1, status: "queued" }), { status: 200 }));
-    vi.stubGlobal("fetch", spy);
+  it("uploadJob omits preprocess/output_format/mode when opts absent", async () => {
+    stubXHR();
+    const spy = stubFetchRoutes({ "/api/jobs/presign": PRESIGN, "/api/jobs": { id: 1, status: "queued" } });
     await api.uploadJob(new File(["x"], "a.jpg", { type: "image/jpeg" }));
-    const [, opts] = spy.mock.calls[0];
-    expect((opts.body as FormData).get("output_format")).toBeNull();
+    const presignBody = JSON.parse(
+      String(spy.mock.calls.find(([url]) => String(url) === "/api/jobs/presign")?.[1]?.body),
+    );
+    expect(presignBody).not.toHaveProperty("output_format");
+    expect(presignBody).not.toHaveProperty("mode");
+    const createCall = spy.mock.calls.find(
+      ([url, opts]) => String(url) === "/api/jobs" && opts?.method === "POST",
+    );
+    expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
+      storage_key: PRESIGN.storage_key,
+      page_count: 1,
+    });
   });
 
-  it("uploadJob appends mode field when opts.mode present", async () => {
-    const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1, status: "queued" }), { status: 200 }));
-    vi.stubGlobal("fetch", spy);
-    await api.uploadJob(new File(["x"], "a.jpg", { type: "image/jpeg" }), { mode: "extract_only" });
-    const [, opts] = spy.mock.calls[0];
-    expect((opts.body as FormData).get("mode")).toBe("extract_only");
+  it("uploadJob reports upload progress percent + phase transitions", async () => {
+    const xhrs = stubXHR();
+    stubFetchRoutes({ "/api/jobs/presign": PRESIGN, "/api/jobs": { id: 1, status: "queued" } });
+    const phases: string[] = [];
+    const percents: number[] = [];
+    const done = api.uploadJob(new File(["x"], "a.jpg", { type: "image/jpeg" }), {
+      onPhase: (p) => phases.push(p),
+      onProgress: (p) => percents.push(p),
+    });
+    // onprogress fires DURING the XHR upload → percent updates
+    await vi.waitFor(() => expect(xhrs).toHaveLength(1));
+    xhrs[0].fireProgress(40, 100);
+    xhrs[0].fireProgress(100, 100);
+    xhrs[0].finish();
+    await done;
+    expect(percents).toEqual([40, 100]);
+    expect(phases).toEqual(["uploading", "counting"]);
   });
 
-  it("uploadJob omits mode field when opts absent", async () => {
-    const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1, status: "queued" }), { status: 200 }));
-    vi.stubGlobal("fetch", spy);
-    await api.uploadJob(new File(["x"], "a.jpg", { type: "image/jpeg" }));
-    const [, opts] = spy.mock.calls[0];
-    expect((opts.body as FormData).get("mode")).toBeNull();
+  it("uploadJob counts PDF pages with pdf.js AFTER the upload", async () => {
+    stubXHR();
+    const spy = stubFetchRoutes({ "/api/jobs/presign": PRESIGN, "/api/jobs": { id: 1, status: "queued" } });
+    await api.uploadJob(new File(["%PDF"], "a.pdf", { type: "application/pdf" }));
+    const createCall = spy.mock.calls.find(
+      ([url, opts]) => String(url) === "/api/jobs" && opts?.method === "POST",
+    );
+    expect(JSON.parse(String(createCall?.[1]?.body)).page_count).toBe(3); // loadPdf mock numPages
   });
 
-  it("uploadJob accepts Blob + filename (cropped JPEG multipart name)", async () => {
-    const spy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: 1, status: "queued" }), { status: 200 }));
-    vi.stubGlobal("fetch", spy);
+  it("uploadJob rejects on non-2xx storage POST", async () => {
+    const xhrs = stubXHR(false);
+    stubFetchRoutes({ "/api/jobs/presign": PRESIGN });
+    const done = api.uploadJob(new File(["x"], "a.jpg", { type: "image/jpeg" }));
+    await vi.waitFor(() => expect(xhrs).toHaveLength(1));
+    xhrs[0].finish(403);
+    await expect(done).rejects.toThrow("HTTP 403");
+  });
+
+  it("uploadJob rejects with detail message on network error", async () => {
+    const xhrs = stubXHR(false);
+    stubFetchRoutes({ "/api/jobs/presign": PRESIGN });
+    const done = api.uploadJob(new File(["x"], "a.jpg", { type: "image/jpeg" }));
+    await vi.waitFor(() => expect(xhrs).toHaveLength(1));
+    xhrs[0].error();
+    await expect(done).rejects.toThrow("Tải file thất bại.");
+  });
+
+  it("uploadJob accepts Blob + filename (cropped JPEG)", async () => {
+    const xhrs = stubXHR();
+    stubFetchRoutes({ "/api/jobs/presign": PRESIGN, "/api/jobs": { id: 1, status: "queued" } });
     const blob = new Blob(["x"], { type: "image/jpeg" });
     await api.uploadJob(blob, { filename: "photo-crop.jpg" });
-    const [, opts] = spy.mock.calls[0];
-    const entry = (opts.body as FormData).get("file") as File;
+    const entry = xhrs[0].form.get("file") as File;
     expect(entry.name).toBe("photo-crop.jpg");
     expect(entry.type).toBe("image/jpeg");
   });
