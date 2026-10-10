@@ -24,7 +24,7 @@ export interface PdfDoc {
 }
 
 /** Thin pdfjs-dist boundary — components import ONLY this; tests vi.mock it (R30). */
-export async function loadPdf(file: File): Promise<PdfDoc> {
+export async function loadPdf(file: File | Blob): Promise<PdfDoc> {
   const data = new Uint8Array(await file.arrayBuffer());
   const doc: PDFDocumentProxy = await pdfjs.getDocument({ data }).promise;
   return {

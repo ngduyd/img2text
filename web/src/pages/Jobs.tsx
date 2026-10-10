@@ -1,12 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Inbox } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "../api/client";
-import Dropzone from "../components/Dropzone";
+import { ApiError, api } from "../api/client";
+import type { JobMode } from "../api/types";
+import CropDialog from "../components/CropDialog";
 import JobRow from "../components/JobRow";
+import MultiFileUpload from "../components/MultiFileUpload";
+import PageSelectDialog, { type PageSelectEntry } from "../components/PageSelectDialog";
 import StatusFilterTabs from "../components/StatusFilterTabs";
+import SubmitModal, { type SubmitFormat } from "../components/SubmitModal";
+import { mapApiError } from "../lib/errors";
 import type { StatusFilter } from "../components/StatusFilterTabs";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
@@ -29,8 +34,22 @@ export default function Jobs() {
     queryFn: () => api.listJobs(page),
   });
   const [filter, setFilter] = useState<StatusFilter>("all");
-  // Plan D4: export format chosen BEFORE upload — stored on the job, auto-generated after OCR.
-  const [outputFormat, setOutputFormat] = useState<"md" | "docx">("md");
+  // Upload flow (spec U1-U3): Gửi → SubmitModal (mode+format) → merge → presign (R2) → tạo job.
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
+  // ponytail: gate only after me resolves — server enforces anyway.
+  const denied = me !== undefined && !(me?.ocr_enabled ?? false);
+  // "uploading" = POST form → storage (XHR progress), "counting" = pdf.js đếm trang.
+  const [phase, setPhase] = useState<"idle" | "uploading" | "counting">("idle");
+  const [percent, setPercent] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  // Gửi gate: beforeSubmit của MultiFileUpload resolve qua modal confirm/cancel.
+  const submitGate = useRef<((ok: boolean) => void) | null>(null);
+  const choiceRef = useRef<{ mode: JobMode; output_format: SubmitFormat } | null>(null);
+  const [crop, setCrop] = useState<{ blob: Blob; name: string } | null>(null);
+  const cropDone = useRef<((blob: Blob | null) => void) | null>(null);
+  const [pageEntry, setPageEntry] = useState<PageSelectEntry | null>(null);
+  const pagesDone = useRef<((pages: number[] | null) => void) | null>(null);
   const items = jobs?.items ?? [];
   // Stats + filter tabs are trang hiện tại (server total sống riêng ở stats-total + pagination).
   const visible = filter === "all" ? items : items.filter((j) => j.status === filter);
@@ -52,6 +71,34 @@ export default function Jobs() {
     },
   });
   const allVisibleSelected = visible.length > 0 && visible.every((j) => selected.has(j.id));
+
+  // Reuse Dropzone lane: api.uploadJob = presign → POST form (XHR progress) → pdf.js đếm trang → POST /api/jobs.
+  const submit = async (pdf: Blob, meta: { page_count: number; filename: string }) => {
+    setUploadError(null);
+    setPercent(0);
+    try {
+      const choice = choiceRef.current ?? { mode: "layout" as JobMode, output_format: "md" as SubmitFormat };
+      await api.uploadJob(pdf, {
+        filename: meta.filename,
+        mode: choice.mode,
+        output_format: choice.output_format,
+        onPhase: setPhase,
+        onProgress: setPercent,
+      });
+      // R59: toast + invalidate + navigate về list route.
+      toast.success("Đã tải lên — đang chờ xử lý.");
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      navigate("/jobs");
+      return true;
+    } catch (err) {
+      // R51: inline block kept; toast mirrors it (R59). Files giữ lại để gửi lại.
+      setUploadError(err instanceof ApiError ? err.detail : "Tải file thất bại.");
+      toast.error(mapApiError(err));
+      return false;
+    } finally {
+      setPhase("idle");
+    }
+  };
 
   return (
     <main id="main" className="mx-auto max-w-3xl p-4 sm:p-6">
@@ -94,15 +141,119 @@ export default function Jobs() {
         <StatusFilterTabs items={items} value={filter} onChange={setFilter} />
       </div>
 
-      {/* R59: invalidate so the new job shows; navigate to the /jobs list route. */}
-      <Dropzone
-        outputFormat={outputFormat}
-        onFormatChange={setOutputFormat}
-        onUploaded={() => {
-          queryClient.invalidateQueries({ queryKey: ["jobs"] });
-          navigate("/jobs");
+      {/* Spec U3: Gửi → modal mode/format; U1: multi-file cards + crop/page-select. */}
+      {denied && (
+        <div
+          data-testid="banner-no-access"
+          className="mb-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-warning"
+        >
+          Chờ admin cấp quyền
+          <p className="mt-1 text-xs">
+            Môi trường dev: đăng nhập tài khoản admin → mục Người dùng → bật OCR cho tài khoản
+            này.
+          </p>
+        </div>
+      )}
+      {uploadError && (
+        <div
+          data-testid="upload-error"
+          className="mb-2 rounded-md border border-error/40 bg-error/10 px-3 py-2 text-error"
+        >
+          {uploadError}
+        </div>
+      )}
+      {phase === "uploading" && (
+        <div data-testid="upload-progress" className="mb-2 space-y-1">
+          <div
+            role="progressbar"
+            aria-valuenow={percent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            className="h-2 w-full overflow-hidden rounded-md bg-surface-2"
+          >
+            <div
+              className="h-full rounded-md bg-accent transition-[width] duration-200"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+          <p className="text-xs text-muted">{percent}%</p>
+        </div>
+      )}
+      {phase === "counting" && (
+        <p data-testid="upload-counting" className="mb-2 text-sm text-muted">
+          Đang đếm trang...
+        </p>
+      )}
+      <MultiFileUpload
+        disabled={denied}
+        beforeSubmit={
+          () =>
+            new Promise<boolean>((res) => {
+              submitGate.current = res;
+              setModalOpen(true);
+            })
+        }
+        onSubmit={submit}
+        onCrop={
+          (blob, name) =>
+            new Promise<Blob | null>((res) => {
+              cropDone.current = res;
+              setCrop({ blob, name });
+            })
+        }
+        onSelectPages={
+          (entry) =>
+            new Promise<number[] | null>((res) => {
+              pagesDone.current = res;
+              setPageEntry(entry);
+            })
+        }
+      />
+      <SubmitModal
+        open={modalOpen}
+        onConfirm={(choice) => {
+          choiceRef.current = choice;
+          setModalOpen(false);
+          submitGate.current?.(true);
+          submitGate.current = null;
+        }}
+        onCancel={() => {
+          setModalOpen(false);
+          submitGate.current?.(false);
+          submitGate.current = null;
         }}
       />
+      {crop && (
+        <CropDialog
+          blob={crop.blob}
+          name={crop.name}
+          onCancel={() => {
+            cropDone.current?.(null);
+            cropDone.current = null;
+            setCrop(null);
+          }}
+          onDone={(b) => {
+            cropDone.current?.(b);
+            cropDone.current = null;
+            setCrop(null);
+          }}
+        />
+      )}
+      {pageEntry && (
+        <PageSelectDialog
+          entry={pageEntry}
+          onCancel={() => {
+            pagesDone.current?.(null);
+            pagesDone.current = null;
+            setPageEntry(null);
+          }}
+          onDone={(pages) => {
+            pagesDone.current?.(pages);
+            pagesDone.current = null;
+            setPageEntry(null);
+          }}
+        />
+      )}
 
       {/* Phase 4: select-all trang hiện tại — chọn đúng các hàng đang thấy. */}
       {!isLoading && items.length > 0 && (

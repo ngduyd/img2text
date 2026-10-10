@@ -51,92 +51,126 @@ function renderWithRouter(ui: ReactElement, { route = "/" } = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // jsdom thiếu object URL cho thumbnail card của MultiFileUpload.
+  Object.defineProperty(URL, "createObjectURL", {
+    value: vi.fn(() => "blob:mock"),
+    configurable: true,
+    writable: true,
+  });
+  Object.defineProperty(URL, "revokeObjectURL", {
+    value: vi.fn(),
+    configurable: true,
+    writable: true,
+  });
 });
 
-it("banner and disabled upload when ocr_enabled false", async () => {
+// PNG 1×1 thật — pdf-lib từ chối bytes giả ("The input is not a PNG file!").
+const PNG_1PX = Uint8Array.from(
+  atob(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  ),
+  (c) => c.charCodeAt(0),
+);
+const png = () => new File([PNG_1PX], "photo.png", { type: "image/png" });
+
+/** Thêm 1 ảnh → bấm Gửi → SubmitModal mở (flow U3). */
+async function openSubmitModal() {
+  const user = userEvent.setup();
+  await user.upload(screen.getByTestId("muf-input"), png());
+  await screen.findByTestId("muf-card-0");
+  await user.click(screen.getByTestId("muf-submit"));
+  await screen.findByTestId("submit-modal");
+  return user;
+}
+
+it("banner and disabled Gửi/input when ocr_enabled false", async () => {
   vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: false } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Jobs />);
   expect(await screen.findByTestId("banner-no-access")).toHaveTextContent("Chờ admin cấp quyền");
-  expect(screen.getByTestId("btn-upload")).toBeDisabled();
+  expect(screen.getByTestId("muf-submit")).toBeDisabled();
+  expect(screen.getByTestId("muf-input")).toBeDisabled();
 });
 
-it("upload button enabled and calls api when granted", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
-  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
-  vi.mocked(api.uploadJob).mockResolvedValue({ id: 42, status: "queued", page_count: 3 } as Job);
-  renderWithRouter(<Jobs />);
-  const btn = await screen.findByTestId("btn-upload");
-  expect(btn).toBeEnabled();
-  // Image files route to the crop wizard — txt exercises the immediate upload path.
-  // applyAccept is a setup() option: input.accept would otherwise filter out non-matching files.
-  const file = new File(["x"], "a.txt", { type: "text/plain" });
-  const user = userEvent.setup({ applyAccept: false });
-  await user.upload(screen.getByTestId("input-file"), file);
-  expect(api.uploadJob).toHaveBeenCalledWith(file, expect.objectContaining({ output_format: "md", mode: "layout" }));
-  // R59: upload success → toast + navigate to /jobs (the list route now).
-  expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý.");
-  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs"));
-});
-
-// Format combo: the toolbar <select> is gone — the upload button is a split button.
-it("split upload button renders with Markdown default; no format select in toolbar", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
-  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
-  renderWithRouter(<Jobs />);
-  const btn = await screen.findByTestId("btn-upload");
-  expect(btn).toHaveTextContent("Tải file lên · Markdown");
-  expect(screen.getByTestId("btn-format-toggle")).toBeInTheDocument();
-  expect(screen.queryByTestId("select-output-format")).not.toBeInTheDocument();
-});
-
-it("format menu: caret opens, Word→docx, Markdown→md, outside click closes", async () => {
+it("Gửi → modal → confirm: uploadJob(gộp PDF, layout+md) + toast + navigate", async () => {
   vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   vi.mocked(api.uploadJob).mockResolvedValue({ id: 42, status: "queued" } as Job);
   renderWithRouter(<Jobs />);
-  await screen.findByTestId("btn-upload");
-  const user = userEvent.setup({ applyAccept: false });
-  const file = new File(["x"], "a.txt", { type: "text/plain" });
-
-  // caret → menu with both options
-  await user.click(screen.getByTestId("btn-format-toggle"));
-  expect(screen.getByTestId("format-opt-md")).toBeInTheDocument();
-  expect(screen.getByTestId("format-opt-docx")).toBeInTheDocument();
-  // choose Word → menu closes, label reflects state, upload sends docx
-  await user.click(screen.getByTestId("format-opt-docx"));
-  expect(screen.queryByTestId("format-opt-docx")).not.toBeInTheDocument();
-  expect(screen.getByTestId("btn-upload")).toHaveTextContent("Tải file lên · Word");
-  await user.upload(screen.getByTestId("input-file"), file);
-  expect(api.uploadJob).toHaveBeenLastCalledWith(file, expect.objectContaining({ output_format: "docx", mode: "layout" }));
-  // choose Markdown again → upload sends md
-  await user.click(screen.getByTestId("btn-format-toggle"));
-  await user.click(screen.getByTestId("format-opt-md"));
-  expect(screen.getByTestId("btn-upload")).toHaveTextContent("Tải file lên · Markdown");
-  await user.upload(screen.getByTestId("input-file"), file);
-  expect(api.uploadJob).toHaveBeenLastCalledWith(file, expect.objectContaining({ output_format: "md", mode: "layout" }));
-  // click outside → menu closes
-  await user.click(screen.getByTestId("btn-format-toggle"));
-  expect(screen.getByTestId("format-opt-md")).toBeInTheDocument();
-  await user.click(screen.getByRole("heading", { name: "Công việc" }));
-  expect(screen.queryByTestId("format-opt-md")).not.toBeInTheDocument();
+  await screen.findByTestId("muf-input");
+  const user = await openSubmitModal();
+  await user.click(screen.getByTestId("sm-confirm"));
+  // Job = 1 PDF gộp client-side → presign lane (api.uploadJob), metadata-only.
+  await waitFor(() =>
+    expect(api.uploadJob).toHaveBeenCalledWith(
+      expect.any(Blob),
+      expect.objectContaining({ filename: "tong-hop.pdf", mode: "layout", output_format: "md" }),
+    ),
+  );
+  expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý.");
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs"));
+  // Gửi thành công → cards xóa (revoke thumbnails).
+  await waitFor(() => expect(screen.queryByTestId("muf-card-0")).not.toBeInTheDocument());
 });
 
-it("upload error surfaces server detail", async () => {
+it("modal: default layout+md; Hủy → không upload, giữ card", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  renderWithRouter(<Jobs />);
+  const user = await openSubmitModal();
+  expect(screen.getByTestId("sm-mode-layout")).toBeChecked();
+  expect(screen.getByTestId("sm-format-md")).toBeChecked();
+  // Format picker cũ (split button trên Jobs) đã chuyển vào modal.
+  expect(screen.queryByTestId("btn-format-toggle")).not.toBeInTheDocument();
+  await user.click(screen.getByTestId("sm-cancel"));
+  expect(screen.queryByTestId("submit-modal")).not.toBeInTheDocument();
+  expect(api.uploadJob).not.toHaveBeenCalled();
+  expect(screen.getByTestId("muf-card-0")).toBeInTheDocument();
+});
+
+it("modal choices: layout → docx; extract_only → mode + md", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  vi.mocked(api.uploadJob).mockResolvedValue({ id: 42, status: "queued" } as Job);
+  renderWithRouter(<Jobs />);
+  await screen.findByTestId("muf-input");
+  // layout + word → docx
+  let user = await openSubmitModal();
+  await user.click(screen.getByTestId("sm-format-docx"));
+  await user.click(screen.getByTestId("sm-confirm"));
+  await waitFor(() =>
+    expect(api.uploadJob).toHaveBeenLastCalledWith(
+      expect.any(Blob),
+      expect.objectContaining({ mode: "layout", output_format: "docx" }),
+    ),
+  );
+  // extract_only → ẩn md/word, luôn output_format md
+  user = await openSubmitModal();
+  await user.click(screen.getByTestId("sm-mode-extract-only"));
+  expect(screen.queryByTestId("sm-format-md")).not.toBeInTheDocument();
+  await user.click(screen.getByTestId("sm-confirm"));
+  await waitFor(() =>
+    expect(api.uploadJob).toHaveBeenLastCalledWith(
+      expect.any(Blob),
+      expect.objectContaining({ mode: "extract_only", output_format: "md" }),
+    ),
+  );
+});
+
+it("upload error surfaces server detail; giữ card để gửi lại", async () => {
   vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   vi.mocked(api.uploadJob).mockRejectedValue(new ApiError("Đã đạt giới hạn upload hôm nay."));
   renderWithRouter(<Jobs />);
-  await screen.findByTestId("btn-upload");
-  const file = new File(["x"], "a.txt", { type: "text/plain" });
-  const user = userEvent.setup({ applyAccept: false });
-  await user.upload(screen.getByTestId("input-file"), file);
+  await screen.findByTestId("muf-input");
+  const user = await openSubmitModal();
+  await user.click(screen.getByTestId("sm-confirm"));
   expect(await screen.findByTestId("upload-error")).toHaveTextContent(
     "Đã đạt giới hạn upload hôm nay.",
   );
   // R59: failing upload also toasts mapped detail (inline block kept, R51).
   expect(toast.error).toHaveBeenCalledWith("Đã đạt giới hạn upload hôm nay.");
-  expect(api.uploadJob).toHaveBeenCalledWith(file, expect.objectContaining({ output_format: "md", mode: "layout" }));
+  expect(screen.getByTestId("muf-card-0")).toBeInTheDocument();
 });
 
 it("job rows render status badge", async () => {
@@ -335,7 +369,9 @@ it("toolbar shows filter tabs without an output-format select", async () => {
   expect(screen.queryByTestId("select-output-format")).not.toBeInTheDocument();
   expect(screen.getByTestId("filter-all")).toBeInTheDocument();
   expect(screen.getByTestId("filter-done")).toBeInTheDocument();
-  expect(screen.getByTestId("btn-format-toggle")).toBeInTheDocument();
+  // Format picker cũ trên toolbar đã chuyển vào SubmitModal (spec U3).
+  expect(screen.queryByTestId("btn-format-toggle")).not.toBeInTheDocument();
+  expect(screen.getByTestId("muf-submit")).toBeInTheDocument();
 });
 
 it("empty state shows CTA hint", async () => {

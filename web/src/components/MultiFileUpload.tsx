@@ -21,17 +21,28 @@ interface Entry {
  */
 export default function MultiFileUpload({
   onSubmit,
+  beforeSubmit,
+  disabled,
   onCrop,
   onSelectPages,
 }: {
-  onSubmit: (pdf: Blob, meta: { page_count: number; filename: string }) => void;
-  /** Ảnh: mở UI crop (tái dùng logic ImageCropWizard ở bước integration) → blob đã crop. */
+  /** Trả false = upload thất bại (Jobs đã toast) → GIỮ files để gửi lại. */
+  onSubmit: (
+    pdf: Blob,
+    meta: { page_count: number; filename: string },
+  ) => boolean | void | Promise<boolean | void>;
+  /** Gửi → gate TRƯỚC merge (SubmitModal): false = hủy, giữ files. */
+  beforeSubmit?: () => boolean | Promise<boolean>;
+  /** OCR denied → chặn pick/input/Gửi. */
+  disabled?: boolean;
+  /** Ảnh: mở dialog crop (drag-rect) → blob đã crop. */
   onCrop?: (blob: Blob, name: string) => Promise<Blob | null>;
-  /** PDF: mở UI chọn trang → mảng trang mới (null = hủy). */
+  /** PDF: mở dialog chọn trang → mảng trang mới (null = hủy). */
   onSelectPages?: (entry: {
     name: string;
     numPages: number;
     pages: number[];
+    blob: Blob;
   }) => Promise<number[] | null>;
 }) {
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -53,7 +64,7 @@ export default function MultiFileUpload({
     list.reduce((s, e) => s + (e.kind === "image" ? 1 : e.pages?.length ?? e.numPages ?? 0), 0);
 
   const addFiles = async (files: FileList | File[] | null | undefined) => {
-    if (!files) return;
+    if (!files || disabled) return;
     let running = total(entriesRef.current);
     for (const f of Array.from(files)) {
       if (f.type === "image/png" || f.type === "image/jpeg") {
@@ -123,6 +134,7 @@ export default function MultiFileUpload({
       name: e.name,
       numPages: e.numPages,
       pages: e.pages ?? [],
+      blob: e.blob,
     });
     if (!next) return;
     const filtered = next.filter((n) => n >= 1 && n <= e.numPages!);
@@ -138,15 +150,26 @@ export default function MultiFileUpload({
     commit(entriesRef.current.map((x) => (x.id === e.id ? { ...x, pages: filtered } : x)));
   };
 
+  const clear = () => {
+    for (const u of urls.current.values()) URL.revokeObjectURL(u);
+    urls.current.clear();
+    commit([]);
+  };
+
   const submit = async () => {
     setBusy(true);
     try {
+      if (beforeSubmit && !(await beforeSubmit())) return;
       const pdf = await mergeToPdf(
         entries.map((e) => ({ kind: e.kind, blob: e.blob, name: e.name, pages: e.pages })),
       );
-      onSubmit(pdf, { page_count: total(entries), filename: "tong-hop.pdf" });
+      const ok = await onSubmit(pdf, { page_count: total(entries), filename: "tong-hop.pdf" });
+      if (ok === false) return;
+      clear();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Ghép PDF thất bại.");
+      // pdf-lib/pngjs throw raw strings ("The input is not a PNG file!") — surface luôn.
+      const msg = typeof err === "string" ? err : err instanceof Error ? err.message : "";
+      toast.error(msg || "Ghép PDF thất bại.");
     } finally {
       setBusy(false);
     }
@@ -167,7 +190,7 @@ export default function MultiFileUpload({
         <Button
           testid="muf-submit"
           className="ml-auto"
-          disabled={entries.length === 0 || total(entries) === 0 || busy}
+          disabled={disabled || entries.length === 0 || total(entries) === 0 || busy}
           loading={busy}
           onClick={() => void submit()}
         >
@@ -180,7 +203,7 @@ export default function MultiFileUpload({
         onDrop={drop}
         className="rounded-card border-2 border-dashed border-border bg-surface/50 p-4 text-center transition hover:border-accent/50"
       >
-        <Button testid="muf-pick" onClick={() => inputRef.current?.click()}>
+        <Button testid="muf-pick" disabled={disabled} onClick={() => inputRef.current?.click()}>
           Tải file lên
         </Button>
         <p className="mt-2 text-sm text-muted">Kéo thả file vào đây hoặc chọn từ máy</p>
@@ -191,6 +214,7 @@ export default function MultiFileUpload({
           multiple
           accept="image/png,image/jpeg,application/pdf"
           className="hidden"
+          disabled={disabled}
           onChange={(e) => {
             void addFiles(e.target.files);
             e.target.value = "";
