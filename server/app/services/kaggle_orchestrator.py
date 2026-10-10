@@ -53,6 +53,9 @@ logger = logging.getLogger(__name__)
 
 DATASET_SLUG = "img2text-worker-files"
 INPUT_SLUG = "img2text-input"  # batch input dataset (run_one.py K4, shared slug)
+# F3 (spec 2026-10-10): manifest input_url presigned GET window — kernel
+# downloads right after the spawn tick, so 1h is generous headroom.
+INPUT_URL_EXPIRES_SECONDS = 3600
 # kernel statuses meaning "run in progress" (case-insensitive match)
 _ACTIVE_STATUSES = frozenset({"running", "pending", "queued"})
 # batch statuses meaning "terminal" (normalized lowercase). P2: literal
@@ -431,19 +434,39 @@ async def _spawn_batch_run(api, session_factory, jobs: list[Job]) -> bool:
     claimer; no orphan extracting rows)."""
     global _last_spawn
     owner = settings.kaggle_username
-    # per-job poison FIRST: an unreadable upload aborts before any Kaggle call
-    datas = [await _get_storage().get(job.storage_key) for job in jobs]
+    # per-job poison FIRST: a MISSING upload aborts before any Kaggle call
+    # (head-check only — F3 never reads the bytes).
+    storage = _get_storage()
+    for job in jobs:
+        if not await storage.exists(job.storage_key):
+            raise KeyError(job.storage_key)
     build = Path(tempfile.mkdtemp(prefix="kaggle-img2text-batch-"))
     try:
         input_stage = build / "input"
         input_stage.mkdir()
-        expected: list[str] = []
-        for job, data in zip(jobs, datas):
-            # staging prefix: {job_id}__{orig} — unambiguous reverse mapping
-            # (kernel find_inputs parses the job id back from the filename)
-            name = f"{job.id}__{Path(job.storage_key).name}"
-            (input_stage / name).write_bytes(data)  # sha.<ext> keeps the ext
-            expected.append(name)
+        # F3: stage manifest.json ONLY (vài byte) — the kernel downloads each
+        # file from the presigned GET url and verifies sha256; KHÔNG copy file
+        # lớn vào dataset. filename keeps the {job_id}__{orig} prefix contract
+        # (mount fallback + unambiguous reverse mapping).
+        manifest = {
+            "jobs": [
+                {
+                    "job_id": job.id,
+                    "input_url": await storage.presign_get(
+                        job.storage_key, INPUT_URL_EXPIRES_SECONDS
+                    ),
+                    "filename": f"{job.id}__{Path(job.storage_key).name}",
+                    # content-addressed key uploads/{sha256}.{ext} → the hash
+                    "sha256": Path(job.storage_key).stem,
+                }
+                for job in jobs
+            ]
+        }
+        (input_stage / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        expected: list[str] = ["manifest.json"]
         (input_stage / "dataset-metadata.json").write_text(
             json.dumps(
                 {

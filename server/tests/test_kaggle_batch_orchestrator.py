@@ -94,6 +94,7 @@ class BatchStubKaggleApi:
         self.missing_outputs: set[int] = set()  # jobs the kernel wrote NOTHING for
         self.dataset_exists = True  # private dataset present (prod state)
         self.dataset_files = ["TA.jpg"]  # OLD input served by list_files
+        self.staged_job_ids: list[int] = []  # F3: job ids parsed from manifest
         self.stale_after_create = False  # create OK but files stay old
         self.omit_file: str | None = None  # staged file HIDDEN from list_files
 
@@ -122,9 +123,15 @@ class BatchStubKaggleApi:
 
     def dataset_create_new(self, folder):
         meta = json.loads((Path(folder) / "dataset-metadata.json").read_text())
-        files = sorted(p.name for p in Path(folder).iterdir())
+        # {name: bytes} snapshot — F3 tests parse manifest.json contents
+        files = {p.name: p.read_bytes() for p in Path(folder).iterdir()}
         self.calls.append(("dataset_create_new", meta["id"], files))
         self.dataset_exists = True
+        if "manifest.json" in files:
+            self.staged_job_ids = [
+                int(e["job_id"])
+                for e in json.loads(files["manifest.json"])["jobs"]
+            ]
         if not self.stale_after_create:
             kept = [f for f in files if f != "dataset-metadata.json"]
             if self.omit_file and self.omit_file in kept:
@@ -147,12 +154,12 @@ class BatchStubKaggleApi:
         if self.output_error is not None:
             raise self.output_error  # transient pull failure (test knob)
         assert self.result_doc is not None, "kernels_output before test set result_doc"
-        # production shape: per-job output named from the STAGED {id}__ prefix
-        for name in self.dataset_files:
-            head, sep, _ = name.partition("__")
-            if not sep or not head.isdigit() or int(head) in self.missing_outputs:
+        # production shape: per-job output named from the batch's job ids
+        # (F3: parsed from the staged manifest.json)
+        for job_id in self.staged_job_ids:
+            if job_id in self.missing_outputs:
                 continue
-            (Path(path) / f"{head}_result.json").write_text(
+            (Path(path) / f"{job_id}_result.json").write_text(
                 json.dumps(self.result_doc, ensure_ascii=False), encoding="utf-8"
             )
         return None
@@ -220,16 +227,13 @@ async def test_batch_verifies_input_files_before_kernel_push(
     private-dataset exists check: dataset_status sees it (dataset_list search
     returns []), so delete runs and the verify call precedes kernels_push."""
     assert await orch.ensure_worker(SessionLocal) is True
-    job = await db_session.get(Job, seed_job)
-    # staging prefix (Task 2): {job_id}__{sha}.<ext>
-    staged = f"{seed_job}__{Path(job.storage_key).name}"
     assert ("dataset_status", "testuser/img2text-input") in api.calls
     assert ("dataset_delete", "testuser/img2text-input") in api.calls
     files_checks = [c for c in api.calls if c[0] == "dataset_list_files"]
     assert files_checks and files_checks[0][1] == "testuser/img2text-input"
     kinds = [c[0] for c in api.calls]
     assert kinds.index("dataset_list_files") < kinds.index("kernels_push")
-    assert staged in api.dataset_files  # served file == the staged upload
+    assert "manifest.json" in api.dataset_files  # F3: manifest-only staging
 
 async def test_batch_happy_flow_spawn_then_complete_ingest(
     kaggle_batch_env, api, storage_env, seed_job, db_session, monkeypatch
@@ -239,10 +243,12 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
     assert await orch.ensure_worker(SessionLocal) is True
     job = await db_session.get(Job, seed_job)
     assert job.storage_key.startswith("uploads/")
-    storage_env.get.assert_awaited_with(job.storage_key)  # staged from storage
+    storage_env.exists.assert_awaited_with(job.storage_key)  # head-check only (F3)
     creates = [c for c in api.calls if c[0] == "dataset_create_new"]
     assert creates[0][1] == "testuser/img2text-input"
-    assert f"{job.id}__{job.storage_key.rsplit('/', 1)[-1]}" in creates[0][2]  # {job_id}__sha.<ext> staged
+    entries = json.loads(creates[0][2]["manifest.json"])["jobs"]
+    assert entries[0]["job_id"] == job.id  # manifest carries id/url/filename/sha256
+    assert entries[0]["sha256"] == Path(job.storage_key).stem
     assert "dataset-metadata.json" in creates[0][2]
     pushes = _pushes(api)
     assert len(pushes) == 1
@@ -375,19 +381,25 @@ async def test_batch_spawn_marks_job_extracting_with_kaggle_ref(
 async def test_batch_spawn_stages_all_queued_jobs_under_one_run(
     kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session
 ):
-    """Task 2(a): ONE tick stages EVERY queued job (cap 20) as
-    {job_id}__{name}; all marked extracting with the SAME ref; a single
-    _batch_runs entry lists the whole batch."""
+    """Task 2(a) + F3: ONE tick stages EVERY queued job (cap 20) into ONE
+    manifest.json (input_url presigned GET + filename + sha256, no file
+    bytes); all marked extracting with the SAME ref."""
     job2 = await _extra_queued_job(auth_client, storage_env, "seed2")
     job3 = await _extra_queued_job(auth_client, storage_env, "seed3")
     assert await orch.ensure_worker(SessionLocal) is True
     creates = [c for c in api.calls if c[0] == "dataset_create_new"]
     assert len(creates) == 1
-    staged = creates[0][2]
+    entries = {
+        e["job_id"]: e
+        for e in json.loads(creates[0][2]["manifest.json"])["jobs"]
+    }
     db_session.expire_all()
     for jid in (seed_job, job2, job3):
         job = await db_session.get(Job, jid)
-        assert f"{jid}__{Path(job.storage_key).name}" in staged
+        entry = entries[jid]
+        assert entry["filename"] == f"{jid}__{Path(job.storage_key).name}"
+        assert entry["sha256"] == Path(job.storage_key).stem
+        assert job.storage_key in entry["input_url"]  # presigned GET (1h)
         assert job.status == "extracting"
         assert job.kaggle_ref == BATCH_REF
     assert list(orch._batch_runs) == [BATCH_REF]
@@ -398,14 +410,13 @@ async def test_batch_verify_missing_one_file_blocks_whole_spawn(
     kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session,
     monkeypatch,
 ):
-    """Task 2(b): verify-before-push requires the FULL batch — one staged
-    filename missing from dataset_list_files → no push, no map entry, NO
-    job touched (whole batch retried next tick)."""
+    """Task 2(b): verify-before-push requires the FULL batch — the staged
+    manifest.json missing from dataset_list_files → no push, no map entry,
+    NO job touched (whole batch retried next tick)."""
     monkeypatch.setattr(orch, "_INPUT_VERIFY_TIMEOUT", 0.05)
     monkeypatch.setattr(orch, "_INPUT_VERIFY_INTERVAL", 0.01)
     job2 = await _extra_queued_job(auth_client, storage_env, "seed2")
-    sha2 = hashlib.sha256(PNG_1PX + b"seed2").hexdigest()
-    api.omit_file = f"{job2}__{sha2}.png"
+    api.omit_file = "manifest.json"
     assert await orch.ensure_worker(SessionLocal) is False
     assert _pushes(api) == []  # NEVER pushed with a file missing
     assert orch._batch_runs == {}
@@ -426,7 +437,8 @@ async def test_batch_spawn_caps_staged_jobs_at_config(
     assert await orch.ensure_worker(SessionLocal) is True
     creates = [c for c in api.calls if c[0] == "dataset_create_new"]
     assert len(creates) == 1
-    assert not any(n.startswith(f"{job3}__") for n in creates[0][2])
+    entries = json.loads(creates[0][2]["manifest.json"])["jobs"]
+    assert [e["job_id"] for e in entries] == [seed_job, job2]  # job3 waits
     db_session.expire_all()
     assert (await db_session.get(Job, seed_job)).status == "extracting"
     assert (await db_session.get(Job, job2)).status == "extracting"
@@ -740,8 +752,8 @@ async def test_batch_poison_job_does_not_block_queue(
     assert orch._batch_runs[BATCH_REF]["job_ids"] == [job2]  # job2 spawned, job1 skipped
     creates = [c for c in api.calls if c[0] == "dataset_create_new"]
     assert len(creates) == 1
-    staged_name = f"{job2}__" + hashlib.sha256(PNG_1PX + b"seed2").hexdigest() + ".png"
-    assert staged_name in creates[0][2]  # job2's prefixed file, not job1's
+    entries = json.loads(creates[0][2]["manifest.json"])["jobs"]
+    assert [e["job_id"] for e in entries] == [job2]  # job2 staged, job1 skipped
     assert len(_pushes(api)) == 1
 
 async def test_batch_output_failure_keeps_ref_and_retries(

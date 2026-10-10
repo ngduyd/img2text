@@ -6,8 +6,9 @@ dataset, no sys.path mounts, no backend/secrets. Contains worker/verdict.py
 from VLM_OCR_pipeline(2).ipynb (cells 5/12/14).
 
 Two phases, ONE file:
-- parent phase (kernel Python, light deps): locate ALL staged inputs
-  ({job_id}__ prefix) → rasterize (pdftoppm) → preprocess → precheck gate →
+- parent phase (kernel Python, light deps): locate inputs — manifest.json
+  mode (spec 2026-10-10: download each input_url + verify sha256) or mount
+  fallback ({job_id}__ prefix glob) → rasterize (pdftoppm) → preprocess → precheck gate →
   re-exec self under the py3.12 venv for OCR → normalize raw JSON →
   {job_id}_result.{json,md} into /kaggle/working (script-kernel output
   capture) + copy to /kaggle/outputs (notebook compat).
@@ -29,6 +30,7 @@ Ceilings (ponytail):
 """
 from __future__ import annotations
 import glob
+import hashlib
 import io
 import json
 import os
@@ -38,6 +40,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 from dataclasses import dataclass
 
 # ===========================================================================
@@ -478,6 +481,58 @@ def find_inputs(root: str = "/kaggle/input") -> list[tuple[int, str]]:
     return found
 
 
+def fetch_input(url: str, dest: str, sha256: str | None = None,
+                timeout: float = 120.0) -> None:
+    """Manifest mode (spec 2026-10-10): download presigned url → dest,
+    verify sha256 WHILE streaming (file ≤50MB). Mismatch → dest removed +
+    RuntimeError (per-job partial-fail đã có)."""
+    os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+    digest = hashlib.sha256()
+    req = urllib.request.Request(url, headers={"User-Agent": "img2text-batch"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp, open(dest, "wb") as out:
+        while True:
+            chunk = resp.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+            out.write(chunk)
+    if sha256 is not None and digest.hexdigest() != sha256:
+        os.remove(dest)
+        raise RuntimeError(f"sha256 không khớp — bỏ qua {dest}")
+
+def load_manifest(root: str = "/kaggle/input") -> list[dict] | None:
+    """manifest.json dưới mount (Kaggle nests /kaggle/input/<owner>/<slug>/);
+    None = không có manifest → mount fallback (dev localstack)."""
+    hits = sorted(glob.glob(os.path.join(root, "**", "manifest.json"), recursive=True))
+    if not hits:
+        return None
+    with open(hits[0], encoding="utf-8") as f:
+        return json.load(f).get("jobs") or []
+
+def fetch_manifest_jobs(jobs: list[dict], dest_dir: str,
+                        root: str = "/kaggle/input") -> list[tuple[int, str]]:
+    """manifest entries → (job_id, downloaded path); download fail (URL hết
+    hạn/network) → mount fallback ({job_id}__* đã mount) → still missing →
+    bỏ qua job đó (batch chạy tiếp)."""
+    os.makedirs(dest_dir, exist_ok=True)
+    mounted = find_inputs(root)
+    out: list[tuple[int, str]] = []
+    for entry in jobs:
+        job_id = int(entry["job_id"])
+        dest = os.path.join(dest_dir, entry["filename"])
+        try:
+            fetch_input(entry["input_url"], dest, entry.get("sha256"))
+            out.append((job_id, dest))
+            continue
+        except Exception as exc:
+            print(f"[batch] job {job_id} tải input lỗi: {exc} — thử mount fallback", flush=True)
+        fallback = next((p for jid, p in mounted if jid == job_id), None)
+        if fallback is None:
+            print(f"[batch] job {job_id} không có input — bỏ qua", flush=True)
+            continue
+        out.append((job_id, fallback))
+    return out
+
 def rasterize_to_pages(input_path: str, raw_dir: str) -> list[str]:
     """Input → page_0001.png.. (raw_dir); returns sorted page paths."""
     os.makedirs(raw_dir, exist_ok=True)
@@ -656,7 +711,12 @@ def run_batch(inputs: list[tuple[int, str]]) -> int:
     return 0
 
 def main() -> int:
-    inputs = find_inputs()
+    manifest = load_manifest()
+    if manifest:
+        print(f"manifest: {len(manifest)} job (URL mode)", flush=True)
+        inputs = fetch_manifest_jobs(manifest, os.path.join(WORK_DIR, "inputs"))
+    else:
+        inputs = find_inputs()  # mount fallback (dev)
     if not inputs:
         raise SystemExit(
             "no staged input ({job_id}__file, jpg/jpeg/png/webp/pdf) under "
