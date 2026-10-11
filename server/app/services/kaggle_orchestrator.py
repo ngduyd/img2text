@@ -783,18 +783,29 @@ async def _ensure_batch_runs(api, session_factory) -> bool:
         ).scalars().all()
     # group by ref: all jobs of one run land in ONE entry (review focus:
     # spawn crash between UPDATE and map insert → adopt recovers the group)
-    by_ref: dict[str, list[int]] = {}
+    by_ref: dict[str, list[Job]] = {}
     for job in orphans:
-        by_ref.setdefault(str(job.kaggle_ref), []).append(job.id)
-    for ref, ids in by_ref.items():
+        by_ref.setdefault(str(job.kaggle_ref), []).append(job)
+    for ref, group in by_ref.items():
+        ids = [j.id for j in group]
         run = _batch_runs.get(ref)
         if run is not None:  # live ref → merge any not-yet-tracked group members
             known = set(run["job_ids"])
             run["job_ids"].extend(i for i in ids if i not in known)
             continue
+        # P2-8: adopt KHÔNG reset đồng hồ timeout — tuổi run lấy từ
+        # started_at đã persist (restart recovery vẫn revert đúng hạn);
+        # started_at thiếu → coi như mới (fresh, không tự kill sớm).
+        started = [j.started_at for j in group if j.started_at is not None]
+        age = 0.0
+        if started:
+            age = max(
+                0.0,
+                (datetime.now(timezone.utc) - min(started)).total_seconds(),
+            )
         _batch_runs[ref] = {
             "ref": ref,
-            "pushed_at": time.monotonic(),
+            "pushed_at": time.monotonic() - age,
             "job_ids": ids,
             "ingest_failures": 0,
         }

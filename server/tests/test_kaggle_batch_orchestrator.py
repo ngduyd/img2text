@@ -570,6 +570,29 @@ async def test_adopt_groups_extracting_jobs_by_ref(
     assert orch._batch_runs[BATCH_REF]["job_ids"] == [seed_job, job2]
     assert len(_pushes(api)) == 1  # live ref → NO second run, even gapless
 
+async def test_adopt_keeps_run_age_from_started_at(
+    kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session,
+):
+    """P2-8: adopt KHÔNG reset đồng hồ timeout — tuổi run lấy từ started_at
+    đã persist → run kẹt qua restart vẫn revert đúng hạn (không sống mãi)."""
+    job2 = await _extra_queued_job(auth_client, storage_env, "seed2")
+    assert await orch.ensure_worker(SessionLocal) is True  # 1 run, 2 jobs
+    orch._batch_runs.clear()  # restart: hot index lost, started_at persisted
+    db_session.expire_all()
+    for jid in (seed_job, job2):
+        job = await db_session.get(Job, jid)
+        job.started_at = datetime.now(timezone.utc) - timedelta(
+            seconds=settings.kaggle_timeout + 10
+        )
+    await db_session.commit()
+    api.status = {"status": SimpleNamespace(name="RUNNING")}
+    assert await orch.ensure_worker(SessionLocal) is False  # adopt + poll
+    assert orch._batch_runs == {}  # timeout fired from the PERSISTED age
+    db_session.expire_all()
+    for jid in (seed_job, job2):
+        job = await db_session.get(Job, jid)
+        assert job.status == "queued" and job.lease_expires_at is None
+
 async def test_batch_timeout_reverts_every_job_in_run(
     kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session
 ):
