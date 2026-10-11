@@ -1,7 +1,7 @@
 import type { Query } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, FileQuestion, PenLine, TriangleAlert } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
@@ -36,11 +36,24 @@ export default function JobDetail() {
   const [showOriginal, setShowOriginal] = useState(false);
   /** P0-C: panel "Lịch sử" — list lazy-fetch khi mở (queryKey "versions" để invalidate). */
   const [showHistory, setShowHistory] = useState(false);
-  const { data: versions } = useQuery({
+  const {
+    data: versions,
+    isPending: versionsPending,
+    isError: versionsError,
+  } = useQuery({
     queryKey: ["versions", id],
     queryFn: () => api.listVersions(id!),
     enabled: showHistory,
   });
+  /** P2 a11y: Escape đóng panel lịch sử. */
+  useEffect(() => {
+    if (!showHistory) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowHistory(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [showHistory]);
   const editorHostRef = useRef<HTMLElement>(null);
 
   /* Plan M: scroll + focus nguồn md-layout do UnifiedEditor tự lo khi editing=true. */
@@ -239,6 +252,7 @@ export default function JobDetail() {
             testid="btn-version-history"
             variant="secondary"
             aria-expanded={showHistory}
+            aria-controls="version-history"
             onClick={() => setShowHistory((v) => !v)}
           >
             Lịch sử
@@ -247,6 +261,7 @@ export default function JobDetail() {
       </header>
       {showHistory && (
         <section
+          id="version-history"
           data-testid="version-history"
           aria-label="Lịch sử phiên bản"
           className="mb-4 rounded-card border border-border bg-surface p-4 shadow-card"
@@ -263,10 +278,22 @@ export default function JobDetail() {
             </Button>
           </div>
           <ul className="flex flex-col gap-2">
+            {/* P1: không nuốt loading/error — skeleton 1 dòng, fail → role=alert. */}
+            {versionsPending && (
+              <li>
+                <Skeleton testid="versions-skeleton" className="h-8 w-full" />
+              </li>
+            )}
+            {versionsError && (
+              <li role="alert" className="text-sm text-error">
+                Không tải được lịch sử.
+              </li>
+            )}
             {versions?.items.map((v: DocumentVersion) => (
               <li
                 key={v.id}
-                data-testid={`version-row-${v.version}`}
+                /* P0-C: UNIQUE(job_id,kind,version) → version restart per kind → testid phải gồm kind. */
+                data-testid={`version-row-${v.kind}-${v.version}`}
                 className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2 text-sm last:border-0 last:pb-0"
               >
                 <span className="flex flex-wrap items-center gap-2">
@@ -275,10 +302,13 @@ export default function JobDetail() {
                   <time dateTime={v.created_at} className="text-muted">
                     {new Date(v.created_at).toLocaleString("vi-VN")}
                   </time>
-                  {v.version === job.text_version && <Badge tone="success">Hiện tại</Badge>}
+                  {/* P0-C: "Hiện tại" CHỈ kind=text (md-layout v1 ≠ text v1). */}
+                  {v.kind === "text" && v.version === job.text_version && (
+                    <Badge tone="success">Hiện tại</Badge>
+                  )}
                 </span>
                 <Button
-                  testid={`btn-version-restore-${v.version}`}
+                  testid={`btn-version-restore-${v.kind}-${v.version}`}
                   variant="secondary"
                   size="sm"
                   onClick={async () => {

@@ -1,6 +1,6 @@
 import type { Query } from "@tanstack/react-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -238,7 +238,8 @@ const DONE_JOB: Job = {
   started_at: null,
   finished_at: null,
   result: EMPTY_RESULT,
-} as Job;
+  text_version: 1,
+};
 
 it("done renders 3 panels: original + result + info with status badge", async () => {
   mockJob(DONE_JOB);
@@ -468,17 +469,17 @@ it("btn-version-history lists versions: v{version} + kind + time + Hiện tại 
   await user.click(await screen.findByTestId("btn-version-history"));
   expect(api.listVersions).toHaveBeenCalledWith("5");
   expect(await screen.findByTestId("version-history")).toBeInTheDocument();
-  const current = screen.getByTestId("version-row-3");
+  const current = screen.getByTestId("version-row-text-3");
   expect(current).toHaveTextContent("v3");
   expect(current).toHaveTextContent("text");
   expect(within(current).getByText("Hiện tại")).toBeInTheDocument();
-  const old = screen.getByTestId("version-row-2");
+  const old = screen.getByTestId("version-row-md-layout-2");
   expect(old).toHaveTextContent("v2");
   expect(old).toHaveTextContent("md-layout");
   expect(within(old).queryByText("Hiện tại")).not.toBeInTheDocument();
 });
 
-it("btn-version-restore-{version} calls api.restoreVersion + toast + invalidate job & versions", async () => {
+it("btn-version-restore-{kind}-{version} calls api.restoreVersion + toast + invalidate job & versions", async () => {
   mockJob({ ...DONE_JOB, text_version: 3 });
   vi.mocked(api.listVersions).mockResolvedValue({ items: VERSIONS });
   vi.mocked(api.restoreVersion).mockResolvedValue(undefined);
@@ -486,7 +487,7 @@ it("btn-version-restore-{version} calls api.restoreVersion + toast + invalidate 
   const invalidate = vi.spyOn(lastQueryClient!, "invalidateQueries");
   const user = userEvent.setup();
   await user.click(await screen.findByTestId("btn-version-history"));
-  await user.click(await screen.findByTestId("btn-version-restore-2"));
+  await user.click(await screen.findByTestId("btn-version-restore-md-layout-2"));
   // vid = DocumentVersion.id (server: session.get(DocumentVersion, vid)).
   expect(api.restoreVersion).toHaveBeenCalledWith("5", 10);
   await waitFor(() =>
@@ -494,4 +495,57 @@ it("btn-version-restore-{version} calls api.restoreVersion + toast + invalidate 
   );
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["job", "5"] });
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["versions", "5"] });
+});
+
+/** P0-C red: UNIQUE(job_id,kind,version) → version number restart per kind.
+ *  2 kind cùng version number → testid phải khác nhau; "Hiện tại" CHỈ cho text. */
+it("versions same number across kinds: unique testids, only text row badges Hiện tại", async () => {
+  mockJob({ ...DONE_JOB, text_version: 1 });
+  vi.mocked(api.listVersions).mockResolvedValue({
+    items: [
+      { id: 21, kind: "text", version: 1, based_on_text_version: 1, detached: false, created_at: "2026-01-02T03:04:05Z" },
+      { id: 20, kind: "md-layout", version: 1, based_on_text_version: 1, detached: false, created_at: "2026-01-01T00:00:00Z" },
+    ],
+  });
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await userEvent.setup().click(await screen.findByTestId("btn-version-history"));
+  const textRow = await screen.findByTestId("version-row-text-1");
+  const mdRow = screen.getByTestId("version-row-md-layout-1");
+  expect(within(textRow).getByText("Hiện tại")).toBeInTheDocument();
+  expect(within(mdRow).queryByText("Hiện tại")).not.toBeInTheDocument();
+  expect(screen.getByTestId("btn-version-restore-text-1")).toBeInTheDocument();
+  expect(screen.getByTestId("btn-version-restore-md-layout-1")).toBeInTheDocument();
+});
+
+/** P1: panel không nuốt loading/error — skeleton lúc fetch, role=alert khi fail. */
+it("versions pending shows skeleton row inside history panel", async () => {
+  mockJob(DONE_JOB);
+  vi.mocked(api.listVersions).mockReturnValue(new Promise(() => {}) as never);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await userEvent.setup().click(await screen.findByTestId("btn-version-history"));
+  const panel = await screen.findByTestId("version-history");
+  expect(within(panel).getByTestId("versions-skeleton")).toBeInTheDocument();
+});
+
+it("versions fetch failure shows role=alert error line", async () => {
+  mockJob(DONE_JOB);
+  vi.mocked(api.listVersions).mockRejectedValue(new ApiError("boom"));
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await userEvent.setup().click(await screen.findByTestId("btn-version-history"));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Không tải được lịch sử");
+});
+
+/** P2 a11y: Escape đóng panel (button đã có aria-expanded + aria-controls. */
+it("Escape key closes history panel", async () => {
+  mockJob(DONE_JOB);
+  vi.mocked(api.listVersions).mockResolvedValue({ items: [] });
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await userEvent.setup().click(await screen.findByTestId("btn-version-history"));
+  const panel = await screen.findByTestId("version-history");
+  expect(panel).toHaveAttribute("id", "version-history");
+  expect(screen.getByTestId("btn-version-history")).toHaveAttribute("aria-controls", "version-history");
+  expect(screen.getByTestId("btn-version-history")).toHaveAttribute("aria-expanded", "true");
+  fireEvent.keyDown(panel, { key: "Escape" });
+  expect(screen.queryByTestId("version-history")).not.toBeInTheDocument();
+  expect(screen.getByTestId("btn-version-history")).toHaveAttribute("aria-expanded", "false");
 });
