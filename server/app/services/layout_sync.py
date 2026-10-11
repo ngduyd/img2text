@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 
 MD_LAYOUT_KEY = "exports/{job_id}/md-layout"
 DOCX_HTML_KEY = "exports/{job_id}/docx.html"
+# LLM render artifact (auto-gen/POST export fmt=docx-layout) — docx.html
+# (user edit) supersedes it; history falls back to this when html chưa có.
+DOCX_LAYOUT_KEY = "exports/{job_id}/docx-layout"
 
 
 def sync_md_layout(md_text: str, old: str, new: str, count: int = -1) -> str | None:

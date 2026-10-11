@@ -136,6 +136,18 @@ class TestBuildMDFromIR:
         out = await build_md(_ocr_result(), use_llm=False)
         assert out
 
+    async def test_image_region_without_bbox_keeps_marker(self):
+        """P2-2: image node thiếu bbox KHÔNG bị drop — marker vẫn render."""
+        result = {"pages": [{"index": 0, "width": 800, "height": 600,
+            "regions": [
+                {"id": "r0", "bbox": [1, 2, 30, 40], "text": "Châu Á",
+                 "verdict": "ok", "placeholder": False},
+                {"id": "r1", "text": "", "verdict": "image_unextractable",
+                 "placeholder": True},  # thiếu bbox
+            ]}]}
+        out = await build_md(result, use_llm=False)
+        assert "vùng r1" in out
+
     async def test_prompt_requests_bbox(self, monkeypatch):
         """Cả structurize lẫn render prompt đều chỉ định bbox."""
         calls = fake_llm(monkeypatch, [

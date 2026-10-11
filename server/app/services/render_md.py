@@ -115,12 +115,16 @@ def extract_pages(result: dict) -> list[Page]:
         blocks: list[Block] = []
         for region in pg.get("regions", []):
             text = unicodedata.normalize("NFC", region.get("text") or "")
-            bbox = region.get("bbox")
-            if not bbox or len(bbox) != 4:
-                continue
             is_image = bool(region.get("placeholder")) or (
                 region.get("verdict") == "image_unextractable"
             )
+            bbox = region.get("bbox")
+            if not bbox or len(bbox) != 4:
+                # P2-2: image node thiếu bbox vẫn giữ (marker render được,
+                # không crash) — bbox 0-node cho geometry; text khác bị drop
+                if not is_image:
+                    continue
+                bbox = (0, 0, 0, 0)
             # P1-R4a: image region luôn tạo node (text rỗng không bị drop ở fallback)
             if not text.strip() and not is_image:
                 continue

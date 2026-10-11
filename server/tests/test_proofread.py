@@ -216,17 +216,26 @@ async def test_run_proofread_fuzzy_whitespace_and_diacritics(
     page_text = "\n".join(r.get("text") or "" for r in job.result["pages"][0]["regions"])
     assert page_text[row.start : row.end] == "Xin chào"
 
-async def test_run_proofread_replaces_previous_rows(
+async def test_run_proofread_rerun_keeps_accepted_rows(
     monkeypatch, db_session, done_job_with_result
 ):
-    """Re-run = fresh result: old rows (any status) are dropped."""
+    """P2-7: rerun giữ status accepted (quyết định người dùng không mất);
+    pending/rejected cũ drop → kết quả mới thay thế."""
     job = await _job(db_session, done_job_with_result)
-    db_session.add(
+    db_session.add_all([
         OcrSuggestion(
             job_id=job.id, page_index=0, start=0, end=1,
-            original="stale", suggestion="x", reason="old", status="accepted",
-        )
-    )
+            original="giu", suggestion="y", reason="ok", status="accepted",
+        ),
+        OcrSuggestion(
+            job_id=job.id, page_index=0, start=2, end=3,
+            original="stale", suggestion="x", reason="old", status="pending",
+        ),
+        OcrSuggestion(
+            job_id=job.id, page_index=0, start=4, end=5,
+            original="bo", suggestion="z", reason="no", status="rejected",
+        ),
+    ])
     await db_session.commit()
     fake_llm(
         monkeypatch,
@@ -238,8 +247,35 @@ async def test_run_proofread_replaces_previous_rows(
             select(OcrSuggestion).where(OcrSuggestion.job_id == job.id)
         )
     ).scalars().all()
-    assert [r.original for r in rows] == ["chào"]
-    assert rows[0].status == "pending"
+    assert {r.original: r.status for r in rows} == {
+        "giu": "accepted", "chào": "pending",
+    }
+
+async def test_run_proofread_rerun_dedupes_vs_accepted(
+    monkeypatch, db_session, done_job_with_result
+):
+    """P2: rerun trả đúng (phrase, suggestion) đã accepted → KHÔNG tạo
+    row thứ 2 (chỉ 1 row, giữ accepted)."""
+    job = await _job(db_session, done_job_with_result)
+    db_session.add(
+        OcrSuggestion(
+            job_id=job.id, page_index=0, start=0, end=1,
+            original="chào", suggestion="chao", reason="dấu",
+            status="accepted",
+        )
+    )
+    await db_session.commit()
+    fake_llm(
+        monkeypatch,
+        [_llm_response([{"phrase": "chào", "suggestion": "chao", "reason": "dấu"}])],
+    )
+    assert await run_proofread(db_session, job) == 0  # 0 row mới
+    rows = (
+        await db_session.execute(
+            select(OcrSuggestion).where(OcrSuggestion.job_id == job.id)
+        )
+    ).scalars().all()
+    assert len(rows) == 1 and rows[0].status == "accepted"
 
 async def test_run_proofread_llm_down_warns_and_keeps_job(
     monkeypatch, db_session, done_job_with_result, caplog

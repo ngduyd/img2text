@@ -341,6 +341,20 @@ async def test_batch_preprocess_ceiling_warns_and_ingests_whole_file(
     assert job.status == "done"
     assert len(job.result["pages"]) == 2  # whole file, selection ignored
 
+async def test_batch_manifest_carries_preprocess(
+    kaggle_batch_env, api, storage_env, seed_job, db_session
+):
+    """P2-6: preprocess propagate qua manifest → pipeline — batch mode không
+    còn im lặng nuốt preprocess (kernel đọc key này khi deploy lane hỗ trợ;
+    extra key không phá contract manifest hiện tại)."""
+    job = await db_session.get(Job, seed_job)
+    job.preprocess = '{"pages": [1], "rotate": {"1": 90}}'
+    await db_session.commit()
+    assert await orch.ensure_worker(SessionLocal) is True  # spawn
+    creates = [c for c in api.calls if c[0] == "dataset_create_new"]
+    entries = json.loads(creates[0][2]["manifest.json"])["jobs"]
+    assert entries[0]["preprocess"] == {"pages": [1], "rotate": {"1": 90}}
+
 async def test_batch_ingest_marks_rendering_then_done_after_auto_output(
     kaggle_batch_env, api, storage_env, seed_job, db_session, monkeypatch
 ):
@@ -555,6 +569,29 @@ async def test_adopt_groups_extracting_jobs_by_ref(
     assert list(orch._batch_runs) == [BATCH_REF]
     assert orch._batch_runs[BATCH_REF]["job_ids"] == [seed_job, job2]
     assert len(_pushes(api)) == 1  # live ref → NO second run, even gapless
+
+async def test_adopt_keeps_run_age_from_started_at(
+    kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session,
+):
+    """P2-8: adopt KHÔNG reset đồng hồ timeout — tuổi run lấy từ started_at
+    đã persist → run kẹt qua restart vẫn revert đúng hạn (không sống mãi)."""
+    job2 = await _extra_queued_job(auth_client, storage_env, "seed2")
+    assert await orch.ensure_worker(SessionLocal) is True  # 1 run, 2 jobs
+    orch._batch_runs.clear()  # restart: hot index lost, started_at persisted
+    db_session.expire_all()
+    for jid in (seed_job, job2):
+        job = await db_session.get(Job, jid)
+        job.started_at = datetime.now(timezone.utc) - timedelta(
+            seconds=settings.kaggle_timeout + 10
+        )
+    await db_session.commit()
+    api.status = {"status": SimpleNamespace(name="RUNNING")}
+    assert await orch.ensure_worker(SessionLocal) is False  # adopt + poll
+    assert orch._batch_runs == {}  # timeout fired from the PERSISTED age
+    db_session.expire_all()
+    for jid in (seed_job, job2):
+        job = await db_session.get(Job, jid)
+        assert job.status == "queued" and job.lease_expires_at is None
 
 async def test_batch_timeout_reverts_every_job_in_run(
     kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session

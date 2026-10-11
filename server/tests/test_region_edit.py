@@ -90,8 +90,10 @@ async def test_region_edit_happy_path(auth_client, db_session):
         f"/api/jobs/{job_id}/regions/r0", json={"text": "Tạm biệt"}
     )
     assert r.status_code == 200, r.text
+    # P2-3: response mang text_version MỚI (bump) — client/API thô biết tv
     assert r.json() == {
-        "id": "r0", "text": "Tạm biệt", "markdown_replaced": True
+        "id": "r0", "text": "Tạm biệt", "markdown_replaced": True,
+        "text_version": 1,
     }
     detail = (await auth_client.get(f"/api/jobs/{job_id}")).json()["result"]
     # edited_markdown: old replaced ONCE (2nd occurrence untouched)
@@ -110,7 +112,8 @@ async def test_region_edit_old_text_absent(auth_client, db_session):
     )
     assert r.status_code == 200, r.text
     assert r.json() == {
-        "id": "r0", "text": "Tạm biệt", "markdown_replaced": False
+        "id": "r0", "text": "Tạm biệt", "markdown_replaced": False,
+        "text_version": 1,
     }
     detail = (await auth_client.get(f"/api/jobs/{job_id}")).json()["result"]
     assert "edited_markdown" not in detail  # no replace → key not created

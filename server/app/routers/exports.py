@@ -397,7 +397,8 @@ async def patch_content(
     )
     # cache invalidation: exported md must reflect the edit
     await storage.delete_prefix(f"exports/{id}/")
-    return {}
+    # P2-3: response mang text_version MỚI — client/API thô biết tv đã bump
+    return {"text_version": job.text_version}
 
 # --- Export generation + download: POST /export, GET /export/{fmt}/download ---
 
@@ -511,6 +512,11 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
     docx_ok = False
     try:
         data = await _llm_docx_export(job.id, job, ir_sink)
+        # P2-4: LLM overwrite must not wipe unsnapshotted artifact bytes
+        # (trước đây chỉ md-layout snapshot — docx-layout mất bản cũ)
+        await snapshot_current_layout(
+            storage, None, job.id, "docx-layout", job.text_version
+        )
         # P0-A: same dedupe rule as md-layout — delete before put (exact key:
         # user-edited docx.html must survive an LLM re-render)
         await storage.delete_prefix(f"exports/{job.id}/docx-layout")

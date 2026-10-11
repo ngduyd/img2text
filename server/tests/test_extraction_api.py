@@ -223,6 +223,35 @@ async def test_auto_gen_snapshots_previous_md_layout(
     assert [i["version"] for i in items] == [1]  # pre-overwrite snapshot
     assert await st.get(f"versions/{jid}/md-layout/1") == b"# ban cu"
 
+async def test_auto_gen_snapshots_previous_docx_layout(
+    auth_client, app, done_job_with_result, db_session, monkeypatch
+):
+    """P2-4: auto-gen snapshot docx-layout TRƯỚC overwrite (giống md-layout)
+    — bản cũ phải còn trong version history sau lần auto-gen thứ 2."""
+    from app.core.models import Job
+    from app.routers import exports
+
+    jid = done_job_with_result
+    st = app.state.storage
+    await st.put(f"exports/{jid}/docx-layout", b"docx ban cu")
+
+    async def fake_md(job_id, job, ir_sink=None):
+        return b"# ban moi"
+
+    async def fake_docx(job_id, job, ir_sink=None):
+        return b"docx ban moi"
+
+    monkeypatch.setattr(exports, "_llm_md_export", fake_md)
+    monkeypatch.setattr(exports, "_llm_docx_export", fake_docx)
+    job = await db_session.get(Job, jid)
+    assert await exports.auto_generate_output(job, st) is True
+    assert await st.get(f"exports/{jid}/docx-layout") == b"docx ban moi"
+    items = (
+        await auth_client.get(f"/api/jobs/{jid}/versions?kind=docx-layout")
+    ).json()["items"]
+    assert [i["version"] for i in items] == [1]  # pre-overwrite snapshot
+    assert await st.get(f"versions/{jid}/docx-layout/1") == b"docx ban cu"
+
 async def test_auto_gen_overwrites_stale_artifacts(
     app, done_job_with_result, db_session, monkeypatch
 ):
@@ -319,6 +348,28 @@ async def test_restore_layout_writes_artifact(auth_client, app, done_job_with_re
         b"# Tieu de\n\nXin chao the gioi"
     items = (await auth_client.get(f"/api/jobs/{jid}/versions?kind=md-layout")).json()["items"]
     assert [i["version"] for i in items] == [3, 2, 1]  # seed v1, sync v2, restore v3
+
+async def test_restore_docx_layout_binary_writes_layout_key(
+    auth_client, app, done_job_with_result, db_session
+):
+    """P2: version kind docx-layout lưu BINARY render (P2-4 fallback
+    snapshot) → restore ghi DOCX_LAYOUT_KEY; KHÔNG đè docx.html
+    (GET docx.html .decode("utf-8") sẽ 500 với binary)."""
+    jid = done_job_with_result
+    st = app.state.storage
+    await _seed_layouts(app, jid)
+    binary = b"PK\x03\x04binary-render"
+    v = await save_version(
+        st, jid, "docx-layout", binary, 0, session=db_session
+    )
+    r = await auth_client.post(f"/api/jobs/{jid}/versions/{v.id}/restore")
+    assert r.status_code == 204, r.text
+    assert await st.get(f"exports/{jid}/docx-layout") == binary
+    # docx.html giữ nguyên (không bị binary ghi đè / xóa)
+    assert await st.get(f"exports/{jid}/docx.html") == \
+        b"<p>Xin chao <b>the gioi</b></p>"
+    dl = await auth_client.get(f"/api/jobs/{jid}/export/docx.html/download")
+    assert dl.status_code == 200, dl.text
 
 
 async def test_put_layout_marks_detached(auth_client, done_job_with_result):

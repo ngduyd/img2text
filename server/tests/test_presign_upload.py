@@ -5,8 +5,8 @@ path is removed — bytes go browser → storage directly."""
 import hashlib
 from unittest.mock import AsyncMock
 
+from app.core.config import settings
 from app.core.models import Job
-from app.routers.jobs import MAX_PDF_PAGES
 from tests.conftest import PNG_1PX, TEST_JPEG, TEST_PDF_3, upload_job
 
 MAX_BYTES = 50 * 1024 * 1024
@@ -83,11 +83,22 @@ async def test_presign_rejects_page_over_cap(auth_client):
     r = await auth_client.post(
         "/api/jobs/presign",
         json=_presign_body(
-            data=TEST_PDF_3, filename="a.pdf", page_count=MAX_PDF_PAGES + 1
+            data=TEST_PDF_3, filename="a.pdf", page_count=settings.max_pages + 1
         ),
     )
     assert r.status_code == 422
-    assert r.json()["detail"] == f"File PDF quá {MAX_PDF_PAGES} trang."
+    assert r.json()["detail"] == f"File PDF quá {settings.max_pages} trang."
+
+async def test_page_cap_follows_config(auth_client, monkeypatch):
+    """P2-5: 1 config settings.max_pages — presign cap đọc từ config,
+    không hardcode (đổi config → đổi cap, không sửa code)."""
+    monkeypatch.setattr(settings, "max_pages", 2)
+    r = await auth_client.post(
+        "/api/jobs/presign",
+        json=_presign_body(data=TEST_PDF_3, filename="a.pdf", page_count=3),
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"] == "File PDF quá 2 trang."
 
 async def test_presign_page_count_optional(auth_client):
     """UI uploads FIRST (progress bar) and counts pages after with pdf.js —
@@ -182,10 +193,10 @@ async def test_create_page_over_cap_422(auth_client, app):
     await app.state.storage.put(key, TEST_PDF_3)
     r = await auth_client.post(
         "/api/jobs",
-        json={"storage_key": key, "page_count": MAX_PDF_PAGES + 1},
+        json={"storage_key": key, "page_count": settings.max_pages + 1},
     )
     assert r.status_code == 422
-    assert r.json()["detail"] == f"File PDF quá {MAX_PDF_PAGES} trang."
+    assert r.json()["detail"] == f"File PDF quá {settings.max_pages} trang."
 
 async def test_create_image_page_count_not_one_422(auth_client, app):
     r = await auth_client.post(

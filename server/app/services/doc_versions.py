@@ -12,7 +12,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.models import DocumentVersion
-from app.services.layout_sync import DOCX_HTML_KEY, MD_LAYOUT_KEY
+from app.services.layout_sync import DOCX_HTML_KEY, DOCX_LAYOUT_KEY, MD_LAYOUT_KEY
 from app.services.storage import StorageDriver
 
 logger = logging.getLogger(__name__)
@@ -62,7 +62,14 @@ async def snapshot_current_layout(
     try:
         data = await storage.get(key)
     except KeyError:
-        return
+        if kind != "docx-layout":
+            return
+        # P2-4: docx.html chưa có (chỉ LLM render) → snapshot chính artifact
+        # docx-layout sắp bị auto-gen ghi đè (md-layout: key trùng artifact).
+        try:
+            data = await storage.get(DOCX_LAYOUT_KEY.format(job_id=job_id))
+        except KeyError:
+            return
     own = session is None
     session = session or SessionLocal()
     try:
