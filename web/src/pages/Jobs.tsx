@@ -18,6 +18,19 @@ import Button from "../components/ui/Button";
 import Skeleton from "../components/ui/Skeleton";
 import { PENDING_STATUSES } from "../lib/status";
 
+/** Windowed page numbers: luôn 1 + last + ±2 quanh current; gap > 1 → "…". */
+export function pageWindow(current: number, total: number): (number | "…")[] {
+  const nums = new Set<number>([1, total]);
+  for (let n = current - 2; n <= current + 2; n++) if (n >= 1 && n <= total) nums.add(n);
+  const sorted = [...nums].sort((a, b) => a - b);
+  const out: (number | "…")[] = [];
+  sorted.forEach((n, i) => {
+    if (i > 0 && n - sorted[i - 1] > 1) out.push("…");
+    out.push(n);
+  });
+  return out;
+}
+
 export default function Jobs() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -349,19 +362,24 @@ export default function Jobs() {
           >
             Trước
           </Button>
-          {/* ponytail: list mọi số trang — nâng cấp khi total_pages > ~20 (windowed numbers). */}
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
-            <Button
-              key={n}
-              testid={`btn-page-${n}`}
-              size="sm"
-              variant={n === page ? "primary" : "ghost"}
-              aria-current={n === page ? "page" : undefined}
-              onClick={() => changePage(n)}
-            >
-              {n}
-            </Button>
-          ))}
+          {pageWindow(page, totalPages).map((n, i) =>
+            typeof n === "number" ? (
+              <Button
+                key={n}
+                testid={`btn-page-${n}`}
+                size="sm"
+                variant={n === page ? "primary" : "ghost"}
+                aria-current={n === page ? "page" : undefined}
+                onClick={() => changePage(n)}
+              >
+                {n}
+              </Button>
+            ) : (
+              <span key={`gap-${i}`} aria-hidden="true" className="px-1 text-sm text-muted">
+                …
+              </span>
+            ),
+          )}
           <Button
             testid="btn-page-next"
             size="sm"
