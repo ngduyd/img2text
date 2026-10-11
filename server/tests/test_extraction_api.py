@@ -336,3 +336,69 @@ async def test_put_layout_marks_detached(auth_client, done_job_with_result):
     assert items[0]["detached"] is True
     items = (await auth_client.get(f"/api/jobs/{jid}/versions?kind=docx-layout")).json()["items"]
     assert items[0]["detached"] is True
+
+# --- audit-P1 verification (đóng bởi P0 stale badge; bổ sung test evidence) ---
+
+async def test_audit_text_only_save_shows_stale_badge(auth_client, app, done_job_with_result):
+    """Audit P1 (a): text-only save (KHÔNG old/new phrase) bump version →
+    GET job stale_layouts hiện badge (sync skipped → layout rows behind)."""
+    jid = done_job_with_result
+    await _seed_layouts(app, jid)
+    r = await auth_client.get(f"/api/jobs/{jid}/extraction")  # lazy-seed @tv0
+    assert r.status_code == 200
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={"text": "Xin chao ban", "expected_text_version": 0},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["text_version"] == 1
+    body = (await auth_client.get(f"/api/jobs/{jid}")).json()
+    assert body["text_version"] == 1
+    assert body["stale_layouts"] == ["md", "docx"]
+
+async def test_audit_restore_text_shows_badge_then_resync_clears(
+    auth_client, app, done_job_with_result
+):
+    """Audit P1 (b): restore text version → stale badge hiện; extraction POST
+    phrase resync → based_on bắt kịp → badge clear."""
+    jid = done_job_with_result
+    st = app.state.storage
+    await _seed_layouts(app, jid)
+    await auth_client.get(f"/api/jobs/{jid}/extraction")  # seed text v1 @tv0
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={
+            "text": "Xin chao the gioi moi",
+            "old_phrase": "the gioi",
+            "new_phrase": "the gioi moi",
+            "expected_text_version": 0,
+        },
+    )
+    assert r.json()["synced"] == {"md": True, "docx": True}
+    assert b"the gioi moi" in await st.get(f"exports/{jid}/md-layout")
+    assert (await auth_client.get(f"/api/jobs/{jid}")).json()["stale_layouts"] == []
+    # restore text v1 → tv 2 → badge hiện md+docx
+    v1 = [
+        i for i in (
+            await auth_client.get(f"/api/jobs/{jid}/versions?kind=text")
+        ).json()["items"]
+        if i["version"] == 1
+    ][0]
+    r = await auth_client.post(f"/api/jobs/{jid}/versions/{v1['id']}/restore")
+    assert r.status_code == 204, r.text
+    body = (await auth_client.get(f"/api/jobs/{jid}")).json()
+    assert body["text_version"] == 2
+    assert body["stale_layouts"] == ["md", "docx"]
+    # resync: phrase round-trip → layouts saved @tv3 → badge clear
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={
+            "text": "Xin chào\n",
+            "old_phrase": "the gioi moi",
+            "new_phrase": "the gioi",
+            "expected_text_version": 2,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["synced"] == {"md": True, "docx": True}
+    assert (await auth_client.get(f"/api/jobs/{jid}")).json()["stale_layouts"] == []
