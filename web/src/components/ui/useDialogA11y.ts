@@ -8,8 +8,15 @@ import { useEffect, useRef } from "react";
  * role/aria-modal/aria-labelledby gắn JSX riêng theo id heading từng dialog.
  */
 
-/** Stack các dialog đang mở — dialog cuối = trên cùng, chỉ nó nhận Escape. */
-const openStack: symbol[] = [];
+/** Stack các dialog đang mở — dialog cuối = trên cùng, chỉ nó nhận Escape.
+ *  Export cho test double-cleanup guard. */
+export const openDialogStack: symbol[] = [];
+
+/** Gỡ token có guard: cleanup có thể chạy lần 2 (indexOf = -1) → KHÔNG được splice entry cuối. */
+export function releaseDialogToken(token: symbol) {
+  const i = openDialogStack.indexOf(token);
+  if (i >= 0) openDialogStack.splice(i, 1);
+}
 
 export function useDialogA11y<T extends HTMLElement>(open: boolean, onClose: () => void) {
   const panelRef = useRef<T>(null);
@@ -21,14 +28,14 @@ export function useDialogA11y<T extends HTMLElement>(open: boolean, onClose: () 
     const prev = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     panelRef.current?.focus();
     const token = Symbol("dialog");
-    openStack.push(token);
+    openDialogStack.push(token);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && openStack[openStack.length - 1] === token) closeRef.current();
+      if (e.key === "Escape" && openDialogStack[openDialogStack.length - 1] === token) closeRef.current();
     };
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
-      openStack.splice(openStack.indexOf(token), 1);
+      releaseDialogToken(token);
       prev?.focus();
     };
   }, [open]);
