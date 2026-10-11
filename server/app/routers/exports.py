@@ -484,6 +484,9 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
         data = await _llm_md_export(job.id, job, ir_sink)
         # P1-3: LLM overwrite must not wipe unsnapshotted artifact bytes
         await snapshot_current_layout(storage, None, job.id, "md-layout", job.text_version)
+        # P0-A: S3Driver.put dedupes existing keys → delete first, else
+        # retry-layout/auto-gen can never overwrite the stale artifact
+        await storage.delete_prefix(f"exports/{job.id}/md-layout")
         await storage.put(f"exports/{job.id}/md-layout", data)
         md_ok = True
     except HTTPException as exc:
@@ -502,6 +505,9 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
     docx_ok = False
     try:
         data = await _llm_docx_export(job.id, job, ir_sink)
+        # P0-A: same dedupe rule as md-layout — delete before put (exact key:
+        # user-edited docx.html must survive an LLM re-render)
+        await storage.delete_prefix(f"exports/{job.id}/docx-layout")
         await storage.put(f"exports/{job.id}/docx-layout", data)
         docx_ok = True
     except HTTPException as exc:
