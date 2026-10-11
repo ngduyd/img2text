@@ -76,9 +76,9 @@ export default function Jobs() {
   const bulkRetry = useMutation({
     mutationFn: () => api.retryJobs(selectedFailed.map((j) => j.id)),
     onSuccess: ({ ok, errors }) => {
-      // R59: partial failure → toast lỗi (batch đã settle các job còn lại).
+      // R59: partial failure → toast tổng hợp đếm (không nuốt các lỗi sau đầu).
       if (ok > 0) toast.success("Đã lên lịch chạy lại");
-      if (errors.length > 0) toast.error(errors[0]);
+      if (errors.length > 0) toast.error(`${errors.length} job lỗi khi chạy lại`);
       setSelected(new Set());
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
