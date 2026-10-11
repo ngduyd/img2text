@@ -31,6 +31,7 @@ function errorOverlay(): { fill: string; stroke: string } {
  * Spec U4: crop per-image trong multi-file flow — drag-rect trên canvas → JPEG blob.
  * Đơn giản hơn ImageCropWizard cũ (bỏ rotate/submit upload): dialog chỉ trả blob.
  * ponytail: no-rect → trả blob gốc (giống R62); thêm rotate nếu user hỏi.
+ * ponytail: keyboard rect editing (arrow-nudge) deferred — drag + nút chọn toàn bộ ảnh đủ.
  */
 export default function CropDialog({
   blob,
@@ -165,7 +166,17 @@ export default function CropDialog({
             dragRef.current = null;
           }}
         />
-        <div className="mt-3 flex justify-end gap-2">
+        <div className="mt-3 flex items-center justify-end gap-2">
+          <Button
+            testid="btn-crop-full"
+            variant="ghost"
+            size="sm"
+            className="mr-auto"
+            disabled={!dims}
+            onClick={() => dims && setRect({ x: 0, y: 0, w: dims.w, h: dims.h })}
+          >
+            Chọn toàn bộ ảnh
+          </Button>
           <Button testid="crop-cancel" variant="ghost" onClick={onCancel}>
             Hủy
           </Button>
