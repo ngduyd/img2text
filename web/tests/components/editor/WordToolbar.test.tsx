@@ -137,6 +137,11 @@ it("caret trong table: cụm +row −row +col −col hiện và sửa bảng th�
   renderToolbar(editor);
   expect(editor.isActive("table")).toBe(true);
   expect(screen.getByTestId("word-tb-row-add")).toBeInTheDocument();
+  // Nhóm 3: table row/col tách sang hàng thứ 2 — không còn trong strip overflow-x-auto.
+  expect(screen.getByRole("toolbar")).not.toContainElement(screen.getByTestId("word-tb-row-add"));
+  expect(screen.getByTestId("word-tb-table-controls")).toContainElement(
+    screen.getByTestId("word-tb-row-add"),
+  );
   const count = (tag: string) => editor.getHTML().match(new RegExp(`<${tag}`, "g"))?.length ?? 0;
   expect(count("tr")).toBe(2);
   fireEvent.click(screen.getByTestId("word-tb-row-add"));
