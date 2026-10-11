@@ -226,17 +226,19 @@ export default function MultiFileUpload({
           <li
             key={e.id}
             data-testid={`muf-card-${i}`}
-            className="flex items-center gap-2 rounded-card border border-border bg-surface px-2 py-1 text-sm"
+            className="flex items-center gap-2 rounded-card border border-border bg-surface px-2 py-2 text-sm"
           >
             {e.kind === "image" ? (
               <img src={e.url} alt={e.name} className="h-8 w-8 rounded object-cover" />
             ) : (
               <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-xs font-medium">PDF</span>
             )}
-            <span className="truncate">{e.name}</span>
-            <span className="ml-auto text-xs text-muted">
-              {e.kind === "pdf" ? `${e.pages?.length ?? 0}/${e.numPages} trang` : "1 trang"}
-            </span>
+            <div className="min-w-0 flex-1">
+              <span className="block truncate">{e.name}</span>
+              <span className="block text-xs text-muted">
+                {e.kind === "pdf" ? `${e.pages?.length ?? 0}/${e.numPages} trang` : "1 trang"}
+              </span>
+            </div>
             {e.kind === "image" && onCrop && (
               <Button testid={`muf-crop-${i}`} size="sm" variant="secondary" onClick={() => void crop(e)}>
                 Chọn vùng

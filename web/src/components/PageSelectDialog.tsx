@@ -93,7 +93,7 @@ export default function PageSelectDialog({
                   ref={(el) => {
                     canvasRefs.current[n - 1] = el;
                   }}
-                  className="mb-1 h-auto w-full bg-white"
+                  className="mb-1 h-auto w-full bg-paper"
                 />
                 <span>Trang {n}</span>
               </button>
