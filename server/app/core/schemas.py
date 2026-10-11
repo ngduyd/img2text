@@ -4,6 +4,10 @@ from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
+# Exact marker cho image region chưa trích xuất — cùng mẫu worker/pipeline.py;
+# {region_id} placeholder (khớp 1-1 str.format, giữ nguyên ký tự tiếng Việt).
+IMAGE_MARKER = "**[Hình ảnh chưa trích xuất: vùng {region_id}]**"
+
 class PreprocessIn(BaseModel):
     """Plan W upload wizard: page selection + per-page rotation.
     Stored as JSON string in jobs.preprocess (TEXT column)."""

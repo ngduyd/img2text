@@ -24,6 +24,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.db import SessionLocal
+from app.core.schemas import IMAGE_MARKER
 from app.services.ir import DocumentIR, IR_PROMPT, validate_ir, IRValidationError
 from app.services.runtime_settings import get_runtime_setting
 
@@ -115,7 +116,13 @@ def extract_pages(result: dict) -> list[Page]:
         for region in pg.get("regions", []):
             text = unicodedata.normalize("NFC", region.get("text") or "")
             bbox = region.get("bbox")
-            if not text.strip() or not bbox or len(bbox) != 4:
+            if not bbox or len(bbox) != 4:
+                continue
+            is_image = bool(region.get("placeholder")) or (
+                region.get("verdict") == "image_unextractable"
+            )
+            # P1-R4a: image region luôn tạo node (text rỗng không bị drop ở fallback)
+            if not text.strip() and not is_image:
                 continue
             rid = str(region.get("id"))
             while rid in seen:
@@ -123,7 +130,7 @@ def extract_pages(result: dict) -> list[Page]:
             seen.add(rid)
             if "<table" in text.lower():
                 kind = "table"
-            elif region.get("placeholder") or region.get("verdict") == "image_unextractable":
+            elif is_image:
                 kind = "image"
             else:
                 kind = "text"
@@ -419,6 +426,9 @@ async def llm_render_md(ir_doc: DocumentIR, result: dict) -> str:
 # ---------------------------------------------------------------- render from heuristic
 def _fmt_lines(b: Block) -> list[str]:
     lab = b.label
+    # P1-R4a/R5: image node text rỗng → marker (ảnh sống sót qua md fallback)
+    if b.kind == "image" and not b.text.strip():
+        return [IMAGE_MARKER.format(region_id=b.id)]
     h = lab.get("h", 0)
     out = []
     for i, ln in enumerate(b.lines):

@@ -741,6 +741,18 @@ def _extraction_text(result: dict) -> str:
         for p in pages
     )
 
+def _text_bytes(result: dict) -> bytes:
+    """extraction_text nếu có, không thì derive từ regions — seed/trước-sửa
+    và snapshot/sau-sửa đều đi qua đây (một spelling cho khái niệm text gốc)."""
+    return (result.get("extraction_text") or _extraction_text(result)).encode(
+        "utf-8"
+    )
+
+def _result_bytes(result: dict) -> bytes:
+    """job.result JSON — snapshot kind "md": region edit sửa chính result
+    (extraction_text không đổi → kind-text không phản ánh edit)."""
+    return json.dumps(result, ensure_ascii=False).encode("utf-8")
+
 async def _detached_kinds(
     session: AsyncSession, job_id: int, storage: StorageDriver
 ) -> set[str]:
@@ -756,13 +768,10 @@ async def _seed_versions(
     session: AsyncSession, job: Job, storage: StorageDriver
 ) -> None:
     """Lazy-seed version 1 for text + existing layouts on first access."""
-    text = (job.result or {}).get("extraction_text") or _extraction_text(
-        job.result or {}
-    )
     if await latest_version(session, job.id, "text") is None:
         await seed_current(
-            storage, job.id, "text", text.encode("utf-8"), job.text_version,
-            session=session,
+            storage, job.id, "text", _text_bytes(job.result or {}),
+            job.text_version, session=session,
         )
     for kind, key in (
         ("md-layout", MD_LAYOUT_KEY.format(job_id=job.id)),
@@ -775,6 +784,40 @@ async def _seed_versions(
                 storage, job.id, kind, await storage.get(key),
                 job.text_version, session=session,
             )
+
+async def bump_text_after_edit(
+    session: AsyncSession,
+    storage: StorageDriver,
+    job: Job,
+    data: bytes | None = None,
+    seed_bytes: bytes | None = None,
+    kind: str = "text",
+) -> int:
+    """content/region edit → bump jobs.text_version + snapshot 1 kind.
+
+    kind "text" = text gốc (content edit); kind "md" = job.result JSON
+    (region edit — content region edit sửa thật sự; extraction_text giữ
+    nguyên → dual-truth deferred).
+    seed_bytes = bản gốc TRƯỚC mutate (caller capture trước khi ghi job.result)
+    → version 1 không bị bản đã sửa nuốt mất. data = bytes snapshot sau edit
+    (mặc định derive từ job.result đã sửa; content edit truyền edited_markdown).
+    Snapshot based_on = version mới → GET job stale_layouts + version history
+    tự thấy edit.
+    P1-2 round 2: seed + save KHÔNG tự commit → MỘT commit cuối gom
+    result + 2 version row + bump; save_version nổ = chưa commit gì.
+    """
+    text = data if data is not None else _text_bytes(job.result or {})
+    new_version = job.text_version + 1
+    await seed_current(
+        storage, job.id, kind, seed_bytes if seed_bytes is not None else text,
+        job.text_version, session=session, commit=False,
+    )
+    await save_version(
+        storage, job.id, kind, text, new_version, session=session, commit=False
+    )
+    job.text_version = new_version
+    await session.commit()
+    return job.text_version
 
 @router.get("/api/jobs/{id}/extraction")
 async def get_extraction(
@@ -944,6 +987,17 @@ async def restore_version(
         await save_version(
             storage, id, "text", data, job.text_version, session=session
         )
+        return Response(status_code=204)
+    if row.kind == "md":
+        # P1-1 round 2: kind "md" = JSON job.result → restore trả result về
+        # bản chụp, append-only như kind text; export dẫn xuất chết theo
+        job.result = json.loads(data)
+        job.text_version += 1
+        await session.commit()
+        await save_version(
+            storage, id, "md", data, job.text_version, session=session
+        )
+        await storage.delete_prefix(f"exports/{id}/")
         return Response(status_code=204)
     key = (
         MD_LAYOUT_KEY.format(job_id=id)

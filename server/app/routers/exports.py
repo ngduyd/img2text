@@ -27,7 +27,8 @@ from app.services.convert import PANDOC_BIN, REFERENCE_DOCX
 from app.core.db import SessionLocal, get_session
 from app.core.deps import get_current_user
 from app.core.models import Job, User
-from app.routers.jobs import _job_or_403
+from app.core.schemas import IMAGE_MARKER
+from app.routers.jobs import _job_or_403, _text_bytes, bump_text_after_edit
 from app.services.render_docx import LLMError as DocxLLMError, build_docx
 from app.services.render_md import LLMError, build_md
 from app.services.doc_versions import save_version, snapshot_current_layout
@@ -54,8 +55,7 @@ MAX_MARKDOWN_BYTES = 2 * 1024 * 1024
 CROP_MAX_WIDTH = 800
 CROP_JPEG_QUALITY = 70
 PANDOC_TIMEOUT_SECONDS = 55
-# Exact marker emitted by worker/pipeline.py for unextractable image regions.
-_MARKER = "**[Hình ảnh chưa trích xuất: vùng {rid}]**"
+# Exact marker emitted by worker/pipeline.py — shared IMAGE_MARKER (app.core.schemas)
 # bleach allowlist covering pandoc html output (Task 4 brief, verbatim)
 _HTML_TAGS = [
     "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li",
@@ -196,7 +196,7 @@ async def _materialize_crops(
             if region.get("bbox") is None:
                 continue
             rid = region["id"]
-            marker = _MARKER.format(rid=rid)
+            marker = IMAGE_MARKER.format(region_id=rid)
             if marker not in markdown:
                 continue  # no marker → no rewrite → no crop needed
             try:
@@ -386,9 +386,15 @@ async def patch_content(
         storage, session, id, "docx-layout", job.text_version, detached=True
     )
     result = dict(job.result or {})  # JSONB merge: copy, set, reassign
+    # P1-R1: capture text gốc TRƯỚC khi ghi edited_markdown → seed v1 giữ bản gốc
+    pre_bytes = _text_bytes(result)
     result["edited_markdown"] = body.markdown
     job.result = result
-    await session.commit()
+    # P1-2/R3: bump với bytes = nội dung vừa lưu (snapshot phản ánh edit)
+    await bump_text_after_edit(
+        session, storage, job,
+        data=body.markdown.encode("utf-8"), seed_bytes=pre_bytes,
+    )
     # cache invalidation: exported md must reflect the edit
     await storage.delete_prefix(f"exports/{id}/")
     return {}

@@ -1,6 +1,7 @@
 """Plan H Task 2: PATCH /api/jobs/{id}/regions/{rid} — per-region edit."""
 
 import copy
+import json
 from uuid import uuid4
 
 import httpx
@@ -150,3 +151,111 @@ async def test_region_edit_empty_text_422(auth_client, db_session):
         f"/api/jobs/{job_id}/regions/r0", json={"text": ""}
     )
     assert r.status_code == 422, r.text
+
+async def test_region_edit_bumps_text_version(auth_client, db_session):
+    """P1-2: region edit → bump jobs.text_version (stale badge) + snapshot
+    kind "md" = job.result (content region edit sửa thật sự)."""
+    job_id = await _seed_done(db_session, _result(_MD_WITH_TEXT))
+    r = await auth_client.patch(
+        f"/api/jobs/{job_id}/regions/r0", json={"text": "Tạm biệt"}
+    )
+    assert r.status_code == 200, r.text
+    job = await db_session.get(Job, job_id)
+    await db_session.refresh(job)
+    assert job.text_version == 1
+    items = (await auth_client.get(
+        f"/api/jobs/{job_id}/versions", params={"kind": "md"}
+    )).json()["items"]
+    assert items and items[0]["based_on_text_version"] == 1
+
+async def test_region_edit_v1_keeps_pre_edit_text(auth_client, db_session, storage):
+    """P1-R1: seed v1 TRƯỚC mutate → version 1 = result TRƯỚC edit,
+    version 2 = result sau edit (bản gốc không biến mất khỏi history)."""
+    job_id = await _seed_done(db_session, _result(_MD_WITH_TEXT))
+    r = await auth_client.patch(
+        f"/api/jobs/{job_id}/regions/r0", json={"text": "Tạm biệt"}
+    )
+    assert r.status_code == 200, r.text
+    v1 = json.loads(await storage.get(f"versions/{job_id}/md/1"))
+    assert v1["pages"][0]["regions"][0]["text"] == "Xin chào thế giới"
+    assert "Tạm biệt" not in json.dumps(v1, ensure_ascii=False)
+    v2 = json.loads(await storage.get(f"versions/{job_id}/md/2"))
+    assert v2["pages"][0]["regions"][0]["text"] == "Tạm biệt"  # snapshot sau edit
+
+async def test_region_edit_snapshot_md_not_extraction_text(
+    auth_client, db_session, storage
+):
+    """P1-1 round 2: fixture CÓ extraction_text (lỗ che round 1) →
+    region edit KHÔNG seed kind-text; version mới kind "md" = job.result
+    TRƯỚC edit, KHÔNG phải extraction_text."""
+    result = _result(_MD_WITH_TEXT)
+    result["extraction_text"] = "EXTRACTION GOC KHONG DOI"
+    job_id = await _seed_done(db_session, result)
+    r = await auth_client.patch(
+        f"/api/jobs/{job_id}/regions/r0", json={"text": "Tạm biệt"}
+    )
+    assert r.status_code == 200, r.text
+    # kind-text history không tăng v (text gốc vẫn là extraction_text)
+    text_items = (await auth_client.get(
+        f"/api/jobs/{job_id}/versions", params={"kind": "text"}
+    )).json()["items"]
+    assert text_items == []
+    md_items = (await auth_client.get(
+        f"/api/jobs/{job_id}/versions", params={"kind": "md"}
+    )).json()["items"]
+    assert [m["version"] for m in md_items] == [2, 1]  # newest first
+    raw_v1 = await storage.get(f"versions/{job_id}/md/1")
+    # RED: bytes từng là extraction_text thô (== bản copy y hệt v1/v2)
+    assert raw_v1 != "EXTRACTION GOC KHONG DOI".encode("utf-8")
+    v1 = json.loads(raw_v1)  # bytes = job.result JSON, không phải text gốc
+    assert v1["pages"][0]["regions"][0]["text"] == "Xin chào thế giới"
+    v2 = json.loads(await storage.get(f"versions/{job_id}/md/2"))
+    assert v2["pages"][0]["regions"][0]["text"] == "Tạm biệt"
+
+async def test_region_edit_restore_md_roundtrip(auth_client, db_session, storage):
+    """P1-1 r2: snapshot/restore nhất quán — restore kind "md" trả
+    job.result về bản chụp TRƯỚC edit + append version mới."""
+    job_id = await _seed_done(db_session, _result(_MD_WITH_TEXT))
+    r = await auth_client.patch(
+        f"/api/jobs/{job_id}/regions/r0", json={"text": "Tạm biệt"}
+    )
+    assert r.status_code == 200, r.text
+    v1 = next(
+        v for v in (await auth_client.get(
+            f"/api/jobs/{job_id}/versions", params={"kind": "md"}
+        )).json()["items"]
+        if v["version"] == 1
+    )
+    r = await auth_client.post(f"/api/jobs/{job_id}/versions/{v1['id']}/restore")
+    assert r.status_code == 204, r.text
+    job = await db_session.get(Job, job_id)
+    await db_session.refresh(job)
+    assert job.result["pages"][0]["regions"][0]["text"] == "Xin chào thế giới"
+    assert job.text_version == 2
+    md_items = (await auth_client.get(
+        f"/api/jobs/{job_id}/versions", params={"kind": "md"}
+    )).json()["items"]
+    assert [m["version"] for m in md_items] == [3, 2, 1]  # restore append-only
+
+async def test_region_edit_save_version_fail_keeps_db(
+    auth_client, db_session, monkeypatch
+):
+    """P1-2: save_version nổ → MỘT commit chưa tới: job.result + 
+    text_version đều giữ nguyên trong DB."""
+    job_id = await _seed_done(db_session, _result(_MD_WITH_TEXT))
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("save_version exploded")
+
+    monkeypatch.setattr("app.routers.jobs.save_version", _boom)
+    try:
+        await auth_client.patch(
+            f"/api/jobs/{job_id}/regions/r0", json={"text": "Tạm biệt"}
+        )
+    except Exception:
+        pass  # 500 hoặc exception lội lên — cả hai đều OK
+    job = await db_session.get(Job, job_id)
+    await db_session.refresh(job)
+    assert job.text_version == 0
+    # RED: seed_current đã commit job.result mutated trước khi save_version nổ
+    assert job.result["pages"][0]["regions"][0]["text"] == "Xin chào thế giới"
