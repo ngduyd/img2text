@@ -189,6 +189,19 @@ class TestBuildDocxFromIR:
         texts = [p.text.strip() for p in Document(io.BytesIO(data)).paragraphs]
         assert [t for t in texts if t] == ["TRƯỜNG THCS ABC", "Nội dung phần một"]
 
+    async def test_image_region_without_bbox_keeps_placeholder(self):
+        """P2-2: image node thiếu bbox KHÔNG bị drop — marker vẫn render."""
+        result = {"pages": [{"index": 0, "width": 800, "height": 600,
+            "regions": [
+                {"id": "r0", "bbox": [1, 2, 30, 40], "text": "Châu Á",
+                 "verdict": "ok", "placeholder": False},
+                {"id": "r1", "text": "", "verdict": "image_unextractable",
+                 "placeholder": True},  # thiếu bbox
+            ]}]}
+        data = await build_docx(result, use_llm=False)
+        doc = Document(io.BytesIO(data))
+        assert any("[ảnh]" in p.text for p in doc.paragraphs)
+
     async def test_prompt_requests_bbox(self, monkeypatch):
         """Cả structurize lẫn render prompt đều chỉ định bbox."""
         calls = fake_llm(monkeypatch, [
