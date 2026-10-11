@@ -417,6 +417,13 @@ async def get_job(
     job = await _job_or_403(session, id, user)
     # storage_key deliberately omitted — never leak bucket keys to users
     docx_html = await _layout_artifact_exists(storage, id, "docx.html")
+    # P0-D: web contract — text_version + kinds whose layout version row is
+    # based on an older text (re-render needed); no version row → not stale
+    stale_layouts: list[str] = []
+    for kind, label in (("md-layout", "md"), ("docx-layout", "docx")):
+        row = await latest_version(session, id, kind)
+        if row is not None and row.based_on_text_version < job.text_version:
+            stale_layouts.append(label)
     return {
         "id": job.id,
         "status": job.status,
@@ -428,6 +435,8 @@ async def get_job(
         "created_at": job.created_at,
         "started_at": job.started_at,
         "finished_at": job.finished_at,
+        "text_version": job.text_version,
+        "stale_layouts": stale_layouts,
         # Plan M: unified-editor contract — artifact cache flags + word style
         # Plan M3: docx = docx.html (user-edited) OR docx-layout (LLM render)
         "layout_cache": {
