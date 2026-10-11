@@ -291,21 +291,28 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
     assert len(res["pages"]) == 2
     p1 = res["pages"][0]
     assert p1["index"] == 1 and p1["width"] == 800 and p1["height"] == 600
-    # image + empty-text blocks dropped; doc_title/paragraph_title/table kept
+    # empty-text non-image blocks dropped; doc_title/paragraph_title/table
+    # kept; image block KEPT as image_unextractable (P1 — crop downstream)
     assert [r["text"] for r in p1["regions"]] == [
         "Báo cáo",
         "Mục 1",
         "<table><tr><td>1</td></tr></table>",
+        "hình minh họa",
     ]
     assert all(
         set(r) == {"id", "bbox", "text", "verdict", "placeholder"}
-        and r["verdict"] == "ok"
-        and r["placeholder"] is False
         for r in p1["regions"]
+    )
+    assert p1["regions"][-1]["verdict"] == "image_unextractable"
+    assert p1["regions"][-1]["placeholder"] is True
+    assert all(
+        r["verdict"] == "ok" and r["placeholder"] is False
+        for r in p1["regions"][:-1]
     )
     assert p1["markdown"].startswith("# Báo cáo")
     assert "\n\n## Mục 1" in p1["markdown"]
     assert "<table><tr><td>1</td></tr></table>" in p1["markdown"]
+    assert "**[Hình ảnh chưa trích xuất: vùng p1_b3]**" in p1["markdown"]
     p2 = res["pages"][1]
     assert p2["index"] == 2 and p2["width"] == 0 and p2["height"] == 0
     assert p2["markdown"] == "Trang hai"
@@ -921,16 +928,35 @@ def test_batch_max_jobs_default_config():
 
 # --- adapter unit cases (pure, no DB) ---
 
-def test_adapter_drops_image_and_empty_keeps_table_html():
+def test_adapter_drops_empty_keeps_table_html():
     out = orch.adapt_batch_document(RESULT_DOC)
     body = ResultBody.model_validate(out)
     p1 = body.pages[0]
     texts = [r.text for r in p1.regions]
-    assert "hình minh họa" not in texts  # type=="image" dropped (even with text)
     assert not any(t.strip() == "" for t in texts)  # empty text dropped
     assert "<table><tr><td>1</td></tr></table>" in texts  # HTML kept verbatim
     assert p1.markdown.startswith("# Báo cáo")
     assert p1.markdown.splitlines()[2].startswith("## Mục 1")
+
+def test_adapter_keeps_image_block_as_unextractable():
+    """P1: image block KHÔNG bị drop — region verdict image_unextractable
+    (crop downstream trong exports._materialize_crops) + marker trong markdown."""
+    out = orch.adapt_batch_document(RESULT_DOC)
+    body = ResultBody.model_validate(out)
+    p1 = body.pages[0]
+    img = next(r for r in p1.regions if r.id == "p1_b3")
+    assert img.verdict == "image_unextractable" and img.placeholder is True
+    assert img.text == "hình minh họa" and img.bbox == [10, 310, 400, 500]
+    assert "**[Hình ảnh chưa trích xuất: vùng p1_b3]**" in p1.markdown
+
+def test_adapter_keeps_image_block_with_empty_text():
+    """Image block text rỗng vẫn giữ (bbox + verdict → crop); marker dùng id."""
+    doc = {"pages": [{"page": 1, "blocks": [
+        {"id": "b0", "type": "image", "bbox": [0, 0, 10, 10], "text": ""}]}]}
+    page = orch.adapt_batch_document(doc)["pages"][0]
+    r = page["regions"][0]
+    assert r["verdict"] == "image_unextractable" and r["placeholder"] is True
+    assert "**[Hình ảnh chưa trích xuất: vùng b0]**" in page["markdown"]
 
 def test_adapter_title_prefixes_and_page_join():
     out = orch.adapt_batch_document(RESULT_DOC)

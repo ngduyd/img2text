@@ -67,6 +67,9 @@ BATCH_MODEL_VERSION = "PaddleOCR-VL-1.5-0.9B"
 # per-block markdown prefixes (batch doc_title → H1, paragraph_title → H2;
 # table/text → raw — block.text is already HTML for tables)
 _MD_PREFIX = {"doc_title": "# ", "paragraph_title": "## "}
+# mirror deploy/kaggle/files/pipeline.py _MARKER (= routers/exports.py
+# _MARKER) — server cannot import deploy scripts.
+_IMAGE_MARKER = "**[Hình ảnh chưa trích xuất: vùng {region_id}]**"
 
 _last_spawn = 0.0
 # ceiling: persistent ingest failures for one ref → drop instead of looping
@@ -225,9 +228,10 @@ def adapt_batch_document(doc: dict) -> dict:
 
     Batch-grade ceilings: whole file → pages 1..N (preprocess ignored — caller
     logs the KAGGLE_MODE=loop hint); no dual-branch verdicts → verdict "ok" /
-    page_flag "ok"; image blocks dropped (pixels never leave the kernel) as are
-    empty-text blocks; table block text is already HTML, kept verbatim.
-    gpu_seconds 0 — kernel log elapsed is wall time, not GPU seconds."""
+    page_flag "ok"; image blocks KEPT as verdict image_unextractable + marker
+    (crop flow downstream — pixels never leave the kernel, only bbox);
+    empty-text non-image blocks dropped; table block text is already HTML,
+    kept verbatim. gpu_seconds 0 — kernel log elapsed is wall time, not GPU."""
     md_pages: list[str] = []
     pages_out: list[dict] = []
     for i, pg in enumerate(doc.get("pages") or [], 1):
@@ -235,16 +239,23 @@ def adapt_batch_document(doc: dict) -> dict:
         md_parts: list[str] = []
         for b in pg.get("blocks") or []:
             text = b.get("text") or ""
-            if b.get("type") == "image" or not text.strip():
-                continue
+            is_image = b.get("type") == "image"
+            if not is_image and not text.strip():
+                continue  # truly-empty non-image block is meaningless
+            rid = str(b.get("id") or f"p{i}_b{len(regions)}")
             regions.append({
-                "id": str(b.get("id") or f"p{i}_b{len(regions)}"),
+                "id": rid,
                 "bbox": b.get("bbox"),
                 "text": text,
-                "verdict": "ok",
-                "placeholder": False,
+                "verdict": "image_unextractable" if is_image else "ok",
+                "placeholder": is_image,
             })
-            md_parts.append(_MD_PREFIX.get(b.get("type"), "") + text)
+            if is_image:
+                # same marker as deploy/kaggle pipeline.py → exports.py
+                # _materialize_crops rewrites it into the cached crop
+                md_parts.append(_IMAGE_MARKER.format(region_id=rid))
+            else:
+                md_parts.append(_MD_PREFIX.get(b.get("type"), "") + text)
         page_md = "\n\n".join(md_parts)
         pages_out.append({
             "index": int(pg.get("page") or i),
