@@ -111,6 +111,10 @@ export interface Job {
   layout_cache?: { md: boolean; docx: boolean; docx_html?: boolean };
   /** Plan M (M1): word style overrides đã lưu (JSON parsed | null). */
   layout_style?: LayoutStyle | null;
+  /** Contract GET /api/jobs/{id}: text version hiện tại (badge "Hiện tại" lịch sử). */
+  text_version: number;
+  /** Contract GET /api/jobs/{id}: layout đã lỗi thời so với text → cần đồng bộ (vắng/[] = ẩn badge). */
+  stale_layouts?: ("md" | "docx")[];
 }
 
 /** List endpoint subset: server /api/jobs items omit result; started_at/finished_at

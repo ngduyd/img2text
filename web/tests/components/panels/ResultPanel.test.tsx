@@ -67,6 +67,7 @@ const JOB: Job = {
   output_format: "md",
   layout_cache: { md: false, docx: false },
   layout_style: null,
+  text_version: 1,
 };
 
 function renderPanel(result: ResultBody = RESULT): ReturnType<typeof render> {
