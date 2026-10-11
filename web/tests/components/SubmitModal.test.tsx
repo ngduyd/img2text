@@ -45,3 +45,10 @@ it("a11y: role=dialog + aria-modal + focus panel; Escape → onCancel", () => {
   fireEvent.keyDown(panel, { key: "Escape" });
   expect(onCancel).toHaveBeenCalled();
 });
+
+/** P2: 2 fieldset đều có legend là child đầu tiên → group accessible name (SR associate qua legend). */
+it("a11y: cả 2 fieldset đều có accessible name từ legend", () => {
+  setup();
+  expect(screen.getByRole("group", { name: "Chế độ xử lý" })).toBeInTheDocument();
+  expect(screen.getByRole("group", { name: "Định dạng" })).toBeInTheDocument();
+});

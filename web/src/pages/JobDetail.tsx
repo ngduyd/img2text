@@ -302,8 +302,12 @@ export default function JobDetail() {
                   <time dateTime={v.created_at} className="text-muted">
                     {new Date(v.created_at).toLocaleString("vi-VN")}
                   </time>
-                  {/* P0-C: "Hiện tại" CHỈ kind=text (md-layout v1 ≠ text v1). */}
-                  {v.kind === "text" && v.version === job.text_version && (
+                  {/* P2: "Hiện tại" = version == MAX trong cùng kind (md snapshot kind "md" khi region edit). */}
+                  {versions &&
+                    v.version ===
+                      Math.max(
+                        ...versions.items.filter((x: DocumentVersion) => x.kind === v.kind).map((x: DocumentVersion) => x.version),
+                      ) && (
                     <Badge tone="success">Hiện tại</Badge>
                   )}
                 </span>

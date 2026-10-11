@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -252,6 +252,8 @@ it("click outside closes the popover (a11y)", async () => {
 });
 
 it("popover non-overflow: anchor giữa viewport → left-0 (không flip)", async () => {
+  // P2: jsdom default 1024 là implicit — set rõ để test không phụ thuộc environment.
+  const widthSpy = vi.spyOn(window, "innerWidth", "get").mockReturnValue(800);
   const user = userEvent.setup();
   const spy = vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
     x: 0, y: 0, top: 0, left: 100, right: 410, bottom: 0, width: 310, height: 20,
@@ -263,9 +265,12 @@ it("popover non-overflow: anchor giữa viewport → left-0 (không flip)", asyn
   expect(pop.className).toContain("left-0");
   expect(pop.className).not.toContain("right-0");
   spy.mockRestore();
+  widthSpy.mockRestore();
 });
 
 it("popover flip: anchor sát mép phải viewport → right-0 + max-w (không tràn)", async () => {
+  // P2: set innerWidth rõ ràng (bỏ phụ thuộc default 1024 của jsdom).
+  const widthSpy = vi.spyOn(window, "innerWidth", "get").mockReturnValue(800);
   const user = userEvent.setup();
   const spy = vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
     x: 0, y: 0, top: 0, left: 700, right: 1010, bottom: 0, width: 310, height: 20,
@@ -277,4 +282,31 @@ it("popover flip: anchor sát mép phải viewport → right-0 + max-w (không t
   expect(pop.className).toContain("right-0 left-auto");
   expect(pop.className).toContain("max-w-[calc(100vw-2rem)]");
   spy.mockRestore();
+  widthSpy.mockRestore();
+});
+
+/** P2: resize/scroll while open → popover phải recompute vị trí (không stale rect). */
+it("popover recompute position on resize while open (không stale)", async () => {
+  const widthSpy = vi.spyOn(window, "innerWidth", "get").mockReturnValue(800);
+  const user = userEvent.setup();
+  // Anchor giữa viewport → render left-0.
+  const spy = vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+    x: 0, y: 0, top: 0, left: 100, right: 410, bottom: 0, width: 310, height: 20,
+    toJSON: () => ({}),
+  } as DOMRect);
+  renderWithSuggestions([pendingSuggestion({})]);
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  const pop = screen.getByTestId("suggestion-popover-11");
+  expect(pop.className).toContain("left-0");
+  // Resize: anchor giờ sát mép phải → phải flip sang right-0.
+  spy.mockReturnValue({
+    x: 0, y: 0, top: 0, left: 700, right: 760, bottom: 0, width: 60, height: 20,
+    toJSON: () => ({}),
+  } as DOMRect);
+  fireEvent(window, new Event("resize"));
+  await waitFor(() =>
+    expect(screen.getByTestId("suggestion-popover-11").className).toContain("right-0"),
+  );
+  spy.mockRestore();
+  widthSpy.mockRestore();
 });

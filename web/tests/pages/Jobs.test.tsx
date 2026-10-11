@@ -337,8 +337,22 @@ it("bulk retry partial failure: error toast fires, batch not aborted", async () 
   await screen.findByTestId("job-row-1");
   await userEvent.click(screen.getByTestId("select-all-page"));
   await userEvent.click(screen.getByTestId("bulk-retry"));
-  await waitFor(() => expect(toast.error).toHaveBeenCalledWith("job not retryable"));
+  await waitFor(() => expect(toast.error).toHaveBeenCalledWith("1 job lỗi khi chạy lại"));
   expect(toast.success).toHaveBeenCalledWith("Đã lên lịch chạy lại");
+});
+
+/** P2: thay vì toast errors[0] only → toast tổng hợp "n job lỗi" (R59 testids giữ). */
+it("bulk retry 2 job fail → error toast contains count 2", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [failed(1), failed(2)], total: 2, page: 1, page_size: 10 });
+  vi.mocked(api.retryJobs).mockResolvedValue({ ok: 0, errors: ["job 1 not retryable", "job 2 not retryable"] });
+  renderWithRouter(<Jobs />);
+  await screen.findByTestId("job-row-1");
+  await userEvent.click(screen.getByTestId("select-all-page"));
+  await userEvent.click(screen.getByTestId("bulk-retry"));
+  await waitFor(() =>
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("2")),
+  );
 });
 
 it("header shows job stats (total, pending, done)", async () => {
