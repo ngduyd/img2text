@@ -1,6 +1,6 @@
 import type { Query } from "@tanstack/react-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -24,6 +24,8 @@ vi.mock("../../src/api/client", async (importOriginal) => {
       cancelJob: vi.fn(),
       exportJob: vi.fn(),
       downloadExport: vi.fn(),
+      listVersions: vi.fn(),
+      restoreVersion: vi.fn(),
     },
   };
 });
@@ -410,4 +412,86 @@ it("pending job hides extraction link", async () => {
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("job-header");
   expect(screen.queryByTestId("link-extraction")).not.toBeInTheDocument();
+});
+
+/** P0-D: stale_layouts > 0 → badge "Cần đồng bộ" + resync (contract GET /api/jobs/{id}). */
+it("stale_layouts non-empty: stale-badge shows, resync calls api + toast + invalidate", async () => {
+  mockJob({ ...DONE_JOB, stale_layouts: ["md"] });
+  vi.mocked(api.retryLayout).mockResolvedValue({ md: true, docx: true });
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  expect(await screen.findByTestId("stale-badge")).toHaveTextContent("Cần đồng bộ");
+  const invalidate = vi.spyOn(lastQueryClient!, "invalidateQueries");
+  const user = userEvent.setup();
+  await user.click(screen.getByTestId("btn-resync-layout"));
+  expect(api.retryLayout).toHaveBeenCalledWith("5");
+  await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Đã đồng bộ layout"));
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["job", "5"] });
+});
+
+// Hidden case: stale_layouts rỗng hoặc vắng mặt → KHÔNG render badge/nút.
+it.each<[string, Job]>([
+  ["missing", DONE_JOB],
+  ["empty", { ...DONE_JOB, stale_layouts: [] }],
+])("stale_layouts %s hides stale-badge and resync button", async (_label, job) => {
+  mockJob(job);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await screen.findByTestId("job-header");
+  expect(screen.queryByTestId("stale-badge")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("btn-resync-layout")).not.toBeInTheDocument();
+});
+
+/** P0-C: lịch sử version — list + badge "Hiện tại" (version == job.text_version). */
+const VERSIONS = [
+  {
+    id: 11,
+    kind: "text",
+    version: 3,
+    based_on_text_version: 3,
+    detached: false,
+    created_at: "2026-01-02T03:04:05Z",
+  },
+  {
+    id: 10,
+    kind: "md-layout",
+    version: 2,
+    based_on_text_version: 2,
+    detached: false,
+    created_at: "2026-01-01T00:00:00Z",
+  },
+];
+
+it("btn-version-history lists versions: v{version} + kind + time + Hiện tại badge", async () => {
+  mockJob({ ...DONE_JOB, text_version: 3 });
+  vi.mocked(api.listVersions).mockResolvedValue({ items: VERSIONS });
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByTestId("btn-version-history"));
+  expect(api.listVersions).toHaveBeenCalledWith("5");
+  expect(await screen.findByTestId("version-history")).toBeInTheDocument();
+  const current = screen.getByTestId("version-row-3");
+  expect(current).toHaveTextContent("v3");
+  expect(current).toHaveTextContent("text");
+  expect(within(current).getByText("Hiện tại")).toBeInTheDocument();
+  const old = screen.getByTestId("version-row-2");
+  expect(old).toHaveTextContent("v2");
+  expect(old).toHaveTextContent("md-layout");
+  expect(within(old).queryByText("Hiện tại")).not.toBeInTheDocument();
+});
+
+it("btn-version-restore-{version} calls api.restoreVersion + toast + invalidate job & versions", async () => {
+  mockJob({ ...DONE_JOB, text_version: 3 });
+  vi.mocked(api.listVersions).mockResolvedValue({ items: VERSIONS });
+  vi.mocked(api.restoreVersion).mockResolvedValue(undefined);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const invalidate = vi.spyOn(lastQueryClient!, "invalidateQueries");
+  const user = userEvent.setup();
+  await user.click(await screen.findByTestId("btn-version-history"));
+  await user.click(await screen.findByTestId("btn-version-restore-2"));
+  // vid = DocumentVersion.id (server: session.get(DocumentVersion, vid)).
+  expect(api.restoreVersion).toHaveBeenCalledWith("5", 10);
+  await waitFor(() =>
+    expect(toast.success).toHaveBeenCalledWith("Đã khôi phục bản cũ"),
+  );
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["job", "5"] });
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["versions", "5"] });
 });

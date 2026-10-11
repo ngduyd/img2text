@@ -55,6 +55,7 @@ const JOB: Job = {
   output_format: "md",
   layout_cache: { md: false, docx: false },
   layout_style: null,
+  text_version: 1,
 };
 
 /** Harness có state editing thật (btn-edit-doc header toggle như JobDetail control). */

@@ -20,6 +20,7 @@ const DONE_JOB: Job = {
     pages: [],
     edited_markdown: null,
   },
+  text_version: 1,
 };
 
 it("renders status badge + vi-VN dates, page count, gpu + model", () => {

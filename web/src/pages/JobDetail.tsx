@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
-import type { Job } from "../api/types";
+import type { DocumentVersion, Job } from "../api/types";
 import { mapApiError } from "../lib/errors";
 import { STATUS_TEXT, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
 import ExportBar from "../components/ExportBar";
@@ -34,6 +34,13 @@ export default function JobDetail() {
   const [editing, setEditing] = useState(false);
   /** Toggle "Bản gốc": default full-width; ON → split 7/5 với OriginalFilePanel (luôn mount, ẩn qua `hidden`). */
   const [showOriginal, setShowOriginal] = useState(false);
+  /** P0-C: panel "Lịch sử" — list lazy-fetch khi mở (queryKey "versions" để invalidate). */
+  const [showHistory, setShowHistory] = useState(false);
+  const { data: versions } = useQuery({
+    queryKey: ["versions", id],
+    queryFn: () => api.listVersions(id!),
+    enabled: showHistory,
+  });
   const editorHostRef = useRef<HTMLElement>(null);
 
   /* Plan M: scroll + focus nguồn md-layout do UnifiedEditor tự lo khi editing=true. */
@@ -115,6 +122,29 @@ export default function JobDetail() {
           <Badge tone={STATUS_TONE[job.status]}>{STATUS_TEXT[job.status]}</Badge>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* P0-D: stale_layouts > 0 → badge + đồng bộ lại (server trả [] → mất badge). */}
+          {(job.stale_layouts?.length ?? 0) > 0 && (
+            <>
+              <Badge testid="stale-badge" tone="warning">
+                Cần đồng bộ
+              </Badge>
+              <Button
+                testid="btn-resync-layout"
+                variant="secondary"
+                onClick={async () => {
+                  try {
+                    await api.retryLayout(id!);
+                    toast.success("Đã đồng bộ layout");
+                    await queryClient.invalidateQueries({ queryKey: ["job", id] });
+                  } catch (err) {
+                    toast.error(mapApiError(err));
+                  }
+                }}
+              >
+                Đồng bộ lại
+              </Button>
+            </>
+          )}
           {job.status === "failed" && (
             <Button
               testid="btn-retry-job"
@@ -204,8 +234,75 @@ export default function JobDetail() {
             <PenLine className="h-4 w-4" aria-hidden="true" />
             {editing ? "Đang sửa" : "Edit"}
           </Button>
+          {/* P0-C: lịch sử version + khôi phục (API listVersions/restoreVersion sẵn). */}
+          <Button
+            testid="btn-version-history"
+            variant="secondary"
+            aria-expanded={showHistory}
+            onClick={() => setShowHistory((v) => !v)}
+          >
+            Lịch sử
+          </Button>
         </div>
       </header>
+      {showHistory && (
+        <section
+          data-testid="version-history"
+          aria-label="Lịch sử phiên bản"
+          className="mb-4 rounded-card border border-border bg-surface p-4 shadow-card"
+        >
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold">Lịch sử phiên bản</h2>
+            <Button
+              testid="btn-version-history-close"
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowHistory(false)}
+            >
+              Đóng
+            </Button>
+          </div>
+          <ul className="flex flex-col gap-2">
+            {versions?.items.map((v: DocumentVersion) => (
+              <li
+                key={v.id}
+                data-testid={`version-row-${v.version}`}
+                className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2 text-sm last:border-0 last:pb-0"
+              >
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono font-medium">v{v.version}</span>
+                  <Badge tone="neutral">{v.kind}</Badge>
+                  <time dateTime={v.created_at} className="text-muted">
+                    {new Date(v.created_at).toLocaleString("vi-VN")}
+                  </time>
+                  {v.version === job.text_version && <Badge tone="success">Hiện tại</Badge>}
+                </span>
+                <Button
+                  testid={`btn-version-restore-${v.version}`}
+                  variant="secondary"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      // vid = DocumentVersion.id (server: session.get(DocumentVersion, vid)).
+                      await api.restoreVersion(id!, v.id);
+                      toast.success("Đã khôi phục bản cũ");
+                      await queryClient.invalidateQueries({ queryKey: ["job", id] });
+                      await queryClient.invalidateQueries({ queryKey: ["versions", id] });
+                    } catch (err) {
+                      toast.error(mapApiError(err));
+                    }
+                  }}
+                >
+                  Khôi phục
+                </Button>
+              </li>
+            ))}
+            {versions && versions.items.length === 0 && (
+              <li className="text-sm text-muted">Chưa có phiên bản nào.</li>
+            )}
+          </ul>
+        </section>
+      )}
       {retryError && (
         <p data-testid="retry-error" role="alert" className="mb-4 text-sm text-error">
           {retryError}
