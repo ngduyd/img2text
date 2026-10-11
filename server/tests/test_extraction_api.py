@@ -223,6 +223,35 @@ async def test_auto_gen_snapshots_previous_md_layout(
     assert [i["version"] for i in items] == [1]  # pre-overwrite snapshot
     assert await st.get(f"versions/{jid}/md-layout/1") == b"# ban cu"
 
+async def test_auto_gen_snapshots_previous_docx_layout(
+    auth_client, app, done_job_with_result, db_session, monkeypatch
+):
+    """P2-4: auto-gen snapshot docx-layout TRƯỚC overwrite (giống md-layout)
+    — bản cũ phải còn trong version history sau lần auto-gen thứ 2."""
+    from app.core.models import Job
+    from app.routers import exports
+
+    jid = done_job_with_result
+    st = app.state.storage
+    await st.put(f"exports/{jid}/docx-layout", b"docx ban cu")
+
+    async def fake_md(job_id, job, ir_sink=None):
+        return b"# ban moi"
+
+    async def fake_docx(job_id, job, ir_sink=None):
+        return b"docx ban moi"
+
+    monkeypatch.setattr(exports, "_llm_md_export", fake_md)
+    monkeypatch.setattr(exports, "_llm_docx_export", fake_docx)
+    job = await db_session.get(Job, jid)
+    assert await exports.auto_generate_output(job, st) is True
+    assert await st.get(f"exports/{jid}/docx-layout") == b"docx ban moi"
+    items = (
+        await auth_client.get(f"/api/jobs/{jid}/versions?kind=docx-layout")
+    ).json()["items"]
+    assert [i["version"] for i in items] == [1]  # pre-overwrite snapshot
+    assert await st.get(f"versions/{jid}/docx-layout/1") == b"docx ban cu"
+
 async def test_auto_gen_overwrites_stale_artifacts(
     app, done_job_with_result, db_session, monkeypatch
 ):
