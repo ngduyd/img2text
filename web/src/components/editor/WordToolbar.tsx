@@ -265,7 +265,7 @@ export default function WordToolbar({ editor }: { editor: Editor | null }) {
     <div
       ref={rootRef}
       data-testid="word-toolbar"
-      className="sticky top-32 z-10 border-b border-border bg-surface py-2"
+      className="lg:sticky lg:top-32 z-10 border-b border-border bg-surface py-2"
     >
       <div className="relative flex items-center gap-2">
         <div

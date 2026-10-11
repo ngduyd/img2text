@@ -154,6 +154,15 @@ it("caret trong table: cụm +row −row +col −col hiện và sửa bảng th�
   expect(count("td")).toBe(6);
 });
 
+/** WordToolbar sticky chỉ ≥lg — mobile header static, toolbar sticky +128px = treo hổng. */
+it("toolbar sticky chỉ ≥lg (mobile static)", () => {
+  renderToolbar(makeEditor());
+  const root = screen.getByTestId("word-toolbar");
+  expect(root).toHaveClass("lg:sticky");
+  expect(root).toHaveClass("lg:top-32");
+  expect(root.className).not.toMatch(/(^|\s)sticky/);
+});
+
 it("caret ngoài table (không có table): ẩn cụm row/col", () => {
   renderToolbar(makeEditor());
   for (const testid of ["word-tb-row-add", "word-tb-row-del", "word-tb-col-add", "word-tb-col-del"]) {

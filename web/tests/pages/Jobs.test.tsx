@@ -401,4 +401,8 @@ it("windowed pagination: 1 + last + ±2 quanh current, ellipsis giữa gap", asy
   expect(pageWindow(1, 10)).toEqual([1, 2, 3, "…", 10]);
   expect(pageWindow(3, 4)).toEqual([1, 2, 3, 4]);
   expect(pageWindow(2, 2)).toEqual([1, 2]);
+  // Edge: current = last → "…" trước cụm cuối; total=1 không "…"; total lẻ kín không "…".
+  expect(pageWindow(10, 10)).toEqual([1, "…", 8, 9, 10]);
+  expect(pageWindow(1, 1)).toEqual([1]);
+  expect(pageWindow(3, 5)).toEqual([1, 2, 3, 4, 5]);
 });
