@@ -43,6 +43,20 @@ export default function ExtractionPage() {
   /** Anchor element per suggestion key — popover flip đọc rect từ đây lúc render. */
   const anchorEls = useRef(new Map<string, HTMLSpanElement>());
 
+  // P2: resize/scroll while open → popoverPos recompute (rect tính lúc render, stale nếu không bump).
+  const [, setPopoverTick] = useState(0);
+  useEffect(() => {
+    if (!openSuggestion) return;
+    const bump = () => setPopoverTick((n) => n + 1);
+    // capture=true: scroll của ancestor container cũng đổi vị trí tương đối viewport.
+    window.addEventListener("resize", bump);
+    window.addEventListener("scroll", bump, true);
+    return () => {
+      window.removeEventListener("resize", bump);
+      window.removeEventListener("scroll", bump, true);
+    };
+  }, [openSuggestion]);
+
   // P3: Escape + click-outside đóng popover.
   useEffect(() => {
     if (!openSuggestion) return;
