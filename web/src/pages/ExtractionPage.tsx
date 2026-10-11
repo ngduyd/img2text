@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, TriangleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { api, ApiError } from "../api/client";
@@ -15,6 +15,12 @@ import Skeleton from "../components/ui/Skeleton";
  * Highlight phrase lỗi (proofread suggestions) → click → popover →
  * Áp dụng = POST /extraction (save + incremental sync, 0 LLM).
  */
+
+/** w-64 popover: chạm mép phải viewport (rect.right + 256) → flip right-0; max-w chặn tràn. */
+function popoverPos(anchor: HTMLElement | undefined): string {
+  const rect = anchor?.getBoundingClientRect();
+  return rect && rect.right + 256 > window.innerWidth ? "right-0 left-auto" : "left-0";
+}
 export default function ExtractionPage() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
@@ -34,6 +40,8 @@ export default function ExtractionPage() {
   const [redrawing, setRedrawing] = useState(false);
 
   const openSuggestion = suggestions.find((s) => s.id === open?.sid) ?? null;
+  /** Anchor element per suggestion key — popover flip đọc rect từ đây lúc render. */
+  const anchorEls = useRef(new Map<string, HTMLSpanElement>());
 
   // P3: Escape + click-outside đóng popover.
   useEffect(() => {
@@ -198,14 +206,18 @@ export default function ExtractionPage() {
           data-text-version={data.text_version}
           className="rounded-card border border-border bg-surface p-4 text-sm leading-[1.7] whitespace-pre-wrap shadow-card"
         >
-          {buildHighlights(data.text, suggestions).map((seg, i) =>
-            seg.sid === null ? (
-              <span key={i}>{seg.text}</span>
-            ) : (
+          {buildHighlights(data.text, suggestions).map((seg, i) => {
+            if (seg.sid === null) return <span key={i}>{seg.text}</span>;
+            const anchorKey = `${seg.sid}-${seg.occurrence ?? 0}`;
+            return (
               <span
                 key={i}
                 className="relative inline-block"
                 data-suggestion-anchor
+                ref={(el) => {
+                  if (el) anchorEls.current.set(anchorKey, el);
+                  else anchorEls.current.delete(anchorKey);
+                }}
               >
                 <mark
                   data-testid={
@@ -239,7 +251,9 @@ export default function ExtractionPage() {
                       data-testid={`suggestion-popover-${seg.sid}`}
                       role="group"
                       aria-label="Gợi ý sửa"
-                      className="absolute left-0 top-full z-20 mt-1 flex w-64 flex-col gap-2 rounded-md border border-border bg-surface p-3 shadow-card"
+                      className={`absolute top-full z-20 mt-1 flex w-64 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-md border border-border bg-surface p-3 shadow-card ${popoverPos(
+                        anchorEls.current.get(anchorKey),
+                      )}`}
                     >
                       <span className="flex items-baseline gap-2">
                         <span className="text-sm line-through decoration-error text-error">
@@ -276,8 +290,8 @@ export default function ExtractionPage() {
                     </span>
                   )}
               </span>
-            ),
-          )}
+            );
+          })}
         </article>
       )}
     </main>
