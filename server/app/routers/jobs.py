@@ -35,6 +35,7 @@ from app.services.doc_versions import (
 from app.services.job_results import _schedule_auto_output, store_worker_result
 from app.services.layout_sync import (
     DOCX_HTML_KEY,
+    DOCX_LAYOUT_KEY,
     MD_LAYOUT_KEY,
     sync_job_layouts,
 )
@@ -1000,17 +1001,21 @@ async def restore_version(
         )
         await storage.delete_prefix(f"exports/{id}/")
         return Response(status_code=204)
-    key = (
-        MD_LAYOUT_KEY.format(job_id=id)
-        if row.kind == "md-layout"
-        else DOCX_HTML_KEY.format(job_id=id)
-    )
+    if row.kind == "md-layout":
+        key = MD_LAYOUT_KEY.format(job_id=id)
+    elif data.startswith(b"PK\x03\x04"):
+        # kind docx-layout chứa CẢ binary render (P2-4 fallback snapshot)
+        # lẫn docx.html HTML (seed/edit/sync) → phân loại theo bytes: binary
+        # phải về DOCX_LAYOUT_KEY, ghi vào docx.html sẽ 500 (.decode utf-8).
+        key = DOCX_LAYOUT_KEY.format(job_id=id)
+    else:
+        key = DOCX_HTML_KEY.format(job_id=id)
     # P2: snapshot the current artifact BEFORE the overwrite — crash-safe
     # provenance (pre-restore bytes stay in version history).
     await snapshot_current_layout(
         storage, session, id, row.kind, job.text_version
     )
-    if row.kind == "docx-layout":
+    if row.kind == "docx-layout" and key == DOCX_HTML_KEY.format(job_id=id):
         # supersede rule: derived exports/{id}/docx* die with the html edit
         await storage.delete_prefix(f"exports/{id}/docx")
     else:

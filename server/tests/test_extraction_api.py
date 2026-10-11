@@ -349,6 +349,28 @@ async def test_restore_layout_writes_artifact(auth_client, app, done_job_with_re
     items = (await auth_client.get(f"/api/jobs/{jid}/versions?kind=md-layout")).json()["items"]
     assert [i["version"] for i in items] == [3, 2, 1]  # seed v1, sync v2, restore v3
 
+async def test_restore_docx_layout_binary_writes_layout_key(
+    auth_client, app, done_job_with_result, db_session
+):
+    """P2: version kind docx-layout lưu BINARY render (P2-4 fallback
+    snapshot) → restore ghi DOCX_LAYOUT_KEY; KHÔNG đè docx.html
+    (GET docx.html .decode("utf-8") sẽ 500 với binary)."""
+    jid = done_job_with_result
+    st = app.state.storage
+    await _seed_layouts(app, jid)
+    binary = b"PK\x03\x04binary-render"
+    v = await save_version(
+        st, jid, "docx-layout", binary, 0, session=db_session
+    )
+    r = await auth_client.post(f"/api/jobs/{jid}/versions/{v.id}/restore")
+    assert r.status_code == 204, r.text
+    assert await st.get(f"exports/{jid}/docx-layout") == binary
+    # docx.html giữ nguyên (không bị binary ghi đè / xóa)
+    assert await st.get(f"exports/{jid}/docx.html") == \
+        b"<p>Xin chao <b>the gioi</b></p>"
+    dl = await auth_client.get(f"/api/jobs/{jid}/export/docx.html/download")
+    assert dl.status_code == 200, dl.text
+
 
 async def test_put_layout_marks_detached(auth_client, done_job_with_result):
     """Task 6: direct layout edit → latest snapshot detached=True."""
