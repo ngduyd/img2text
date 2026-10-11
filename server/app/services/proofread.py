@@ -229,8 +229,16 @@ async def run_proofread(session: AsyncSession, job: Job) -> int:
                     reason=(item.get("reason") or "").strip(),
                 )
             )
-    # chạy lại = kết quả mới: drop cũ (mọi status) trước khi ghi
-    await session.execute(delete(OcrSuggestion).where(OcrSuggestion.job_id == job.id))
+    # P2-7: rerun giữ status accepted (quyết định người dùng không mất);
+    # pending/rejected cũ drop → kết quả mới thay thế.
+    # ponytail: accepted trùng phrase với kết quả mới (edge, content chưa sửa
+    # → locate vẫn hit) sẽ có 2 dòng — gộp khi UI list bị phàn nàn.
+    await session.execute(
+        delete(OcrSuggestion).where(
+            OcrSuggestion.job_id == job.id,
+            OcrSuggestion.status != "accepted",
+        )
+    )
     session.add_all(rows)
     await session.commit()
     logger.info(
