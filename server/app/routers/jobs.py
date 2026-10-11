@@ -748,6 +748,11 @@ def _text_bytes(result: dict) -> bytes:
         "utf-8"
     )
 
+def _result_bytes(result: dict) -> bytes:
+    """job.result JSON — snapshot kind "md": region edit sửa chính result
+    (extraction_text không đổi → kind-text không phản ánh edit)."""
+    return json.dumps(result, ensure_ascii=False).encode("utf-8")
+
 async def _detached_kinds(
     session: AsyncSession, job_id: int, storage: StorageDriver
 ) -> set[str]:
@@ -786,25 +791,32 @@ async def bump_text_after_edit(
     job: Job,
     data: bytes | None = None,
     seed_bytes: bytes | None = None,
+    kind: str = "text",
 ) -> int:
-    """P1-2: content/region edit → bump jobs.text_version + kind "text" snapshot.
+    """content/region edit → bump jobs.text_version + snapshot 1 kind.
 
+    kind "text" = text gốc (content edit); kind "md" = job.result JSON
+    (region edit — content region edit sửa thật sự; extraction_text giữ
+    nguyên → dual-truth deferred).
     seed_bytes = bản gốc TRƯỚC mutate (caller capture trước khi ghi job.result)
-    → version 1 không bị text đã sửa nuốt mất. data = bytes snapshot sau edit
+    → version 1 không bị bản đã sửa nuốt mất. data = bytes snapshot sau edit
     (mặc định derive từ job.result đã sửa; content edit truyền edited_markdown).
     Snapshot based_on = version mới → GET job stale_layouts + version history
-    tự thấy edit. Deferred (out of scope): bidirectional sync giữa
-    extraction_text và region/edited_markdown (dual-truth).
+    tự thấy edit.
+    P1-2 round 2: seed + save KHÔNG tự commit → MỘT commit cuối gom
+    result + 2 version row + bump; save_version nổ = chưa commit gì.
     """
     text = data if data is not None else _text_bytes(job.result or {})
+    new_version = job.text_version + 1
     await seed_current(
-        storage, job.id, "text", seed_bytes if seed_bytes is not None else text,
-        job.text_version, session=session,
+        storage, job.id, kind, seed_bytes if seed_bytes is not None else text,
+        job.text_version, session=session, commit=False,
     )
-    job.text_version += 1
-    # P1-R2: save_version TRƯỚC mọi commit — nó tự commit (row + bump cùng
-    # transaction); nổ → chưa commit gì → text_version không tăng nửa vời.
-    await save_version(storage, job.id, "text", text, job.text_version, session=session)
+    await save_version(
+        storage, job.id, kind, text, new_version, session=session, commit=False
+    )
+    job.text_version = new_version
+    await session.commit()
     return job.text_version
 
 @router.get("/api/jobs/{id}/extraction")
@@ -975,6 +987,17 @@ async def restore_version(
         await save_version(
             storage, id, "text", data, job.text_version, session=session
         )
+        return Response(status_code=204)
+    if row.kind == "md":
+        # P1-1 round 2: kind "md" = JSON job.result → restore trả result về
+        # bản chụp, append-only như kind text; export dẫn xuất chết theo
+        job.result = json.loads(data)
+        job.text_version += 1
+        await session.commit()
+        await save_version(
+            storage, id, "md", data, job.text_version, session=session
+        )
+        await storage.delete_prefix(f"exports/{id}/")
         return Response(status_code=204)
     key = (
         MD_LAYOUT_KEY.format(job_id=id)

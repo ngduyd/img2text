@@ -18,7 +18,7 @@ from app.services.storage import StorageDriver
 logger = logging.getLogger(__name__)
 
 N_VERSIONS = 20
-VERSION_KINDS = ("text", "md-layout", "docx-layout")
+VERSION_KINDS = ("text", "md", "md-layout", "docx-layout")
 
 
 def version_key(job_id: int, kind: str, version: int) -> str:
@@ -86,8 +86,12 @@ async def save_version(
     based_on_text_version: int,
     detached: bool = False,
     session: AsyncSession | None = None,
+    commit: bool = True,
 ) -> DocumentVersion:
     """Snapshot bytes + insert row + prune >N. session omitted → SessionLocal.
+
+    commit=False → chỉ stage trong transaction của caller (P1-2: bump gom
+    seed + save + jobs.text_version vào MỘT commit cuối).
 
     version = latest + 1 (UNIQUE(job_id,kind,version) closes the concurrent
     race: the loser's INSERT raises, caller surfaces the error).
@@ -110,9 +114,12 @@ async def save_version(
             detached=detached,
         )
         session.add(row)
-        await session.commit()
-        await session.refresh(row)
-        await _prune(storage, session, job_id, kind)
+        if commit:
+            await session.commit()
+            await session.refresh(row)
+        else:
+            await session.flush()
+        await _prune(storage, session, job_id, kind, commit=commit)
         return row
     finally:
         if own:
@@ -120,7 +127,8 @@ async def save_version(
 
 
 async def _prune(
-    storage: StorageDriver, session: AsyncSession, job_id: int, kind: str
+    storage: StorageDriver, session: AsyncSession, job_id: int, kind: str,
+    commit: bool = True,
 ) -> None:
     """Keep N_VERSIONS newest; delete older rows + S3 objects (warn on fail)."""
     try:
@@ -148,7 +156,12 @@ async def _prune(
                 DocumentVersion.version < keep_from,
             )
         )
-        await session.commit()
+        # ponytail: S3 prune xóa cả khi commit=False (rollback khi đã >N_VERSIONS
+        # là rất hiếm) — upgrade: hoãn storage.delete về sau commit cuối
+        if commit:
+            await session.commit()
+        else:
+            await session.flush()
     except Exception as exc:
         logger.warning("version prune fail job=%s kind=%s: %s", job_id, kind, exc)
 
@@ -160,11 +173,14 @@ async def seed_current(
     data: bytes,
     based_on_text_version: int,
     session: AsyncSession | None = None,
+    commit: bool = True,
 ) -> DocumentVersion | None:
     """Lazy-seed: current artifact becomes version 1 on first access.
 
     No-op (returns the existing latest row) when any version exists —
     existing jobs predate document_versions (Review Focus: first version).
+    commit=False → seed chỉ stage trong transaction caller; KHÔNG tự commit
+    (P1-2: commit của seed flush cả job.result mutated trước khi save chạy).
     """
     from app.core.db import SessionLocal
 
@@ -175,7 +191,8 @@ async def seed_current(
         if existing is not None:
             return existing
         return await save_version(
-            storage, job_id, kind, data, based_on_text_version, session=session
+            storage, job_id, kind, data, based_on_text_version,
+            session=session, commit=commit,
         )
     finally:
         if own:
