@@ -376,17 +376,17 @@ it("layout: toggle ON → 2-column grid, reading col + rail with file/meta/expor
   expect(screen.getByTestId("export-formats")).not.toBeVisible();
 });
 
-/** JD2 sticky context header: bám dưới AppNav (top-14 / md:top-16). */
-it("header is sticky below app nav with blurred surface bg", async () => {
+/** JD2: header static trên mobile (3-4 dòng che viewport) — sticky ≥lg, bám dưới AppNav h-16. */
+it("header sticky chỉ ≥lg (mobile static) với blurred surface bg", async () => {
   mockJob(DONE_JOB);
   const { container } = renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("job-header");
   const header = container.querySelector('[data-testid="job-header"]');
   expect(header).not.toBeNull();
   const cls = (header as HTMLElement).className;
-  expect(cls).toContain("sticky");
-  expect(cls).toContain("top-14");
-  expect(cls).toContain("md:top-16");
+  expect(cls).toContain("lg:sticky");
+  expect(cls).toContain("lg:top-16");
+  expect(cls).not.toMatch(/(^|\s)sticky/);
   expect(cls).toContain("backdrop-blur");
 });
 
