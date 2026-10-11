@@ -397,7 +397,8 @@ async def patch_content(
     )
     # cache invalidation: exported md must reflect the edit
     await storage.delete_prefix(f"exports/{id}/")
-    return {}
+    # P2-3: response mang text_version MỚI — client/API thô biết tv đã bump
+    return {"text_version": job.text_version}
 
 # --- Export generation + download: POST /export, GET /export/{fmt}/download ---
 

@@ -10,6 +10,13 @@ async def test_patch_content_done(auth_client, done_job_with_result, db_session)
     await db_session.refresh(job)  # request session committed; drop stale identity-map copy
     assert job.result["edited_markdown"] == "## Part 2\nEdited."
 
+async def test_patch_content_returns_text_version(auth_client, done_job_with_result):
+    """P2-3: response mang text_version MỚI (bump) — client/API thô biết tv."""
+    r = await auth_client.patch(f"/api/jobs/{done_job_with_result}/content",
+                                json={"markdown": "# moi"})
+    assert r.status_code == 200
+    assert r.json()["text_version"] == 1
+
 async def test_patch_content_409_when_queued(auth_client, seed_job):
     r = await auth_client.patch(f"/api/jobs/{seed_job}/content", json={"markdown": "x"})
     assert r.status_code == 409

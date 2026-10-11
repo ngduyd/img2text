@@ -74,4 +74,8 @@ async def edit_region_text(
     # cache invalidation: exported md must reflect the edit (Plan D binding,
     # same as patch_content); crops untouched — bboxes unchanged
     await storage.delete_prefix(f"exports/{id}/")
-    return {"id": rid, "text": new, "markdown_replaced": markdown_replaced}
+    # P2-3: response mang text_version MỚI — client/API thô biết tv đã bump
+    return {
+        "id": rid, "text": new, "markdown_replaced": markdown_replaced,
+        "text_version": job.text_version,
+    }
