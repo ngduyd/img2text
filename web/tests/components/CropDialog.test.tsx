@@ -88,11 +88,11 @@ it("a11y: role=dialog + aria-modal + focus panel; Escape → onCancel", () => {
   expect(onCancel).toHaveBeenCalled();
 });
 
-it("btn-crop-full: chọn toàn bộ ảnh → rect overlay = full dims", () => {
+it("btn-crop-full: chọn toàn bộ ảnh → rect overlay = full dims", async () => {
   const { onDone } = setup();
   fireEvent.click(screen.getByTestId("btn-crop-full"));
   expect(ctx.fillRect).toHaveBeenCalledWith(0, 0, 800, 600);
   expect(ctx.strokeRect).toHaveBeenCalledWith(0, 0, 800, 600);
   fireEvent.click(screen.getByTestId("crop-confirm"));
-  expect(onDone).toHaveBeenCalled();
+  await waitFor(() => expect(onDone).toHaveBeenCalled());
 });
