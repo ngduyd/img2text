@@ -288,6 +288,17 @@ class TestCoverageImageRegion:
         with pytest.raises(IRValidationError, match="r0"):
             validate_ir(ir, _ocr_with_image())
 
+    def test_placeholder_without_image_verdict_still_required(self):
+        """P2-1: exempt coverage CHỈ khi verdict=image — region placeholder
+        nhưng verdict khác (LLM mislabel text→image) vẫn bắt buộc cover,
+        không được bỏ qua coverage (mất text im im)."""
+        ocr = _ocr_with_image()
+        region = ocr["pages"][0]["regions"][2]
+        region["verdict"] = "ok"  # mislabel: placeholder nhưng KHÔNG phải image
+        ir = _valid_ir()  # cover r0 + r1, bỏ r2
+        with pytest.raises(IRValidationError, match="r2"):
+            validate_ir(ir, ocr)
+
     def test_image_region_as_source_id_accepted(self):
         """LLM cover image region → source id hợp lệ (không reject)."""
         ir = _valid_ir()

@@ -107,18 +107,16 @@ class IRValidationError(Exception):
 def _collect_ocr_block_ids(ocr_result: dict, *, skip_image: bool = False) -> set[str]:
     """All block IDs across all pages in OCR result.
 
-    skip_image: bỏ image region (verdict/placeholder marker) — dùng cho
-    coverage set (P1-R4b: LLM không bắt buộc cover ảnh, prompt không đổi);
-    source-id check vẫn nhận image id (valid set đầy đủ riêng).
-    """
+    skip_image: bỏ image region — dùng cho coverage set (P1-R4b: LLM không
+    bắt buộc cover ảnh, prompt không đổi); source-id check vẫn nhận image id
+    (valid set đầy đủ riêng). P2-1: exempt CHỈ verdict=image_unextractable —
+    placeholder-OR đã bỏ: LLM mislabel text→image (placeholder=True, verdict
+    khác) không được thoát coverage (mất text)."""
     ids: set[str] = set()
     for page in ocr_result.get("pages", []):
         for region in page.get("regions", []):
             rid = str(region.get("id"))
-            if skip_image and (
-                region.get("placeholder")
-                or region.get("verdict") == "image_unextractable"
-            ):
+            if skip_image and region.get("verdict") == "image_unextractable":
                 continue
             if rid:
                 ids.add(rid)
