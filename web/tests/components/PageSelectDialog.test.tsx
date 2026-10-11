@@ -49,3 +49,12 @@ it("cancel → onCancel, không gọi onDone", () => {
   expect(onCancel).toHaveBeenCalled();
   expect(onDone).not.toHaveBeenCalled();
 });
+
+it("a11y: role=dialog + aria-modal + focus panel; Escape → onCancel", async () => {
+  const { onCancel } = setup();
+  const panel = screen.getByRole("dialog");
+  expect(panel).toHaveAttribute("aria-modal", "true");
+  expect(panel).toHaveFocus();
+  fireEvent.keyDown(panel, { key: "Escape" });
+  expect(onCancel).toHaveBeenCalled();
+});

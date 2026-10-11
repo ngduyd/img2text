@@ -36,3 +36,12 @@ it("open=false → không render", () => {
   render(<SubmitModal open={false} onConfirm={vi.fn()} onCancel={vi.fn()} />);
   expect(screen.queryByTestId("submit-modal")).toBeNull();
 });
+
+it("a11y: role=dialog + aria-modal + focus panel; Escape → onCancel", () => {
+  const { onCancel } = setup();
+  const panel = screen.getByRole("dialog");
+  expect(panel).toHaveAttribute("aria-modal", "true");
+  expect(panel).toHaveFocus();
+  fireEvent.keyDown(panel, { key: "Escape" });
+  expect(onCancel).toHaveBeenCalled();
+});
