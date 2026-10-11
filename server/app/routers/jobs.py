@@ -776,6 +776,24 @@ async def _seed_versions(
                 job.text_version, session=session,
             )
 
+async def bump_text_after_edit(
+    session: AsyncSession, storage: StorageDriver, job: Job
+) -> int:
+    """P1-2: content/region edit → bump jobs.text_version + kind "text" snapshot.
+
+    seed-current trước: history giữ text cũ (job chưa có version row).
+    Snapshot based_on = version mới → GET job stale_layouts + version history
+    tự thấy edit. Deferred (out of scope): bidirectional sync giữa
+    extraction_text và region/edited_markdown (dual-truth).
+    """
+    result = job.result or {}
+    text = (result.get("extraction_text") or _extraction_text(result)).encode("utf-8")
+    await seed_current(storage, job.id, "text", text, job.text_version, session=session)
+    job.text_version += 1
+    await session.commit()
+    await save_version(storage, job.id, "text", text, job.text_version, session=session)
+    return job.text_version
+
 @router.get("/api/jobs/{id}/extraction")
 async def get_extraction(
     id: int,

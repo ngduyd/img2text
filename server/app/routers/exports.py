@@ -27,7 +27,7 @@ from app.services.convert import PANDOC_BIN, REFERENCE_DOCX
 from app.core.db import SessionLocal, get_session
 from app.core.deps import get_current_user
 from app.core.models import Job, User
-from app.routers.jobs import _job_or_403
+from app.routers.jobs import _job_or_403, bump_text_after_edit
 from app.services.render_docx import LLMError as DocxLLMError, build_docx
 from app.services.render_md import LLMError, build_md
 from app.services.doc_versions import save_version, snapshot_current_layout
@@ -388,7 +388,8 @@ async def patch_content(
     result = dict(job.result or {})  # JSONB merge: copy, set, reassign
     result["edited_markdown"] = body.markdown
     job.result = result
-    await session.commit()
+    # P1-2: bump text_version + text snapshot → stale badge + lịch sử thấy edit
+    await bump_text_after_edit(session, storage, job)
     # cache invalidation: exported md must reflect the edit
     await storage.delete_prefix(f"exports/{id}/")
     return {}

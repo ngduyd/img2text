@@ -150,3 +150,19 @@ async def test_region_edit_empty_text_422(auth_client, db_session):
         f"/api/jobs/{job_id}/regions/r0", json={"text": ""}
     )
     assert r.status_code == 422, r.text
+
+async def test_region_edit_bumps_text_version(auth_client, db_session):
+    """P1-2: region edit → bump jobs.text_version (stale badge) + text
+    snapshot kind "text" (lịch sử thấy edit)."""
+    job_id = await _seed_done(db_session, _result(_MD_WITH_TEXT))
+    r = await auth_client.patch(
+        f"/api/jobs/{job_id}/regions/r0", json={"text": "Tạm biệt"}
+    )
+    assert r.status_code == 200, r.text
+    job = await db_session.get(Job, job_id)
+    await db_session.refresh(job)
+    assert job.text_version == 1
+    items = (await auth_client.get(
+        f"/api/jobs/{job_id}/versions", params={"kind": "text"}
+    )).json()["items"]
+    assert items and items[0]["based_on_text_version"] == 1
