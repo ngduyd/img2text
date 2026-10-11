@@ -104,12 +104,22 @@ class IRValidationError(Exception):
     """IR fails validation (caller → fallback or 502)."""
 
 
-def _collect_ocr_block_ids(ocr_result: dict) -> set[str]:
-    """All block IDs across all pages in OCR result."""
+def _collect_ocr_block_ids(ocr_result: dict, *, skip_image: bool = False) -> set[str]:
+    """All block IDs across all pages in OCR result.
+
+    skip_image: bỏ image region (verdict/placeholder marker) — dùng cho
+    coverage set (P1-R4b: LLM không bắt buộc cover ảnh, prompt không đổi);
+    source-id check vẫn nhận image id (valid set đầy đủ riêng).
+    """
     ids: set[str] = set()
     for page in ocr_result.get("pages", []):
         for region in page.get("regions", []):
             rid = str(region.get("id"))
+            if skip_image and (
+                region.get("placeholder")
+                or region.get("verdict") == "image_unextractable"
+            ):
+                continue
             if rid:
                 ids.add(rid)
     return ids
@@ -267,6 +277,8 @@ def validate_ir(ir: dict, ocr_result: dict) -> DocumentIR:
 
     # Check source_block_ids exist in OCR
     valid_ocr_ids = _collect_ocr_block_ids(ocr_result)
+    # P1-R4b: coverage bỏ image region — LLM không bắt buộc cover ảnh
+    coverage_ids = _collect_ocr_block_ids(ocr_result, skip_image=True)
     # bbox: LLM gán hoặc union từ source_block_ids (renderer dùng trực tiếp)
     # text: LLM không viết lại text → join từ OCR qua source_block_ids (render cần)
     for page in doc.pages:
@@ -280,8 +292,9 @@ def validate_ir(ir: dict, ocr_result: dict) -> DocumentIR:
         _check_source_ids(page.header, valid_ocr_ids)
         _check_source_ids(page.content, valid_ocr_ids)
         _check_source_ids(page.footer, valid_ocr_ids)
-    # P0-B: coverage — mọi OCR id exactly-once (thiếu = mất chữ, trùng = lặp)
-    _check_coverage(doc, valid_ocr_ids)
+    # P0-B: coverage — mọi OCR id exactly-once (thiếu = mất chữ, trùng = lặp);
+    # image region loại khỏi bắt buộc (coverage_ids) — LLM không cover cũng OK
+    _check_coverage(doc, coverage_ids)
 
     # Check page_number >= 1
     for page in doc.pages:

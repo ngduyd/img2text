@@ -115,7 +115,13 @@ def extract_pages(result: dict) -> list[Page]:
         for region in pg.get("regions", []):
             text = unicodedata.normalize("NFC", region.get("text") or "")
             bbox = region.get("bbox")
-            if not text.strip() or not bbox or len(bbox) != 4:
+            if not bbox or len(bbox) != 4:
+                continue
+            is_image = bool(region.get("placeholder")) or (
+                region.get("verdict") == "image_unextractable"
+            )
+            # P1-R4a: image region luôn tạo node (text rỗng không bị drop ở fallback)
+            if not text.strip() and not is_image:
                 continue
             rid = str(region.get("id"))
             while rid in seen:
@@ -123,7 +129,7 @@ def extract_pages(result: dict) -> list[Page]:
             seen.add(rid)
             if "<table" in text.lower():
                 kind = "table"
-            elif region.get("placeholder") or region.get("verdict") == "image_unextractable":
+            elif is_image:
                 kind = "image"
             else:
                 kind = "text"

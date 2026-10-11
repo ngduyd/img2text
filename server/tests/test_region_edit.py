@@ -166,3 +166,17 @@ async def test_region_edit_bumps_text_version(auth_client, db_session):
         f"/api/jobs/{job_id}/versions", params={"kind": "text"}
     )).json()["items"]
     assert items and items[0]["based_on_text_version"] == 1
+
+async def test_region_edit_v1_keeps_pre_edit_text(auth_client, db_session, storage):
+    """P1-R1: seed v1 TRƯỚC mutate → version 1 = text TRƯỚC edit,
+    version 2 = text sau edit (bản gốc không biến mất khỏi history)."""
+    job_id = await _seed_done(db_session, _result(_MD_WITH_TEXT))
+    r = await auth_client.patch(
+        f"/api/jobs/{job_id}/regions/r0", json={"text": "Tạm biệt"}
+    )
+    assert r.status_code == 200, r.text
+    v1 = (await storage.get(f"versions/{job_id}/text/1")).decode("utf-8")
+    assert "Xin chào thế giới" in v1  # bản gốc
+    assert "Tạm biệt" not in v1
+    v2 = (await storage.get(f"versions/{job_id}/text/2")).decode("utf-8")
+    assert "Tạm biệt" in v2  # snapshot sau edit

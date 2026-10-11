@@ -741,6 +741,13 @@ def _extraction_text(result: dict) -> str:
         for p in pages
     )
 
+def _text_bytes(result: dict) -> bytes:
+    """extraction_text nếu có, không thì derive từ regions — seed/trước-sửa
+    và snapshot/sau-sửa đều đi qua đây (một spelling cho khái niệm text gốc)."""
+    return (result.get("extraction_text") or _extraction_text(result)).encode(
+        "utf-8"
+    )
+
 async def _detached_kinds(
     session: AsyncSession, job_id: int, storage: StorageDriver
 ) -> set[str]:
@@ -756,13 +763,10 @@ async def _seed_versions(
     session: AsyncSession, job: Job, storage: StorageDriver
 ) -> None:
     """Lazy-seed version 1 for text + existing layouts on first access."""
-    text = (job.result or {}).get("extraction_text") or _extraction_text(
-        job.result or {}
-    )
     if await latest_version(session, job.id, "text") is None:
         await seed_current(
-            storage, job.id, "text", text.encode("utf-8"), job.text_version,
-            session=session,
+            storage, job.id, "text", _text_bytes(job.result or {}),
+            job.text_version, session=session,
         )
     for kind, key in (
         ("md-layout", MD_LAYOUT_KEY.format(job_id=job.id)),
@@ -777,20 +781,29 @@ async def _seed_versions(
             )
 
 async def bump_text_after_edit(
-    session: AsyncSession, storage: StorageDriver, job: Job
+    session: AsyncSession,
+    storage: StorageDriver,
+    job: Job,
+    data: bytes | None = None,
+    seed_bytes: bytes | None = None,
 ) -> int:
     """P1-2: content/region edit → bump jobs.text_version + kind "text" snapshot.
 
-    seed-current trước: history giữ text cũ (job chưa có version row).
+    seed_bytes = bản gốc TRƯỚC mutate (caller capture trước khi ghi job.result)
+    → version 1 không bị text đã sửa nuốt mất. data = bytes snapshot sau edit
+    (mặc định derive từ job.result đã sửa; content edit truyền edited_markdown).
     Snapshot based_on = version mới → GET job stale_layouts + version history
     tự thấy edit. Deferred (out of scope): bidirectional sync giữa
     extraction_text và region/edited_markdown (dual-truth).
     """
-    result = job.result or {}
-    text = (result.get("extraction_text") or _extraction_text(result)).encode("utf-8")
-    await seed_current(storage, job.id, "text", text, job.text_version, session=session)
+    text = data if data is not None else _text_bytes(job.result or {})
+    await seed_current(
+        storage, job.id, "text", seed_bytes if seed_bytes is not None else text,
+        job.text_version, session=session,
+    )
     job.text_version += 1
-    await session.commit()
+    # P1-R2: save_version TRƯỚC mọi commit — nó tự commit (row + bump cùng
+    # transaction); nổ → chưa commit gì → text_version không tăng nửa vời.
     await save_version(storage, job.id, "text", text, job.text_version, session=session)
     return job.text_version
 

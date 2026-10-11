@@ -354,3 +354,45 @@ async def test_auto_md_llm_down_falls_back_to_plain_md(
     assert data.decode("utf-8") == VALID_RESULT_JSONB["markdown"]
     job = await db_session.get(Job, seed_job)
     assert job.status == "failed" and job.failed_step == "rendering"
+
+# --- P1-R4a/R5: image region sống sót qua heuristic ---
+
+def test_heuristic_extract_keeps_empty_image_block():
+    """P1-R4a: image region text rỗng → node image KHÔNG bị drop
+    (cả 2 renderer: render_md + render_docx)."""
+    import importlib
+    result = _result([
+        _region("r0", [1, 2, 30, 40], "Nội dung"),
+        {"id": "r1", "bbox": [5, 6, 70, 80], "text": "",
+         "verdict": "image_unextractable", "placeholder": True},
+    ])
+    for modname in ("app.services.render_md", "app.services.render_docx"):
+        mod = importlib.import_module(modname)
+        blocks = mod.extract_pages(result)[0].blocks
+        assert any(b.kind == "image" for b in blocks), modname
+
+async def test_export_md_layout_fallback_keeps_image_marker(
+    auth_client, db_session, storage, monkeypatch
+):
+    """P1-R5: adapt_batch doc có image rỗng → export md-layout LLM-down
+    → marker ảnh sống trong md fallback (không crash, không mất ảnh)."""
+    from app.services.kaggle_orchestrator import adapt_batch_document
+    from tests.test_region_edit import _seed_done
+    doc = {"pages": [{"page": 1, "width": 800, "height": 600, "blocks": [
+        {"id": "b0", "type": "text", "bbox": [10, 10, 400, 40],
+         "text": "Nội dung"},
+        {"id": "b1", "type": "image", "bbox": [10, 60, 400, 200],
+         "text": ""},
+    ]}]}
+    job_id = await _seed_done(db_session, adapt_batch_document(doc))
+    fake_llm(
+        monkeypatch,
+        [httpx.ConnectError("refused"), httpx.ConnectError("refused")],
+    )
+    r = await auth_client.post(
+        f"/api/jobs/{job_id}/export", json={"fmt": "md-layout"}
+    )
+    assert r.status_code == 200, r.text
+    md = (await storage.get(f"exports/{job_id}/md-layout")).decode("utf-8")
+    assert "Nội dung" in md
+    assert "**[Hình ảnh chưa trích xuất: vùng b1]**" in md

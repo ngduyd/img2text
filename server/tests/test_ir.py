@@ -253,3 +253,43 @@ class TestValidateIR:
         result = validate_ir(ir, _ocr_result())
         assert len(result.pages[0].content[0].children) == 1
         assert result.pages[0].content[0].children[0].id == "node_010"
+
+
+def _ocr_with_image() -> dict:
+    """OCR + 1 image region (verdict marker, text rỗng)."""
+    return {
+        "pages": [
+            {
+                "index": 0,
+                "width": 800,
+                "height": 600,
+                "regions": [
+                    {"id": "r0", "bbox": [1, 2, 30, 40], "text": "Hello"},
+                    {"id": "r1", "bbox": [5, 6, 70, 80], "text": "World"},
+                    {"id": "r2", "bbox": [5, 90, 70, 150], "text": "",
+                     "verdict": "image_unextractable", "placeholder": True},
+                ],
+            }
+        ]
+    }
+
+class TestCoverageImageRegion:
+    """P1-R4b: LLM KHÔNG bắt buộc cover image region (prompt không đổi);
+    text region vẫn bắt buộc."""
+
+    def test_image_region_not_required_in_coverage(self):
+        ir = _valid_ir()  # cover r0 + r1, bỏ r2 (image)
+        doc = validate_ir(ir, _ocr_with_image())
+        assert doc.pages[0]
+
+    def test_text_region_still_required(self):
+        ir = _valid_ir()
+        ir["pages"][0]["header"][0]["source_block_ids"] = []  # bỏ r0
+        with pytest.raises(IRValidationError, match="r0"):
+            validate_ir(ir, _ocr_with_image())
+
+    def test_image_region_as_source_id_accepted(self):
+        """LLM cover image region → source id hợp lệ (không reject)."""
+        ir = _valid_ir()
+        ir["pages"][0]["content"][0]["source_block_ids"] = ["r1", "r2"]
+        validate_ir(ir, _ocr_with_image())

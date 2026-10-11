@@ -45,7 +45,7 @@ from sqlalchemy import func, select, update
 
 from app.core.config import settings
 from app.core.models import Job
-from app.core.schemas import ResultBody
+from app.core.schemas import IMAGE_MARKER, ResultBody
 from app.services.job_results import store_batch_result
 from app.services.runtime_settings import get_runtime_setting
 
@@ -67,9 +67,8 @@ BATCH_MODEL_VERSION = "PaddleOCR-VL-1.5-0.9B"
 # per-block markdown prefixes (batch doc_title → H1, paragraph_title → H2;
 # table/text → raw — block.text is already HTML for tables)
 _MD_PREFIX = {"doc_title": "# ", "paragraph_title": "## "}
-# mirror deploy/kaggle/files/pipeline.py _MARKER (= routers/exports.py
-# _MARKER) — server cannot import deploy scripts.
-_IMAGE_MARKER = "**[Hình ảnh chưa trích xuất: vùng {region_id}]**"
+# mirror deploy/kaggle/files/pipeline.py _MARKER — server cannot import deploy
+# scripts; marker chữ nằm ở app.core.schemas.IMAGE_MARKER (dùng chung exports/render)
 
 _last_spawn = 0.0
 # ceiling: persistent ingest failures for one ref → drop instead of looping
@@ -253,7 +252,7 @@ def adapt_batch_document(doc: dict) -> dict:
             if is_image:
                 # same marker as deploy/kaggle pipeline.py → exports.py
                 # _materialize_crops rewrites it into the cached crop
-                md_parts.append(_IMAGE_MARKER.format(region_id=rid))
+                md_parts.append(IMAGE_MARKER.format(region_id=rid))
             else:
                 md_parts.append(_MD_PREFIX.get(b.get("type"), "") + text)
         page_md = "\n\n".join(md_parts)

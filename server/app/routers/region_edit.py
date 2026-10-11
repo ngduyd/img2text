@@ -15,7 +15,7 @@ from app.core.db import get_session
 from app.core.deps import get_current_user
 from app.core.models import User
 from app.routers.exports import current_markdown, find_region
-from app.routers.jobs import _job_or_403, bump_text_after_edit
+from app.routers.jobs import _job_or_403, _text_bytes, bump_text_after_edit
 from app.services.storage import StorageDriver, get_storage
 
 MAX_REGION_TEXT_CHARS = 10_000
@@ -54,6 +54,8 @@ async def edit_region_text(
         raise HTTPException(status_code=404, detail="region not found")
     old = region.get("text") or ""
     new = body.text
+    # P1-R1: capture text gốc TRƯỚC mutate → seed v1 giữ bản trước edit
+    pre_bytes = _text_bytes(result)
     region["text"] = new
     markdown_replaced = False
     if old and old != new:
@@ -63,7 +65,7 @@ async def edit_region_text(
             markdown_replaced = True
     job.result = result
     # P1-2: bump text_version + text snapshot → stale badge + lịch sử thấy edit
-    await bump_text_after_edit(session, storage, job)
+    await bump_text_after_edit(session, storage, job, seed_bytes=pre_bytes)
     # cache invalidation: exported md must reflect the edit (Plan D binding,
     # same as patch_content); crops untouched — bboxes unchanged
     await storage.delete_prefix(f"exports/{id}/")
