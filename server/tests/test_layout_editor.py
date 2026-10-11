@@ -303,7 +303,8 @@ async def test_build_docx_overrides_reach_table_cells(
         "text": "<table><tr><td>A</td><td>B</td></tr></table>",
         "align": "left",
         "indent": 0,
-        "source_block_ids": ["r1"],
+        # coverage: r1 đã dùng ở node_002 — table node không dùng lại
+        "source_block_ids": [],
         "children": [],
     })
     fake_llm(monkeypatch, [

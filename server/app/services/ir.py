@@ -206,6 +206,34 @@ def _check_source_ids(nodes: list[NodeIR], valid_ids: set[str]) -> None:
         if node.children:
             _check_source_ids(node.children, valid_ids)
 
+def _collect_source_ids(nodes: list[NodeIR], out: list[str]) -> None:
+    """Every source_block_id qua mọi node (kể cả children) — coverage check."""
+    for node in nodes:
+        out.extend(node.source_block_ids)
+        if node.children:
+            _collect_source_ids(node.children, out)
+
+def _check_coverage(ir: DocumentIR, valid_ids: set[str]) -> None:
+    """P0-B: mỗi OCR region phải được dùng exactly-once — LLM bỏ block =
+    mất chữ im im, render fallback heuristic. Thiếu/trùng → raise, nêu id."""
+    used: list[str] = []
+    for page in ir.pages:
+        _collect_source_ids(page.header, used)
+        _collect_source_ids(page.content, used)
+        _collect_source_ids(page.footer, used)
+    counts: dict[str, int] = {}
+    for bid in used:
+        counts[bid] = counts.get(bid, 0) + 1
+    missing = sorted(valid_ids - counts.keys())
+    duplicated = sorted(b for b, n in counts.items() if n > 1)
+    if missing or duplicated:
+        parts = []
+        if missing:
+            parts.append(f"thiếu (OCR region không được dùng): {', '.join(missing)}")
+        if duplicated:
+            parts.append(f"trùng (dùng >1 lần): {', '.join(duplicated)}")
+        raise IRValidationError("Coverage sai — " + "; ".join(parts))
+
 
 def validate_ir(ir: dict, ocr_result: dict) -> DocumentIR:
     """Validate IR dict against OCR result → DocumentIR.
@@ -252,6 +280,8 @@ def validate_ir(ir: dict, ocr_result: dict) -> DocumentIR:
         _check_source_ids(page.header, valid_ocr_ids)
         _check_source_ids(page.content, valid_ocr_ids)
         _check_source_ids(page.footer, valid_ocr_ids)
+    # P0-B: coverage — mọi OCR id exactly-once (thiếu = mất chữ, trùng = lặp)
+    _check_coverage(doc, valid_ocr_ids)
 
     # Check page_number >= 1
     for page in doc.pages:

@@ -214,14 +214,40 @@ async def test_auto_gen_snapshots_previous_md_layout(
     monkeypatch.setattr(exports, "_llm_docx_export", fake_docx)
     job = await db_session.get(Job, jid)
     assert await exports.auto_generate_output(job, st) is True
-    # S3Driver.put dedupes existing keys → artifact keeps old bytes;
-    # the snapshot is what preserves them in version history
-    assert await st.get(f"exports/{jid}/md-layout") == b"# ban cu"
+    # P0-A: put dedupes → delete_prefix trước put → artifact = bytes mới;
+    # bản cũ được snapshot xuống version history TRƯỚC khi ghi đè
+    assert await st.get(f"exports/{jid}/md-layout") == b"# ban moi"
     items = (
         await auth_client.get(f"/api/jobs/{jid}/versions?kind=md-layout")
     ).json()["items"]
     assert [i["version"] for i in items] == [1]  # pre-overwrite snapshot
     assert await st.get(f"versions/{jid}/md-layout/1") == b"# ban cu"
+
+async def test_auto_gen_overwrites_stale_artifacts(
+    app, done_job_with_result, db_session, monkeypatch
+):
+    """P0-A: S3Driver.put dedupes → delete_prefix TRƯỚC put → retry-layout
+   /auto-gen ghi đè artifact cũ (md-layout + docx-layout)."""
+    from app.core.models import Job
+    from app.routers import exports
+
+    jid = done_job_with_result
+    st = app.state.storage
+    await st.put(f"exports/{jid}/md-layout", b"# ban cu")
+    await st.put(f"exports/{jid}/docx-layout", b"docx ban cu")
+
+    async def fake_md(job_id, job, ir_sink=None):
+        return b"# ban moi"
+
+    async def fake_docx(job_id, job, ir_sink=None):
+        return b"docx ban moi"
+
+    monkeypatch.setattr(exports, "_llm_md_export", fake_md)
+    monkeypatch.setattr(exports, "_llm_docx_export", fake_docx)
+    job = await db_session.get(Job, jid)
+    assert await exports.auto_generate_output(job, st) is True
+    assert await st.get(f"exports/{jid}/md-layout") == b"# ban moi"
+    assert await st.get(f"exports/{jid}/docx-layout") == b"docx ban moi"
 
 async def test_restore_layout_snapshots_pre_overwrite(
     auth_client, app, done_job_with_result

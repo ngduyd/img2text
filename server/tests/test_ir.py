@@ -92,6 +92,20 @@ class TestValidateIR:
         with pytest.raises(IRValidationError, match="source_block_ids"):
             validate_ir(ir, _ocr_result())
 
+    def test_missing_ocr_region_rejected(self):
+        """P0-B: IR bỏ 1 OCR region → mất chữ im im → raise, nêu id thiếu."""
+        ir = _valid_ir()
+        ir["pages"][0]["header"][0]["source_block_ids"] = []  # bỏ r0
+        with pytest.raises(IRValidationError, match="r0"):
+            validate_ir(ir, _ocr_result())
+
+    def test_duplicate_source_id_rejected(self):
+        """P0-B: 1 OCR id dùng 2 lần → raise, nêu id trùng."""
+        ir = _valid_ir()
+        ir["pages"][0]["content"][0]["source_block_ids"] = ["r1", "r0"]
+        with pytest.raises(IRValidationError, match="r0"):
+            validate_ir(ir, _ocr_result())
+
     def test_cycle_rejected(self):
         ir = _valid_ir()
         # Create cycle: node_003 → node_004 → node_003
@@ -139,18 +153,21 @@ class TestValidateIR:
             validate_ir(ir, _ocr_result())
 
     def test_empty_ir_valid(self):
+        # coverage: OCR không region nào → IR rỗng là hợp lệ
+        ocr = {"pages": [{"index": 0, "width": 800, "height": 600, "regions": []}]}
         ir = {
             "document_id": "doc_002",
             "schema_version": "1.0",
             "pages": [],
         }
-        result = validate_ir(ir, _ocr_result())
+        result = validate_ir(ir, ocr)
         assert result.pages == []
 
     def test_fill_text_from_ocr_when_llm_omits(self):
         """LLM structurize không viết lại text → node.text rỗng. validate_ir
         phải join text từ OCR qua source_block_ids (render cần text thật)."""
         ir = _valid_ir()
+        ir["pages"][0]["header"][0]["source_block_ids"] = []  # coverage: r0 do content dùng
         node = ir["pages"][0]["content"][0]
         node["text"] = ""  # LLM bỏ trống
         node["source_block_ids"] = ["r0", "r1"]
@@ -184,18 +201,24 @@ class TestValidateIR:
     def test_bbox_auto_union_from_source_ids(self):
         """Thiếu bbox → union từ source_block_ids (x1=min, y1=min, x2=max, y2=max)."""
         ir = _valid_ir()
+        ir["pages"][0]["header"][0]["source_block_ids"] = []  # coverage: không trùng r0
         ir["pages"][0]["content"][0]["source_block_ids"] = ["r0", "r1"]
         result = validate_ir(ir, _ocr_result())
         assert result.pages[0].content[0].bbox == [1, 2, 70, 80]
 
     def test_bbox_none_when_no_source_ids(self):
+        # coverage: cả OCR lẫn IR không region nào → node không source → bbox None
+        ocr = {"pages": [{"index": 0, "width": 800, "height": 600, "regions": []}]}
         ir = _valid_ir()
+        ir["pages"][0]["header"][0]["source_block_ids"] = []
         ir["pages"][0]["content"][0]["source_block_ids"] = []
-        result = validate_ir(ir, _ocr_result())
+        result = validate_ir(ir, ocr)
         assert result.pages[0].content[0].bbox is None
 
     def test_bbox_children_filled(self):
         ir = _valid_ir()
+        # coverage: r0 ở header, r1 ở child (content không dùng lại)
+        ir["pages"][0]["content"][0]["source_block_ids"] = []
         ir["pages"][0]["content"][0]["children"] = [
             {
                 "id": "node_011",
@@ -213,6 +236,8 @@ class TestValidateIR:
 
     def test_children_validated_recursively(self):
         ir = _valid_ir()
+        # coverage: r0 ở header, r1 ở child (content không dùng lại)
+        ir["pages"][0]["content"][0]["source_block_ids"] = []
         ir["pages"][0]["content"][0]["children"] = [
             {
                 "id": "node_010",
@@ -221,7 +246,7 @@ class TestValidateIR:
                 "text": "child text",
                 "align": "left",
                 "indent": 0,
-                "source_block_ids": ["r0"],
+                "source_block_ids": ["r1"],
                 "children": [],
             }
         ]

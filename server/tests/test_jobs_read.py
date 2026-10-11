@@ -120,6 +120,45 @@ async def test_detail_owner_ok(auth_client, seed_job):
 async def test_detail_other_user_403(auth_client, other_client, seed_job):
     assert (await other_client.get(f"/api/jobs/{seed_job}")).status_code == 403
 
+# --- P0-D: GET job → text_version + stale_layouts (web contract) ---
+
+async def test_detail_stale_layouts_when_based_on_behind(
+    auth_client, app, seed_job, db_session
+):
+    """Layout version row based_on_text_version < job.text_version → kind có mặt."""
+    from app.services.doc_versions import save_version
+
+    jid = seed_job
+    await app.state.storage.put(f"exports/{jid}/md-layout", b"# x")
+    await save_version(
+        app.state.storage, jid, "md-layout", b"# x", 0, session=db_session
+    )
+    job = await db_session.get(Job, jid)
+    job.text_version = 1  # text edit sau khi layout render
+    await db_session.commit()
+    body = (await auth_client.get(f"/api/jobs/{jid}")).json()
+    assert body["text_version"] == 1
+    assert body["stale_layouts"] == ["md"]
+
+async def test_detail_stale_layouts_empty_when_current_or_absent(
+    auth_client, app, seed_job, db_session
+):
+    """Không có row → []; based_on == text_version → []."""
+    from app.services.doc_versions import save_version
+
+    jid = seed_job
+    # không layout row → không tính stale
+    body = (await auth_client.get(f"/api/jobs/{jid}")).json()
+    assert body["text_version"] == 0
+    assert body["stale_layouts"] == []
+    # row based_on == text_version → không stale
+    await app.state.storage.put(f"exports/{jid}/md-layout", b"# x")
+    await save_version(
+        app.state.storage, jid, "md-layout", b"# x", 0, session=db_session
+    )
+    body = (await auth_client.get(f"/api/jobs/{jid}")).json()
+    assert body["stale_layouts"] == []
+
 
 async def test_file_presign_owner(auth_client, seed_job):
     r = await auth_client.get(f"/api/jobs/{seed_job}/file")
