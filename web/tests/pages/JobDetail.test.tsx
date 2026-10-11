@@ -476,7 +476,8 @@ it("btn-version-history lists versions: v{version} + kind + time + Hiện tại 
   const old = screen.getByTestId("version-row-md-layout-2");
   expect(old).toHaveTextContent("v2");
   expect(old).toHaveTextContent("md-layout");
-  expect(within(old).queryByText("Hiện tại")).not.toBeInTheDocument();
+  // P2: max trong kind cũng "Hiện tại" (md-layout v2 là current của kind md-layout).
+  expect(within(old).getByText("Hiện tại")).toBeInTheDocument();
 });
 
 it("btn-version-restore-{kind}-{version} calls api.restoreVersion + toast + invalidate job & versions", async () => {
@@ -498,8 +499,8 @@ it("btn-version-restore-{kind}-{version} calls api.restoreVersion + toast + inva
 });
 
 /** P0-C red: UNIQUE(job_id,kind,version) → version number restart per kind.
- *  2 kind cùng version number → testid phải khác nhau; "Hiện tại" CHỈ cho text. */
-it("versions same number across kinds: unique testids, only text row badges Hiện tại", async () => {
+ *  2 kind cùng version number → testid phải khác nhau; mỗi kind badge max version của nó. */
+it("versions same number across kinds: unique testids, each kind's max row badges Hiện tại", async () => {
   mockJob({ ...DONE_JOB, text_version: 1 });
   vi.mocked(api.listVersions).mockResolvedValue({
     items: [
@@ -512,9 +513,27 @@ it("versions same number across kinds: unique testids, only text row badges Hi�
   const textRow = await screen.findByTestId("version-row-text-1");
   const mdRow = screen.getByTestId("version-row-md-layout-1");
   expect(within(textRow).getByText("Hiện tại")).toBeInTheDocument();
-  expect(within(mdRow).queryByText("Hiện tại")).not.toBeInTheDocument();
+  expect(within(mdRow).getByText("Hiện tại")).toBeInTheDocument();
   expect(screen.getByTestId("btn-version-restore-text-1")).toBeInTheDocument();
   expect(screen.getByTestId("btn-version-restore-md-layout-1")).toBeInTheDocument();
+});
+
+/** P2: server snapshot kind "md" khi region edit → current md version phải được mark.
+ *  Rule: "Hiện tại" = version == MAX trong cùng kind (mọi kind, kể cả md). */
+it("md kind: only max md version row badges Hiện tại (region-edit snapshot)", async () => {
+  mockJob({ ...DONE_JOB, text_version: 3 });
+  vi.mocked(api.listVersions).mockResolvedValue({
+    items: [
+      { id: 31, kind: "md", version: 2, based_on_text_version: 3, detached: false, created_at: "2026-01-03T00:00:00Z" },
+      { id: 30, kind: "md", version: 1, based_on_text_version: 2, detached: false, created_at: "2026-01-01T00:00:00Z" },
+      { id: 29, kind: "text", version: 3, based_on_text_version: 3, detached: false, created_at: "2026-01-02T03:04:05Z" },
+    ],
+  });
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await userEvent.setup().click(await screen.findByTestId("btn-version-history"));
+  expect(within(await screen.findByTestId("version-row-md-2")).getByText("Hiện tại")).toBeInTheDocument();
+  expect(within(screen.getByTestId("version-row-md-1")).queryByText("Hiện tại")).not.toBeInTheDocument();
+  expect(within(screen.getByTestId("version-row-text-3")).getByText("Hiện tại")).toBeInTheDocument();
 });
 
 /** P1: panel không nuốt loading/error — skeleton lúc fetch, role=alert khi fail. */
