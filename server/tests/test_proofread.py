@@ -251,6 +251,32 @@ async def test_run_proofread_rerun_keeps_accepted_rows(
         "giu": "accepted", "chào": "pending",
     }
 
+async def test_run_proofread_rerun_dedupes_vs_accepted(
+    monkeypatch, db_session, done_job_with_result
+):
+    """P2: rerun trả đúng (phrase, suggestion) đã accepted → KHÔNG tạo
+    row thứ 2 (chỉ 1 row, giữ accepted)."""
+    job = await _job(db_session, done_job_with_result)
+    db_session.add(
+        OcrSuggestion(
+            job_id=job.id, page_index=0, start=0, end=1,
+            original="chào", suggestion="chao", reason="dấu",
+            status="accepted",
+        )
+    )
+    await db_session.commit()
+    fake_llm(
+        monkeypatch,
+        [_llm_response([{"phrase": "chào", "suggestion": "chao", "reason": "dấu"}])],
+    )
+    assert await run_proofread(db_session, job) == 0  # 0 row mới
+    rows = (
+        await db_session.execute(
+            select(OcrSuggestion).where(OcrSuggestion.job_id == job.id)
+        )
+    ).scalars().all()
+    assert len(rows) == 1 and rows[0].status == "accepted"
+
 async def test_run_proofread_llm_down_warns_and_keeps_job(
     monkeypatch, db_session, done_job_with_result, caplog
 ):

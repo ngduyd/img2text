@@ -24,7 +24,7 @@ import unicodedata
 
 import httpx
 from httpx import AsyncClient
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -193,6 +193,19 @@ async def run_proofread(session: AsyncSession, job: Job) -> int:
         return 0
     started = time.perf_counter()
     rows: list[OcrSuggestion] = []
+    # P2-9: dedupe batch mới vs accepted giữ — cùng (phrase,suggestion) đã
+    # accepted → skip, không tạo row thứ 2.
+    accepted = {
+        (r.original, r.suggestion)
+        for r in (
+            await session.execute(
+                select(OcrSuggestion).where(
+                    OcrSuggestion.job_id == job.id,
+                    OcrSuggestion.status == "accepted",
+                )
+            )
+        ).scalars()
+    }
     for index, page in enumerate(pages):
         text = _page_text(page)
         if not text.strip():
@@ -212,7 +225,7 @@ async def run_proofread(session: AsyncSession, job: Job) -> int:
             if not phrase or not suggestion:
                 continue
             key = (phrase, suggestion)
-            if key in seen:
+            if key in seen or key in accepted:
                 continue
             seen.add(key)
             hit = locate(text, phrase)
@@ -231,8 +244,7 @@ async def run_proofread(session: AsyncSession, job: Job) -> int:
             )
     # P2-7: rerun giữ status accepted (quyết định người dùng không mất);
     # pending/rejected cũ drop → kết quả mới thay thế.
-    # ponytail: accepted trùng phrase với kết quả mới (edge, content chưa sửa
-    # → locate vẫn hit) sẽ có 2 dòng — gộp khi UI list bị phàn nàn.
+    # P2-9: batch mới đã dedupe vs accepted ở trên → không nhân đôi row.
     await session.execute(
         delete(OcrSuggestion).where(
             OcrSuggestion.job_id == job.id,
