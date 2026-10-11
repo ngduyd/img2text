@@ -18,6 +18,7 @@ from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import get_current_user, get_runner_key, require_ocr
 from app.core.limiter import DailyCounter
@@ -43,7 +44,7 @@ UPLOAD_DAILY_LIMIT = 20
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 # Spec 2026-10-10 sanity bound (was 50 on the removed server-side parse):
 # the client counts pages with pdf.js; presign/create check the METADATA.
-MAX_PDF_PAGES = 100
+# P2-5: cap = settings.max_pages (1 config; default = kernel hard cap 100).
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "pdf"}
 # ext → canonical Content-Type (R2): presign binds the declared type to the
 # extension allowlist; the Plan V download route reuses the same map.
@@ -172,13 +173,13 @@ def _validate_output_settings(output_format: str, mode: str) -> None:
         raise HTTPException(status_code=422, detail="Chế độ xử lý không hợp lệ.")
 
 def _bad_page_count(ext: str, page_count: int) -> str | None:
-    """pdf → ≤ MAX_PDF_PAGES; image = 1 (rasterization always yields one
-    page). None = ok."""
+    """pdf → ≤ settings.max_pages (P2-5: 1 config); image = 1 (rasterization
+    always yields one page). None = ok."""
     if page_count < 1:
         return "Số trang không hợp lệ."
     if ext == "pdf":
-        if page_count > MAX_PDF_PAGES:
-            return f"File PDF quá {MAX_PDF_PAGES} trang."
+        if page_count > settings.max_pages:
+            return f"File PDF quá {settings.max_pages} trang."
     elif page_count != 1:
         return "Số trang không hợp lệ."
     return None

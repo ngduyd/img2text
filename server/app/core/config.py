@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     # Batch one-run (spec 2026-10-09): max queued jobs staged into ONE kernel
     # run (env KAGGLE_BATCH_MAX_JOBS; extra jobs wait for the next tick).
     kaggle_batch_max_jobs: int = 20
+    # P2-5: unified page cap — MỘT config cho presign/create (server);
+    # default = kernel hard cap (deploy/kaggle MAX_PDF_PAGES=100). Web upload
+    # UI cap (25) thuộc lane web — server chỉ expose config này.
+    max_pages: int = 100
     kaggle_stage_src: str = "deploy/kaggle"
     kaggle_stage_dir: str = "/tmp/img2text-kaggle-kernel"
     # Plan K5: orchestration mode. "batch" (default) = backend drives the
