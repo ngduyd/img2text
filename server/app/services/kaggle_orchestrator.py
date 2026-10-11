@@ -225,8 +225,9 @@ def adapt_batch_document(doc: dict) -> dict:
     """result.json (K4 notebook document shape) → ResultBody payload (spec §4,
     validated by schemas.ResultBody before ingest).
 
-    Batch-grade ceilings: whole file → pages 1..N (preprocess ignored — caller
-    logs the KAGGLE_MODE=loop hint); no dual-branch verdicts → verdict "ok" /
+    Batch-grade ceilings: whole file → pages 1..N (preprocess propagate qua
+    manifest per job — P2-6; kernel batch chưa áp dụng → caller logs the
+    KAGGLE_MODE=loop hint); no dual-branch verdicts → verdict "ok" /
     page_flag "ok"; image blocks KEPT as verdict image_unextractable + marker
     (crop flow downstream — pixels never leave the kernel, only bbox);
     empty-text non-image blocks dropped; table block text is already HTML,
@@ -468,6 +469,12 @@ async def _spawn_batch_run(api, session_factory, jobs: list[Job]) -> bool:
                     "filename": f"{job.id}__{Path(job.storage_key).name}",
                     # content-addressed key uploads/{sha256}.{ext} → the hash
                     "sha256": Path(job.storage_key).stem,
+                    # P2-6: preprocess propagate → manifest → pipeline (kernel
+                    # batch chưa đọc key này — deploy lane; extra key không
+                    # phá contract: entries khác giữ nguyên)
+                    "preprocess": (
+                        json.loads(job.preprocess) if job.preprocess else None
+                    ),
                 }
                 for job in jobs
             ]
@@ -603,7 +610,8 @@ async def _ingest_batch_result(session_factory, job_id: int, out_dir: Path) -> N
             return
         if job.preprocess:
             logger.warning(
-                "kaggle batch bỏ qua preprocess — dùng worker loop "
+                "kaggle batch bỏ qua preprocess (đã propagate qua manifest, "
+                "kernel batch chưa đọc) — dùng worker loop "
                 "(KAGGLE_MODE=loop) khi cần"
             )
         body = ResultBody.model_validate(adapt_batch_document(doc))

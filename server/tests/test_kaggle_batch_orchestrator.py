@@ -341,6 +341,20 @@ async def test_batch_preprocess_ceiling_warns_and_ingests_whole_file(
     assert job.status == "done"
     assert len(job.result["pages"]) == 2  # whole file, selection ignored
 
+async def test_batch_manifest_carries_preprocess(
+    kaggle_batch_env, api, storage_env, seed_job, db_session
+):
+    """P2-6: preprocess propagate qua manifest → pipeline — batch mode không
+    còn im lặng nuốt preprocess (kernel đọc key này khi deploy lane hỗ trợ;
+    extra key không phá contract manifest hiện tại)."""
+    job = await db_session.get(Job, seed_job)
+    job.preprocess = '{"pages": [1], "rotate": {"1": 90}}'
+    await db_session.commit()
+    assert await orch.ensure_worker(SessionLocal) is True  # spawn
+    creates = [c for c in api.calls if c[0] == "dataset_create_new"]
+    entries = json.loads(creates[0][2]["manifest.json"])["jobs"]
+    assert entries[0]["preprocess"] == {"pages": [1], "rotate": {"1": 90}}
+
 async def test_batch_ingest_marks_rendering_then_done_after_auto_output(
     kaggle_batch_env, api, storage_env, seed_job, db_session, monkeypatch
 ):
