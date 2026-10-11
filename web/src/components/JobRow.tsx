@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { FileText, Image as ImageIcon } from "lucide-react";
+import { Download, FileText, Image as ImageIcon, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../api/client";
 import type { JobListItem } from "../api/types";
@@ -91,7 +91,8 @@ export default function JobRow({
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-2">
+      {/* 320px: wrap + justify-end; nhãn dài → icon+aria-label dưới sm (label ẩn sm:inline). */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <Badge tone={STATUS_TONE[job.status]} testid={`badge-${job.id}`}>
           {STATUS_TEXT[job.status]}
         </Badge>
@@ -108,6 +109,8 @@ export default function JobRow({
             testid={`btn-dl-original-${job.id}`}
             size="sm"
             variant="secondary"
+            title="Tải bản gốc"
+            aria-label="Tải bản gốc"
             onClick={async () => {
               // P2: same-origin blob download (presigned host unreachable via port-forward).
               // R59a: download failure surfaces as toast (no inline slot here).
@@ -126,7 +129,8 @@ export default function JobRow({
               }
             }}
           >
-            Tải bản gốc
+            <Download className="h-4 w-4 sm:hidden" aria-hidden="true" />
+            <span className="hidden sm:inline">Tải bản gốc</span>
           </Button>
         )}
         {job.status === "failed" && (
@@ -134,10 +138,13 @@ export default function JobRow({
             testid={`btn-retry-job-${job.id}`}
             size="sm"
             variant="secondary"
+            title="Chạy lại"
+            aria-label="Chạy lại"
             disabled={retry.isPending}
             onClick={() => retry.mutate()}
           >
-            Chạy lại
+            <RotateCcw className="h-4 w-4 sm:hidden" aria-hidden="true" />
+            <span className="hidden sm:inline">Chạy lại</span>
           </Button>
         )}
         {cancellable && (
