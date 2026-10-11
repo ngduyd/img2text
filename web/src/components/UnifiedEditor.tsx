@@ -522,7 +522,7 @@ export default function UnifiedEditor({
               {pendingCount > 0 && (
                 <span
                   data-testid="proofread-badge"
-                  className="ml-1 rounded-full bg-error px-1.5 text-xs font-semibold text-white"
+                  className="ml-1 rounded-full bg-error/15 px-1.5 text-xs font-semibold text-error"
                 >
                   {pendingCount}
                 </span>

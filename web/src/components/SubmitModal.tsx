@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { JobMode } from "../api/types";
 import Button from "./ui/Button";
+import { useDialogA11y } from "./ui/useDialogA11y";
 
 /** output_format server nhận: "md" | "docx" (jobs.py). */
 export type SubmitFormat = "md" | "docx";
@@ -17,15 +18,25 @@ export default function SubmitModal({
 }) {
   const [mode, setMode] = useState<JobMode>("layout");
   const [format, setFormat] = useState<SubmitFormat>("md");
+  const panelRef = useDialogA11y<HTMLDivElement>(open, onCancel);
   if (!open) return null;
   return (
     <div
       data-testid="submit-modal"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
     >
-      <div className="w-full max-w-sm rounded-card border border-border bg-surface p-4 text-left">
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="submit-modal-title"
+        tabIndex={-1}
+        className="w-full max-w-sm rounded-card border border-border bg-surface p-4 text-left outline-none"
+      >
         <fieldset className="mb-3">
-          <legend className="mb-2 text-sm font-medium">Chế độ xử lý</legend>
+          <legend id="submit-modal-title" className="mb-2 text-sm font-medium">
+            Chế độ xử lý
+          </legend>
           <label className="mr-4 inline-flex cursor-pointer items-center gap-1.5 text-sm">
             <input
               type="radio"

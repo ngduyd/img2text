@@ -202,3 +202,11 @@ it("renders row-select checkbox and fires onToggle with the job id", async () =>
   await userEvent.click(box);
   expect(onToggle).toHaveBeenCalledWith(7);
 });
+
+it("cụm actions flex-wrap + nút Tải bản gốc icon-only <sm (aria-label)", () => {
+  renderRow(job({ status: "done" }));
+  const dl = screen.getByTestId("btn-dl-original-7");
+  expect(dl).toHaveAttribute("aria-label", "Tải bản gốc");
+  expect(dl.querySelector("svg")).not.toBeNull();
+  expect(dl.parentElement).toHaveClass("flex-wrap", "justify-end");
+});

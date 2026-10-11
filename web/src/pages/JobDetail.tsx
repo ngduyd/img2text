@@ -115,10 +115,10 @@ export default function JobDetail() {
 
   return (
     <main id="main" className="mx-auto max-w-[1400px] p-4 sm:p-6">
-      {/* Sticky dưới AppNav (top-14, md:top-16): title + status + actions luôn thấy khi đọc doc dài. */}
+      {/* Header 3-4 dòng mobile — sticky che viewport đọc doc dài; chỉ sticky ≥lg (dưới AppNav h-16). */}
       <header
         data-testid="job-header"
-        className="sticky top-14 z-10 -mx-4 mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-surface/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 md:top-16"
+        className="lg:sticky lg:top-16 z-10 -mx-4 mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-surface/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6"
       >
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           <Link

@@ -38,7 +38,8 @@ export default function StatusFilterTabs({
   for (const j of items) counts[j.status] += 1;
 
   return (
-    <div className="flex flex-wrap gap-1">
+    // Mobile: 6 chip cuộn ngang (không đẩy nút upload khỏi fold); md+ wrap.
+    <div className="flex gap-1 overflow-x-auto whitespace-nowrap [&>*]:shrink-0 md:flex-wrap md:overflow-visible">
       {TABS.map(({ key, label }) => (
         <Button
           key={key}

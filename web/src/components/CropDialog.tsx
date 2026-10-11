@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Button from "./ui/Button";
+import { useDialogA11y } from "./ui/useDialogA11y";
 
 /** Rects below this (image px) are ignored — accidental micro-drags. */
 const MIN_RECT = 10;
@@ -30,6 +31,7 @@ function errorOverlay(): { fill: string; stroke: string } {
  * Spec U4: crop per-image trong multi-file flow — drag-rect trên canvas → JPEG blob.
  * Đơn giản hơn ImageCropWizard cũ (bỏ rotate/submit upload): dialog chỉ trả blob.
  * ponytail: no-rect → trả blob gốc (giống R62); thêm rotate nếu user hỏi.
+ * ponytail: keyboard rect editing (arrow-nudge) deferred — drag + nút chọn toàn bộ ảnh đủ.
  */
 export default function CropDialog({
   blob,
@@ -48,6 +50,7 @@ export default function CropDialog({
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const dragRef = useRef<{ sx: number; sy: number } | null>(null);
+  const panelRef = useDialogA11y<HTMLDivElement>(true, onCancel);
 
   useEffect(() => {
     const u = URL.createObjectURL(blob);
@@ -115,8 +118,17 @@ export default function CropDialog({
       data-testid="crop-dialog"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
     >
-      <div className="w-full max-w-lg rounded-card border border-border bg-surface p-4 text-left">
-        <p className="mb-2 text-sm font-medium">Chọn vùng cần cắt · {name}</p>
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="crop-dialog-title"
+        tabIndex={-1}
+        className="w-full max-w-lg rounded-card border border-border bg-surface p-4 text-left outline-none"
+      >
+        <p id="crop-dialog-title" className="mb-2 text-sm font-medium">
+          Chọn vùng cần cắt · {name}
+        </p>
         {/* Measurement-only — canvas is the sole visible surface. */}
         <img
           ref={imgRef}
@@ -154,7 +166,17 @@ export default function CropDialog({
             dragRef.current = null;
           }}
         />
-        <div className="mt-3 flex justify-end gap-2">
+        <div className="mt-3 flex items-center justify-end gap-2">
+          <Button
+            testid="btn-crop-full"
+            variant="ghost"
+            size="sm"
+            className="mr-auto"
+            disabled={!dims}
+            onClick={() => dims && setRect({ x: 0, y: 0, w: dims.w, h: dims.h })}
+          >
+            Chọn toàn bộ ảnh
+          </Button>
           <Button testid="crop-cancel" variant="ghost" onClick={onCancel}>
             Hủy
           </Button>

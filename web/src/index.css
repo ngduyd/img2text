@@ -19,6 +19,7 @@
   --color-accent-text: var(--accent-text);
   --color-accent-contrast: var(--accent-contrast);
   --color-border: var(--border);
+  --color-paper: var(--paper);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-error: var(--error);

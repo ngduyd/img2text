@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { loadPdf } from "../lib/pdfjs";
 import Button from "./ui/Button";
+import { useDialogA11y } from "./ui/useDialogA11y";
 
 /** Entry MultiFileUpload truyền vào dialog chọn trang (1-based). */
 export interface PageSelectEntry {
@@ -28,6 +29,7 @@ export default function PageSelectDialog({
     entry.pages.length > 0 ? entry.pages : Array.from({ length: entry.numPages }, (_, i) => i + 1),
   );
   const canvasRefs = useRef<Array<HTMLCanvasElement | null>>([]);
+  const panelRef = useDialogA11y<HTMLDivElement>(true, onCancel);
 
   // Thumbnail render sau mount (refs đã gắn) — cancel flag chặn setState sau unmount.
   useEffect(() => {
@@ -59,8 +61,17 @@ export default function PageSelectDialog({
       data-testid="pages-dialog"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
     >
-      <div className="w-full max-w-lg rounded-card border border-border bg-surface p-4 text-left">
-        <p className="mb-2 text-sm font-medium">Chọn số trang · {entry.name}</p>
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pages-dialog-title"
+        tabIndex={-1}
+        className="w-full max-w-lg rounded-card border border-border bg-surface p-4 text-left outline-none"
+      >
+        <p id="pages-dialog-title" className="mb-2 text-sm font-medium">
+          Chọn số trang · {entry.name}
+        </p>
         <div
           data-testid="pages-grid"
           className="mb-4 mt-2 grid max-h-[60vh] grid-cols-3 gap-2 overflow-auto sm:grid-cols-4"
@@ -82,7 +93,7 @@ export default function PageSelectDialog({
                   ref={(el) => {
                     canvasRefs.current[n - 1] = el;
                   }}
-                  className="mb-1 h-auto w-full bg-white"
+                  className="mb-1 h-auto w-full bg-paper"
                 />
                 <span>Trang {n}</span>
               </button>

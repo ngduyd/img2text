@@ -265,7 +265,7 @@ export default function WordToolbar({ editor }: { editor: Editor | null }) {
     <div
       ref={rootRef}
       data-testid="word-toolbar"
-      className="sticky top-32 z-10 border-b border-border bg-surface py-2"
+      className="lg:sticky lg:top-32 z-10 border-b border-border bg-surface py-2"
     >
       <div className="relative flex items-center gap-2">
         <div
@@ -325,45 +325,49 @@ export default function WordToolbar({ editor }: { editor: Editor | null }) {
           >
             <Table2 className="h-4 w-4" aria-hidden="true" />
           </Button>
-          {ui?.inTable && (
-            <>
-              <CmdButton
-                editor={editor}
-                testid="word-tb-row-add"
-                title="Thêm hàng"
-                run={(e) => void e.chain().focus().addRowAfter().run()}
-              >
-                + Hàng
-              </CmdButton>
-              <CmdButton
-                editor={editor}
-                testid="word-tb-row-del"
-                title="Xóa hàng"
-                run={(e) => void e.chain().focus().deleteRow().run()}
-              >
-                - Hàng
-              </CmdButton>
-              <CmdButton
-                editor={editor}
-                testid="word-tb-col-add"
-                title="Thêm cột"
-                run={(e) => void e.chain().focus().addColumnAfter().run()}
-              >
-                + Cột
-              </CmdButton>
-              <CmdButton
-                editor={editor}
-                testid="word-tb-col-del"
-                title="Xóa cột"
-                run={(e) => void e.chain().focus().deleteColumn().run()}
-              >
-                - Cột
-              </CmdButton>
-            </>
-          )}
           {divider}
           <Group items={CMD_GROUPS[4]} editor={editor} ui={ui} />
         </div>
+        {/* Hàng 2: table row/col tách riêng — strip chính không quá ~15 control. */}
+        {ui?.inTable && (
+          <div
+            data-testid="word-tb-table-controls"
+            className="mt-2 flex items-center gap-2 whitespace-nowrap [&>*]:shrink-0"
+          >
+            <CmdButton
+              editor={editor}
+              testid="word-tb-row-add"
+              title="Thêm hàng"
+              run={(e) => void e.chain().focus().addRowAfter().run()}
+            >
+              + Hàng
+            </CmdButton>
+            <CmdButton
+              editor={editor}
+              testid="word-tb-row-del"
+              title="Xóa hàng"
+              run={(e) => void e.chain().focus().deleteRow().run()}
+            >
+              - Hàng
+            </CmdButton>
+            <CmdButton
+              editor={editor}
+              testid="word-tb-col-add"
+              title="Thêm cột"
+              run={(e) => void e.chain().focus().addColumnAfter().run()}
+            >
+              + Cột
+            </CmdButton>
+            <CmdButton
+              editor={editor}
+              testid="word-tb-col-del"
+              title="Xóa cột"
+              run={(e) => void e.chain().focus().deleteColumn().run()}
+            >
+              - Cột
+            </CmdButton>
+          </div>
+        )}
         {pickerOpen && (
           <div
             data-testid="word-tb-table-grid"

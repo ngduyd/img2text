@@ -250,3 +250,31 @@ it("click outside closes the popover (a11y)", async () => {
     expect(screen.queryByTestId("suggestion-popover-11")).not.toBeInTheDocument(),
   );
 });
+
+it("popover non-overflow: anchor giữa viewport → left-0 (không flip)", async () => {
+  const user = userEvent.setup();
+  const spy = vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+    x: 0, y: 0, top: 0, left: 100, right: 410, bottom: 0, width: 310, height: 20,
+    toJSON: () => ({}),
+  } as DOMRect);
+  renderWithSuggestions([pendingSuggestion({})]);
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  const pop = screen.getByTestId("suggestion-popover-11");
+  expect(pop.className).toContain("left-0");
+  expect(pop.className).not.toContain("right-0");
+  spy.mockRestore();
+});
+
+it("popover flip: anchor sát mép phải viewport → right-0 + max-w (không tràn)", async () => {
+  const user = userEvent.setup();
+  const spy = vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+    x: 0, y: 0, top: 0, left: 700, right: 1010, bottom: 0, width: 310, height: 20,
+    toJSON: () => ({}),
+  } as DOMRect);
+  renderWithSuggestions([pendingSuggestion({})]);
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  const pop = screen.getByTestId("suggestion-popover-11");
+  expect(pop.className).toContain("right-0 left-auto");
+  expect(pop.className).toContain("max-w-[calc(100vw-2rem)]");
+  spy.mockRestore();
+});

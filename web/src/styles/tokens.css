@@ -11,6 +11,8 @@
   /* Lighter accent for TEXT on dark surfaces (contrast ≥4.5: #1c64e4 = 3.3 on --surface). */
   --accent-text: #58a6ff; /* Accent — links, text accents */
   --border: #30363d; /* Whisper border — 1px structural lines */
+  /* Paper: canvas trang PDF/thumbnail — luôn trắng, không theo theme. */
+  --paper: #ffffff;
   --success: #3fb950;
   --warning: #d29922;
   --error: #f85149;

@@ -40,7 +40,8 @@ export function buildPreviewCss(o: PreviewOpts): string {
     );
   }
   if (o.tableBorders) {
-    rules.push("table, th, td { border: 1px solid #8b949e; border-collapse: collapse; }");
+    // var(--muted) safe: css chỉ scope trong app (.word-doc), token theo theme.
+    rules.push("table, th, td { border: 1px solid var(--muted); border-collapse: collapse; }");
   }
   return rules.join("\n");
 }
