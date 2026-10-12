@@ -1,132 +1,111 @@
-# Spec: JobDetail 2-section redesign + pipeline ảnh + quota + landing mới
+# Spec: Ảnh chụp điện thoại + JobDetail 2 section + pipeline crop/quota/landing (2026-10-13)
 
-Ngày: 2026-10-13. Nguồn: user yêu cầu trực tiếp (21 mục liệt kê + 4 chỗ chốt).
-Chốt: nút tải = 2 nhóm (Văn bản | Layout); remove background = `rembg` (u2net);
-landing = viết mới toàn bộ + self-capture playwright; quota = page_count, refund khi
-fail/hủy, tuần T2→CN Asia/Ho_Chi_Minh, chặn lúc upload, LLM không tính.
+## Bối cảnh
 
-## WS-UI — JobDetail 2 section (items 1-9, 13, 14)
+User test E2E thật qua R2 dev: upload → job → Kaggle batch OCR. Raid bug + yêu cầu
+mới: ảnh chụp điện thoại (JPEG-HEIC/JPEG-AV1, ngang/dọc, quét tài liệu), JobDetail
+2 section dọc, preview styled, export 2 nhóm, pipeline crop→remove-background→MD,
+landing mới + screenshot, quota 25/ngày-150/tuần, admin LLM timeout/token.
 
-### Cấu trúc trang (cuộn dọc, 2 section)
-```
-[Header job: tên + status + Chạy lại/Hủy + Lịch sử] [badge "Cần đồng bộ"]
+Evidance từ run thật (Version 20, T4x2): wheelhouse mới OK (133 pkg, onnxruntime
+đúng extra), job jpg fail `cannot identify image file` (file `.jpg` thật ra là
+`%PDF-1.7`), job pdf fail `'NoneType' object is not callable`
+(`process_job(preprocess=...)` shadow module fn `preprocess`).
 
-SECTION 1 "Văn bản"  — grid lg:[7fr_5fr]
-  trái 7: text render HTML thuần (GET /extraction), KHÔNG free editor.
-          từ proofread (suggestions) → <mark> bg-warning/20 + underline dotted.
-          click → popover: "Đề xuất: X" [Áp dụng] [Bỏ qua] | ô nhập "Sửa khác…" [Lưu].
-          Áp dụng/Sửa khác → POST /extraction (old/new phrase) → save+sync → invalidate.
-          KHÔNG còn IssuesPanel ở layout — panel "Kiểm tra lỗi" (issues accordion
-          + inline region edit) chuyển vào đây (dưới text).
-          Hiện kể cả status == "rendering" (OCR xong).
-          Nút "Lưu văn bản": nếu response requires_rerender hoặc status rendering →
-          modal confirm (useDialogA11y):
-          "Lưu văn bản sẽ cần vẽ lại layout. Thêm vào hàng đợi vẽ layout?"
-          [Hủy] [Lưu & xếp hàng] → toast + invalidate.
-          Link "Mở trang trích xuất đầy đủ".
-  phải 5: ẢNH GỐC — auto-fetch blob khi mount (bỏ toggle "Hiện file"),
-          sticky lg:top-16, cùng padding/align-start với cột trái.
-          PDF nhiều trang → container cuộn (h-[75vh]) + nút zoom −/+ và slider
-          (pdf.js render trang → canvas; deps pdfjs-dist đã có).
-          Ảnh đơn → zoom container (buttons + wheel).
-          1 fetch blob chung cho cả 2 section (module-level cache theo jobId).
+## Nguồn sự thật
 
-SECTION 2 "Layout"  — grid lg:[7fr_5fr]
-  trái 7: XEM TRƯỚC mặc định, read-only, styled:
-    • word (docx.html): iframe sandbox srcDoc = docx.html + <style>{docStyle}</style>
-    • md (md-layout): md → HTML (renderer markdown tối giản/đã có deps) + docStyle,
-      sanitize (DOMPurify hoặc escape nghiêm ngặt).
-    ảnh figure node (crop artifact, xem WS-PIPE) render <img> presigned 24h thay marker.
-    Toggle "Chỉnh sửa" → WordEditor (Tiptap docx.html) / MDEditor (md) như hiện tại
-    (set detached=true). Stats line dưới preview.
-  phải 5: ẢNH GỐC (cùng component, dùng lại blob cache — không fetch đôi).
-  Cột rail còn lại (ExportBar 2 nhóm + InfoPanel) — ExportBar đặt DƯỚI preview
-  cột trái (không còn trong rail chen chung), InfoPanel gọn cột phải dưới ảnh.
+- **OCR = PaddleOCR-VL** trên Kaggle T4x2, kernel `jhandf/img2text-batch`,
+  wheelhouse dataset `img2text-wheelbuild-env` (uv --no-index, cp312).
+- **Server** FastAPI + Postgres, storage R2 (presigned PUT/GET), worker = batch
+  script kernel (manifest URL mode), orchestrate qua
+  `server/app/services/kaggle_orchestrator.py`.
+- **Web** Vite React SPA (`web/`), Design System `web/DESIGN.md`.
 
-### Nút tải định dạng (item 13 = B)
-2 nhóm trong ExportBar:
-  • "Văn bản": md | docx | pdf (thuần text, các export hiện có)
-  • "Layout": md-layout | docx-layout (bản dựng layout)
-UI: 2 dropdown button nhóm; giữ testids cũ R51 (điều chỉnh).
+## Users (đã xác nhận)
 
-### Fix kèm theo
-- crop404 spam: IssuesPanel/Crop chỉ fetch crop khi job.file_type=="image",
-  query retry:false. PDF → hiện text region.
-- log LLM: render_md.py:323 + render_docx.py:275 → repr(exc) + attempt;
-  fallback log loud "HEURISTIC FALLBACK render — layout tạm".
+1. **Giáo viên** — ảnh chụp đề/khối tài liệu thật → Markdown/DOCX/PDF sạch.
+   Sợ mất bố cục gốc, sợ tốn quota vì job lỗi.
+2. **Admin/dev (user hiện tại)** — giữ E2E chain + debug pipeline.
 
-## WS-SERVER — hàng đợi render (item 4)
+## Đúng/sai/MVP
 
-- Migration: `ALTER TABLE jobs ADD COLUMN rerender_requested boolean DEFAULT false;`
-- `POST /api/jobs/{id}/extraction`: cho phép khi status=="rendering"; save set
-  `rerender_requested=true` KHI (status=="rendering") hoặc (layout artifact tồn tại
-  && sync targeted-fail); KHÔNG set khi mode=="extract_only".
-  Response thêm `requires_rerender: bool`.
-- Render/completion finalize: trước khi done → nếu rerender_requested → clear flag +
-  render lại tối đa 1 lần (loop guard 2; quá 2 → done + giữ flag + log warning).
-- Đặt reaper/sweep hiện có làm tương tự khi job stuck rendering + flag.
+Đúng: ảnh chụp phone sinh ra từ máy phone (Pillow 12.3 quen HEIC/AVIF; webp
+luôn quen). HEIC-HEIF → Pillow ≥10.3 `Image.open` thẳng (libheif plugin built-in
+từ Pillow 11.3; verify lúc implement, fallback `pillow-heif` nếu build thiếu
+libheif). JPEG-AVIF (Pixel) → Pillow ≥11.3. JPEG-XL → **KHÔNG** (Pillow chưa
+support; defer, ghi chú trong docs).
 
-## WS-PIPE — pipeline trích xuất ảnh + remove background (items 15, 16)
+Sai (không làm): giữ "chỉ jpg/png/pdf" status quo (user không dùng được ảnh
+phone); đoán bằng magic-byte THAY metadata (metadata vẫn là primary; magic chỉ
+là cross-check chặn file sai đuôi); GPU worker self-host (infra tốn kém, out
+scope).
 
-- Kernel (`deploy/kaggle/kernel/img2text_batch.py`):
-  với mọi region verdict=="image_unextractable" (và placeholder): PyMuPDF
-  `page.get_pixmap(clip=bbox)` → PNG crop.
-  rembg (u2net) remove background → `img2text-crops/{job_id}__{rid}.png`.
-  Model u2net.onnx (~170MB) đưa vào dataset wheelbuild-env (cache, tránh tải mỗi run).
-  Upload crops qua manifest/Kaggle output → orchestrator ingest về S3
-  `exports/{job_id}/crops/{rid}.png` (S3Driver).
-- Server render:
-  docx-layout: embed bytes crop (html_to_docx img src = bytes) — không phụ thuộc URL.
-  md-layout: `![vùng {rid}]({presigned 24h})`.
-  LayoutPreview (web): figure node → <img> presigned (invalidate khi hết giờ).
-- Timing: kernel +~10-30s/ảnh (rembg GPU), budget trong batch run.
+MVP = đủ 6 mục user + 2 fix pipeline blocker; HEIC/AVIF là mức 2, JPEG-XL defer.
 
-## WS-WEB — Landing page mới (item 17)
+## Assumption (cần verify)
 
-- VIẾT MỚI toàn bộ copy (Vietnamese) + design theo skill design-taste-frontend +
-  DESIGN.md (dark, một accent, radius 6/8, không em-dash).
-- Cấu trúc đề xuất: Hero (giá trị + CTA) → Cách hoạt động (OCR→IR→Layout pipeline,
-  3 bước) → Tính năng (2 section, version/undo, proofread click-fix, export 5 định
-  dạng) → Gallery screenshot → Giới hạn/quota → CTA cuối + Footer.
-- Screenshot: cài playwright (devDep web hoặc scripts/ riêng) — capture từ dev stack
-  thật (cần login; seed dev user hoặc reuse token): Jobs list, JobDetail section
-  Văn bản, Section Layout preview, Extraction page. Ảnh PNG vào web/public/screenshots/.
-- Landing route hiện có (pages/Landing.tsx) → thay nội dung; giữ auth flow.
+1. **HEIC**: Pillow 12.3 đã đọc HEIC/HEIF qua plugin built-in (`pillow_heif`
+   auto-register) — nếu container/venv thiếu libheif thì thêm
+   `pillow-heif` vào server deps + `register_heif_opener()`. Verify = test ảnh
+   HEIC thật.
+2. **JPEG-AVIF**: Pillow ≥11.3 đọc AVIF (đóng gói libavif) — verify = test ảnh
+   AVIF thật.
+3. **Magic-byte**: server `POST /api/jobs` (tạo job, sau upload) GET object →
+   sniff 16 byte đầu → mismatch với ext → 422 + delete. Không sniff ở presign
+   (chưa có bytes).
+4. **Quota**: `users.daily_page_limit` (default 25), `users.weekly_page_limit`
+   (150); đếm theo `page_count` của job (pdf = số trang, image = 1); block
+   pre-create 429; hiển thị QuotaBadge. Week = Mon→Sun (Asia/Ho_Chi_Minh).
+5. **Admin LLM**: `settings.llm_timeout` (default 180s), `llm_api_key` masked
+   write-only (không echo). Token = LLM API key cho proxy 100.86.205.2:20128.
 
-## WS-ADMIN — settings + quota (items 18-21)
+## User-facing behavior
 
-- Admin runtime settings mở rộng: `llm_timeout` (số, 30-600), `llm_api_key`
-  (write-only: hiện masked "sk-…last4", submit mới ghi đè; không log).
-- Quota:
-  Migration: `ALTER TABLE users ADD COLUMN daily_page_limit int DEFAULT 25;`
-             `ALTER TABLE users ADD COLUMN weekly_page_limit int DEFAULT 150;`
-  Usage = SUM(jobs.page_count) WHERE created_at trong cửa sổ
-  (ngày: local Asia/Ho_Chi_Minh; tuần: T2→CN) AND status NOT IN ('failed','cancelled').
-  Check tại POST /jobs/presign + POST /jobs (pre-create) → 429
-  "Hôm nay bạn đã hết quota (25 trang). Quay lại sau." / tuần.
-  GET /api/quota/me → {daily_limit, daily_used, weekly_limit, weekly_used,
-  daily_remaining, weekly_remaining}.
-  UI: Jobs header "Còn X trang hôm nay · Y tuần này" (query invalidate sau tạo job).
-  Admin: bảng user → cột quota (đã dùng/còn) + inline edit limit (2 ô) + audit.
+1. **Ảnh chụp điện thoại**
+   - Upload nhận jpg/jpeg/png/webp/pdf + **heic/heif/avif**; picker `accept`
+     mở rộng; server `ALLOWED_EXTENSIONS` + `CONTENT_TYPE_BY_EXT` thêm.
+   - Ảnh phone (ngang/dọc, EXIF rotation) → OCR giữ nguyên; EXIF-rotate áp
+     trước OCR (Pillow `ImageOps.exif_transpose`).
+   - Quét tài liệu nhiều ảnh → multi-image job (mỗi ảnh 1 trang; md join
+     `---`).
+2. **JobDetail 2 section** (cuộn dọc, không tab): Văn bản (IssuesPanel +
+   Markdown render + click-to-highlight) trên; Layout (styled preview + 7/5
+   ảnh gốc) dưới. Preview mặc định = styled HTML, toggle xem Markdown/HTML.
+3. **Preview styled**: iframe sandbox + docStyle tokens (font Inter, radius
+   6/8, spacing 4/8/16/24/32, accent) — không còn khối chữ trần.
+4. **Export 2 nhóm**: nhóm "Văn bản" (md/html/docx/pdf) + nhóm "Layout"
+   (md-layout/docx-layout) trên ExportBar; label rõ.
+5. **Pipeline crop → remove-background**: kernel emit crops (rembg u2net) →
+   md artifact tham chiếu `crops/{rid}.png` → server serve presigned GET →
+   preview hiển ảnh sạch.
+6. **Quota**: QuotaBadge (header + Jobs) "còn X/Y trang hôm nay"; block tạo
+   job vượt → 429 toast; admin chỉnh per-user trong AdminUsers.
+7. **Admin LLM settings**: timeout (120–600s) + api key masked (write-only) trong
+   AdminSettings; đổi → áp cho worker (env下一 run).
+8. **Landing mới**: hero + 6 slot screenshot thật (login, upload, jobdetail 2
+   section, layout preview, export, admin) + copy Việt hóa; capture script
+   (Playwright) — CHẠY TAY trên máy bình thường.
+9. **Fix pipeline blocker**: (a) `process_job` param shadow → rename
+   `preprocess_spec`; (b) create-time magic-byte sniff → 422 rõ ràng.
 
-## Migration/Deploy checklist (thêm)
-- ALTER TABLE jobs ADD COLUMN rerender_requested boolean DEFAULT false;
-- ALTER TABLE users ADD COLUMN daily_page_limit int DEFAULT 25;
-- ALTER TABLE users ADD COLUMN weekly_page_limit int DEFAULT 150;
-- Wheelhouse-env dataset: thêm u2net.onnx (rembg model) — rebuild wheelbuild kernel.
+## Non-goals
 
-## Phasing (lane)
-- **A**: WS-UI + WS-SERVER (JobDetail 2 section + queue + fixes) — đau nhất, làm trước
-- **B**: WS-PIPE (kernel ảnh + rembg + ingest crops + render embed)
-- **C**: WS-ADMIN (settings + quota + widget)
-- **D**: WS-LANDING (sau A — cần screenshot từ UI mới)
-A/B/C song song được (file disjoint: web+server routers/jobs vs kernel/deploy vs admin).
-Review loop mỗi lane (round 1 → fix → re-check, cap 3).
+- JPEG-XL, TIFF, BMP (defer).
+- Self-host GPU worker.
+- Dual-truth bidirectional sync (deferred backlog).
+- Rate limit RAM→Redis (defer, note P2).
 
-## Testing
-- Server: extraction save khi rendering (flag+429/200), finalize rerender guard,
-  quota check (day/week boundary, refund), crop ingest.
-- Web: section render khi rendering, confirm modal queue, popover "Sửa khác",
-  preview styled (iframe srcDoc chứa docStyle), zoom/pdf scroll, ExportBar 2 nhóm.
-- Kernel: crop extract unit (PyMuPDF clip) + rembg stub (mock model).
-- Landing: build pass, screenshot files exist.
+## Risks
+
+- HEIC/AVIF plugin built-in có thể thiếu native lib → fallback `pillow-heif`
+  / `pillow-avif` (server deps tăng ~5MB).
+- Magic-byte GET object = 1 round-trip R2 thêm mỗi create (≤50MB, chấp nhận).
+- Quota per-week cần migration ALTER (dev đã chạy tay; prod cần checklist).
+- Landing screenshot cần máy bình thường (sandbox chặn Chrome network) —
+  user tự chạy `capture.mjs`.
+
+## Open questions
+
+1. HEIC/AVIF mức 2 có cần ngay hay MVP jpg/png/webp/pdf + fix blocker đủ trước?
+2. Export nhóm "Layout" giữ md-layout/docx-layout (2 file) hay thêm pdf-layout?
+3. Landing screenshot slot nào QUAN TRỌNH nhất (để ưu tiên capture)?
