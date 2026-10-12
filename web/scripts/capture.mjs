@@ -1,67 +1,76 @@
 /**
- * Chụp screenshot tĩnh (playwright chromium headless, 1440x900) cho landing/gallery.
- * - Dev stack: vite dev port 5174 (tránh đè 5173), proxy /api -> localhost:8010
- *   (server container đã chạy). KHÔNG đăng nhập: Landing/Login/Register là trang
- *   công khai; /jobs redirect về /signin khi chưa auth (đủ cho gallery).
- * - Output: web/public/screenshots/*.png (Landing gallery đọc trực tiếp).
- * Dùng: node scripts/capture.mjs   (chạy trong web/)
- * LIMITATION (lane-d 2026-10-12): chromium khong chay duoc trong sandbox nay
- * (chrome --dump-dom cung treo, exit 124). Anh chua chup duoc: gallery dung
- * placeholder (onError an img, caption van doc). Chay lai script tren may co
- * display/chromium binh thuong de thay the placeholder.
+ * Capture landing screenshots via system Chrome headless CLI
+ * (playwright chromium treo trong sandbox — dùng google-chrome --headless=new).
+ * Chạy: node scripts/capture.mjs   (cần web dev server hoặc tự spawn vite :5174)
  */
-import { chromium } from "playwright";
 import { spawn } from "node:child_process";
 import { mkdirSync, statSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
-const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const outDir = path.join(webRoot, "public", "screenshots");
 const PORT = 5174;
 const BASE = `http://localhost:${PORT}`;
+const OUT = "public/screenshots";
+const CHROME = process.env.CHROME_BIN || "google-chrome";
 
 const SHOTS = [
-  { path: "/", name: "landing" },
-  { path: "/signin", name: "login" },
-  { path: "/signup", name: "register" },
-  { path: "/jobs", name: "jobs-empty" }, // chưa auth -> redirect /signin (Jobs list trống khi login capture-only)
+  { path: "/", name: "landing-hero" },
+  { path: "/login", name: "login" },
+  { path: "/register", name: "register" },
+  { path: "/jobs", name: "jobs" },
 ];
 
-async function waitForServer(url, ms = 120_000) {
-  const deadline = Date.now() + ms;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(url);
-      if (res.ok) return;
-    } catch {
-      /* vite chưa lên */
+function waitForServer(url, tries = 60) {
+  return (async () => {
+    for (let i = 0; i < tries; i++) {
+      try {
+        const r = await fetch(url);
+        if (r.ok) return;
+      } catch {}
+      await sleep(500);
     }
-    await new Promise((r) => setTimeout(r, 300));
-  }
-  throw new Error(`vite dev khong len duoc ${url}`);
+    throw new Error(`vite không lên ${url}`);
+  })();
+}
+
+function chromeShot(url, file) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      "--headless=new",
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      `--screenshot=${file}`,
+      "--window-size=1440,900",
+      "--hide-scrollbars",
+      "--virtual-time-budget=10000",
+      url,
+    ];
+    const p = spawn(CHROME, args, { stdio: "ignore" });
+    p.on("exit", (code) => {
+      // chrome exit != 0 vẫn có thể đã ghi file (network-service noise) — check file
+      try {
+        if (statSync(file).size > 10_000) return resolve();
+      } catch {}
+      reject(new Error(`chrome shot fail ${file} code=${code}`));
+    });
+  });
 }
 
 const dev = spawn("npx", ["vite", "--port", String(PORT), "--strictPort"], {
-  cwd: webRoot,
   stdio: "ignore",
 });
-
-let browser;
 try {
+  mkdirSync(OUT, { recursive: true });
   await waitForServer(BASE);
-  mkdirSync(outDir, { recursive: true });
-  browser = await chromium.launch({ headless: true });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  for (const shot of SHOTS) {
-    await page.goto(BASE + shot.path, { waitUntil: "networkidle", timeout: 90_000 });
-    await page.waitForTimeout(600); // motion entry + fonts settle
-    const file = path.join(outDir, `${shot.name}.png`);
-    await page.screenshot({ path: file });
-    const kb = Math.round(statSync(file).size / 1024);
-    console.log(`OK ${shot.name}.png ${kb}KB`);
+  for (const s of SHOTS) {
+    const file = `${OUT}/${s.name}.png`;
+    await chromeShot(BASE + s.path, file);
+    console.log("shot:", file);
   }
+  console.log("DONE", SHOTS.length, "screenshots →", OUT);
+} catch (e) {
+  console.error("capture failed:", e.message);
+  process.exitCode = 1;
 } finally {
-  await browser?.close();
-  dev.kill();
+  dev.kill("SIGTERM");
 }
