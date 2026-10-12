@@ -14,21 +14,22 @@ function stubLocationAssign() {
 
 const PRESIGN = {
   storage_key: `uploads/${"ab".repeat(32)}.jpg`,
-  url: "https://r2.example/bucket",
-  fields: { key: `uploads/${"ab".repeat(32)}.jpg`, "Content-Type": "image/jpeg" },
+  url: "https://r2.example/bucket/uploads/ab.jpg",
   max_bytes: 52428800,
 };
 
 interface XhrState {
   url: string;
-  form: FormData;
+  method: string;
+  body: unknown;
+  headers: Record<string, string>;
   progress: number[];
   fireProgress: (loaded: number, total: number) => void;
   finish: (status?: number) => void;
   error: () => void;
 }
 
-/** Fake XMLHttpRequest: captures the form POST, manual progress/load control. */
+/** Fake XMLHttpRequest: captures the PUT + ArrayBuffer body, manual progress/load control. */
 function stubXHR(autoFinish = true): XhrState[] {
   const calls: XhrState[] = [];
   class FakeXHR {
@@ -37,13 +38,21 @@ function stubXHR(autoFinish = true): XhrState[] {
     onload: (() => void) | null = null;
     onerror: (() => void) | null = null;
     private url = "";
-    open(_method: string, url: string) {
+    private method = "";
+    private headers: Record<string, string> = {};
+    setRequestHeader(k: string, v: string) {
+      this.headers[k] = v;
+    }
+    open(method: string, url: string) {
+      this.method = method;
       this.url = url;
     }
-    send(form: FormData) {
+    send(body: unknown) {
       const state: XhrState = {
         url: this.url,
-        form,
+        method: this.method,
+        body,
+        headers: this.headers,
         progress: [],
         fireProgress: (loaded, total) => {
           state.progress.push(Math.round((loaded / total) * 100));
@@ -93,7 +102,7 @@ describe("api client", () => {
     await expect(api.uploadJob(new File([], "a.jpg"))).rejects.toThrow("Chưa được cấp quyền OCR.");
   });
 
-  it("uploadJob presigns, POSTs the form straight to storage, then creates metadata-only", async () => {
+  it("uploadJob presigns, PUTs the ArrayBuffer straight to storage, then creates metadata-only", async () => {
     const xhrs = stubXHR();
     const spy = stubFetchRoutes({ "/api/jobs/presign": PRESIGN, "/api/jobs": { id: 1, status: "queued" } });
     const file = new File(["x"], "a.jpg", { type: "image/jpeg" });
@@ -112,11 +121,17 @@ describe("api client", () => {
       output_format: "docx",
       mode: "extract_only",
     });
-    // form → storage (KHÔNG qua backend): policy fields + file
+    // PUT ArrayBuffer → storage (KHÔNG qua backend; KHÔNG Content-Type
+    // header — browser không tự thêm cho ArrayBuffer, tránh signature mismatch).
+    // Red-green: fail ngay khi code set bất kỳ Content-Type nào (kể cả casing khác).
     expect(xhrs).toHaveLength(1);
+    expect(xhrs[0].method).toBe("PUT");
     expect(xhrs[0].url).toBe(PRESIGN.url);
-    expect(xhrs[0].form.get("key")).toBe(PRESIGN.storage_key);
-    expect((xhrs[0].form.get("file") as File).name).toBe("a.jpg");
+    expect(xhrs[0].body).toBeInstanceOf(ArrayBuffer);
+    expect((xhrs[0].body as ArrayBuffer).byteLength).toBe(1);
+    for (const xhr of xhrs) {
+      expect(Object.keys(xhr.headers).filter((k) => k.toLowerCase() === "content-type")).toEqual([]);
+    }
     // create = metadata-only
     const createCall = spy.mock.calls.find(
       ([url, opts]) => String(url) === "/api/jobs" && opts?.method === "POST",
@@ -177,7 +192,7 @@ describe("api client", () => {
     expect(JSON.parse(String(createCall?.[1]?.body)).page_count).toBe(3); // loadPdf mock numPages
   });
 
-  it("uploadJob rejects on non-2xx storage POST", async () => {
+  it("uploadJob rejects on non-2xx storage PUT", async () => {
     const xhrs = stubXHR(false);
     stubFetchRoutes({ "/api/jobs/presign": PRESIGN });
     const done = api.uploadJob(new File(["x"], "a.jpg", { type: "image/jpeg" }));
@@ -195,14 +210,14 @@ describe("api client", () => {
     await expect(done).rejects.toThrow("Tải file thất bại.");
   });
 
-  it("uploadJob accepts Blob + filename (cropped JPEG)", async () => {
+  it("uploadJob accepts Blob + filename (cropped JPEG — filename chỉ tới presign metadata)", async () => {
     const xhrs = stubXHR();
-    stubFetchRoutes({ "/api/jobs/presign": PRESIGN, "/api/jobs": { id: 1, status: "queued" } });
+    const spy = stubFetchRoutes({ "/api/jobs/presign": PRESIGN, "/api/jobs": { id: 1, status: "queued" } });
     const blob = new Blob(["x"], { type: "image/jpeg" });
     await api.uploadJob(blob, { filename: "photo-crop.jpg" });
-    const entry = xhrs[0].form.get("file") as File;
-    expect(entry.name).toBe("photo-crop.jpg");
-    expect(entry.type).toBe("image/jpeg");
+    const presignCall = spy.mock.calls.find(([url]) => String(url) === "/api/jobs/presign");
+    expect(JSON.parse(String(presignCall?.[1]?.body)).filename).toBe("photo-crop.jpg");
+    expect(xhrs[0].body).toBeInstanceOf(ArrayBuffer);
   });
 
   it("401 on non-auth path redirects to /signin and still throws ApiError", async () => {

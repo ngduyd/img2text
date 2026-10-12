@@ -53,11 +53,10 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   return (await res.json()) as T;
 }
 
-/** R2 presigned POST policy: upload thẳng browser → storage, không qua backend. */
+/** R2 presigned PUT URL: upload thẳng browser → storage, không qua backend. */
 export interface PresignResponse {
   storage_key: string;
   url: string;
-  fields: Record<string, string>;
   max_bytes: number;
 }
 
@@ -75,19 +74,19 @@ export async function sha256Hex(blob: Blob): Promise<string> {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-/** POST form (fields + file) thẳng tới storage qua XMLHttpRequest —
- * upload.onprogress là chỉ có cách report upload progress. No credentials:
- * cross-origin presigned endpoint, policy đã kí (R2/localstack). */
-export function postForm(
+/** PUT ArrayBuffer thẳng tới presigned URL qua XMLHttpRequest —
+ * upload.onprogress là chỉ có cách report upload progress. KHÔNG set
+ * Content-Type: body là ArrayBuffer (không phải Blob) nên browser không
+ * tự thêm header → khớp signature đã kí. No credentials: cross-origin
+ * presigned endpoint (R2/localstack). */
+export function putPresigned(
   url: string,
-  fields: Record<string, string>,
-  file: Blob,
-  filename: string,
+  data: ArrayBuffer,
   onProgress?: (percent: number) => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", url);
+    xhr.open("PUT", url);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress?.(Math.round((e.loaded / e.total) * 100));
     };
@@ -96,14 +95,11 @@ export function postForm(
       else reject(new ApiError(`HTTP ${xhr.status}`));
     };
     xhr.onerror = () => reject(new ApiError("Tải file thất bại."));
-    const form = new FormData();
-    for (const [k, v] of Object.entries(fields)) form.append(k, v);
-    form.append("file", file, filename);
-    xhr.send(form);
+    xhr.send(data);
   });
 }
 
-/** Presigned upload flow (spec 2026-10-10): presign → POST form → storage
+/** Presigned upload flow (spec 2026-10-10): presign → PUT ArrayBuffer → storage
  * (progress) → pdf.js đếm trang (image = 1) → POST /api/jobs metadata-only. */
 async function uploadPresigned(
   file: File | Blob,
@@ -130,7 +126,8 @@ async function uploadPresigned(
     mode: opts?.mode,
   });
   opts?.onPhase?.("uploading");
-  await postForm(presign.url, presign.fields, blob, filename, opts?.onProgress);
+  // ArrayBuffer (KHÔNG Blob) — browser không tự thêm Content-Type header.
+  await putPresigned(presign.url, await blob.arrayBuffer(), opts?.onProgress);
   opts?.onPhase?.("counting");
   // Page count client-side (spec): pdf.js; image luôn là 1.
   const page_count =
@@ -160,9 +157,8 @@ export const api = {
   listJobs: (page = 1, page_size = 10) =>
     request<JobsPage>(`/api/jobs?page=${page}&page_size=${page_size}`),
   getJob: (id: number | string) => request<Job>(`/api/jobs/${id}`),
-  // Blob has no name — `filename` supplies the multipart filename (e.g. cropped JPEG).
-  // R2 presign: sanity-check metadata → policy {url, fields} — bytes goes
-  // browser → storage (không chạm backend).
+  // R2 presign: sanity-check metadata → presigned PUT URL — browser PUTs
+  // ArrayBuffer thẳng vào storage (không chạm backend).
   presignUpload: (body: {
     filename: string;
     content_type: string;
@@ -180,7 +176,7 @@ export const api = {
       mode?: string;
       /** 0-100% (XHR upload.onprogress — fetch không report upload progress). */
       onProgress?: (percent: number) => void;
-      /** "uploading" = POST form → storage; "counting" = pdf.js đếm trang. */
+      /** "uploading" = PUT → storage; "counting" = pdf.js đếm trang. */
       onPhase?: (phase: "uploading" | "counting") => void;
     },
   ) => uploadPresigned(file, opts),

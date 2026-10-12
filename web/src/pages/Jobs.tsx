@@ -85,7 +85,7 @@ export default function Jobs() {
   });
   const allVisibleSelected = visible.length > 0 && visible.every((j) => selected.has(j.id));
 
-  // Reuse Dropzone lane: api.uploadJob = presign → POST form (XHR progress) → pdf.js đếm trang → POST /api/jobs.
+  // Reuse Dropzone lane: api.uploadJob = presign → PUT ArrayBuffer (XHR progress) → pdf.js đếm trang → POST /api/jobs.
   const submit = async (pdf: Blob, meta: { page_count: number; filename: string }) => {
     setUploadError(null);
     setPercent(0);

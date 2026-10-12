@@ -55,9 +55,26 @@ R2_PUBLIC_BASE=            # optional; reserved for public CDN domain later
 
 ## Presigned URLs — no public bucket
 
-Uploads stream browser → backend → R2; previews, worker downloads, crops and
+Uploads go browser → R2 directly via presigned PUT; previews, worker
+downloads, crops and
 exports are served via presigned GETs (TTLs: worker download 1 h, original
 preview 1 h, crops 24 h, exports 24 h). The bucket stays private.
+
+## Presigned PUT — CORS
+
+R2 không implement Presigned POST (HTTP 501) → client chuyển sang presigned
+PUT upload thẳng từ browser. Browser preflight OPTIONS trước PUT, nên bucket
+cần CORS policy (R2 → bucket → Settings → CORS policy):
+
+| Setting        | Value                                                  |
+|----------------|--------------------------------------------------------|
+| AllowedOrigins | `http://localhost:5173` + prod domain (VD `https://…`) |
+| AllowedMethods | `PUT, GET, HEAD, OPTIONS`                              |
+| AllowedHeaders | `*`                                                    |
+| MaxAge         | `600` (cache preflight, giảm OPTIONS round-trip)       |
+
+Thiếu CORS → browser block upload dù URL presigned còn hạn. `OPTIONS` cần
+trong AllowedMethods vì chính preflight là một request OPTIONS.
 
 ## Rebuild deploy/reference.docx
 
