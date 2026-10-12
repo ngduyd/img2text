@@ -130,3 +130,27 @@ def test_extract_crops_pdf_bbox_in_preprocessed_coords(tmp_path):
     r, g, b = img.getpixel((cx, cy))[:3]
     pix.close()
     assert r > 200 and g < 60 and b < 60, f"center ({cx},{cy}) = {(r, g, b)}"
+
+def test_extract_crops_pixmap_144dpi(tmp_path):
+    """get_pixmap mặc định 72dpi → crop mờ cho rembg. matrix=Matrix(2,2)
+    → pix.width ≥ clip.width×1.5."""
+    import fitz
+    from PIL import Image
+
+    doc = fitz.open()
+    p1 = doc.new_page(width=200, height=300)
+    p1.draw_rect(fitz.Rect(20, 30, 120, 180), color=(1, 0, 0), fill=(1, 0, 0))
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(doc.tobytes())
+    doc.close()
+    # bbox = pre px (width 100 = half của rect 200pt → scale 2)
+    got = kb.extract_crops(
+        str(pdf),
+        [{"page": 1, "width": 100, "height": 150,
+          "blocks": [{"id": "p1_b0", "type": "image",
+                      "bbox": [10, 15, 60, 90], "text": ""}]}],
+        remove=lambda png: png,
+    )
+    img = Image.open(io.BytesIO(got["p1_b0"]))
+    clip_w_pt = (60 - 10) * 2.0  # bbox × scale = 100pt
+    assert img.width >= clip_w_pt * 1.5, f"pix.width={img.width} < {clip_w_pt*1.5}"

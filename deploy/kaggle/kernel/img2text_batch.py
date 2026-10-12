@@ -679,7 +679,8 @@ def extract_crops(input_path: str, pages_out: list, remove=None) -> dict[str, by
                 x0, y0, x1, y1 = _to_original_bbox(b["bbox"], scale)
                 clip = fitz.Rect(x0, y0, x1, y1)
                 try:
-                    pix = page.get_pixmap(clip=clip)
+                    # 72dpi mặc định → crop mờ; Matrix(2,2) = 144dpi đủ sharp
+                    pix = page.get_pixmap(clip=clip, matrix=fitz.Matrix(2, 2))
                     png = pix.tobytes("png")
                     crops[rid] = remove(png)
                 except Exception as exc:  # partial-fail 1 crop
