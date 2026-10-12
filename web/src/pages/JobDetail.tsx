@@ -381,11 +381,11 @@ export default function JobDetail() {
           </h2>
           <div
             data-testid="detail-grid"
-            className="grid gap-4 lg:grid-cols-[7fr_5fr] lg:gap-6"
+            className="grid gap-4 lg:grid-cols-12 lg:gap-6"
           >
             <div
               data-testid="detail-reading"
-              className="flex min-w-0 flex-col gap-4 py-2 leading-[1.6] lg:py-6"
+              className="flex min-w-0 flex-col gap-4 py-2 leading-[1.6] lg:col-span-7 lg:py-6"
             >
               <div data-testid="panel-result" className="flex min-w-0 flex-col gap-6">
                 <TextSection jobId={id!} regions={regions} fileType={job.file_type} />
@@ -399,7 +399,7 @@ export default function JobDetail() {
                 </Link>
               </div>
             </div>
-            <aside className="flex min-w-0 flex-col lg:sticky lg:top-16 lg:self-start">
+            <aside className="flex min-w-0 flex-col lg:col-span-5 lg:sticky lg:top-16 lg:self-start">
               <OriginalFilePanel jobId={id!} fileType={job.file_type} />
             </aside>
           </div>
@@ -416,8 +416,8 @@ export default function JobDetail() {
           <h2 id="section-layout-title" className="text-lg font-semibold tracking-tight">
             Layout
           </h2>
-          <div className="grid gap-4 lg:grid-cols-[7fr_5fr] lg:gap-6">
-            <div className="flex min-w-0 flex-col gap-4 py-2 lg:py-6">
+          <div className="grid gap-4 lg:grid-cols-12 lg:gap-6">
+            <div className="flex min-w-0 flex-col gap-4 py-2 lg:col-span-7 lg:py-6">
               {editing ? (
                 <UnifiedEditor
                   jobId={id!}
@@ -439,7 +439,7 @@ export default function JobDetail() {
                 <ExportBar jobId={id!} />
               </Card>
             </div>
-            <aside className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-16 lg:self-start">
+            <aside className="flex min-w-0 flex-col gap-4 lg:col-span-5 lg:sticky lg:top-16 lg:self-start">
               {/* ẢNH GỐC: dùng lại blob cache — không fetch đôi. */}
               <OriginalFilePanel
                 jobId={id!}
@@ -454,9 +454,9 @@ export default function JobDetail() {
 
       {/* OCR chưa xong (queued/extracting/failed): status-only — original + info. */}
       {!textReady && (
-        <div data-testid="detail-grid" className="grid gap-4 lg:grid-cols-[7fr_5fr] lg:gap-6">
-          <div />
-          <aside className="flex min-w-0 flex-col gap-4">
+        <div data-testid="detail-grid" className="grid gap-4 lg:grid-cols-12 lg:gap-6">
+          <div className="lg:col-span-7" />
+          <aside className="flex min-w-0 flex-col gap-4 lg:col-span-5">
             <OriginalFilePanel jobId={id!} fileType={job.file_type} />
             <InfoPanel job={job} />
           </aside>

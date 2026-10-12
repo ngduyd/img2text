@@ -65,6 +65,11 @@ it("md mode renders sanitized markdown + scoped docStyle", async () => {
   expect(pane.querySelector("script")).toBeNull();
   expect(pane.querySelector("style")?.textContent).toContain(".layout-preview");
   expect(pane.querySelector("style")?.textContent).toContain("Times New Roman");
+  // Lane B Task 2: base doc style luôn có (Inter stack, prose 65ch, accent) — không khối chữ trần.
+  const css = pane.querySelector("style")?.textContent ?? "";
+  expect(css).toContain("Inter");
+  expect(css).toContain("65ch");
+  expect(css).toContain("#2563eb");
 });
 
 /** WS-UI: word → iframe sandbox srcDoc = docStyle + docx.html. */
@@ -79,6 +84,9 @@ it("word mode renders sandboxed iframe with docStyle in srcDoc", async () => {
   const src = frame.getAttribute("srcdoc") ?? "";
   expect(src).toContain("Noi dung");
   expect(src).toContain("font-size: 18px");
+  // Lane B Task 2: base doc style trong srcDoc của word pane.
+  expect(src).toContain("65ch");
+  expect(src).toContain("#2563eb");
   expect(api.getDocxHtml).toHaveBeenCalledWith(5);
 });
 
