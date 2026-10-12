@@ -32,6 +32,7 @@ def test_dockerfile_has_dejavu_fonts_and_fontconfig():
         encoding="utf-8"
     )
     assert "fonts-dejavu-extra" in src
+    assert "fonts-dejavu-core" in src  # review r1 P1-3: extra thiếu Sans regular
     assert "fontconfig" in src
 
 @pytest_asyncio.fixture
