@@ -174,3 +174,62 @@ async def test_detail_returns_mode(auth_client, seed_job, db_session):
     await db_session.commit()
     body = (await auth_client.get(f"/api/jobs/{seed_job}")).json()
     assert body["mode"] == "extract_only"
+
+# --- wave-2 #3: q (ILIKE filename) + status (single) + sort newest|oldest ---
+
+async def _seed_named(
+    session: AsyncSession, user_id: int, filename: str, status: str, days_ago: int
+) -> int:
+    from datetime import datetime, timedelta, timezone
+
+    job = Job(
+        user_id=user_id, storage_key=f"uploads/{abs(hash(filename))}.pdf",
+        file_type="pdf", page_count=1, filename=filename, status=status,
+        created_at=datetime.now(timezone.utc) - timedelta(days=days_ago),
+    )
+    session.add(job)
+    await session.commit()
+    await session.refresh(job)
+    return job.id
+
+@pytest_asyncio.fixture
+async def three_named_jobs(db_session, auth_client) -> dict:
+    uid = await _user_id(db_session, "u-")
+    oldest = await _seed_named(db_session, uid, "bao-cao-thang-1.pdf", "done", 3)
+    failed = await _seed_named(db_session, uid, "bieu-mau-ku.pdf", "failed", 2)
+    newest = await _seed_named(db_session, uid, "bao-cao-thang-2.pdf", "queued", 1)
+    return {"oldest": oldest, "failed": failed, "newest": newest}
+
+async def test_list_q_ilike_filename(auth_client, three_named_jobs):
+    items = (await auth_client.get("/api/jobs", params={"q": "BAO"})).json()
+    # ILIKE: hoa/thường không phân biệt; default newest trước
+    assert [j["id"] for j in items["items"]] == [
+        three_named_jobs["newest"], three_named_jobs["oldest"],
+    ]
+    assert items["total"] == 2
+
+async def test_list_status_single_value(auth_client, three_named_jobs):
+    items = (await auth_client.get("/api/jobs", params={"status": "failed"})).json()
+    assert [j["id"] for j in items["items"]] == [three_named_jobs["failed"]]
+    assert items["total"] == 1
+
+async def test_list_sort_oldest(auth_client, three_named_jobs):
+    items = (await auth_client.get("/api/jobs", params={"sort": "oldest"})).json()
+    assert items["items"][0]["id"] == three_named_jobs["oldest"]
+    # default giữ newest
+    default = (await auth_client.get("/api/jobs")).json()
+    assert default["items"][0]["id"] == three_named_jobs["newest"]
+
+async def test_list_sort_invalid_422(auth_client):
+    assert (
+        await auth_client.get("/api/jobs", params={"sort": "random"})
+    ).status_code == 422
+
+async def test_create_stores_filename(upload, db_session):
+    """upload helper gửi filename (web lane cũng gửi) → cột filename."""
+    from tests.conftest import TEST_PDF_3
+
+    r = await upload(TEST_PDF_3, "ho-so.pdf", page_count=1)
+    assert r.status_code == 201, r.text
+    job = await db_session.get(Job, r.json()["id"])
+    assert job.filename == "ho-so.pdf"

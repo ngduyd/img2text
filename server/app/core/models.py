@@ -129,10 +129,15 @@ class Job(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"))
+    # wave-2 #3 (spec 2026-10-14): tên file gốc client khai khi create →
+    # GET /jobs q ILIKE. ALTER-only migration (create_all never ALTERs):
+    #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS filename TEXT;
+    # Legacy rows NULL → q không khớp (accept).
     status: Mapped[str] = mapped_column(
         Text, default="queued", server_default=text("'queued'")
     )
     storage_key: Mapped[str] = mapped_column(Text)
+    filename: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_type: Mapped[str] = mapped_column(Text)
     page_count: Mapped[int] = mapped_column(Integer)
     preprocess: Mapped[str | None] = mapped_column(Text, nullable=True)

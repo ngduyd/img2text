@@ -97,7 +97,7 @@ async def upload_job(
         page_count = (
             len(PdfReader(io.BytesIO(data)).pages) if ext == "pdf" else 1
         )
-    body: dict = {"storage_key": key, "page_count": page_count}
+    body: dict = {"storage_key": key, "page_count": page_count, "filename": filename}
     if output_format is not None:
         body["output_format"] = output_format
     if mode is not None:

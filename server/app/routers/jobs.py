@@ -12,6 +12,7 @@ import logging
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ValidationError
@@ -159,10 +160,22 @@ class JobCreateBody(BaseModel):
 
     storage_key: str
     page_count: int
+    # wave-2 #3: tên file gốc (search q ILIKE); web cũ không gửi → None.
+    filename: str | None = None
     output_format: str = "md"
     mode: str = "layout"
     # Plan W (wizard): page selection + rotation JSON object, not a string.
     preprocess: dict | None = None
+
+def _clean_filename(name: str | None) -> str | None:
+    """wave-2 #3 trust boundary: metadata only (KHÔNG BAO GIỜ làm path) —
+    strip, không rỗng, ≤255, không path separator/NUL."""
+    if name is None:
+        return None
+    name = name.strip()
+    if not name or len(name) > 255 or any(c in name for c in "/\\\x00"):
+        raise HTTPException(status_code=422, detail="Tên file không hợp lệ.")
+    return name
 
 def _file_ext(name: str) -> str:
     return name.rsplit(".", 1)[-1].lower() if "." in name else ""
@@ -281,6 +294,7 @@ async def create_job(
     # WS-ADMIN quota: pre-create gate SAU các 422 validation (giữ 422 pin),
     # TRƯỚC khi insert row.
     await ensure_quota(session, user, body.page_count)
+    filename = _clean_filename(body.filename)
     file_type = "pdf" if ext == "pdf" else "image"
     # Plan W: preprocess validated AFTER page_count known, BEFORE the row write
     preprocess_json: str | None = None
@@ -319,6 +333,7 @@ async def create_job(
         user_id=user.id,
         status="queued",
         storage_key=body.storage_key,
+        filename=filename,
         file_type=file_type,
         page_count=body.page_count,
         preprocess=preprocess_json,
@@ -354,22 +369,37 @@ async def _job_or_403(
 async def list_jobs(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
+    # wave-2 #3 (spec 2026-10-14): search + status tab + sort lên server.
+    q: str | None = Query(None, max_length=255),
+    status: str | None = Query(None, max_length=20),
+    sort: Literal["newest", "oldest"] = "newest",
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Paginated owner list (Phase 4): page/page_size in, {items,total,page,page_size}.
 
-    total counts ALL owner jobs (unpaginated) so the UI can render page
-    numbers; id desc tiebreak keeps created_at ties from shuffling rows
-    across page boundaries (pages must partition cleanly).
+    total counts ALL owner jobs matching the FILTER (unpaginated) so the UI
+    can render page numbers; id tiebreak keeps created_at ties from
+    shuffling rows across page boundaries (pages must partition cleanly).
+    q → ILIKE filename (filename NULL = legacy row, không khớp); status =
+    single value; sort=newest|oldest (default newest, spec 2026-10-14 #3).
     """
     base = select(Job).where(Job.user_id == user.id)
+    if (q or "").strip():
+        base = base.where(Job.filename.ilike(f"%{q.strip()}%"))
+    if status:
+        base = base.where(Job.status == status)
     total = (
         await session.execute(select(func.count()).select_from(base.subquery()))
     ).scalar_one()
+    order = (
+        (Job.created_at.asc(), Job.id.asc())
+        if sort == "oldest"
+        else (Job.created_at.desc(), Job.id.desc())
+    )
     rows = (
         await session.execute(
-            base.order_by(Job.created_at.desc(), Job.id.desc())
+            base.order_by(*order)
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
