@@ -421,11 +421,30 @@ async def llm_render_docx(ir_doc: DocumentIR, result: dict) -> str:
         html = m.group(1).strip()
     if not html:
         raise LLMError("LLM render trả về rỗng")
-    # LLM thỉnh thoảng echo lại IR JSON thay vì render HTML → coi là fail,
-    # rơi về heuristic (render thủ công). HTML không bao giờ bắt đầu bằng {.
-    if html.startswith("{") and ('"document_id"' in html or '"pages"' in html):
-        raise LLMError("LLM render trả về IR JSON, không phải HTML")
+    # Model free thường bọc HTML trong JSON envelope {"output": ...} hoặc
+    # echo IR JSON → unwrap field; thiếu/parsing fail → LLMError → heuristic.
+    if html.startswith("{"):
+        html = _unwrap_envelope(html, ("output", "html")).strip()
+        if not html:
+            raise LLMError("LLM render trả về rỗng")
+    # HTML không tag block nào → LLMError → heuristic (chặn docx trắng 200).
+    if not _BLOCK_HTML_RE.search(html) and not _TABLE_HTML_RE.search(html):
+        raise LLMError("LLM render HTML không chứa tag block")
     return html
+
+
+def _unwrap_envelope(text: str, keys: tuple[str, ...]) -> str:
+    """JSON envelope {\"output\": ...} → field string. Fail → LLMError (heuristic)."""
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(text)
+    except (ValueError, TypeError) as exc:
+        raise LLMError(f"LLM render JSON hỏng: {exc}") from exc
+    if isinstance(obj, dict):
+        for key in keys:
+            val = obj.get(key)
+            if isinstance(val, str) and val.strip():
+                return val
+    raise LLMError(f"LLM render JSON thiếu field {'/'.join(keys)}")
 
 _BLOCK_HTML_RE = re.compile(
     r"<(h1|h2|h3|p|blockquote)\b([^>]*)>(.*?)</\1>", re.DOTALL | re.IGNORECASE

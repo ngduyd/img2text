@@ -221,6 +221,43 @@ async def test_build_docx_llm_down_raises(
     )
     assert any(r.levelname == "WARNING" for r in caplog.records)
 
+async def test_docx_render_envelope_output_unwrapped(monkeypatch, VALID_RESULT_JSONB):
+    """Render trả envelope {\"output\": html} → unwrap → docx build."""
+    fake_llm(monkeypatch, [
+        FakeResponse(json.dumps(FAKE_IR)),
+        FakeResponse(json.dumps({"output": FAKE_IR_HTML})),
+    ])
+    data = await build_docx(VALID_RESULT_JSONB)
+    assert data[:2] == b"PK"
+    doc = Document(io.BytesIO(data))
+    assert "Xin chào" in [p.text for p in doc.paragraphs]
+
+async def test_docx_render_json_missing_field_falls_back(monkeypatch, VALID_RESULT_JSONB, caplog):
+    """JSON thiếu field output/html → LLMError → heuristic (không file trắng)."""
+    caplog.set_level("WARNING", logger="app.services.render_docx")
+    fake_llm(monkeypatch, [
+        FakeResponse(json.dumps(FAKE_IR)),
+        FakeResponse('{"foo":"bar"}'),
+    ])
+    data = await build_docx(VALID_RESULT_JSONB)
+    assert data[:2] == b"PK"
+    doc = Document(io.BytesIO(data))
+    texts = [p.text for p in doc.paragraphs]
+    assert any(texts)  # heuristic render text, không trắng
+    assert not any(t.startswith("{") for t in texts)
+    assert any("fallback" in r.getMessage().lower() for r in caplog.records)
+
+async def test_docx_render_no_block_tag_falls_back(monkeypatch, VALID_RESULT_JSONB):
+    """HTML không match tag block nào → LLMError → heuristic (chặn file trắng 200)."""
+    fake_llm(monkeypatch, [
+        FakeResponse(json.dumps(FAKE_IR)),
+        FakeResponse("<div>không phải block</div>"),
+    ])
+    data = await build_docx(VALID_RESULT_JSONB)
+    doc = Document(io.BytesIO(data))
+    texts = [p.text for p in doc.paragraphs]
+    assert any(t.strip() for t in texts)  # heuristic content, not blank docx
+
 async def test_docx_render_call_no_response_format(
     monkeypatch, VALID_RESULT_JSONB
 ):

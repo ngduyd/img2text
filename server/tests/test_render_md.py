@@ -104,6 +104,25 @@ class TestBuildMDFromIR:
         out = await build_md(_ocr_result())
         assert out == _md_response()  # render markdown tốt giữ nguyên
 
+    async def test_render_envelope_output_unwrapped(self, monkeypatch):
+        """Render trả envelope {\"output\": md} → unwrap đúng md."""
+        fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(_ir_response())),
+            FakeResponse('{"output":"## X"}'),
+        ])
+        out = await build_md(_ocr_result())
+        assert out == "## X"
+
+    async def test_render_json_missing_field_falls_back(self, monkeypatch):
+        """JSON thiếu field output/markdown → LLMError → heuristic."""
+        fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(_ir_response())),
+            FakeResponse('{"foo":"bar"}'),
+        ])
+        out = await build_md(_ocr_result())
+        assert "chú thích" in out  # heuristic, không phải "{...}"
+        assert not out.lstrip().startswith("{")
+
     async def test_build_md_render_echo_ir_json_fallback(self, monkeypatch):
         """Render LLM echo IR JSON → LLMError → heuristic (chứa text OCR)."""
         fake_llm(monkeypatch, [

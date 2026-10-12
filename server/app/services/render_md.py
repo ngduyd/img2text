@@ -372,6 +372,19 @@ async def llm_ir(result: dict) -> dict:
 
 
 # ---------------------------------------------------------------- render from IR
+def _unwrap_envelope(text: str, keys: tuple[str, ...]) -> str:
+    """JSON envelope {\"output\": ...} → field string. Fail → LLMError (heuristic)."""
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(text)
+    except (ValueError, TypeError) as exc:
+        raise LLMError(f"LLM render JSON hỏng: {exc}") from exc
+    if isinstance(obj, dict):
+        for key in keys:
+            val = obj.get(key)
+            if isinstance(val, str) and val.strip():
+                return val
+    raise LLMError(f"LLM render JSON thiếu field {'/'.join(keys)}")
+
 def _table_md(html_text: str) -> list[str]:
     rows: list[list[str]] = []
     for row in _TABLE_ROW_RE.findall(html_text):
@@ -426,10 +439,13 @@ async def llm_render_md(ir_doc: DocumentIR, result: dict) -> str:
         text = m.group(1).strip()
     if not text:
         raise LLMError("LLM render trả về rỗng")
-    # LLM thỉnh thoảng echo lại IR JSON thay vì render → coi là fail, rơi
-    # về heuristic (render thủ công). Markdown không bao giờ bắt đầu bằng {.
-    if text.startswith("{") and ('"document_id"' in text or '"pages"' in text):
-        raise LLMError("LLM render trả về IR JSON, không phải markdown")
+    # Model free thường bọc markdown trong JSON envelope {"output": ...}
+    # hoặc echo IR JSON → unwrap field; thiếu/parsing fail → LLMError →
+    # heuristic (markdown thô KHÔNG bao giờ bắt đầu bằng {).
+    if text.startswith("{"):
+        text = _unwrap_envelope(text, ("output", "markdown")).strip()
+        if not text:
+            raise LLMError("LLM render trả về rỗng")
     return text
 
 
