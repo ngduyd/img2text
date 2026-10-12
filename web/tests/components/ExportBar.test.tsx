@@ -80,6 +80,22 @@ it("shows ApiError detail when export fails", async () => {
   );
 });
 
+/** Lane B Task 3: 2 nhóm label — "Văn bản" + "Layout" tách bạch. */
+it("renders 2 nhóm 'Văn bản' + 'Layout' với label rõ", async () => {
+  render(<ExportBar jobId="5" />);
+  const textGroup = screen.getByRole("button", { name: "Văn bản" });
+  const layoutGroup = screen.getByRole("button", { name: "Layout" });
+  expect(textGroup).toHaveAttribute("aria-expanded", "false");
+  expect(layoutGroup).toHaveAttribute("aria-expanded", "false");
+  // List ẩn mặc định; mở từng nhóm thấy đúng format của nhóm đó.
+  await userEvent.click(textGroup);
+  expect(screen.getByTestId("export-md")).toBeVisible();
+  expect(screen.queryByTestId("btn-export-md-layout")).not.toBeVisible();
+  await userEvent.click(layoutGroup);
+  expect(screen.getByTestId("btn-export-md-layout")).toBeVisible();
+  expect(screen.getByTestId("btn-export-docx-layout")).toBeVisible();
+});
+
 it("disables only in-flight formats under concurrent clicks", async () => {
   const resolvers: Array<(v: { url: string }) => void> = [];
   vi.mocked(api.exportJob).mockImplementation(
