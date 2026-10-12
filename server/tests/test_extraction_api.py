@@ -453,3 +453,151 @@ async def test_audit_restore_text_shows_badge_then_resync_clears(
     assert r.status_code == 200, r.text
     assert r.json()["synced"] == {"md": True, "docx": True}
     assert (await auth_client.get(f"/api/jobs/{jid}")).json()["stale_layouts"] == []
+
+
+# --- WS-SERVER queue: save khi rendering + rerender flag + finalize guard ---
+
+async def _rendering_job(db_session, VALID_RESULT_JSONB, mode: str | None = None) -> int:
+    from sqlalchemy import select
+
+    from app.core.models import Job, User
+
+    user = (await db_session.execute(select(User).order_by(User.id))).scalars().first()
+    job = Job(
+        user_id=user.id,
+        status="rendering",
+        result=VALID_RESULT_JSONB,
+        storage_key="uploads/test.jpg",
+        file_type="image",
+        page_count=1,
+    )
+    if mode is not None:
+        job.mode = mode
+    db_session.add(job)
+    await db_session.commit()
+    await db_session.refresh(job)
+    return job.id
+
+async def test_get_extraction_while_rendering_200(auth_client, db_session, VALID_RESULT_JSONB):
+    """WS-UI: section Văn bản đọc GET /extraction khi status == rendering."""
+    jid = await _rendering_job(db_session, VALID_RESULT_JSONB)
+    r = await auth_client.get(f"/api/jobs/{jid}/extraction")
+    assert r.status_code == 200, r.text
+    assert r.json()["text_version"] == 0
+
+async def test_post_extraction_while_rendering_200_sets_rerender_flag(
+    auth_client, db_session, VALID_RESULT_JSONB
+):
+    from app.core.models import Job
+
+    jid = await _rendering_job(db_session, VALID_RESULT_JSONB)
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={"text": "van ban moi", "expected_text_version": 0},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["requires_rerender"] is True
+    db_session.expire_all()
+    job = await db_session.get(Job, jid)
+    assert job.rerender_requested is True
+
+async def test_post_extraction_extract_only_never_sets_rerender_flag(
+    auth_client, db_session, VALID_RESULT_JSONB
+):
+    from app.core.models import Job
+
+    jid = await _rendering_job(db_session, VALID_RESULT_JSONB, mode="extract_only")
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={"text": "van ban moi", "expected_text_version": 0},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["requires_rerender"] is False
+    db_session.expire_all()
+    job = await db_session.get(Job, jid)
+    assert job.rerender_requested is False
+
+async def test_post_extraction_sync_targeted_fail_sets_rerender_flag(
+    auth_client, app, db_session, done_job_with_result
+):
+    """Done + layout artifact + sync targeted-fail → flag + requires_rerender."""
+    from app.core.models import Job
+
+    jid = done_job_with_result
+    await app.state.storage.put(f"exports/{jid}/md-layout", b"# Tieu de")
+    await app.state.storage.put(f"exports/{jid}/docx.html", b"<p>doc dac biet</p>")
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={
+            "text": "dac biet",
+            "old_phrase": "khong ton tai",
+            "new_phrase": "x",
+            "expected_text_version": 0,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["requires_rerender"] is True
+    db_session.expire_all()
+    job = await db_session.get(Job, jid)
+    assert job.rerender_requested is True
+
+async def test_auto_output_claim_pending_flag_single_render(
+    auth_client, db_session, VALID_RESULT_JSONB, monkeypatch
+):
+    """Flag có sẵn trước khi render → claim (clear) → render đúng 1 lần."""
+    from sqlalchemy import update
+
+    from app.core.models import Job
+    from app.services import job_results
+
+    jid = await _rendering_job(db_session, VALID_RESULT_JSONB)
+    await db_session.execute(
+        update(Job).where(Job.id == jid).values(rerender_requested=True)
+    )
+    await db_session.commit()
+    calls: list[int] = []
+
+    async def _gen(job, storage):
+        calls.append(1)
+        return True
+
+    monkeypatch.setattr("app.routers.exports.auto_generate_output", _gen)
+    job = await db_session.get(Job, jid)
+    await db_session.refresh(job)
+    await job_results._auto_output(job, None)
+    db_session.expire_all()
+    job = await db_session.get(Job, jid)
+    assert job.status == "done"
+    assert calls == [1]
+    assert job.rerender_requested is False
+
+async def test_auto_output_rerenders_once_then_guard_keeps_flag(
+    auth_client, db_session, VALID_RESULT_JSONB, monkeypatch
+):
+    """Save trong lúc render → render lại tối đa 1 lần (guard 2); quá 2 → giữ cờ."""
+    from sqlalchemy import update
+
+    from app.core.models import Job
+    from app.services import job_results
+
+    jid = await _rendering_job(db_session, VALID_RESULT_JSONB)
+    calls: list[int] = []
+
+    async def _gen(job, storage):
+        calls.append(1)
+        # user save ngay trong lúc render → cờ lại bật
+        await db_session.execute(
+            update(Job).where(Job.id == jid).values(rerender_requested=True)
+        )
+        await db_session.commit()
+        return True
+
+    monkeypatch.setattr("app.routers.exports.auto_generate_output", _gen)
+    job = await db_session.get(Job, jid)
+    await db_session.refresh(job)
+    await job_results._auto_output(job, None)
+    db_session.expire_all()
+    job = await db_session.get(Job, jid)
+    assert job.status == "done"
+    assert len(calls) == 2  # guard 2 — không render lần 3
+    assert job.rerender_requested is True  # quá 2 → giữ cờ + log warning
