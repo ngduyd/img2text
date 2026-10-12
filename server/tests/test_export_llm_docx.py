@@ -453,3 +453,14 @@ def test_html_to_docx_list_br_inline_bold_italic():
         "hai" in t for t in bolds
     )
     assert any("nghiêng" in t for t in italics)
+
+async def test_docx_fallback_stats_counter(monkeypatch, VALID_RESULT_JSONB, caplog):
+    """Fallback → _FALLBACK_STATS tăng + warning HEURISTIC FALLBACK tỉ lệ."""
+    from app.services import render_docx
+    monkeypatch.setattr(render_docx, "_FALLBACK_STATS", {"fallback": 0, "total": 0})
+    caplog.set_level("WARNING", logger="app.services.render_docx")
+    fake_llm(monkeypatch, [httpx.ConnectError("refused"), httpx.ConnectError("refused")])
+    await build_docx(VALID_RESULT_JSONB)
+    assert render_docx._FALLBACK_STATS == {"fallback": 1, "total": 1}
+    msg = [r.getMessage() for r in caplog.records if "HEURISTIC FALLBACK" in r.getMessage()]
+    assert msg == ["HEURISTIC FALLBACK LLMError — tỉ lệ 1/1"]

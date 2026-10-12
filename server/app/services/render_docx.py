@@ -634,6 +634,17 @@ def render_from_heuristic(
     return buf.getvalue()
 
 
+# tỉ lệ heuristic fallback / tổng lần build — quan sát model free echo/envelope
+_FALLBACK_STATS = {"fallback": 0, "total": 0}
+
+
+def _log_fallback(exc: Exception) -> None:
+    _FALLBACK_STATS["fallback"] += 1
+    logger.warning(
+        "HEURISTIC FALLBACK %s — tỉ lệ %d/%d",
+        type(exc).__name__, _FALLBACK_STATS["fallback"], _FALLBACK_STATS["total"],
+    )
+
 # ---------------------------------------------------------------- main API
 async def build_docx(
     result: dict,
@@ -650,6 +661,7 @@ async def build_docx(
     (user's saved style wins the IR). ir_sink: optional dict filled with
     the validated IR on the LLM path (auto-gen job.ir_json — no extra call).
     """
+    _FALLBACK_STATS["total"] += 1
     if use_llm:
         try:
             ir_dict = await llm_ir(result)
@@ -660,6 +672,7 @@ async def build_docx(
             return _html_to_docx(html, style_overrides)
         except (LLMError, IRValidationError) as exc:
             logger.warning("LLM IR failed, using heuristic fallback: %s", exc)
+            _log_fallback(exc)
 
     # Heuristic fallback
     return render_from_heuristic(result, style_overrides)

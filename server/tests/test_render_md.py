@@ -276,3 +276,17 @@ def test_prompt_guards_empty_zones():
     assert "empty zones" in low
     assert "do not invent" in low
     assert "render nothing" in low
+
+async def test_fallback_stats_counter(monkeypatch, caplog):
+    """Fallback → _FALLBACK_STATS tăng + warning HEURISTIC FALLBACK tỉ lệ n/total."""
+    from app.services import render_md
+    monkeypatch.setattr(
+        render_md, "_FALLBACK_STATS", {"fallback": 0, "total": 0}
+    )
+    caplog.set_level("WARNING", logger="render_md")
+    fake_llm(monkeypatch, [httpx.ConnectError("refused"), httpx.ConnectError("refused")])
+    await build_md(_ocr_result())  # LLMError → heuristic
+    stats = render_md._FALLBACK_STATS
+    assert stats == {"fallback": 1, "total": 1}
+    msg = [r.getMessage() for r in caplog.records if "HEURISTIC FALLBACK" in r.getMessage()]
+    assert msg == ["HEURISTIC FALLBACK LLMError — tỉ lệ 1/1"]

@@ -589,6 +589,17 @@ async def embed_crop_urls(markdown: str, job_id: int, storage) -> str:
     return markdown
 
 # ---------------------------------------------------------------- main API
+# tỉ lệ heuristic fallback / tổng lần build — quan sát model free echo/envelope
+_FALLBACK_STATS = {"fallback": 0, "total": 0}
+
+
+def _log_fallback(exc: Exception) -> None:
+    _FALLBACK_STATS["fallback"] += 1
+    logger.warning(
+        "HEURISTIC FALLBACK %s — tỉ lệ %d/%d",
+        type(exc).__name__, _FALLBACK_STATS["fallback"], _FALLBACK_STATS["total"],
+    )
+
 async def build_md(
     result: dict, use_llm: bool = True, ir_sink: dict | None = None
 ) -> str:
@@ -600,6 +611,7 @@ async def build_md(
     ir_sink: optional dict filled with the validated IR on the LLM path —
     auto-gen reuses that single IR for job.ir_json (no extra LLM call).
     """
+    _FALLBACK_STATS["total"] += 1
     if use_llm:
         try:
             ir_dict = await llm_ir(result)
@@ -609,6 +621,7 @@ async def build_md(
             return await llm_render_md(ir_doc, result)
         except (LLMError, IRValidationError) as exc:
             logger.warning("LLM IR failed, using heuristic fallback: %s", exc)
+            _log_fallback(exc)
 
     # Heuristic fallback
     pages = extract_pages(result)
