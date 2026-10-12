@@ -12,17 +12,19 @@ import logging
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import get_current_user, get_runner_key, require_ocr
 from app.core.limiter import DailyCounter
-from app.core.models import DocumentVersion, Job, OcrSuggestion, User
+from app.core.models import DocumentVersion, Job, OcrSuggestion, User, WorkerHeartbeat
 from app.core.schemas import PreprocessIn, ResultBody
 from app.services import proofread
 from app.services.doc_versions import (
@@ -159,10 +161,22 @@ class JobCreateBody(BaseModel):
 
     storage_key: str
     page_count: int
+    # wave-2 #3: tên file gốc (search q ILIKE); web cũ không gửi → None.
+    filename: str | None = None
     output_format: str = "md"
     mode: str = "layout"
     # Plan W (wizard): page selection + rotation JSON object, not a string.
     preprocess: dict | None = None
+
+def _clean_filename(name: str | None) -> str | None:
+    """wave-2 #3 trust boundary: metadata only (KHÔNG BAO GIỜ làm path) —
+    strip, không rỗng, ≤255, không path separator/NUL."""
+    if name is None:
+        return None
+    name = name.strip()
+    if not name or len(name) > 255 or any(c in name for c in "/\\\x00"):
+        raise HTTPException(status_code=422, detail="Tên file không hợp lệ.")
+    return name
 
 def _file_ext(name: str) -> str:
     return name.rsplit(".", 1)[-1].lower() if "." in name else ""
@@ -281,6 +295,7 @@ async def create_job(
     # WS-ADMIN quota: pre-create gate SAU các 422 validation (giữ 422 pin),
     # TRƯỚC khi insert row.
     await ensure_quota(session, user, body.page_count)
+    filename = _clean_filename(body.filename)
     file_type = "pdf" if ext == "pdf" else "image"
     # Plan W: preprocess validated AFTER page_count known, BEFORE the row write
     preprocess_json: str | None = None
@@ -319,6 +334,7 @@ async def create_job(
         user_id=user.id,
         status="queued",
         storage_key=body.storage_key,
+        filename=filename,
         file_type=file_type,
         page_count=body.page_count,
         preprocess=preprocess_json,
@@ -333,6 +349,8 @@ async def create_job(
         "status": job.status,
         "page_count": job.page_count,
         "file_type": job.file_type,
+        # review r1 P1-6: filename nhất quán list/detail/create (wave2-web)
+        "filename": filename,
         "output_format": body.output_format,
         "mode": body.mode,
     }
@@ -354,22 +372,39 @@ async def _job_or_403(
 async def list_jobs(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
+    # wave-2 #3 (spec 2026-10-14): search + status tab + sort lên server.
+    q: str | None = Query(None, max_length=255),
+    status: str | None = Query(None, max_length=20),
+    sort: Literal["newest", "oldest"] = "newest",
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Paginated owner list (Phase 4): page/page_size in, {items,total,page,page_size}.
 
-    total counts ALL owner jobs (unpaginated) so the UI can render page
-    numbers; id desc tiebreak keeps created_at ties from shuffling rows
-    across page boundaries (pages must partition cleanly).
+    total counts ALL owner jobs matching the FILTER (unpaginated) so the UI
+    can render page numbers; id tiebreak keeps created_at ties from
+    shuffling rows across page boundaries (pages must partition cleanly).
+    q → ILIKE filename (filename NULL = legacy row, không khớp); status =
+    single value; sort=newest|oldest (default newest, spec 2026-10-14 #3).
     """
     base = select(Job).where(Job.user_id == user.id)
+    if (q or "").strip():
+        # review r1 P1-2: escape %, _, \ → q là literal, không wildcard
+        needle = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        base = base.where(Job.filename.ilike(f"%{needle}%", escape="\\"))
+    if status:
+        base = base.where(Job.status == status)
     total = (
         await session.execute(select(func.count()).select_from(base.subquery()))
     ).scalar_one()
+    order = (
+        (Job.created_at.asc(), Job.id.asc())
+        if sort == "oldest"
+        else (Job.created_at.desc(), Job.id.desc())
+    )
     rows = (
         await session.execute(
-            base.order_by(Job.created_at.desc(), Job.id.desc())
+            base.order_by(*order)
             .offset((page - 1) * page_size)
             .limit(page_size)
         )
@@ -380,6 +415,8 @@ async def list_jobs(
             "status": j.status,
             "page_count": j.page_count,
             "file_type": j.file_type,
+            # wave2-web contract: hiển thị + toast (nullable = legacy row)
+            "filename": j.filename,
             "created_at": j.created_at,
             "error": j.error,
         }
@@ -452,6 +489,8 @@ async def get_job(
         "status": job.status,
         "file_type": job.file_type,
         "page_count": job.page_count,
+        # review r1 P1-6: filename đã có ở list → detail/create đồng bộ
+        "filename": job.filename,
         "error": job.error,
         "output_format": job.output_format or "md",
         # P1-2 review r1: web ẩn Section Layout + export nhóm layout khi extract_only
@@ -1077,6 +1116,48 @@ async def restore_version(
     )
     return Response(status_code=204)
 
+# --- wave-2 #7: POST /api/worker/heartbeat (liveness upsert, runner key) -----
+
+class WorkerHeartbeatBody(BaseModel):
+    worker_id: str
+    # "loop" mặc định (Colab loop); orchestrator ghi trực tiếp kind="kaggle-batch"
+    kind: str = "loop"
+    current_job_id: int | None = None
+
+@router.post("/api/worker/heartbeat")
+async def worker_heartbeat(
+    body: WorkerHeartbeatBody,
+    _: str = Depends(get_runner_key),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """spec 2026-10-14 #7: upsert last_seen/current_job_id (1 row/worker_id).
+    Auth = runner key (cùng worker surface với GET /api/jobs/next — loop
+    chưa có per-job token khi bắt đầu heartbeat)."""
+    worker_id = body.worker_id.strip()
+    kind = body.kind.strip() or "loop"
+    if not worker_id or len(worker_id) > 100:
+        # review r1 P2: tách message theo field hỏng (kind riêng, không gộp)
+        raise HTTPException(status_code=422, detail="worker_id không hợp lệ.")
+    if len(kind) > 20:
+        raise HTTPException(status_code=422, detail="kind không hợp lệ.")
+    now = _utcnow()
+    await session.execute(
+        pg_insert(WorkerHeartbeat)
+        .values(
+            worker_id=worker_id,
+            kind=kind,
+            last_seen=now,
+            current_job_id=body.current_job_id,
+        )
+        .on_conflict_do_update(
+            index_elements=[WorkerHeartbeat.worker_id],
+            set_={"kind": kind, "last_seen": now,
+                  "current_job_id": body.current_job_id},
+        )
+    )
+    await session.commit()
+    return {"last_seen": now.isoformat()}
+
 # --- Worker protocol: heartbeat / result / fail (Task 4) ---
 
 class FailBody(BaseModel):
@@ -1228,6 +1309,58 @@ async def fail_job(
         raise HTTPException(status_code=409, detail="job not runnable")
     await session.commit()
     return {}
+
+# --- Delete: DELETE /api/jobs/{id} (spec wave-2 #1 — GDPR xóa job) ----------
+
+@router.delete("/api/jobs/{id}", status_code=204)
+async def delete_job(
+    id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> Response:
+    """Owner-or-admin (spec 2026-10-14 #1): xóa HẾT data cá nhân của job —
+    derived prefixes exports/{id}/ (md/docx/layout) + crops/{id}/ + version
+    objects versions/{id}/, version rows, input object (job.storage_key),
+    row. Giữ nguyên contract cancel: job đang extracting/rendering VẪN xóa
+    được — ingest guard "job gone → drop" và worker /result|/fail 404 đã có;
+    rendering hủy live auto-output task (cancel pattern). Quota SUM realtime
+    (page_count count lại từ đầu). Storage lỗi → 500, row còn (retry được)."""
+    from app.services import job_results  # lazy: append-only region (R2 lane)
+
+    job = await _job_or_403(session, id, user)
+    if job.status == "rendering":
+        task = job_results._active_outputs.get(id)
+        if task is not None and not task.done():
+            task.cancel()
+    input_key = job.storage_key
+    await storage.delete_prefix(f"exports/{id}/")
+    await storage.delete_prefix(f"crops/{id}/")
+    await storage.delete_prefix(f"versions/{id}/")
+    if input_key:
+        # review r1 P1-1: input content-addressed dùng chung (2 job cùng sha)
+        # → chỉ xóa object khi KHÔNG job nào khác còn trỏ storage_key này.
+        others = (
+            await session.execute(
+                select(func.count())
+                .select_from(Job)
+                .where(Job.storage_key == input_key, Job.id != id)
+            )
+        ).scalar_one()
+        if others == 0:
+            await storage.delete_prefix(input_key)
+    await session.execute(
+        delete(DocumentVersion).where(DocumentVersion.job_id == id)
+    )
+    # review r1 P2: không để heartbeat trỏ job đã xóa (row giữ, upsert tự sửa)
+    await session.execute(
+        update(WorkerHeartbeat)
+        .where(WorkerHeartbeat.current_job_id == id)
+        .values(current_job_id=None)
+    )
+    await session.delete(job)
+    await session.commit()
+    return Response(status_code=204)
 
 # --- Cancel: POST /api/jobs/{id}/cancel (Hủy job) ---------------------------
 

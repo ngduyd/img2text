@@ -42,9 +42,10 @@ from pathlib import Path
 
 from pydantic import ValidationError
 from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.config import settings
-from app.core.models import Job
+from app.core.models import Job, WorkerHeartbeat
 from app.core.schemas import IMAGE_MARKER, ResultBody
 from app.services.job_results import store_batch_result
 from app.services.runtime_settings import get_runtime_setting
@@ -200,6 +201,31 @@ async def _count_queued(session_factory) -> int:
         )
         return int(result.scalar_one())
 
+async def _touch_batch_heartbeat(
+    session_factory, current_job_id: int | None = None
+) -> None:
+    """wave-2 #7: orchestrator marker — upsert row worker_id="kaggle-batch"
+    kind="kaggle-batch" khi spawn + mỗi poll status. Telemetry only: lỗi
+    DB không được phá spawn/poll (warning + bỏ qua)."""
+    try:
+        async with session_factory() as session:
+            now = datetime.now(timezone.utc)
+            await session.execute(
+                pg_insert(WorkerHeartbeat)
+                .values(
+                    worker_id="kaggle-batch", kind="kaggle-batch",
+                    last_seen=now, current_job_id=current_job_id,
+                )
+                .on_conflict_do_update(
+                    index_elements=[WorkerHeartbeat.worker_id],
+                    set_={"kind": "kaggle-batch", "last_seen": now,
+                          "current_job_id": current_job_id},
+                )
+            )
+            await session.commit()
+    except Exception:
+        logger.warning("kaggle batch: heartbeat upsert lỗi", exc_info=True)
+
 # --- Plan K5: batch mode (kaggle_mode="batch") ---
 
 def _get_storage():
@@ -226,8 +252,8 @@ def adapt_batch_document(doc: dict) -> dict:
     validated by schemas.ResultBody before ingest).
 
     Batch-grade ceilings: whole file → pages 1..N (preprocess propagate qua
-    manifest per job — P2-6; kernel batch chưa áp dụng → caller logs the
-    KAGGLE_MODE=loop hint); no dual-branch verdicts → verdict "ok" /
+    manifest per job — kernel batch áp dụng page-select/rotate trước OCR,
+    wave-2 #4); no dual-branch verdicts → verdict "ok" /
     page_flag "ok"; image blocks KEPT as verdict image_unextractable + marker
     (crop flow downstream — pixels never leave the kernel, only bbox);
     empty-text non-image blocks dropped; table block text is already HTML,
@@ -469,8 +495,8 @@ async def _spawn_batch_run(api, session_factory, jobs: list[Job]) -> bool:
                     "filename": f"{job.id}__{Path(job.storage_key).name}",
                     # content-addressed key uploads/{sha256}.{ext} → the hash
                     "sha256": Path(job.storage_key).stem,
-                    # P2-6: preprocess propagate → manifest → pipeline (kernel
-                    # batch chưa đọc key này — deploy lane; extra key không
+                    # P2-6: preprocess propagate → manifest → kernel batch
+                    # đọc + áp dụng trước OCR (wave-2 #4; extra key không
                     # phá contract: entries khác giữ nguyên)
                     "preprocess": (
                         json.loads(job.preprocess) if job.preprocess else None
@@ -560,6 +586,8 @@ async def _spawn_batch_run(api, session_factory, jobs: list[Job]) -> bool:
         "job_ids": marked,
         "ingest_failures": 0,
     }
+    # wave-2 #7: spawn → mark worker kaggle-batch sống (admin card)
+    await _touch_batch_heartbeat(session_factory, marked[0] if marked else None)
     return True
 
 async def _revert_job_queued(session_factory, job_id: int, why: str) -> None:
@@ -608,12 +636,6 @@ async def _ingest_batch_result(session_factory, job_id: int, out_dir: Path) -> N
             # ingest, no fail-mark, no requeue.
             logger.info("kaggle batch: job %s cancelled — skip ingest", job_id)
             return
-        if job.preprocess:
-            logger.warning(
-                "kaggle batch bỏ qua preprocess (đã propagate qua manifest, "
-                "kernel batch chưa đọc) — dùng worker loop "
-                "(KAGGLE_MODE=loop) khi cần"
-            )
         body = ResultBody.model_validate(adapt_batch_document(doc))
         stored = await store_batch_result(
             session, job_id, body, now=datetime.now(timezone.utc),
@@ -724,6 +746,8 @@ async def _poll_batch_run(api, session_factory, run: dict) -> None:
     queued + warning."""
     ref = str(run["ref"])
     job_ids: list[int] = list(run["job_ids"])
+    # wave-2 #7: mỗi poll status → refresh last_seen của marker kaggle-batch
+    await _touch_batch_heartbeat(session_factory, job_ids[0] if job_ids else None)
     status = _norm_status(await asyncio.to_thread(api.kernels_status, ref))
     if status == "complete":
         try:

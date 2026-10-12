@@ -272,9 +272,15 @@ async def _pdf_export(
 
 def _render_pdf(html: str, base_url: str) -> bytes:
     """bleach-cleaned html → pdf via weasyprint (import inside: heavy, in thread)."""
-    from weasyprint import HTML  # deferred import: CPU-heavy, runs in to_thread
+    from weasyprint import CSS, HTML  # deferred import: CPU-heavy, runs in to_thread
 
-    return HTML(string=html, base_url=base_url).write_pdf()
+    # #9 (spec 2026-10-14): font-family explicit — DejaVu (Dockerfile:
+    # fonts-dejavu-extra + fontconfig) phủ dấu tiếng Việt; fallback serif
+    # (user stylesheet thắng CSS mặc định của pandoc — var theo image host).
+    font_css = CSS(string="body { font-family: 'DejaVu Sans', serif; }")
+    return HTML(string=html, base_url=base_url).write_pdf(
+        stylesheets=[font_css]
+    )
 
 # --- Content edit: PATCH /api/jobs/{id}/content ---
 

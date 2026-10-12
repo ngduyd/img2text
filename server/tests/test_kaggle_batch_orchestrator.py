@@ -325,9 +325,12 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
     # validated against the exact worker result shape
     ResultBody.model_validate(res)
 
-async def test_batch_preprocess_ceiling_warns_and_ingests_whole_file(
-    kaggle_batch_env, api, storage_env, seed_job, db_session, caplog, monkeypatch
+async def test_batch_preprocess_ingests_kernel_output_as_is(
+    kaggle_batch_env, api, storage_env, seed_job, db_session, monkeypatch
 ):
+    """Server nhận nguyên kết quả kernel trả về — page-select/rotate do kernel
+    batch áp dụng TRƯỚC OCR (wave-2 #4, test ở test_img2text_batch); mock
+    kernel vẫn trả cả 2 trang → ingest cả 2."""
     api.result_doc = RESULT_DOC
     job = await db_session.get(Job, seed_job)
     job.preprocess = '{"pages": [1], "rotate": {"1": 90}}'
@@ -336,9 +339,7 @@ async def test_batch_preprocess_ceiling_warns_and_ingests_whole_file(
         return "# layout md"
     monkeypatch.setattr("app.routers.exports.build_md", _md_ok)  # before ingest
     assert await orch.ensure_worker(SessionLocal) is True  # spawn
-    with caplog.at_level("WARNING", logger=orch.logger.name):
-        assert await orch.ensure_worker(SessionLocal) is False  # complete → ingest
-    assert any("bỏ qua preprocess" in r.getMessage() for r in caplog.records)
+    assert await orch.ensure_worker(SessionLocal) is False  # complete → ingest
     # ingest → rendering; one layout OK → done after the auto-output task
     await drain_auto_output()
     db_session.expire_all()

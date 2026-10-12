@@ -337,7 +337,9 @@ def resolve(region: Region, page_flag: str) -> str:
 
 # ===========================================================================
 # worker/pipeline.py — batch pieces only. Server-loop pieces (run_job,
-# _apply_preprocess, RunnerAuthError) dropped: no backend in batch mode.
+# RunnerAuthError) dropped: no backend in batch mode. _apply_preprocess giữ
+# bản file-based (wave-2 #4 — page-select + rotate trước OCR, R55 tên trang).
+# ===========================================================================
 # build_page/build_result adapter dropped by the amendment: the py3.12
 # paddleocr[doc-parser] raw shape is parsing_res_list (cell 14 normalize),
 # not the old {layout, markdown} shape those helpers consumed.
@@ -553,19 +555,20 @@ def load_manifest(root: str = "/kaggle/input") -> list[dict] | None:
     return jobs
 
 def fetch_manifest_jobs(jobs: list[dict], dest_dir: str,
-                        root: str = "/kaggle/input") -> list[tuple[int, str]]:
-    """manifest entries → (job_id, downloaded path); download fail (URL hết
-    hạn/network) → mount fallback ({job_id}__* đã mount) → still missing →
-    bỏ qua job đó (batch chạy tiếp)."""
+                        root: str = "/kaggle/input") -> list[tuple[int, str, dict | None]]:
+    """manifest entries → (job_id, downloaded path, preprocess|None); download
+    fail (URL hết hạn/network) → mount fallback ({job_id}__* đã mount, preprocess
+    None) → still missing → bỏ qua job đó (batch chạy tiếp)."""
     os.makedirs(dest_dir, exist_ok=True)
     mounted = find_inputs(root)
-    out: list[tuple[int, str]] = []
+    out: list[tuple[int, str, dict | None]] = []
     for entry in jobs:
         job_id = int(entry["job_id"])
+        pp = entry.get("preprocess") or None
         dest = os.path.join(dest_dir, entry["filename"])
         try:
             fetch_input(entry["input_url"], dest, entry.get("sha256"))
-            out.append((job_id, dest))
+            out.append((job_id, dest, pp))
             continue
         except Exception as exc:
             print(f"[batch] job {job_id} tải input lỗi: {exc} — thử mount fallback", flush=True)
@@ -573,7 +576,7 @@ def fetch_manifest_jobs(jobs: list[dict], dest_dir: str,
         if fallback is None:
             print(f"[batch] job {job_id} không có input — bỏ qua", flush=True)
             continue
-        out.append((job_id, fallback))
+        out.append((job_id, fallback, None))  # mount fallback: không có manifest → không preprocess
     return out
 
 def rasterize_to_pages(input_path: str, raw_dir: str) -> list[str]:
@@ -597,6 +600,35 @@ def rasterize_to_pages(input_path: str, raw_dir: str) -> list[str]:
         out.append(p)
     return out
 
+
+def _apply_preprocess(page_paths: list[str], preprocess: dict | None
+                      ) -> list[str]:
+    """Chọn trang + xoay CLOCKWISE trước OCR (wave-2 #4; worker loop
+    _apply_preprocess pattern — bản file-based).
+
+    pages: GIỮ file trang được chọn (1-based); tên file = số trang gốc
+    (R55 — normalize derive page_no từ tên, không renumber); trang bị loại
+    bị XÓA khỏi disk. rotate: {"<page>": 90|180|270} xoay tại chỗ (0/absent
+    = bytes giữ nguyên). None/pages thiếu → giữ nguyên mọi trang."""
+    from PIL import Image
+    if not preprocess:
+        return page_paths
+    pages_sel = preprocess.get("pages")
+    rotate = preprocess.get("rotate") or {}
+    cw = {90: Image.ROTATE_270, 180: Image.ROTATE_180, 270: Image.ROTATE_90}
+    out: list[str] = []
+    for p in page_paths:
+        n = int(os.path.basename(p).split("_")[1].split(".")[0])
+        if pages_sel is not None and n not in pages_sel:
+            os.remove(p)
+            continue
+        v = int(rotate.get(str(n), 0) or 0)
+        if v in cw:
+            # review r1 P1-5: `with` đóng handle (Image.open fp leak khi loop nhiều trang)
+            with Image.open(p) as im:
+                im.transpose(cw[v]).save(p, "PNG")
+        out.append(p)
+    return out
 
 def run_ocr(img_dir: str, raw_dir: str) -> None:
     """Re-exec THIS file under the py3.12 venv; pump [batch] lines (cell 12)."""
@@ -735,7 +767,7 @@ def normalize(raw_paths: list[str], pre_info: dict,
     return pages_out, problems
 
 
-def process_job(job_id: int, input_path: str) -> None:
+def process_job(job_id: int, input_path: str, preprocess: dict | None = None) -> None:
     """ONE staged input → pages → precheck gate → OCR → {job_id}_result.{json,md}.
 
     Per-job work dirs: page files are keyed page_0001.png — jobs sharing a
@@ -748,7 +780,9 @@ def process_job(job_id: int, input_path: str) -> None:
     ocr_raw_dir = os.path.join(job_dir, "ocr_raw")
     os.makedirs(pre_dir, exist_ok=True)
 
-    raw_paths = rasterize_to_pages(input_path, raw_dir)
+    raw_paths = _apply_preprocess(
+        rasterize_to_pages(input_path, raw_dir), preprocess
+    )
     print(f"job {job_id}: rendered {len(raw_paths)} trang")
 
     # precheck gate (raw bytes — deskew/khử bóng không đổi độ mờ/kích thước
@@ -795,15 +829,15 @@ def process_job(job_id: int, input_path: str) -> None:
         print("LƯU Ý:", m)
     print(f"job {job_id}: pages: {len(pages_out)}")
 
-def run_batch(inputs: list[tuple[int, str]]) -> int:
+def run_batch(inputs: list[tuple[int, str, dict | None]]) -> int:
     """Run EVERY staged input — one job's failure must NOT stop the batch
     (log + continue; SystemExit from run_ocr/_write_outputs included).
     Returns 0 when ≥1 output written, else 1 (server: run failed → all jobs
     in the run fail at step extracting)."""
     written = 0
-    for job_id, path in inputs:
+    for job_id, path, preprocess in inputs:
         try:
-            process_job(job_id, path)
+            process_job(job_id, path, preprocess)
             written += 1
         except (Exception, SystemExit) as exc:
             print(f"[batch] job {job_id} LỖI: {exc} — bỏ qua, chạy tiếp", flush=True)
@@ -819,7 +853,7 @@ def main() -> int:
         print(f"manifest: {len(manifest)} job (URL mode)", flush=True)
         inputs = fetch_manifest_jobs(manifest, os.path.join(WORK_DIR, "inputs"))
     else:
-        inputs = find_inputs()  # mount fallback (dev)
+        inputs = [(jid, p, None) for jid, p in find_inputs()]  # mount fallback (dev)
     if not inputs:
         raise SystemExit(
             "no staged input ({job_id}__file, jpg/jpeg/png/webp/pdf) under "
