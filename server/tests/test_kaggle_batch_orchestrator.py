@@ -1117,12 +1117,13 @@ async def test_batch_result_missing_crops_not_ingested(
     job = await db_session.get(Job, seed_job)
     assert job.status == "failed" and job.failed_step == "extracting"
 
+@pytest.mark.parametrize("max_jobs", [0, -1])
 async def test_batch_max_jobs_zero_unlimited(
     kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session,
-    monkeypatch,
+    monkeypatch, max_jobs,
 ):
     """KAGGLE_BATCH_MAX_JOBS=0 (hoặc -1) = unlimited — stage TẤT CẢ queued."""
-    monkeypatch.setattr(settings, "kaggle_batch_max_jobs", 0)
+    monkeypatch.setattr(settings, "kaggle_batch_max_jobs", max_jobs)
     job2 = await _extra_queued_job(auth_client, storage_env, "seed2")
     job3 = await _extra_queued_job(auth_client, storage_env, "seed3")
     assert await orch.ensure_worker(SessionLocal) is True
