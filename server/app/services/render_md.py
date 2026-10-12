@@ -301,7 +301,8 @@ async def _llm_config() -> tuple[str, str, str, float]:
     model = await get_runtime_setting(SessionLocal, "ir_llm_model", settings.ir_llm_model)
     base_url = await get_runtime_setting(SessionLocal, "llm_base_url", settings.llm_base_url)
     api_key = await get_runtime_setting(SessionLocal, "llm_api_key", settings.llm_api_key)
-    return base_url, model, api_key, settings.llm_timeout
+    timeout = await get_runtime_setting(SessionLocal, "llm_timeout", settings.llm_timeout)
+    return base_url, model, api_key, timeout
 
 
 async def _chat(user_content: str) -> str:
