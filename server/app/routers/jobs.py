@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -1228,6 +1228,42 @@ async def fail_job(
         raise HTTPException(status_code=409, detail="job not runnable")
     await session.commit()
     return {}
+
+# --- Delete: DELETE /api/jobs/{id} (spec wave-2 #1 — GDPR xóa job) ----------
+
+@router.delete("/api/jobs/{id}", status_code=204)
+async def delete_job(
+    id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> Response:
+    """Owner-or-admin (spec 2026-10-14 #1): xóa HẾT data cá nhân của job —
+    derived prefixes exports/{id}/ (md/docx/layout) + crops/{id}/ + version
+    objects versions/{id}/, version rows, input object (job.storage_key),
+    row. Giữ nguyên contract cancel: job đang extracting/rendering VẪN xóa
+    được — ingest guard "job gone → drop" và worker /result|/fail 404 đã có;
+    rendering hủy live auto-output task (cancel pattern). Quota SUM realtime
+    (page_count count lại từ đầu). Storage lỗi → 500, row còn (retry được)."""
+    from app.services import job_results  # lazy: append-only region (R2 lane)
+
+    job = await _job_or_403(session, id, user)
+    if job.status == "rendering":
+        task = job_results._active_outputs.get(id)
+        if task is not None and not task.done():
+            task.cancel()
+    input_key = job.storage_key
+    await storage.delete_prefix(f"exports/{id}/")
+    await storage.delete_prefix(f"crops/{id}/")
+    await storage.delete_prefix(f"versions/{id}/")
+    if input_key:
+        await storage.delete_prefix(input_key)
+    await session.execute(
+        delete(DocumentVersion).where(DocumentVersion.job_id == id)
+    )
+    await session.delete(job)
+    await session.commit()
+    return Response(status_code=204)
 
 # --- Cancel: POST /api/jobs/{id}/cancel (Hủy job) ---------------------------
 
