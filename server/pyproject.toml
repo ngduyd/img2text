@@ -19,6 +19,8 @@ dependencies = [
     "pypdf",
     "pymupdf",
     "pillow",
+    # HEIC/HEIF decode (Pillow 12.3 native AVIF — không cần dep cho avif)
+    "pillow-heif",
     "python-multipart",
     "python-docx",
     "bleach",

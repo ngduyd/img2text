@@ -49,7 +49,7 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 # Spec 2026-10-10 sanity bound (was 50 on the removed server-side parse):
 # the client counts pages with pdf.js; presign/create check the METADATA.
 # P2-5: cap = settings.max_pages (1 config; default = kernel hard cap 100).
-ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "pdf"}
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "pdf", "heic", "heif", "avif"}
 # ext → canonical Content-Type (R2): presign binds the declared type to the
 # extension allowlist; the Plan V download route reuses the same map.
 CONTENT_TYPE_BY_EXT = {
@@ -58,11 +58,14 @@ CONTENT_TYPE_BY_EXT = {
     "png": "image/png",
     "webp": "image/webp",
     "pdf": "application/pdf",
+    "heic": "image/heic",
+    "heif": "image/heif",
+    "avif": "image/avif",
 }
 # content-addressed keys ONLY (sha256 hex from presign; legacy multipart keys
 # were built the same way) — trust boundary: a crafted key must not point the
 # create head-check at arbitrary storage paths.
-STORAGE_KEY_RE = re.compile(r"uploads/[0-9a-f]{64}\.(?:jpg|jpeg|png|webp|pdf)")
+STORAGE_KEY_RE = re.compile(r"uploads/[0-9a-f]{64}\.(?:jpg|jpeg|png|webp|pdf|heic|heif|avif)")
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 PRESIGN_EXPIRES_SECONDS = 3600
 LEASE_MINUTES = 45
