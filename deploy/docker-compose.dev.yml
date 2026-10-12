@@ -77,12 +77,14 @@ services:
     environment:
       # Compose service name — NOT localhost (container-to-container DNS).
       DATABASE_URL: postgresql+asyncpg://img2text:img2text@postgres:5432/img2text_dev
-      # Storage endpoint split (dev upload 500 fix): ops calls (put/head)
-      # use the IN-NETWORK localstack name — container→host-published :4566
-      # times out on hosts with broken DNAT. Presigned file links are fetched
-      # by the USER'S BROWSER on the host → public endpoint stays localhost.
-      R2_ENDPOINT: http://localstack:4566
-      STORAGE_PUBLIC_ENDPOINT: http://localhost:4566
+      # Storage endpoint: dev dùng R2 THẬT từ env_file .env.dev (mode B).
+      # Gỡ override localstack (R2_ENDPOINT/STORAGE_PUBLIC_ENDPOINT) — compose
+      # `environment` đè env_file nên 2 dòng dưới đây từng nuốt R2 creds.
+      # Muốn quay lại localstack dev: uncomment 2 dòng này.
+      #   R2_ENDPOINT: http://localstack:4566
+      #   STORAGE_PUBLIC_ENDPOINT: http://localhost:4566
+      # Lưu ý (localstack mode): container→host-published :4566 timeout trên
+      # máy có DNAT hỏng — đó là lý do override cũ tồn tại.
       # Plan K2/K5: KAGGLE_* KHÔNG liệt kê ở đây — đọc từ env_file .env.dev
       # (khi có `environment:` key → đè env_file → ${...:-} trống nuốt config).
       # Chỉ giữ giá trị cố định trong container:
