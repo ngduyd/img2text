@@ -49,6 +49,8 @@ export default function TextSection({
   const [savingSid, setSavingSid] = useState<number | null>(null);
   /** Custom phrase "Sửa khác…" — value theo sid đang mở. */
   const [customText, setCustomText] = useState("");
+  /** P2-5: Lưu khi rỗng → lỗi inline (role="alert" + aria-describedby). */
+  const [customError, setCustomError] = useState(false);
   /** Task 6: save set cờ rerender (rendering | sync targeted-fail) → confirm xếp hàng. */
   const [rerenderModal, setRerenderModal] = useState(false);
   const rerenderPanelRef = useDialogA11y<HTMLDivElement>(rerenderModal, () =>
@@ -169,7 +171,11 @@ export default function TextSection({
   };
 
   const handleCustom = (s: Suggestion) => {
-    if (!customText.trim()) return;
+    if (!customText.trim()) {
+      setCustomError(true);
+      return;
+    }
+    setCustomError(false);
     setSavingSid(s.id);
     void saveReplace(s.original, customText);
   };
@@ -291,7 +297,14 @@ export default function TextSection({
                           data-testid={`input-custom-${seg.sid}`}
                           type="text"
                           value={customText}
-                          onChange={(e) => setCustomText(e.target.value)}
+                          onChange={(e) => {
+                            setCustomText(e.target.value);
+                            setCustomError(false);
+                          }}
+                          aria-invalid={customError || undefined}
+                          aria-describedby={
+                            customError ? `custom-error-${seg.sid}` : undefined
+                          }
                           onKeyDown={(e) => {
                             if (e.key === "Enter") handleCustom(openSuggestion);
                           }}
@@ -303,12 +316,23 @@ export default function TextSection({
                           variant="secondary"
                           size="sm"
                           loading={savingSid === seg.sid}
-                          disabled={savingSid !== null || !customText.trim()}
+                          disabled={savingSid !== null}
                           onClick={() => handleCustom(openSuggestion)}
                         >
                           Lưu
                         </Button>
                       </span>
+                      {/* P2-5: lỗi validate rỗng — alert + describedby cho input. */}
+                      {customError && (
+                        <p
+                          id={`custom-error-${seg.sid}`}
+                          data-testid={`custom-error-${seg.sid}`}
+                          role="alert"
+                          className="text-xs text-error"
+                        >
+                          Nội dung trống.
+                        </p>
+                      )}
                     </span>
                   )}
               </span>

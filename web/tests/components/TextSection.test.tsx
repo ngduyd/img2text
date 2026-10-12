@@ -101,12 +101,21 @@ it("Sửa khác… custom input → saveExtraction with custom phrase", async ()
   ]);
 });
 
-it("empty custom text → save button disabled", async () => {
+// P2-5 review r1: bấm Lưu khi rỗng → lỗi role="alert" + aria-describedby (button phải bấm được).
+it("empty custom text → Lưu shows alert error + aria-describedby, không save", async () => {
   renderSection(<TextSection jobId="5" />);
-  await screen.findByTestId("suggestion-mark-11");
   const user = userEvent.setup();
-  await user.click(within(screen.getByTestId("suggestion-mark-11")).getByRole("button"));
-  expect(screen.getByTestId("btn-save-custom-11")).toBeDisabled();
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  const input = screen.getByTestId("input-custom-11");
+  expect(screen.queryByTestId("custom-error-11")).toBeNull();
+  await user.click(screen.getByTestId("btn-save-custom-11"));
+  const err = await screen.findByTestId("custom-error-11");
+  expect(err).toHaveAttribute("role", "alert");
+  expect(input).toHaveAttribute("aria-describedby", "custom-error-11");
+  expect(api.saveExtraction).not.toHaveBeenCalled();
+  // gõ text → lỗi biến mất
+  await user.type(input, "a");
+  expect(screen.queryByTestId("custom-error-11")).toBeNull();
 });
 
 // --- Task 6: confirm modal queue (requires_rerender → "Lưu & xếp hàng") ---
