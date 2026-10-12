@@ -243,3 +243,15 @@ async def test_list_items_include_filename(upload, auth_client):
     assert r.status_code == 201, r.text
     items = (await auth_client.get("/api/jobs")).json()["items"]
     assert items[0]["filename"] == "hop-dong.pdf"
+
+# --- review r1 P1-6: filename trong create response + detail ----------------
+
+async def test_create_and_detail_return_filename(upload, auth_client):
+    from tests.conftest import TEST_PDF_3
+
+    r = await upload(TEST_PDF_3, "ho-so-ct.pdf", page_count=1)
+    assert r.status_code == 201, r.text
+    assert r.json()["filename"] == "ho-so-ct.pdf"  # create response
+    detail = await auth_client.get(f"/api/jobs/{r.json()['id']}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["filename"] == "ho-so-ct.pdf"  # detail response

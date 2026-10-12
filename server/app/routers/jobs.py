@@ -349,6 +349,8 @@ async def create_job(
         "status": job.status,
         "page_count": job.page_count,
         "file_type": job.file_type,
+        # review r1 P1-6: filename nhất quán list/detail/create (wave2-web)
+        "filename": filename,
         "output_format": body.output_format,
         "mode": body.mode,
     }
@@ -485,6 +487,8 @@ async def get_job(
         "status": job.status,
         "file_type": job.file_type,
         "page_count": job.page_count,
+        # review r1 P1-6: filename đã có ở list → detail/create đồng bộ
+        "filename": job.filename,
         "error": job.error,
         "output_format": job.output_format or "md",
         # P1-2 review r1: web ẩn Section Layout + export nhóm layout khi extract_only
