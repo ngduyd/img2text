@@ -11,7 +11,9 @@ import { STATUS_TEXT, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
 import ExportBar from "../components/ExportBar";
 import InfoPanel from "../components/panels/InfoPanel";
 import OriginalFilePanel from "../components/panels/OriginalFilePanel";
-import ResultPanel from "../components/panels/ResultPanel";
+import LayoutPreview from "../components/LayoutPreview";
+import TextSection from "../components/TextSection";
+import UnifiedEditor from "../components/UnifiedEditor";
 import Badge from "../components/ui/Badge";
 import Button, { buttonClasses } from "../components/ui/Button";
 import Card from "../components/ui/Card";
@@ -21,6 +23,12 @@ import Skeleton from "../components/ui/Skeleton";
 const jobRefetchInterval = (q: Query<Job>): number | false =>
   q.state.data && PENDING_STATUSES.includes(q.state.data.status) ? 3000 : false;
 
+/**
+ * WS-UI (spec 2026-10-13): 2 section dọc —
+ * SECTION "Văn bản" (7/5: TextSection + ảnh gốc auto) — hiện cả khi rendering;
+ * SECTION "Layout" (7/5: LayoutPreview / editor khi "Chỉnh sửa" + ExportBar
+ * dưới preview | ảnh gốc + InfoPanel). Ảnh gốc auto-fetch, blob cache chung.
+ */
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
@@ -30,10 +38,8 @@ export default function JobDetail() {
     refetchInterval: jobRefetchInterval,
   });
   const [retryError, setRetryError] = useState<string | null>(null);
-  /** JD2: btn-edit-doc = inline edit ON THIS PAGE (không navigate /edit). */
+  /** JD2: btn-edit-doc = inline edit ON THIS PAGE — section Layout: preview ↔ editor. */
   const [editing, setEditing] = useState(false);
-  /** Toggle "Bản gốc": default full-width; ON → split 7/5 với OriginalFilePanel (luôn mount, ẩn qua `hidden`). */
-  const [showOriginal, setShowOriginal] = useState(false);
   /** P0-C: panel "Lịch sử" — list lazy-fetch khi mở (queryKey "versions" để invalidate). */
   const [showHistory, setShowHistory] = useState(false);
   const {
@@ -55,8 +61,6 @@ export default function JobDetail() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [showHistory]);
   const editorHostRef = useRef<HTMLElement>(null);
-
-  /* Plan M: scroll + focus nguồn md-layout do UnifiedEditor tự lo khi editing=true. */
 
   const toggleEdit = () => {
     if (editing) {
@@ -110,8 +114,13 @@ export default function JobDetail() {
     );
   }
 
-  // Done → 2 cột: reading column + rail. Chưa xong → 1 cột (rail thành nội dung chính).
   const result = job.status === "done" ? job.result : null;
+  /** Section "Văn bản": OCR xong (rendering/done) → GET /extraction 200. */
+  const textReady = job.result !== null && (job.status === "rendering" || job.status === "done");
+  /** Section "Layout": layout artifact chỉ có khi done. P1-2: extract_only không gen layout → ẩn. */
+  const layoutReady =
+    result !== null && job.status === "done" && job.mode !== "extract_only";
+  const regions = (job.result?.pages ?? []).flatMap((p) => p.regions);
 
   return (
     <main id="main" className="mx-auto max-w-[1400px] p-4 sm:p-6">
@@ -217,35 +226,16 @@ export default function JobDetail() {
               Chạy lại layout
             </Button>
           )}
-          {/* Phase 2 Task 4: sang trang trích xuất (highlight + click-fix) — done jobs only. */}
-          {job.status === "done" && result && (
-            <Link
-              to={`/jobs/${id}/extraction`}
-              data-testid="link-extraction"
-              className={buttonClasses("secondary", "md")}
-            >
-              Trích xuất văn bản
-            </Link>
-          )}
-          {/* R51: toggle "Bản gốc" — split-view đối chiếu file gốc. */}
-          <Button
-            testid="btn-toggle-original"
-            variant="secondary"
-            aria-pressed={showOriginal}
-            onClick={() => setShowOriginal((v) => !v)}
-          >
-            Bản gốc
-          </Button>
-          {/* JD2 amendment: Edit = inline edit trên chính trang này (không còn navigate /edit). */}
+          {/* JD2 amendment: Edit = inline edit trong section Layout (preview ↔ editor). */}
           <Button
             testid="btn-edit-doc"
             variant="secondary"
             aria-pressed={editing}
-            disabled={!result}
+            disabled={job.status !== "done"}
             onClick={toggleEdit}
           >
             <PenLine className="h-4 w-4" aria-hidden="true" />
-            {editing ? "Đang sửa" : "Edit"}
+            {editing ? "Đang sửa" : "Chỉnh sửa"}
           </Button>
           {/* P0-C: lịch sử version + khôi phục (API listVersions/restoreVersion sẵn). */}
           <Button
@@ -306,7 +296,7 @@ export default function JobDetail() {
                   {versions &&
                     v.version ===
                       Math.max(
-                        ...versions.items.filter((x: DocumentVersion) => x.kind === v.kind).map((x: DocumentVersion) => x.version),
+                        ...versions.items.filter((x: DocumentVersion) => x.kind === v.kind).map((x) => x.version),
                       ) && (
                     <Badge tone="success">Hiện tại</Badge>
                   )}
@@ -342,43 +332,106 @@ export default function JobDetail() {
           {retryError}
         </p>
       )}
-      <div
-        data-testid="detail-grid"
-        className={`grid gap-4 lg:gap-6 ${
-          // R51 toggle: ON = ResultPanel 7 | OriginalFilePanel 5; OFF = full-width 1 cột.
-          showOriginal ? "lg:grid-cols-[7fr_5fr]" : ""
-        }`}
-      >
-        {result && (
+
+      {/* SECTION 1 "Văn bản" — 7/5; hiện cả khi status rendering (OCR xong). */}
+      {textReady && (
+        <section
+          data-testid="section-text"
+          aria-labelledby="section-text-title"
+          className="mb-6 flex flex-col gap-4 lg:mb-8"
+        >
+          <h2 id="section-text-title" className="text-lg font-semibold tracking-tight">
+            Văn bản
+          </h2>
           <div
-            data-testid="detail-reading"
-            /* Plan M3: content col rộng hết cột trái (bỏ cap 75ch) — vùng Soạn thảo mở rộng. */
-            className="flex min-w-0 flex-col gap-6 py-2 leading-[1.6] lg:py-6"
+            data-testid="detail-grid"
+            className="grid gap-4 lg:grid-cols-[7fr_5fr] lg:gap-6"
           >
-            <ResultPanel
-              jobId={id!}
-              job={job}
-              result={result}
-              editing={editing}
-              onEditingChange={setEditing}
-              hostRef={editorHostRef}
-            />
+            <div
+              data-testid="detail-reading"
+              className="flex min-w-0 flex-col gap-4 py-2 leading-[1.6] lg:py-6"
+            >
+              <div data-testid="panel-result" className="flex min-w-0 flex-col gap-6">
+                <TextSection jobId={id!} regions={regions} fileType={job.file_type} />
+                {/* WS-UI: link đọc tiếp ở trang trích xuất đầy đủ. */}
+                <Link
+                  to={`/jobs/${id}/extraction`}
+                  data-testid="link-extraction"
+                  className={buttonClasses("secondary", "md")}
+                >
+                  Mở trang trích xuất đầy đủ
+                </Link>
+              </div>
+            </div>
+            <aside className="flex min-w-0 flex-col lg:sticky lg:top-16 lg:self-start">
+              <OriginalFilePanel jobId={id!} fileType={job.file_type} />
+            </aside>
           </div>
-        )}
-        <aside data-testid="detail-rail" className="flex min-w-0 flex-col gap-4">
-          {/* Luôn mount (không re-fetch); ẩn qua hidden attribute khi toggle OFF. */}
-          <div data-testid="original-panel" hidden={!showOriginal}>
+        </section>
+      )}
+
+      {/* SECTION 2 "Layout" — 7/5: preview (default) / editor khi "Chỉnh sửa". */}
+      {layoutReady && result && (
+        <section
+          data-testid="section-layout"
+          aria-labelledby="section-layout-title"
+          className="flex flex-col gap-4"
+        >
+          <h2 id="section-layout-title" className="text-lg font-semibold tracking-tight">
+            Layout
+          </h2>
+          <div className="grid gap-4 lg:grid-cols-[7fr_5fr] lg:gap-6">
+            <div className="flex min-w-0 flex-col gap-4 py-2 lg:py-6">
+              {editing ? (
+                <UnifiedEditor
+                  jobId={id!}
+                  job={job}
+                  markdown={result.edited_markdown ?? result.markdown}
+                  editing={editing}
+                  onEditingChange={setEditing}
+                  hostRef={editorHostRef}
+                />
+              ) : (
+                <LayoutPreview job={job} />
+              )}
+              {/* Stats line dưới preview (spec: SECTION Layout). */}
+              <p data-testid="result-stats" className="text-sm text-muted">
+                {job.page_count} trang · GPU {result.gpu_seconds}s · {result.model_version}
+              </p>
+              {/* WS-UI item 13: ExportBar 2 nhóm DƯỚI preview cột trái (không còn trong rail). */}
+              <Card testid="panel-export">
+                <ExportBar jobId={id!} />
+              </Card>
+            </div>
+            <aside className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-16 lg:self-start">
+              {/* ẢNH GỐC: dùng lại blob cache — không fetch đôi. */}
+              <OriginalFilePanel
+                jobId={id!}
+                fileType={job.file_type}
+                testid="panel-original-layout"
+              />
+              <InfoPanel job={job} />
+            </aside>
+          </div>
+        </section>
+      )}
+
+      {/* OCR chưa xong (queued/extracting/failed): status-only — original + info. */}
+      {!textReady && (
+        <div data-testid="detail-grid" className="grid gap-4 lg:grid-cols-[7fr_5fr] lg:gap-6">
+          <div />
+          <aside className="flex min-w-0 flex-col gap-4">
             <OriginalFilePanel jobId={id!} fileType={job.file_type} />
-          </div>
-          {/* Phase 3: bỏ job-meta card (badge "Đầu ra" + statsLine) — ExportBar 1 cụm trong rail. */}
-          {result && (
-            <Card testid="panel-export">
-              <ExportBar jobId={id!} />
-            </Card>
-          )}
+            <InfoPanel job={job} />
+          </aside>
+        </div>
+      )}
+      {/* rendering (textReady, chưa layout): InfoPanel lẻ ra dưới. */}
+      {textReady && !layoutReady && (
+        <aside className="mt-4 flex min-w-0 flex-col gap-4">
           <InfoPanel job={job} />
         </aside>
-      </div>
+      )}
     </main>
   );
 }

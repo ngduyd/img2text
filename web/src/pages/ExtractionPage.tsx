@@ -1,144 +1,32 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, TriangleAlert } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { api, ApiError } from "../api/client";
-import type { Suggestion } from "../api/types";
+import { api } from "../api/client";
+import type { ExtractionSaveResult } from "../api/types";
 import { mapApiError } from "../lib/errors";
-import { buildHighlights } from "../lib/highlight";
+import TextSection from "../components/TextSection";
 import Button from "../components/ui/Button";
-import Skeleton from "../components/ui/Skeleton";
 
 /**
  * Phase 2 (spec Sub-system B): trang trích xuất văn bản gốc.
- * Highlight phrase lỗi (proofread suggestions) → click → popover →
- * Áp dụng = POST /extraction (save + incremental sync, 0 LLM).
+ * WS-UI: toàn bộ highlight/popover/custom-save + IssuesPanel nằm trong
+ * TextSection (dùng chung với JobDetail section "Văn bản"); trang này giữ
+ * header + hint needs_render + "Vẽ lại layout".
  */
-
-/** w-64 popover: chạm mép phải viewport (rect.right + 256) → flip right-0; max-w chặn tràn. */
-function popoverPos(anchor: HTMLElement | undefined): string {
-  const rect = anchor?.getBoundingClientRect();
-  return rect && rect.right + 256 > window.innerWidth ? "right-0 left-auto" : "left-0";
-}
 export default function ExtractionPage() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
-  const { data, isPending, isError } = useQuery({
-    queryKey: ["extraction", id],
-    queryFn: () => api.getExtraction(id!),
-  });
-  const { data: suggestions = [] } = useQuery({
-    queryKey: ["suggestions", id],
-    queryFn: () => api.getSuggestions(id!),
-  });
-  /** Mở theo đúng occurrence click (P1: repeat mark cũng mở được popover). */
-  const [open, setOpen] = useState<{ sid: number; occ: number } | null>(null);
-  const [savingSid, setSavingSid] = useState<number | null>(null);
   /** Task 4: layouts không sync được trong lần save gần nhất → cần vẽ lại. */
   const [needsRender, setNeedsRender] = useState<string[]>([]);
   const [redrawing, setRedrawing] = useState(false);
 
-  const openSuggestion = suggestions.find((s) => s.id === open?.sid) ?? null;
-  /** Anchor element per suggestion key — popover flip đọc rect từ đây lúc render. */
-  const anchorEls = useRef(new Map<string, HTMLSpanElement>());
-
-  // P2: resize/scroll while open → popoverPos recompute (rect tính lúc render, stale nếu không bump).
-  const [, setPopoverTick] = useState(0);
-  useEffect(() => {
-    if (!openSuggestion) return;
-    const bump = () => setPopoverTick((n) => n + 1);
-    // capture=true: scroll của ancestor container cũng đổi vị trí tương đối viewport.
-    window.addEventListener("resize", bump);
-    window.addEventListener("scroll", bump, true);
-    return () => {
-      window.removeEventListener("resize", bump);
-      window.removeEventListener("scroll", bump, true);
-    };
-  }, [openSuggestion]);
-
-  // P3: Escape + click-outside đóng popover.
-  useEffect(() => {
-    if (!openSuggestion) return;
-    const close = () => setOpen(null);
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-    };
-    const onDown = (e: PointerEvent) => {
-      if (!(e.target as HTMLElement).closest("[data-suggestion-anchor]"))
-        close();
-    };
-    document.addEventListener("keydown", onKey);
-    document.addEventListener("pointerdown", onDown);
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("pointerdown", onDown);
-    };
-  }, [openSuggestion]);
-
-  const invalidate = async () => {
-    await queryClient.invalidateQueries({ queryKey: ["extraction", id] });
-    await queryClient.invalidateQueries({ queryKey: ["job", id] });
-    await queryClient.invalidateQueries({ queryKey: ["suggestions", id] });
-  };
-
-  const handleApply = async (s: Suggestion) => {
-    if (!data) return;
-    setSavingSid(s.id);
-    // Server sync theo phrase (old→new, mọi occurrence) → text cũng replace
-    // mọi occurrence để khớp layout sau sync.
-    const newText = data.text.split(s.original).join(s.suggestion);
-    const save = (force: boolean) =>
-      api.saveExtraction(id!, {
-        text: newText,
-        old_phrase: s.original,
-        new_phrase: s.suggestion,
-        expected_text_version: data.text_version,
-        ...(force ? { force: true } : {}),
-      });
-    try {
-      let result;
-      try {
-        result = await save(false);
-      } catch (err) {
-        // P2: detached layout 409 → confirm ghi đè → resend force=true.
-        const detached =
-          err instanceof ApiError &&
-          err.detail === "Layout có chỉnh tay. Đồng bộ sẽ ghi đè.";
-        if (
-          !detached ||
-          !window.confirm("Layout có chỉnh tay. Đồng bộ sẽ ghi đè. Tiếp tục?")
-        )
-          throw err;
-        result = await save(true);
-      }
-      setOpen(null);
-      setNeedsRender(result.needs_render);
-      toast.success(
-        result.needs_render.length > 0
-          ? "Đã lưu. Có layout cần vẽ lại."
-          : "Đã lưu và đồng bộ layout.",
-      );
-      await invalidate();
-    } catch (err) {
-      // R59: toast + refresh optimistic lock (409) — không giữ version cũ trong UI.
-      toast.error(mapApiError(err));
-      setOpen(null);
-      await invalidate();
-    } finally {
-      setSavingSid(null);
-    }
-  };
-
-  const handleReject = async (s: Suggestion) => {
-    try {
-      await api.rejectSuggestion(id!, s.id);
-      setOpen(null);
-      await invalidate();
-    } catch (err) {
-      toast.error(mapApiError(err));
-    }
-  };
+  /** P2-3 review r1: file_type của job → TextSection (crop chỉ fetch khi "image"). */
+  const { data: job } = useQuery({
+    queryKey: ["job", id],
+    queryFn: () => api.getJob(id!),
+  });
 
   const handleRedraw = async () => {
     setRedrawing(true);
@@ -199,115 +87,13 @@ export default function ExtractionPage() {
           </Button>
         </div>
       )}
-      {isPending && (
-        <div data-testid="extraction-loading" className="flex flex-col gap-3">
-          <Skeleton className="h-8 w-2/3" />
-          <Skeleton className="h-24 w-full" />
-        </div>
-      )}
-      {isError && (
-        <p
-          data-testid="extraction-error"
-          role="alert"
-          className="text-sm text-error"
-        >
-          Không tải được văn bản trích xuất.
-        </p>
-      )}
-      {data && (
-        <article
-          data-testid="extraction-text"
-          data-text-version={data.text_version}
-          className="rounded-card border border-border bg-surface p-4 text-sm leading-[1.7] whitespace-pre-wrap shadow-card"
-        >
-          {buildHighlights(data.text, suggestions).map((seg, i) => {
-            if (seg.sid === null) return <span key={i}>{seg.text}</span>;
-            const anchorKey = `${seg.sid}-${seg.occurrence ?? 0}`;
-            return (
-              <span
-                key={i}
-                className="relative inline-block"
-                data-suggestion-anchor
-                ref={(el) => {
-                  if (el) anchorEls.current.set(anchorKey, el);
-                  else anchorEls.current.delete(anchorKey);
-                }}
-              >
-                <mark
-                  data-testid={
-                    seg.occurrence
-                      ? `suggestion-mark-${seg.sid}-${seg.occurrence}`
-                      : `suggestion-mark-${seg.sid}`
-                  }
-                  className="rounded-sm bg-warning/20 underline decoration-dotted underline-offset-2"
-                >
-                  <button
-                    type="button"
-                    aria-expanded={
-                      open?.sid === seg.sid && open?.occ === seg.occurrence
-                    }
-                    className="cursor-pointer bg-transparent px-0 text-inherit"
-                    onClick={() =>
-                      setOpen(
-                        open?.sid === seg.sid && open?.occ === seg.occurrence
-                          ? null
-                          : { sid: seg.sid!, occ: seg.occurrence ?? 0 },
-                      )
-                    }
-                  >
-                    {seg.text}
-                  </button>
-                </mark>
-                {open?.sid === seg.sid &&
-                  open?.occ === (seg.occurrence ?? 0) &&
-                  openSuggestion && (
-                    <span
-                      data-testid={`suggestion-popover-${seg.sid}`}
-                      role="group"
-                      aria-label="Gợi ý sửa"
-                      className={`absolute top-full z-20 mt-1 flex w-64 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-md border border-border bg-surface p-3 shadow-card ${popoverPos(
-                        anchorEls.current.get(anchorKey),
-                      )}`}
-                    >
-                      <span className="flex items-baseline gap-2">
-                        <span className="text-sm line-through decoration-error text-error">
-                          {openSuggestion.original}
-                        </span>
-                        <span className="text-sm text-success">
-                          {openSuggestion.suggestion}
-                        </span>
-                      </span>
-                      <span className="text-xs text-muted">
-                        {openSuggestion.reason}
-                      </span>
-                      <span className="flex gap-2">
-                        <Button
-                          testid={`btn-apply-${seg.sid}`}
-                          variant="primary"
-                          size="sm"
-                          loading={savingSid === seg.sid}
-                          disabled={savingSid !== null}
-                          onClick={() => void handleApply(openSuggestion)}
-                        >
-                          Áp dụng
-                        </Button>
-                        <Button
-                          testid={`btn-reject-${seg.sid}`}
-                          variant="ghost"
-                          size="sm"
-                          disabled={savingSid !== null}
-                          onClick={() => void handleReject(openSuggestion)}
-                        >
-                          Bỏ qua
-                        </Button>
-                      </span>
-                    </span>
-                  )}
-              </span>
-            );
-          })}
-        </article>
-      )}
+      <TextSection
+        jobId={id!}
+        fileType={job?.file_type}
+        onSaved={(result: ExtractionSaveResult) =>
+          setNeedsRender(result.needs_render)
+        }
+      />
     </main>
   );
 }

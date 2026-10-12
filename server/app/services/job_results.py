@@ -37,27 +37,62 @@ _pending_output: set[asyncio.Task] = set()
 _active_outputs: dict[int, asyncio.Task] = {}
 
 async def _auto_output(job: Job, storage: StorageDriver) -> None:
-    try:
-        # Phase 5: extract_only — no layout requested; OCR result alone
-        # completes the job (no artifacts, no rendering phase failure).
-        if job.mode == "extract_only":
-            ok = True
-        else:
-            # lazy import: exports → jobs → job_results (cycle if eager)
-            from app.routers.exports import auto_generate_output
-            ok = bool(await auto_generate_output(job, storage))
-    except Exception as exc:
-        logger.warning(
-            "auto output failed job=%s fmt=%s: %s",
-            job.id, job.output_format, exc,
+    # WS-SERVER queue: render ≤ 2 pass. Claim (clear) cờ TRƯỚC mỗi pass —
+    # pass đầu tiên đã là lần "vẽ lại" cho cờ có sẵn; cờ mới bật DURING
+    # render (user save giữa chừng) → thêm 1 pass nữa. Guard 2: quá 2 pass
+    # → done + GIỮ cờ + log warning (sweep nhắc lại sau).
+    from app.core.db import SessionLocal  # task-local, as in _proofread
+    renders = 0
+    while True:
+        renders += 1
+        async with SessionLocal() as session:
+            await session.execute(
+                update(Job)
+                .where(Job.id == job.id, Job.rerender_requested.is_(True))
+                .values(rerender_requested=False)
+            )
+            await session.commit()
+            # P1-1: mỗi pass render bằng row MỚI — user save GIỮA 2 pass đổi
+            # result/rerender_requested/mode; object truyền vào task là stale.
+            fresh = await session.get(Job, job.id)
+        if fresh is not None:
+            job = fresh  # session đóng → detached, attributes đã load
+        try:
+            # Phase 5: extract_only — no layout requested; OCR result alone
+            # completes the job (no artifacts, no rendering phase failure).
+            if job.mode == "extract_only":
+                ok = True
+            else:
+                # lazy import: exports → jobs → job_results (cycle if eager)
+                from app.routers.exports import auto_generate_output
+                ok = bool(await auto_generate_output(job, storage))
+        except Exception as exc:
+            logger.warning(
+                "auto output failed job=%s fmt=%s: %s",
+                job.id, job.output_format, exc,
+            )
+            ok = False
+        async with SessionLocal() as session:
+            fresh = await session.get(Job, job.id)
+            flag_set = bool(fresh is not None and fresh.rerender_requested)
+        if not flag_set:
+            break
+        if renders >= 2:
+            logger.warning(
+                "rerender guard: job %s quá %d lần render — giữ cờ "
+                "rerender_requested, không vẽ lại lần nữa",
+                job.id, renders,
+            )
+            break
+        logger.info(
+            "rerender queued job=%s — vẽ lại layout (pass %d)",
+            job.id, renders + 1,
         )
-        ok = False
     # spec 2026-10-09 completion rule: ≥1 layout OK → done; both fail →
     # failed + failed_step="rendering" (the retry re-runs this step).
     # Own session (the task outlives the request); conditional UPDATE
     # re-checks the phase at commit time — a racing retry task that
     # already flipped the row turns this into a no-op (rowcount 0).
-    from app.core.db import SessionLocal  # task-local, as in _proofread
     async with SessionLocal() as session:
         now = datetime.now(timezone.utc)
         values = (

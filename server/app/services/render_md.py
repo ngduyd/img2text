@@ -325,9 +325,9 @@ async def _chat(user_content: str) -> str:
             try:
                 resp = await client.post(url, json=payload, headers=headers)
             except httpx.HTTPError as exc:
-                logger.warning("llm call failed: %s", exc)
+                logger.warning("llm call failed attempt=%d: %r", attempt, exc)
                 if attempt:
-                    raise LLMError(f"LLM không phản hồi: {exc}") from exc
+                    raise LLMError(f"LLM không phản hồi: {exc!r}") from exc
                 await asyncio.sleep(1.0)
                 continue
             logger.info("llm called: model=%s status=%s elapsed=%.1fs",
@@ -589,7 +589,7 @@ async def build_md(
                 ir_sink.update(ir_dict)
             return await llm_render_md(ir_doc, result)
         except (LLMError, IRValidationError) as exc:
-            logger.warning("LLM IR failed, using heuristic fallback: %s", exc)
+            logger.warning("HEURISTIC FALLBACK render — layout tạm: %r", exc)
 
     # Heuristic fallback
     pages = extract_pages(result)

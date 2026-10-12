@@ -8,7 +8,7 @@ is "extracting" (both HTTP claim and batch spawn set it; "running" gone).
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 
 from app.core.models import Job
 from app.services import job_results
@@ -48,18 +48,31 @@ async def sweep_rendering(session, storage) -> int:
     live task (task died with the process; started_at is the last phase
     marker, so older than _STALE_RENDERING = stuck). Returns tasks started.
 
+    WS-SERVER queue: thêm nhánh rerender_requested — job stuck rendering
+    HOẶC đã done nhưng còn cờ (save khi rendering / sync targeted-fail) →
+    cũng reschedule; _auto_output claim cờ trước render.
+
     In-process registry (_active_outputs) owns the one-task-per-job guard;
     the sweep never double-schedules a live render."""
     stale = (
         await session.execute(
             select(Job).where(
-                Job.status == "rendering",
-                # started_at IS NULL = batch ingest từ queued (không qua
-                # claim) — cũng phải sweep, SQL NULL < cutoff never true
-                (
-                    Job.started_at.is_(None)
-                    | (Job.started_at < datetime.now(timezone.utc) - _STALE_RENDERING)
-                ),
+                or_(
+                    and_(
+                        Job.status == "rendering",
+                        # started_at IS NULL = batch ingest từ queued (không qua
+                        # claim) — cũng phải sweep, SQL NULL < cutoff never true
+                        Job.started_at.is_(None)
+                        | (
+                            Job.started_at
+                            < datetime.now(timezone.utc) - _STALE_RENDERING
+                        ),
+                    ),
+                    and_(
+                        Job.rerender_requested.is_(True),
+                        Job.status.in_(("rendering", "done")),
+                    ),
+                )
             )
         )
     ).scalars().all()

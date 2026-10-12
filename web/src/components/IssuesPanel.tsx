@@ -7,11 +7,17 @@ import { VERDICT_LABELS } from "../lib/verdicts";
 import RegionEditor from "./RegionEditor";
 import Button from "./ui/Button";
 
-/** Signed R2 crop URL, cached per region; staleTime Infinity → no refetch. */
-function Crop({ jobId, rid }: { jobId: string; rid: string }) {
+/**
+ * Signed R2 crop URL, cached per region; staleTime Infinity → no refetch.
+ * WS-UI crop404: chỉ fetch khi file_type == "image" (PDF không có crop
+ * artifact → 404 spam); retry:false — một lần fail là dừng.
+ */
+function Crop({ jobId, rid, fileType }: { jobId: string; rid: string; fileType: string }) {
   const { data } = useQuery({
     queryKey: ["crop", jobId, rid],
     queryFn: () => api.getCropUrl(jobId, rid),
+    enabled: fileType === "image",
+    retry: false,
     staleTime: Infinity,
   });
   if (!data) return null;
@@ -35,10 +41,13 @@ function Crop({ jobId, rid }: { jobId: string; rid: string }) {
 export default function IssuesPanel({
   jobId,
   regions,
+  fileType,
   onRegionUpdated,
 }: {
   jobId: string;
   regions: RegionOut[];
+  /** P2-3: vắng (unknown) → không fetch crop — chỉ "image" mới có crop artifact. */
+  fileType?: string;
   onRegionUpdated?: (rid: string, text: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -78,7 +87,10 @@ export default function IssuesPanel({
           <article key={r.id} data-testid={`issue-${r.id}`} className="py-2">
             <span className="font-semibold">{VERDICT_LABELS[r.verdict] ?? r.verdict}</span>{" "}
             <span className="text-sm text-muted">{r.id}</span>
-            {r.bbox != null && <Crop jobId={jobId} rid={r.id} />}
+            {/* PDF → text region (dưới), không crop image. */}
+            {r.bbox != null && fileType === "image" && (
+              <Crop jobId={jobId} rid={r.id} fileType={fileType} />
+            )}
             {r.text && <p className="text-sm">{r.text}</p>}
             {replacedNotes[r.id] && (
               <p data-testid={`region-note-${r.id}`} className="mt-1 text-sm text-warning">

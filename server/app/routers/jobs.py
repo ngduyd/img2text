@@ -454,6 +454,8 @@ async def get_job(
         "page_count": job.page_count,
         "error": job.error,
         "output_format": job.output_format or "md",
+        # P1-2 review r1: web ẩn Section Layout + export nhóm layout khi extract_only
+        "mode": job.mode or "layout",
         "result": job.result if job.status == "done" else None,
         "created_at": job.created_at,
         "started_at": job.started_at,
@@ -851,7 +853,8 @@ async def get_extraction(
 ) -> dict:
     """text gốc (result extraction_text, else derived from regions) + version."""
     job = await _job_or_403(session, id, user)
-    if job.status != "done":
+    # WS-UI: section "Văn bản" đọc text ngay khi status == "rendering" (OCR xong).
+    if job.status not in ("done", "rendering"):
         raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
     await _seed_versions(session, job, storage)
     result = job.result or {}
@@ -874,10 +877,17 @@ async def post_extraction(
     (direct edit) → 409 conflict unless force (UI-confirm overwrite).
     Per-layout atomic: phrase not found / artifact missing → layout NOT
     touched → needs_render entry, other layouts still synced.
+
+    WS-SERVER queue: save khi status == "rendering" được phép (200) → set
+    ``rerender_requested``; finalize render sẽ vẽ lại tối đa 1 lần (guard 2).
+    mode == "extract_only" không bao giờ set cờ. Response thêm
+    ``requires_rerender``.
     """
     job = await _job_or_403(session, id, user)
-    if job.status != "done":
+    if job.status not in ("done", "rendering"):
         raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
+    was_rendering = job.status == "rendering"
+    extract_only = (job.mode or "layout") == "extract_only"
     if not body.text.strip():
         raise HTTPException(status_code=422, detail="Nội dung trống.")
     if len(body.text) > MAX_EXTRACTION_CHARS:
@@ -898,15 +908,20 @@ async def post_extraction(
     result = dict(job.result or {})
     result["extraction_text"] = body.text
     new_version = body.expected_text_version + 1
+    # Save khi rendering → cờ vẽ lại nằm NGAY trong conditional UPDATE
+    # (atomic với save — finalize không thể lọt giữa check và set).
+    values: dict = {"result": result, "text_version": new_version}
+    if was_rendering and not extract_only:
+        values["rerender_requested"] = True
     rowcount = (
         await session.execute(
             update(Job)
             .where(
                 Job.id == id,
-                Job.status == "done",
+                Job.status.in_(("done", "rendering")),
                 Job.text_version == body.expected_text_version,
             )
-            .values(result=result, text_version=new_version)
+            .values(**values)
         )
     ).rowcount
     if rowcount == 0:
@@ -928,8 +943,11 @@ async def post_extraction(
     }
     needs_render: list[str] = []
     # P1-1: empty/None old OR new → skip sync entirely (old="" would
-    # "replace" between every character and corrupt the artifact)
-    if body.old_phrase and body.new_phrase:
+    # "replace" between every character and corrupt the artifact).
+    # P2-4: save khi rendering → BỎ sync (read-modify-write trên artifact
+    # đang bị render task ghi) — chỉ bump version + flag; pass render sau
+    # vẽ lại từ text mới.
+    if body.old_phrase and body.new_phrase and not was_rendering:
         # detached kinds 409'd above unless force → force overwrites them
         synced = await sync_job_layouts(
             storage, id, body.old_phrase, body.new_phrase
@@ -951,10 +969,21 @@ async def post_extraction(
             for kind, flag in (("md-layout", "md"), ("docx-layout", "docx"))
             if exists[flag] and not synced[flag] and kind not in detached
         ]
+    # Done job: layout artifact tồn tại && sync targeted-fail → cờ vẽ lại.
+    # (rendering case đã set trong UPDATE phía trên; extract_only không set.)
+    requires_rerender = (not extract_only) and (
+        was_rendering or bool(needs_render)
+    )
+    if requires_rerender and not was_rendering:
+        await session.execute(
+            update(Job).where(Job.id == id).values(rerender_requested=True)
+        )
+        await session.commit()
     return {
         "synced": synced,
         "needs_render": needs_render,
         "text_version": job.text_version,
+        "requires_rerender": requires_rerender,
     }
 
 @router.get("/api/jobs/{id}/versions")

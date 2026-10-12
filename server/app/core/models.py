@@ -161,6 +161,13 @@ class Job(Base):
         Integer, default=0, server_default=text("0"), nullable=False
     )
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # WS-SERVER queue: text save khi rendering / sync targeted-fail →
+    # finalize render lại tối đa 1 lần (loop guard 2). ALTER-only migration:
+    #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS rerender_requested BOOLEAN DEFAULT false;
+    # Readers: run-mutable — không cache qua request.
+    rerender_requested: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     # Job status phases (spec 2026-10-09): queued | extracting | rendering |
     # done | failed ("running" eliminated). ALTER-only migration:
     #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS kaggle_ref TEXT;

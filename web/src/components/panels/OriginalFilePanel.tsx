@@ -1,141 +1,118 @@
 import { useEffect, useState } from "react";
 import { Download } from "lucide-react";
-import { ApiError, api } from "../../api/client";
+import { ApiError } from "../../api/client";
+import { getJobBlob } from "../../lib/blobCache";
 import Button from "../ui/Button";
 import Card from "../ui/Card";
 import Skeleton from "../ui/Skeleton";
 
 /**
- * Plan V (V2): inline original viewer + download via SAME-ORIGIN blob.
- * Presigned localhost:4566 URLs unreachable via VSCode port-forward —
- * server now streams bytes; blob → objectURL for <img>/<iframe>/download.
- * Lazy (Task 2 contract kept): blob fetched only on first expand.
+ * WS-UI (spec 2026-10-13): ảnh gốc AUTO-FETCH blob khi mount (bỏ toggle
+ * "Hiện file"); blob cache module-level theo jobId → 2 section dùng chung,
+ * không fetch đôi. Same-origin blob (presigned localhost không tới được).
  */
 export default function OriginalFilePanel({
   jobId,
   fileType,
+  testid = "panel-original",
 }: {
   jobId: string;
   fileType: string;
+  testid?: string;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Revoke the replaced blob URL; revoke current one on unmount (no leak).
+  // Revoke URL khi unmount/đổi job; objectURL tạo lại từ cached blob là an toàn.
   useEffect(() => () => {
     if (objectUrl) URL.revokeObjectURL(objectUrl);
   }, [objectUrl]);
 
-  const toggle = async () => {
-    if (expanded) {
-      setExpanded(false);
-      return;
-    }
-    setExpanded(true);
-    if (objectUrl || loading) return; // already fetched → just re-open
+  useEffect(() => {
+    let alive = true;
     setLoading(true);
     setError(null);
-    try {
-      const blob = await api.downloadJobFile(jobId);
-      setObjectUrl(URL.createObjectURL(blob));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Tải file thất bại.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    getJobBlob(jobId)
+      .then((blob) => {
+        if (alive) setObjectUrl(URL.createObjectURL(blob));
+      })
+      .catch((err: unknown) => {
+        if (alive) setError(err instanceof ApiError ? err.detail : "Tải file thất bại.");
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [jobId]);
 
-  const handleDownload = async () => {
-    // Reuse viewer blob when loaded; otherwise fetch → anchor → revoke.
-    if (objectUrl) {
-      triggerDownload(objectUrl, `job-${jobId}.${downloadExt(fileType)}`);
-      return;
-    }
-    try {
-      const blob = await api.downloadJobFile(jobId);
-      const href = URL.createObjectURL(blob);
-      triggerDownload(href, `job-${jobId}.${downloadExt(fileType, blob)}`);
-      URL.revokeObjectURL(href);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Tải file thất bại.");
-    }
+  const handleDownload = () => {
+    if (!objectUrl) return;
+    triggerDownload(objectUrl, `job-${jobId}.${downloadExt(fileType)}`);
   };
 
   return (
-    <Card testid="panel-original" title="File gốc">
+    <Card testid={testid} title="File gốc">
       <div className="flex items-center gap-2">
-        <Button
-          testid="toggle-original"
-          variant="secondary"
-          size="sm"
-          aria-expanded={expanded}
-          onClick={toggle}
-        >
-          {expanded ? "Ẩn file" : "Hiện file"}
-        </Button>
         <Button
           testid="btn-download-original"
           variant="ghost"
           size="sm"
           title="Tải file gốc"
-          disabled={loading}
+          disabled={!objectUrl}
           onClick={handleDownload}
         >
           <Download aria-hidden="true" className="h-4 w-4" />
           Tải xuống
         </Button>
       </div>
-      {/* P2: error hoisted OUTSIDE expanded — visible collapsed (download btn always on). */}
       {error && (
         <p data-testid="original-error" className="mt-2 text-sm text-error">
           {error}
         </p>
       )}
-      {expanded && (
-        <div className="mt-3">
-          {loading && (
-            <Skeleton testid="original-loading" className="h-40" />
+      {loading && <Skeleton testid="original-loading" className="mt-3 h-40" />}
+      {objectUrl && !error && (
+        <div
+          data-testid="original-viewer"
+          className="mt-3 max-h-[75vh] overflow-auto"
+        >
+          {fileType === "image" && (
+            <img
+              data-testid="original-image"
+              src={objectUrl}
+              alt="File gốc"
+              className="max-w-full rounded-md"
+            />
           )}
-          {objectUrl && !error && (
-            <>
-              {fileType === "image" && (
-                <img
-                  data-testid="original-image"
-                  src={objectUrl}
-                  alt="File gốc"
-                  className="max-w-full rounded-md"
-                />
-              )}
-              {fileType === "pdf" && (
-                <iframe
-                  data-testid="original-pdf-frame"
-                  src={objectUrl}
-                  title="File gốc"
-                  sandbox=""
-                  className="h-96 w-full rounded-md border border-border"
-                />
-              )}
-              <a
-                href={objectUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-2 inline-block text-sm text-accent-text hover:underline"
-              >
-                Mở tab mới
-              </a>
-            </>
+          {fileType === "pdf" && (
+            <iframe
+              data-testid="original-pdf-frame"
+              src={objectUrl}
+              title="File gốc"
+              sandbox=""
+              className="h-[75vh] w-full rounded-md border border-border"
+            />
           )}
+          <a
+            href={objectUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 inline-block text-sm text-accent-text hover:underline"
+          >
+            Mở tab mới
+          </a>
         </div>
       )}
     </Card>
   );
 }
 
-/** Filename extension: blob.type wins (jpeg/png…); pdf vs ảnh fallback. */
-function downloadExt(fileType: string, blob?: Blob): string {
-  return blob?.type.split("/")[1] || (fileType === "pdf" ? "pdf" : "jpg");
+/** Filename extension: pdf vs ảnh fallback (blob type không còn nguồn — cache share). */
+function downloadExt(fileType: string): string {
+  return fileType === "pdf" ? "pdf" : "jpg";
 }
 
 function triggerDownload(href: string, filename: string) {

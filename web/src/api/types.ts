@@ -90,11 +90,14 @@ export interface Extraction {
   text_version: number;
 }
 
-/** POST /extraction response: per-layout sync flags + layouts cần render lại. */
+/** POST /extraction response: per-layout sync flags + layouts cần render lại.
+ * WS-SERVER queue: requires_rerender = save này set cờ vẽ lại (rendering |
+ * sync targeted-fail; extract_only luôn false). */
 export interface ExtractionSaveResult {
   synced: { md: boolean; docx: boolean };
   needs_render: string[];
   text_version: number;
+  requires_rerender?: boolean;
 }
 
 /** GET /versions item (metadata only, newest first). */
@@ -119,6 +122,8 @@ export interface Job {
   finished_at: string | null;
   /** Plan D4: export format chosen at upload ("md" | "docx"); absent on legacy rows → "md". */
   output_format?: string;
+  /** Phase 5 + P1-2 review r1: "layout" | "extract_only" — vắng (legacy) → layout. */
+  mode?: JobMode;
   /** Plan M (M1): exports/{id}/md-layout + docx-layout tồn tại chưa (badge + flow);
    *  Plan M3 (M3-server): + docx_html = exports/{id}/docx.html (word content đã lưu). */
   layout_cache?: { md: boolean; docx: boolean; docx_html?: boolean };
