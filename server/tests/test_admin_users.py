@@ -117,6 +117,14 @@ async def test_patch_quota_validation_422(admin_client, seeded_users_5):
         r = await admin_client.patch("/api/admin/users/2/quota", json=body)
         assert r.status_code == 422, body
 
+async def test_patch_quota_non_admin_403(auth_client, seeded_users_5):
+    """Review R1 P1: quota endpoint cũng gate admin (guard pin)."""
+    r = await auth_client.patch(
+        "/api/admin/users/2/quota",
+        json={"daily_page_limit": 5, "weekly_page_limit": 50},
+    )
+    assert r.status_code == 403
+
 async def test_patch_quota_404_unknown(admin_client, seeded_users_5):
     r = await admin_client.patch(
         "/api/admin/users/9999/quota",
