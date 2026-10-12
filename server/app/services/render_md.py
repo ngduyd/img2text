@@ -28,6 +28,10 @@ from app.core.schemas import IMAGE_MARKER
 from app.services.ir import DocumentIR, IR_PROMPT, validate_ir, IRValidationError
 from app.services.runtime_settings import get_runtime_setting
 
+# marker template prefix ("**[Hình ảnh chưa trích xuất: vùng ") — dùng để
+# quét marker trong md render (embed_crop_urls)
+IMAGE_MARKER_PREFIX = IMAGE_MARKER.split("{region_id}")[0]
+
 logger = logging.getLogger("render_md")
 
 # ---------------------------------------------------------------- constants
@@ -535,6 +539,22 @@ async def generate_ir(result: dict) -> dict | None:
         logger.warning("IR generation failed: %s", exc)
         return None
 
+
+# ---------------------------------------------------------------- crop embed (WS-PIPE)
+CROP_PRESIGN_EXPIRES = 86400
+
+async def embed_crop_urls(markdown: str, job_id: int, storage) -> str:
+    """IMAGE_MARKER → `![vùng {rid}]({presigned 24h})` khi crop artifact
+    exports/{job_id}/crops/{rid}.png tồn tại; KHÔNG có → giữ nguyên marker
+    (Global Constraints: không mất thông tin khi crop chưa ingest)."""
+    for m in re.finditer(re.escape(IMAGE_MARKER_PREFIX) + r"([^\]]+)\]\*\*", markdown):
+        rid = m.group(1)
+        key = f"exports/{job_id}/crops/{rid}.png"
+        if not await storage.exists(key):
+            continue
+        url = await storage.presign_get(key, CROP_PRESIGN_EXPIRES)
+        markdown = markdown.replace(m.group(0), f"![vùng {rid}]({url})")
+    return markdown
 
 # ---------------------------------------------------------------- main API
 async def build_md(

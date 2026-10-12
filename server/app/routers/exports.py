@@ -30,9 +30,9 @@ from app.core.models import Job, User
 from app.core.schemas import IMAGE_MARKER
 from app.routers.jobs import _job_or_403, _text_bytes, bump_text_after_edit
 from app.services.render_docx import LLMError as DocxLLMError, build_docx
-from app.services.render_md import LLMError, build_md
+from app.services.render_md import LLMError, build_md, embed_crop_urls
 from app.services.doc_versions import save_version, snapshot_current_layout
-from app.services.html_to_docx import html_to_docx
+from app.services.html_to_docx import html_to_docx, CROP_SRC_RE
 from app.services.storage import StorageDriver, get_storage
 
 logger = logging.getLogger(__name__)
@@ -438,18 +438,24 @@ def _job_layout_style(job: Job) -> dict | None:
     return style if isinstance(style, dict) else None
 
 async def _llm_md_export(
-    job_id: int, job: Job, ir_sink: dict | None = None
+    job_id: int, job: Job, ir_sink: dict | None = None,
+    storage: StorageDriver | None = None,
 ) -> bytes:
     """IR rewrite: result → LLM IR → markdown bytes (never caches errors).
 
     Missing result → 409 "Chưa có kết quả OCR."; LLM unreachable/timeout
     → 502 "Không kết nối LLM máy chủ." — raised BEFORE storage.put.
+    storage (WS-PIPE): figure marker → presigned crop URL 24h nếu crop
+    artifact đã ingest; thiếu → giữ marker.
     """
     result = dict(job.result or {})
     if not result.get("pages"):
         raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
     try:
-        return (await build_md(result, ir_sink=ir_sink)).encode("utf-8")
+        md = await build_md(result, ir_sink=ir_sink)
+        if storage is not None:
+            md = await embed_crop_urls(md, job_id, storage)
+        return md.encode("utf-8")
     except LLMError as exc:
         logger.warning("md-layout LLM failure job=%s: %s", job_id, exc)
         raise HTTPException(
@@ -458,11 +464,21 @@ async def _llm_md_export(
 
 async def _docx_html_export(job_id: int, storage: StorageDriver) -> bytes | None:
     """Plan M3: exports/{id}/docx.html → python-docx walker; None if absent
-    (caller falls back to the pandoc docx path)."""
+    (caller falls back to the pandoc docx path).
+
+    WS-PIPE: img src tham chiếu crop artifact → load bytes (partial-fail:
+    crop thiếu → img drop trong walker)."""
     key = f"exports/{job_id}/docx.html"
     if not await storage.exists(key):
         return None
-    return html_to_docx((await storage.get(key)).decode("utf-8"))
+    html = (await storage.get(key)).decode("utf-8")
+    crops: dict[str, bytes] = {}
+    for rid in {m.group(1) for m in CROP_SRC_RE.finditer(html)}:
+        try:
+            crops[rid] = await storage.get(f"exports/{job_id}/crops/{rid}.png")
+        except KeyError:
+            logger.info("docx export: crop %s chưa ingest — img bị drop", rid)
+    return html_to_docx(html, crops=crops)
 
 async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
     """Generate BOTH md-layout and docx-layout eagerly after OCR.
@@ -488,7 +504,7 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
     md_ok = False
     # md-layout (LLM) — failure → warning + fallback plain md at exports/{id}/md
     try:
-        data = await _llm_md_export(job.id, job, ir_sink)
+        data = await _llm_md_export(job.id, job, ir_sink, storage)
         # P1-3: LLM overwrite must not wipe unsnapshotted artifact bytes
         await snapshot_current_layout(storage, None, job.id, "md-layout", job.text_version)
         # P0-A: S3Driver.put dedupes existing keys → delete first, else
@@ -554,7 +570,7 @@ async def export_job(
         if body.fmt == "docx-layout":
             data = await _llm_docx_export(id, job)
         elif body.fmt == "md-layout":
-            data = await _llm_md_export(id, job)  # LLM errors → 502, no put
+            data = await _llm_md_export(id, job, storage=storage)  # LLM errors → 502, no put
         elif body.fmt == "docx" and (
             data := await _docx_html_export(id, storage)
         ) is not None:
