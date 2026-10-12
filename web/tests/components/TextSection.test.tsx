@@ -100,3 +100,53 @@ it("empty custom text → save button disabled", async () => {
   await user.click(within(screen.getByTestId("suggestion-mark-11")).getByRole("button"));
   expect(screen.getByTestId("btn-save-custom-11")).toBeDisabled();
 });
+
+// --- Task 6: confirm modal queue (requires_rerender → "Lưu & xếp hàng") ---
+
+it("save with requires_rerender → confirm modal; Lưu & xếp hàng → toast + invalidate", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.saveExtraction).mockResolvedValue({
+    synced: { md: true, docx: true },
+    needs_render: [],
+    text_version: 4,
+    requires_rerender: true,
+  });
+  const { toast } = await import("sonner");
+  const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const spy = vi.spyOn(queryClient, "invalidateQueries");
+  render(
+    <QueryClientProvider client={queryClient}>
+      <TextSection jobId="5" />
+    </QueryClientProvider>,
+  );
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  await user.click(screen.getByTestId("btn-apply-11"));
+  const modal = await screen.findByTestId("rerender-modal");
+  expect(modal).toHaveTextContent("Lưu văn bản sẽ cần vẽ lại layout. Thêm vào hàng đợi vẽ layout?");
+  await user.click(screen.getByTestId("btn-rerender-confirm"));
+  await waitFor(() =>
+    expect(toast.success).toHaveBeenCalledWith("Đã xếp hàng vẽ lại layout."),
+  );
+  await waitFor(() =>
+    expect(spy).toHaveBeenCalledWith({ queryKey: ["job", "5"] }),
+  );
+  expect(screen.queryByTestId("rerender-modal")).not.toBeInTheDocument();
+});
+
+it("requires_rerender modal: Hủy closes without queue toast", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.saveExtraction).mockResolvedValue({
+    synced: { md: true, docx: true },
+    needs_render: [],
+    text_version: 4,
+    requires_rerender: true,
+  });
+  const { toast } = await import("sonner");
+  renderSection(<TextSection jobId="5" />);
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  await user.click(screen.getByTestId("btn-apply-11"));
+  await user.click(await screen.findByTestId("btn-rerender-cancel"));
+  expect(screen.queryByTestId("rerender-modal")).not.toBeInTheDocument();
+  expect(toast.success).not.toHaveBeenCalledWith("Đã xếp hàng vẽ lại layout.");
+});

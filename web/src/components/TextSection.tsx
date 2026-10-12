@@ -8,6 +8,7 @@ import { buildHighlights } from "../lib/highlight";
 import IssuesPanel from "./IssuesPanel";
 import Button from "./ui/Button";
 import Skeleton from "./ui/Skeleton";
+import { useDialogA11y } from "./ui/useDialogA11y";
 
 /**
  * WS-UI section "Văn bản": text render HTML thuần (GET /extraction, không
@@ -48,6 +49,11 @@ export default function TextSection({
   const [savingSid, setSavingSid] = useState<number | null>(null);
   /** Custom phrase "Sửa khác…" — value theo sid đang mở. */
   const [customText, setCustomText] = useState("");
+  /** Task 6: save set cờ rerender (rendering | sync targeted-fail) → confirm xếp hàng. */
+  const [rerenderModal, setRerenderModal] = useState(false);
+  const rerenderPanelRef = useDialogA11y<HTMLDivElement>(rerenderModal, () =>
+    setRerenderModal(false),
+  );
 
   const openSuggestion = suggestions.find((s) => s.id === open?.sid) ?? null;
   /** Anchor element per suggestion key — popover flip đọc rect từ đây lúc render. */
@@ -124,11 +130,17 @@ export default function TextSection({
       }
       setOpen(null);
       setCustomText("");
-      toast.success(
-        result.needs_render.length > 0
-          ? "Đã lưu. Có layout cần vẽ lại."
-          : "Đã lưu và đồng bộ layout.",
-      );
+      // Task 6: response requires_rerender (hoặc status rendering — server set cờ)
+      // → modal confirm "Thêm vào hàng đợi?"; chưa thì toast sync như cũ.
+      if (result.requires_rerender) {
+        setRerenderModal(true);
+      } else {
+        toast.success(
+          result.needs_render.length > 0
+            ? "Đã lưu. Có layout cần vẽ lại."
+            : "Đã lưu và đồng bộ layout.",
+        );
+      }
       await invalidate();
       onSaved?.(result);
     } catch (err) {
@@ -303,6 +315,42 @@ export default function TextSection({
             );
           })}
         </article>
+      )}
+      {/* WS-UI Task 6: confirm modal queue (useDialogA11y — Escape/ref focus). */}
+      {rerenderModal && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4">
+          <div
+            ref={rerenderPanelRef}
+            tabIndex={-1}
+            data-testid="rerender-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="rerender-modal-title"
+            className="w-full max-w-md rounded-card border border-border bg-surface p-4 shadow-card focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <p id="rerender-modal-title" className="text-sm font-medium">
+              Lưu văn bản sẽ cần vẽ lại layout. Thêm vào hàng đợi vẽ layout?
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button
+                testid="btn-rerender-cancel"
+                variant="ghost"
+                onClick={() => setRerenderModal(false)}
+              >
+                Hủy
+              </Button>
+              <Button
+                testid="btn-rerender-confirm"
+                onClick={() => {
+                  setRerenderModal(false);
+                  toast.success("Đã xếp hàng vẽ lại layout.");
+                }}
+              >
+                Lưu & xếp hàng
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
       {/* WS-UI: panel "Kiểm tra lỗi" chuyển vào section Văn bản (dưới text). */}
       {regions != null && (
