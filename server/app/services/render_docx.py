@@ -447,10 +447,51 @@ def _unwrap_envelope(text: str, keys: tuple[str, ...]) -> str:
     raise LLMError(f"LLM render JSON thiếu field {'/'.join(keys)}")
 
 _BLOCK_HTML_RE = re.compile(
-    r"<(h1|h2|h3|p|blockquote)\b([^>]*)>(.*?)</\1>", re.DOTALL | re.IGNORECASE
+    r"<(h1|h2|h3|p|blockquote|ul|li)\b([^>]*)>(.*?)</\1>", re.DOTALL | re.IGNORECASE
 )
 _TABLE_HTML_RE = re.compile(r"<table[^>]*>(.*?)</table>", re.DOTALL | re.IGNORECASE)
 _PAGE_BREAK_RE = re.compile(r"<page-break\s*/?>|<!--\s*page-break\s*-->", re.IGNORECASE)
+# inline tối thiểu (không HTML parser): <br> → ngắt dòng, b/i → run bold/italic
+# capture group bắt buộc: split giữ lại tag → nhánh <br>/bold mới chạy
+_INLINE_RE = re.compile(r"(<br\s*/?>|</?(?:strong|b|em|i)\b[^>]*>)", re.IGNORECASE)
+
+
+def _add_rich_text(para, raw: str) -> None:
+    """text + inline <br>/<b>/<strong>/<em>/<i> → runs (newline/bold/italic)."""
+    bold = italic = False
+    for part in _INLINE_RE.split(raw):
+        low = part.lower()
+        if low.startswith("<br"):
+            para.add_run("\n")
+        elif low.startswith("</"):
+            if low in ("</b>", "</strong>"):
+                bold = False
+            elif low in ("</i>", "</em>"):
+                italic = False
+        elif low.startswith("<"):
+            if low in ("<b>", "<strong>"):
+                bold = True
+            elif low in ("<i>", "<em>"):
+                italic = True
+        else:
+            txt = re.sub(r"<[^>]+>", "", part)
+            if txt:
+                run = para.add_run(txt)
+                if bold:
+                    run.bold = True
+                if italic:
+                    run.italic = True
+
+
+def _list_para(doc):
+    """li → List Bullet; style thiếu → KeyError fallback indent 1 level."""
+    try:
+        return doc.add_paragraph(style="List Bullet")
+    except KeyError:
+        para = doc.add_paragraph()
+        para.paragraph_format.left_indent = Inches(0.5)
+        return para
+
 
 def _html_to_docx(html: str, style_overrides: dict | None = None) -> bytes:
     """HTML (từ LLM render) → DOCX bytes."""
@@ -469,8 +510,16 @@ def _html_to_docx(html: str, style_overrides: dict | None = None) -> bytes:
                 doc.add_heading(inner, level=1)
             elif tag == "h3":
                 doc.add_heading(inner, level=2)
-            elif inner:
-                para = doc.add_paragraph(inner)
+            elif tag in ("ul", "li"):
+                items = (
+                    re.findall(r"<li[^>]*>(.*?)</li>", m.group(3), re.DOTALL | re.IGNORECASE)
+                    if tag == "ul" else [m.group(3)]
+                )
+                for li in items:
+                    _add_rich_text(_list_para(doc), li)
+            elif inner or _INLINE_RE.search(m.group(3)):
+                para = doc.add_paragraph()
+                _add_rich_text(para, m.group(3))
                 align = re.search(r"text-align:\s*(center|right|justify)", attrs)
                 if align:
                     para.alignment = _ALIGN_MAP[align.group(1)]

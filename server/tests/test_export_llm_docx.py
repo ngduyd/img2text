@@ -426,3 +426,30 @@ async def test_export_docx_layout_other_user_403(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "docx-layout"}
     )
     assert r.status_code == 403
+
+# --- _html_to_docx nội dung giữ lại (task 3) ---
+
+def test_html_to_docx_list_br_inline_bold_italic():
+    """ul/li + <br> + <b>/<i> → list para, line break, run bold/italic."""
+    html = (
+        "<p>Thơ dòng 1<br>Thơ dòng 2</p>"
+        "<ul><li>mục một</li><li>mục <b>hai</b></li></ul>"
+        "<p>đậm <strong>mạnh</strong> và <em>nghiêng</em></p>"
+    )
+    data = render_docx._html_to_docx(html)
+    doc = Document(io.BytesIO(data))
+    texts = [p.text for p in doc.paragraphs]
+    assert "Thơ dòng 1\nThơ dòng 2" in texts  # <br> → xuống dòng
+    assert "mục một" in texts
+    assert "mục hai" in texts  # <b> không bị nuốt
+    li_para = next(p for p in doc.paragraphs if p.text == "mục hai")
+    # indent 1 level (List Bullet style hoặc left_indent fallback)
+    assert li_para.style.name == "List Bullet" or (
+        li_para.paragraph_format.left_indent is not None
+    )
+    bolds = {r.text for p in doc.paragraphs for r in p.runs if r.bold}
+    italics = {r.text for p in doc.paragraphs for r in p.runs if r.italic}
+    assert "một" not in bolds and "hai" in bolds or "hai " in bolds or any(
+        "hai" in t for t in bolds
+    )
+    assert any("nghiêng" in t for t in italics)
