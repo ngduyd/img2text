@@ -4,7 +4,7 @@ Rulings embedded: R58 CORS regex origins incl. VSCode port-forward hosts;
 R58a scheduler_interval_seconds floor 5s (no busy-loop).
 """
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -79,14 +79,19 @@ class Settings(BaseSettings):
     # OpenAI-compatible server, e.g. llm.cpp at localhost:20128).
     llm_base_url: str = "http://localhost:20128/v1"
     llm_model: str = "oc/muse-spark-1.3-contributor-free"
-    llm_timeout: int = 180  # LLM free chậm — 180s (2 retry → worst ~6 phút/call)
+    # LLM request timeout (seconds)
+    llm_timeout: int = Field(
+        default=180, description="LLM request timeout (seconds)"
+    )  # LLM free chậm — 180s (2 retry → worst ~6 phút/call)
     # IR rewrite: LLM phân loại cấu trúc document (config: ir_llm_model)
     ir_llm_model: str = "oc/mimo-v2.6-flash-free"
     # Proofread dùng model riêng (khác layout model) — cùng endpoint.
     proofread_llm_model: str = "oc/longcat-2.5-preview-free"
-    # Bearer token for remote /v1/chat/completions; empty = no Authorization
+    # Bearer token for remote /v1/chat/completions; None = no Authorization
     # header (local servers without auth keep working unchanged).
-    llm_api_key: str = ""
+    llm_api_key: str | None = Field(
+        default=None, description="LLM API key (masked write-only)"
+    )
 
     @property
     def r2_endpoint_url(self) -> str:
