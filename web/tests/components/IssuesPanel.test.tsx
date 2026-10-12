@@ -25,13 +25,13 @@ const regions: RegionOut[] = [
 ];
 
 /** Provider wraps like the App shell (R30). */
-function renderPanel(): ReturnType<typeof render> {
+function renderPanel(fileType = "image"): ReturnType<typeof render> {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   const ui: ReactElement = (
     <QueryClientProvider client={queryClient}>
-      <IssuesPanel jobId="5" regions={regions} />
+      <IssuesPanel jobId="5" regions={regions} fileType={fileType} />
     </QueryClientProvider>
   );
   return render(ui);
@@ -58,6 +58,24 @@ it("shows crop image only when bbox present", async () => {
     "https://r2/crops/p1r0.jpg",
   );
   expect(screen.queryByTestId("crop-p1r1")).toBeNull();
+});
+
+/** WS-UI crop404: chỉ fetch crop khi file_type == "image"; PDF → text region, không call API. */
+it("does not fetch crop for pdf jobs", async () => {
+  renderPanel("pdf");
+  expect(await screen.findByTestId("issue-p1r0")).toBeInTheDocument();
+  expect(screen.queryByTestId("crop-p1r0")).toBeNull();
+  expect(api.getCropUrl).not.toHaveBeenCalled();
+});
+
+/** retry:false — crop 404 không retry (một lần fail là xong). */
+it("crop query does not retry on failure", async () => {
+  vi.mocked(api.getCropUrl).mockRejectedValue(new Error("404"));
+  renderPanel("image");
+  expect(await screen.findByTestId("issue-p1r0")).toBeInTheDocument();
+  await new Promise((r) => setTimeout(r, 150));
+  expect(api.getCropUrl).toHaveBeenCalledTimes(1);
+  expect(screen.queryByTestId("crop-p1r0")).toBeNull();
 });
 
 /** JD2 accordion: rows luôn trong DOM, toggle issues-toggle → hiện (document-first). */

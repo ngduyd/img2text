@@ -34,7 +34,11 @@ export default function ResultPanel({
         onEditingChange={onEditingChange}
         hostRef={hostRef}
       />
-      <IssuesPanel jobId={jobId} regions={result.pages.flatMap((p) => p.regions)} />
+      <IssuesPanel
+        jobId={jobId}
+        regions={result.pages.flatMap((p) => p.regions)}
+        fileType={job.file_type}
+      />
     </section>
   );
 }

@@ -34,7 +34,7 @@ function renderPanel(onRegionUpdated?: (rid: string, text: string) => void) {
   });
   const ui: ReactElement = (
     <QueryClientProvider client={queryClient}>
-      <IssuesPanel jobId="5" regions={[region]} onRegionUpdated={onRegionUpdated} />
+      <IssuesPanel jobId="5" regions={[region]} fileType="image" onRegionUpdated={onRegionUpdated} />
     </QueryClientProvider>
   );
   const view = render(ui);
