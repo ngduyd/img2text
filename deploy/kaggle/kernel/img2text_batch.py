@@ -137,6 +137,7 @@ WHEELHOUSE_DEPS = [
     "pillow", "numpy", "opencv-python-headless", "rapidfuzz",
     "pymupdf", "paddlepaddle-gpu==3.2.1", "paddleocr[doc-parser]>=3.6.0",
     "safetensors", "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
+    "rembg",  # WS-PIPE crop — thiếu → extract_crops ImportError
 ]
 
 def _find_wheelhouse() -> str | None:
@@ -196,7 +197,7 @@ if __name__ == "__main__":
             # Repair: wheelhouse drift (thiếu paddle/doc-parser extras) →
             # cài full recipe proven từ network (paddle cu126 + doc-parser stack).
             if subprocess.run(
-                [VENV_PY, "-c", "import paddle, paddleocr"], capture_output=True
+                [VENV_PY, "-c", "import paddle, paddleocr, rembg"], capture_output=True
             ).returncode != 0:
                 print("[batch] wheelhouse thiếu deps — repair full recipe từ network", flush=True)
                 for cmd in (
@@ -204,7 +205,8 @@ if __name__ == "__main__":
                      "paddlepaddle-gpu==3.2.1", "--extra-index-url", PADDLE_PPU_INDEX],
                     ["uv", "pip", "install", "--python", VENV_PY,
                      "paddleocr[doc-parser]>=3.6.0", "safetensors",
-                     "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0"],
+                     "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
+                     "rembg"],
                 ):
                     subprocess.run(cmd, check=False)
         else:
@@ -218,6 +220,7 @@ if __name__ == "__main__":
                     "uv", "pip", "install", "--python", VENV_PY,
                     "paddleocr[doc-parser]>=3.6.0", "safetensors",
                     "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
+                    "rembg",
                 ],
             ):
                 subprocess.run(cmd, check=False)
@@ -230,7 +233,7 @@ if __name__ == "__main__":
         )
 
     _paddle_check = subprocess.run(
-        [VENV_PY, "-c", "import paddle, paddleocr; print(paddle.__version__, paddle.device.is_compiled_with_cuda())"],
+        [VENV_PY, "-c", "import paddle, paddleocr, rembg; print(paddle.__version__, paddle.device.is_compiled_with_cuda())"],
         check=False,
         capture_output=True,
         text=True,
