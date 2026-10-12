@@ -637,6 +637,14 @@ def extract_blocks(raw: dict, page_no: int) -> list[dict]:
     return blocks
 
 
+def _to_original_bbox(bbox, scale):
+    """bbox px trên ảnh ĐÃ preprocess (OCR coord) → bbox trên trang/ảnh GỐC
+    (fitz clip coord). scale = original_size / preprocessed_size — CHUNG cho
+    PDF (page.rect pt) và image (page.rect px); preprocess resize giữ aspect
+    (rotate_keep_size không đổi kích thước) nên 1 factor đủ."""
+    x0, y0, x1, y1 = bbox
+    return [x0 * scale, y0 * scale, x1 * scale, y1 * scale]
+
 def extract_crops(input_path: str, pages_out: list, remove=None) -> dict[str, bytes]:
     """WS-PIPE: image blocks (type==\"image\", có bbox) → PyMuPDF
     page.get_pixmap(clip=bbox px→pt) → PNG → rembg.remove → {rid: png_bytes}.
@@ -661,17 +669,15 @@ def extract_crops(input_path: str, pages_out: list, remove=None) -> dict[str, by
             if not w_px or not (1 <= int(pg.get("page") or 0) <= doc.page_count):
                 continue
             page = doc[int(pg["page"]) - 1]
-            # px→pt: ảnh pdf rasterize @DPI (rect pt = px*72/DPI); ảnh input →
-            # fitz tự gán rect theo px → scale=1 từ 72dpi gốc
-            scale = 72.0 / (DPI if input_path.lower().endswith(".pdf") else 72.0)
-            if not input_path.lower().endswith(".pdf"):
-                scale = page.rect.width / w_px  # px→fitz pt units for image pages
+            # bbox = px ảnh preprocess (OCR đọc bản đó) → trang gốc:
+            # scale = original rect / preprocessed size (PDF pt, image px)
+            scale = page.rect.width / w_px
             for b in pg.get("blocks") or []:
                 if b.get("type") != "image" or not b.get("bbox"):
                     continue
                 rid = str(b["id"])
-                x0, y0, x1, y1 = b["bbox"]
-                clip = fitz.Rect(x0 * scale, y0 * scale, x1 * scale, y1 * scale)
+                x0, y0, x1, y1 = _to_original_bbox(b["bbox"], scale)
+                clip = fitz.Rect(x0, y0, x1, y1)
                 try:
                     pix = page.get_pixmap(clip=clip)
                     png = pix.tobytes("png")

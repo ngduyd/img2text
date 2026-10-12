@@ -102,3 +102,31 @@ def test_extract_crops_image_input(tmp_path):
     )
     assert set(got) == {"p1_b0"}
     assert got["p1_b0"][:8] == b"\x89PNG\r\n\x1a\n"
+
+def test_extract_crops_pdf_bbox_in_preprocessed_coords(tmp_path):
+    """bbox OCR = px trên ảnh ĐÃ preprocess (downscale) → scale = page.rect/
+    preprocessed size trước khi clip. Page 200x300pt, pre 100x150 → scale=2:
+    bbox vùng giữa [25,37,75,112] phải clip đúng rect giữa trang (đỏ)."""
+    import fitz
+    from PIL import Image
+
+    doc = fitz.open()
+    p1 = doc.new_page(width=200, height=300)
+    p1.draw_rect(fitz.Rect(50, 74, 150, 224), color=(1, 0, 0), fill=(1, 0, 0))
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(doc.tobytes())
+    doc.close()
+
+    got = kb.extract_crops(
+        str(pdf),
+        [{"page": 1, "width": 100, "height": 150,
+          "blocks": [{"id": "p1_b0", "type": "image",
+                      "bbox": [25, 37, 75, 112], "text": ""}]}],
+        remove=lambda png: png,
+    )
+    pix = fitz.open(stream=got["p1_b0"], filetype="png")
+    cx, cy = pix[0].rect.width // 2, pix[0].rect.height // 2
+    img = Image.open(io.BytesIO(got["p1_b0"]))
+    r, g, b = img.getpixel((cx, cy))[:3]
+    pix.close()
+    assert r > 200 and g < 60 and b < 60, f"center ({cx},{cy}) = {(r, g, b)}"
