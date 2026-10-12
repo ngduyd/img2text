@@ -77,11 +77,14 @@ export interface Extraction {
   text_version: number;
 }
 
-/** POST /extraction response: per-layout sync flags + layouts cần render lại. */
+/** POST /extraction response: per-layout sync flags + layouts cần render lại.
+ * WS-SERVER queue: requires_rerender = save này set cờ vẽ lại (rendering |
+ * sync targeted-fail; extract_only luôn false). */
 export interface ExtractionSaveResult {
   synced: { md: boolean; docx: boolean };
   needs_render: string[];
   text_version: number;
+  requires_rerender?: boolean;
 }
 
 /** GET /versions item (metadata only, newest first). */
