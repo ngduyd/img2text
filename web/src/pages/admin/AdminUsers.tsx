@@ -1,4 +1,5 @@
 import { ScanText, Users } from "lucide-react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "../../api/client";
@@ -34,29 +35,42 @@ export default function AdminUsers() {
         daily_page_limit: vars.daily,
         weekly_page_limit: vars.weekly,
       }),
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       toast.success("Đã lưu.");
+      setDrafts(({ [vars.id]: _drop, ...rest }) => rest);
+      setErrors(({ [vars.id]: _drop, ...rest }) => rest);
       qc.invalidateQueries({ queryKey: ["admin-users"] });
     },
     onError: (err) => toast.error(mapApiError(err)),
   });
 
-  function saveQuota(id: number) {
-    const read = (field: "daily" | "weekly"): number | null => {
-      const el = document.getElementById(`${field}-limit-${id}`) as HTMLInputElement | null;
-      if (!el || !/^\d+$/.test(el.value.trim())) return null;
-      return Number(el.value);
+  // Review R1 P2: controlled inputs (bỏ getElementById), field error theo row,
+  // spin chỉ row đang lưu (pendingUserId thay vì isPending chung).
+  const [drafts, setDrafts] = useState<Record<number, { daily: string; weekly: string }>>({});
+  const [errors, setErrors] = useState<Record<number, string>>({});
+  const [pendingUserId, setPendingUserId] = useState<number | null>(null);
+
+  function saveQuota(u: User) {
+    const draft = drafts[u.id];
+    const read = (field: "daily" | "weekly", fallback: number | null): number | null => {
+      const raw = (draft?.[field] ?? String(fallback ?? "")).trim();
+      return /^\d+$/.test(raw) ? Number(raw) : null;
     };
-    const daily = read("daily");
-    const weekly = read("weekly");
-    if (
-      daily === null || weekly === null ||
-      daily > 10000 || weekly > 10000
-    ) {
-      toast.error("Giới hạn phải là số nguyên trong khoảng 0–10000.");
+    const daily = read("daily", u.daily_limit);
+    const weekly = read("weekly", u.weekly_limit);
+    if (daily === null || weekly === null || daily > 10000 || weekly > 10000) {
+      setErrors((e) => ({
+        ...e,
+        [u.id]: "Giới hạn phải là số nguyên trong khoảng 0–10000.",
+      }));
       return;
     }
-    patchQuota.mutate({ id, daily, weekly });
+    setErrors(({ [u.id]: _drop, ...rest }) => rest);
+    setPendingUserId(u.id);
+    patchQuota.mutate(
+      { id: u.id, daily, weekly },
+      { onSettled: () => setPendingUserId(null) },
+    );
   }
 
   const items = data?.items ?? [];
@@ -65,7 +79,7 @@ export default function AdminUsers() {
     <Card title="Người dùng">
       {isLoading ? (
         <div data-testid="users-loading" aria-busy="true" className="overflow-x-auto">
-          <div className="min-w-[560px] divide-y divide-border">
+          <div className="min-w-[760px] divide-y divide-border">
             {[0, 1, 2].map((i) => (
               <div key={i} className="flex items-center gap-4 px-4 py-3">
                 <Skeleton className="h-4 w-8" />
@@ -143,7 +157,14 @@ export default function AdminUsers() {
                           type="number"
                           min={0}
                           max={10000}
-                          defaultValue={String(u.daily_limit ?? "")}
+                          value={drafts[u.id]?.daily ?? String(u.daily_limit ?? "")}
+                          error={errors[u.id]}
+                          onChange={(e) =>
+                            setDrafts((d) => ({
+                              ...d,
+                              [u.id]: { ...d[u.id], daily: e.target.value, weekly: d[u.id]?.weekly ?? String(u.weekly_limit ?? "") },
+                            }))
+                          }
                           className="w-20"
                         />
                         <Input
@@ -153,14 +174,21 @@ export default function AdminUsers() {
                           type="number"
                           min={0}
                           max={10000}
-                          defaultValue={String(u.weekly_limit ?? "")}
+                          value={drafts[u.id]?.weekly ?? String(u.weekly_limit ?? "")}
+                          error={errors[u.id]}
+                          onChange={(e) =>
+                            setDrafts((d) => ({
+                              ...d,
+                              [u.id]: { daily: d[u.id]?.daily ?? String(u.daily_limit ?? ""), weekly: e.target.value },
+                            }))
+                          }
                           className="w-20"
                         />
                         <Button
                           type="button"
                           testid={`save-quota-${u.id}`}
-                          onClick={() => saveQuota(u.id)}
-                          loading={patchQuota.isPending}
+                          onClick={() => saveQuota(u)}
+                          loading={patchQuota.isPending && pendingUserId === u.id}
                         >
                           Lưu quota
                         </Button>
