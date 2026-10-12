@@ -167,6 +167,10 @@ async def _store(
                 # "rendering" phase; the auto-output task flips to done /
                 # failed+failed_step=rendering and stamps finished_at.
                 status="rendering",
+                # #6 quota retro-correct: page_count = SỐ TRANG THẬT từ OCR
+                # result (batch + loop cùng qua đây) — SUM quota phản ánh
+                # ngay job đầu, chống khai láo khi create.
+                page_count=len(body.pages),
                 worker_token=None,
                 lease_expires_at=None,
             )
