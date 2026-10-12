@@ -247,3 +247,26 @@ def test_prompt_guards_empty_zones():
     assert "empty zones" in low
     assert "do not invent" in low
     assert "render nothing" in low
+
+
+class TestLLMLogLoudness:
+    """WS-UI fix: lỗi LLM phải log repr(exc) + attempt; fallback phải loud."""
+
+    async def test_chat_failure_logs_repr_and_attempt(self, monkeypatch, caplog):
+        caplog.set_level("WARNING", logger="render_md")
+        fake_llm(monkeypatch, [httpx.ConnectError("conn refused"),
+                               httpx.ConnectError("conn refused")])
+        out = await build_md(_ocr_result())  # LLMError nuốt → heuristic fallback
+        assert out
+        msgs = [r.getMessage() for r in caplog.records]
+        assert any("llm call failed" in m and "attempt=" in m
+                   and "ConnectError" in m for m in msgs), msgs
+
+    async def test_fallback_warning_is_loud(self, monkeypatch, caplog):
+        caplog.set_level("WARNING", logger="render_md")
+        fake_llm(monkeypatch, [httpx.ConnectError("conn refused"),
+                               httpx.ConnectError("conn refused")])
+        out = await build_md(_ocr_result())  # heuristic fallback, no raise
+        assert out
+        msgs = [r.getMessage() for r in caplog.records]
+        assert any("HEURISTIC FALLBACK render" in m for m in msgs), msgs

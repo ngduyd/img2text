@@ -272,9 +272,9 @@ async def _chat(user_content: str) -> str:
             try:
                 resp = await client.post(url, json=payload, headers=headers)
             except httpx.HTTPError as exc:
-                logger.warning("llm call failed: %s", exc)
+                logger.warning("llm call failed attempt=%d: %r", attempt, exc)
                 if attempt:
-                    raise LLMError(f"LLM không phản hồi: {exc}") from exc
+                    raise LLMError(f"LLM không phản hồi: {exc!r}") from exc
                 await asyncio.sleep(1.0)
                 continue
             logger.info("llm called: model=%s status=%s elapsed=%.1fs",
@@ -587,7 +587,7 @@ async def build_docx(
             html = await llm_render_docx(ir_doc, result)
             return _html_to_docx(html, style_overrides)
         except (LLMError, IRValidationError) as exc:
-            logger.warning("LLM IR failed, using heuristic fallback: %s", exc)
+            logger.warning("HEURISTIC FALLBACK render — layout tạm: %r", exc)
 
     # Heuristic fallback
     return render_from_heuristic(result, style_overrides)
