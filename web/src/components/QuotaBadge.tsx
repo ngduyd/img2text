@@ -12,7 +12,7 @@ export default function QuotaBadge() {
   if (!data) return null;
   return (
     <p data-testid="quota-remaining" className="mt-1 text-sm text-muted">
-      Còn {data.daily_remaining} trang hôm nay · {data.weekly_remaining} tuần này
+      Còn {data.daily_remaining}/{data.daily_limit} trang hôm nay · {data.weekly_remaining}/{data.weekly_limit} trang tuần này
     </p>
   );
 }

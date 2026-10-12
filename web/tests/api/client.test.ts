@@ -146,6 +146,22 @@ describe("api client", () => {
     });
   });
 
+  /** Lane B Task 5: ảnh phone → TYPE_BY_EXT heic/heif/avif (server presign validate declared). */
+  it.each([
+    ["x.heif", "image/heif"],
+    ["x.avif", "image/avif"],
+    ["x.heic", "image/heic"],
+  ])("uploadJob %s → presign content_type %s", async (filename, content_type) => {
+    stubXHR();
+    const spy = stubFetchRoutes({ "/api/jobs/presign": PRESIGN, "/api/jobs": { id: 1, status: "queued" } });
+    await api.uploadJob(new File(["ftyp"], filename, { type: content_type }), { filename });
+    const presignBody = JSON.parse(
+      String(spy.mock.calls.find(([url]) => String(url) === "/api/jobs/presign")?.[1]?.body),
+    );
+    expect(presignBody.content_type).toBe(content_type);
+    expect(presignBody.filename).toBe(filename);
+  });
+
   it("uploadJob omits preprocess/output_format/mode when opts absent", async () => {
     stubXHR();
     const spy = stubFetchRoutes({ "/api/jobs/presign": PRESIGN, "/api/jobs": { id: 1, status: "queued" } });

@@ -7,6 +7,7 @@ import { api } from "./api/client";
 import type { User } from "./api/types";
 import ThemeToggle from "./components/ThemeToggle";
 import OcrBadge from "./components/OcrBadge";
+import QuotaBadge from "./components/QuotaBadge";
 import Button, { buttonClasses } from "./components/ui/Button";
 import Forgot from "./pages/Forgot";
 import Admin from "./pages/Admin";
@@ -230,6 +231,8 @@ function AppNav() {
           )}
         </div>
         <div className="ml-auto hidden items-center gap-2 md:flex">
+          {/* Spec #6: QuotaBadge ở header — 401/403 → ẩn (null). */}
+          <QuotaBadge />
           <AuthZone me={me} onLogout={onLogout} />
         </div>
         <button

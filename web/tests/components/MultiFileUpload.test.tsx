@@ -63,15 +63,28 @@ it("quá 25 trang → chặn + toast.error, giữ 25 card", () => {
   expect(toast.error).toHaveBeenCalled();
 });
 
-it("P1-1: accept chỉ png/jpg/pdf — webp bị reject, không nhận", () => {
+it("P1-1: accept png/jpg/heic/heif/avif/pdf — webp bị reject, không nhận", () => {
   render(<MultiFileUpload onSubmit={vi.fn()} />);
   expect(screen.getByTestId("muf-input")).toHaveAttribute(
     "accept",
-    "image/png,image/jpeg,application/pdf",
+    "image/png,image/jpeg,image/heic,image/heif,image/avif,application/pdf",
   );
   add([new File(["x"], "a.webp", { type: "image/webp" })]);
   expect(screen.queryAllByTestId(/muf-card-/)).toHaveLength(0);
   expect(toast.error).toHaveBeenCalled();
+});
+
+/** Lane B Task 5: HEIF/AVIF — card nhận + 1 ảnh thô submit (giữ đuôi + Content-Type). */
+it("heif/avif accepted; 1 ảnh HEIF → submit thô filename giữ đuôi .heif", async () => {
+  const onSubmit = vi.fn().mockResolvedValue(true);
+  render(<MultiFileUpload onSubmit={onSubmit} />);
+  add([new File(["ftyp-bytes"], "x.heif", { type: "image/heif" })]);
+  await screen.findByTestId("muf-card-0");
+  fireEvent.click(screen.getByTestId("muf-submit"));
+  await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+  const [blob, meta] = onSubmit.mock.calls[0];
+  expect(blob.type).toBe("image/heif");
+  expect(meta).toEqual({ page_count: 1, filename: "x.heif" });
 });
 
 it("P1-2: deselect-all → giữ selection cũ, không merge full PDF", async () => {

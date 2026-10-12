@@ -334,7 +334,9 @@ it("renders section-text 7/5 with auto original + no toggle button", async () =>
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   const section = await screen.findByTestId("section-text");
   const grid = within(section).getByTestId("detail-grid");
-  expect(grid.className).toContain("lg:grid-cols-[7fr_5fr]");
+  expect(grid.className).toContain("lg:grid-cols-12");
+  expect(grid.querySelector(".lg\\:col-span-7")).not.toBeNull();
+  expect(grid.querySelector(".lg\\:col-span-5")).not.toBeNull();
   // Mobile stack: mọi grid-cols đều gắn tiền tố lg: (không cột nào ở base).
   const colClasses = grid.className.split(/\s+/).filter((c) => c.includes("grid-cols"));
   expect(colClasses.length).toBeGreaterThan(0);
@@ -351,8 +353,10 @@ it("renders section-layout: preview + export below preview + original + info", a
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   const section = await screen.findByTestId("section-layout");
-  const layoutGrid = section.querySelector(".lg\\:grid-cols-\\[7fr_5fr\\]");
+  const layoutGrid = section.querySelector(".lg\\:grid-cols-12");
   expect(layoutGrid).not.toBeNull();
+  expect(layoutGrid?.querySelector(".lg\\:col-span-7")).not.toBeNull();
+  expect(layoutGrid?.querySelector(".lg\\:col-span-5")).not.toBeNull();
   // Preview read-only mặc định; ExportBar DƯỚI preview cột trái; ảnh gốc + info cột phải.
   expect(screen.getByTestId("layout-preview")).toBeInTheDocument();
   expect(screen.getByTestId("export-bar")).toBeInTheDocument();
@@ -372,6 +376,18 @@ it("extract_only done hides section-layout and export groups", async () => {
   await screen.findByTestId("panel-result");
   expect(screen.queryByTestId("section-layout")).not.toBeInTheDocument();
   expect(screen.queryByTestId("export-bar")).not.toBeInTheDocument();
+});
+
+/** Lane B Task 1: 2 section cuộn dọc (h2 + spacing token) — KHÔNG còn tab Extraction/Layout. */
+it("2 section h2 'Văn bản' + 'Layout', không còn tab buttons", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await screen.findByTestId("section-text");
+  await screen.findByTestId("section-layout");
+  expect(screen.getByRole("heading", { level: 2, name: "Văn bản" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { level: 2, name: "Layout" })).toBeInTheDocument();
+  expect(screen.queryAllByRole("tab")).toHaveLength(0);
+  expect(screen.queryByRole("tablist")).toBeNull();
 });
 
 /** JD2: header static trên mobile (3-4 dòng che viewport) — sticky ≥lg, bám dưới AppNav h-16. */

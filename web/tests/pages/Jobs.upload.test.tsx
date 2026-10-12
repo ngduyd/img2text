@@ -130,11 +130,12 @@ it("Gửi → presign → XHR progress → pdf.js count → metadata-only create
 
   resolveCreate(new Response(JSON.stringify({ id: 42, status: "queued" }), { status: 201 }));
   await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý."));
-  // create = metadata-only (storage_key + page_count từ pdf.js mock = 3; P1: filename = tên gốc)
+  // Lane B Task 5: 1 ảnh → upload THÔ (giữ đuôi .png + content_type match magic-byte
+  // Lane A sniff); image luôn page_count 1 (pdf.js chỉ đếm PDF).
   expect(createBodies).toEqual([
     {
       storage_key: PRESIGN.storage_key,
-      page_count: 3,
+      page_count: 1,
       output_format: "md",
       mode: "layout",
       filename: "photo.png",
@@ -143,9 +144,8 @@ it("Gửi → presign → XHR progress → pdf.js count → metadata-only create
   // create xong → phase idle: chữ đếm trang biến mất
   await waitFor(() => expect(screen.queryByTestId("upload-counting")).not.toBeInTheDocument());
   // T6: badge quota trong Jobs header + invalidate sau khi tạo job → refetch
-  expect(screen.getByTestId("quota-remaining")).toHaveTextContent(
-    "Còn 10 trang hôm nay · 105 tuần này",
-  );
+  expect(screen.getByTestId("quota-remaining")).toHaveTextContent("Còn 10/25 trang hôm nay");
+  expect(screen.getByTestId("quota-remaining")).toHaveTextContent("105/150 trang tuần này");
   await waitFor(() =>
     expect(fetchSpy.mock.calls.filter((c) => String(c[0]) === "/api/quota/me").length).toBeGreaterThan(1),
   );

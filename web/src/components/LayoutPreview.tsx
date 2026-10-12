@@ -4,7 +4,7 @@ import MarkdownIt from "markdown-it";
 import * as mammoth from "mammoth";
 import { api } from "../api/client";
 import type { Job } from "../api/types";
-import { buildLayoutStyleCss } from "../lib/docStyle";
+import { buildLayoutStyleCss, buildPreviewDocCss } from "../lib/docStyle";
 import { mapApiError } from "../lib/errors";
 import Button from "./ui/Button";
 import Skeleton from "./ui/Skeleton";
@@ -30,6 +30,9 @@ export default function LayoutPreview({ job }: { job: Job }) {
   const [error, setError] = useState<string | null>(null);
 
   const docStyle = useMemo(() => buildLayoutStyleCss(job.layout_style), [job.layout_style]);
+  /** Base doc style (spec #3): md pane scope .layout-preview; word iframe scope body. */
+  const mdBase = useMemo(() => buildPreviewDocCss(".layout-preview"), []);
+  const wordBase = useMemo(() => buildPreviewDocCss("body"), []);
   /** md pane: scope rule `body {…}` xuống container (contract M1 — không leak trang). */
   const mdStyle = useMemo(
     () => (docStyle ? docStyle.replace(/^body\b/, ".layout-preview") : ""),
@@ -132,7 +135,7 @@ export default function LayoutPreview({ job }: { job: Job }) {
           data-testid="preview-md"
           className="layout-preview max-h-[75vh] overflow-auto rounded-md border border-border p-4 leading-[1.7] text-text"
         >
-          <style>{mdStyle}</style>
+          <style>{mdBase + mdStyle}</style>
           {mdHtml !== null && <div dangerouslySetInnerHTML={{ __html: mdHtml }} />}
         </div>
       ) : (
@@ -141,7 +144,7 @@ export default function LayoutPreview({ job }: { job: Job }) {
           title="Xem trước layout Word"
           sandbox=""
           // docStyle (body rule) + docx.html — srcdoc cùng origin iframe, sandbox off script.
-          srcDoc={`<style>${docStyle}</style>${wordHtml ?? ""}`}
+          srcDoc={`<style>${wordBase}${docStyle}</style>${wordHtml ?? ""}`}
           className="h-[75vh] w-full rounded-md border border-border bg-surface"
         />
       )}
