@@ -204,11 +204,18 @@ def _sniff_kind(data: bytes) -> str | None:
         return "png"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "webp"
-    brand = data[4:12]  # ISO-BMFF ftyp brand (heic/heix/mif1/avif...)
-    if b"heic" in brand or b"heix" in brand or b"mif1" in brand:
-        return "heic"
-    if b"avif" in brand:
+    # ISO-BMFF ftyp: quét TOÀN BỘ box — major brand alone miss avif file
+    # major-brand mif1 (generic container); avif/avis check TRƯỚC mif1.
+    box_size = int.from_bytes(data[:4], "big")
+    ftyp = (
+        data[4:box_size]
+        if data[4:8] == b"ftyp" and box_size <= len(data)
+        else data[4:12]
+    )
+    if b"avif" in ftyp or b"avis" in ftyp:
         return "avif"
+    if b"heic" in ftyp or b"heix" in ftyp or b"mif1" in ftyp:
+        return "heic"
     return None
 
 def _bad_page_count(ext: str, page_count: int) -> str | None:
@@ -319,7 +326,10 @@ async def create_job(
     # file sai đuôi thật sự; unidentified bytes pass (no false positive).
     sniff_ext = {"jpeg": "jpg"}.get(ext, ext)
     kind = _sniff_kind(await storage.get(body.storage_key))
-    if kind is not None and kind != sniff_ext:
+    # heic/heif là CÙNG 1 định dạng (brand "heic" cho cả 2 đuôi) — normalize
+    # thành 1 nhóm trước khi so, không 422 oan file .heif thật.
+    heif_bytes = kind == "heic" and sniff_ext in {"heic", "heif"}
+    if kind is not None and kind != sniff_ext and not heif_bytes:
         await storage.delete_prefix(body.storage_key)
         raise HTTPException(
             status_code=422,
