@@ -49,12 +49,12 @@ it("formats strip contains DOCX and the Colab free note", () => {
   expect(formats).toHaveTextContent("Chạy miễn phí trên Google Colab");
 });
 
-it("#how shows verb-noun labels (no 'Bước')", () => {
+it("#how shows pipeline labels OCR/IR/Layout (no 'Bước')", () => {
   renderLanding();
   const how = screen.getByTestId("landing-how");
-  expect(how).toHaveTextContent("Tải lên");
-  expect(how).toHaveTextContent("Chỉnh sửa");
-  expect(how).toHaveTextContent("Xuất file");
+  expect(how).toHaveTextContent("OCR");
+  expect(how).toHaveTextContent("IR");
+  expect(how).toHaveTextContent("Layout");
   expect(how.textContent).not.toMatch(/Bước\s*\d/i);
 });
 

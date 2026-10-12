@@ -1,10 +1,9 @@
 import { motion, useReducedMotion } from "motion/react";
 import { Link } from "react-router-dom";
 import Badge from "../components/ui/Badge";
-import Card from "../components/ui/Card";
 import { buttonClasses } from "../components/ui/Button";
 
-/** Client leaf (Vite SPA, no RSC): one animation helper reused by all sections. */
+/** Client leaf (Vite SPA, no RSC): one reveal helper reused by all sections. */
 function Reveal({
   children,
   className,
@@ -33,42 +32,40 @@ function Reveal({
 }
 
 /**
- * Real-component mini-preview: JobRow is coupled to api/queryClient/toast, so this
- * uses the actual ui/Badge + ui/Card primitives with JobRow-like row layout.
+ * Product screenshot. File may not exist yet (capture script chua chay):
+ * onError anh hien tai, chuoi caption van doc duoc (khong lo an, khong vo build).
  */
-function JobsMiniPreview() {
+function Shot({ src, alt, caption }: { src: string; alt: string; caption: string }) {
   return (
-    <Card title="Công việc">
-      <ul className="divide-y divide-border">
-        <li className="flex items-center justify-between gap-3 py-2 text-sm">
-          <span>#47 · PDF · 6 trang</span>
-          <Badge tone="success">Hoàn tất</Badge>
-        </li>
-        <li className="flex items-center justify-between gap-3 py-2 text-sm">
-          <span>#48 · Ảnh · 2 trang</span>
-          <Badge tone="info">Đang xử lý</Badge>
-        </li>
-        <li className="flex items-center justify-between gap-3 py-2 text-sm">
-          <span>#49 · PDF · 1 trang</span>
-          <Badge tone="neutral">Chờ xử lý</Badge>
-        </li>
-      </ul>
-    </Card>
+    <figure data-testid="gallery-shot" className="overflow-hidden">
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        onError={(e) => {
+          e.currentTarget.style.visibility = "hidden";
+          e.currentTarget.style.aspectRatio = "16 / 10";
+          e.currentTarget.style.width = "100%";
+        }}
+        className="aspect-[16/10] w-full rounded-md border border-border bg-surface object-cover object-top"
+      />
+      <figcaption className="mt-2 text-sm text-muted">{caption}</figcaption>
+    </figure>
   );
 }
 
 const HOW_STEPS = [
   {
-    label: "Tải lên",
-    body: "Chụp ảnh hoặc chọn file PDF từ máy bạn.",
+    label: "OCR đọc chữ",
+    body: "Máy đọc ảnh và PDF, ra văn bản thô. Hỗ trợ tiếng Việt có dấu.",
   },
   {
-    label: "Chỉnh sửa",
-    body: "Chọn trang, xoay, cắt vùng, sửa từng vùng lỗi.",
+    label: "IR giữ cấu trúc",
+    body: "Văn bản được tổ chức thành đoạn, tiêu đề, bảng, danh sách. Bạn sửa từng vùng nghi lỗi.",
   },
   {
-    label: "Xuất file",
-    body: "Tải kết quả về MD, HTML, DOCX hoặc PDF.",
+    label: "Layout dựng trang",
+    body: "Trình dựng layout ghép phần đã sửa lại thành trang có-format, giữ cột và canh lề gốc.",
   },
 ];
 
@@ -76,90 +73,99 @@ type Feature = {
   title: string;
   body: string;
   className?: string;
-  visual?: React.ReactNode;
 };
 
 const FEATURES: Feature[] = [
   {
-    title: "Wizard chọn trang và xoay",
-    body: "Bỏ trang thừa, xoay trang nghiêng trước khi chạy OCR.",
+    title: "Soạn hai khung, undo mọi bước",
+    body: "Văn bản và Layout mở song song. Mỗi thao tác lưu vào lịch sử, Ctrl+Z hoàn tác được về bước trước.",
     className: "md:col-span-2",
-    visual: (
-      <img
-        src="https://picsum.photos/seed/exam-paper-desk/1200/520"
-        alt="Ảnh chụp đề thi trên bàn học"
-        className="h-44 w-full rounded-lg object-cover"
-        loading="lazy"
-      />
-    ),
   },
   {
-    title: "Crop ảnh trước khi gửi",
-    body: "Cắt đúng vùng chứa chữ, giảm nhiễu nền.",
-    visual: (
-      <img
-        src="https://picsum.photos/seed/scissor-crop-photo/600/520"
-        alt="Cắt xén ảnh trên bàn làm việc"
-        className="h-44 w-full rounded-lg object-cover"
-        loading="lazy"
-      />
-    ),
-  },
-  {
-    title: "Xem trước MD, PDF, DOCX",
-    body: "Đổi định dạng xem trước ngay trong trình duyệt.",
+    title: "Sửa lỗi proofread bằng cách bấm",
+    body: "Bấm vào vùng sai trong bản xem trước, chữ tương ứng trong ảnh được tô sáng. Sửa đúng chỗ, không ảnh hưởng phần còn lại.",
     className: "bg-accent/10 border-accent/30",
   },
   {
-    title: "Chỉnh sửa từng vùng",
-    body: "Sửa vùng lỗi OCR mà không làm hỏng phần còn lại.",
+    title: "Sáu định dạng xuất",
+    body: "Markdown, HTML, DOCX, PDF, cộng bản giữ nguyên layout cho Markdown và DOCX.",
   },
   {
-    title: "Xuất DOCX, PDF, HTML",
-    body: "Một tệp kết quả, nhiều định dạng.",
+    title: "Quota minh bạch",
+    body: "Số trang còn lại của tháng hiển thị ngay trên thanh điều hướng. Không phát sinh chi phí ẩn.",
+  },
+  {
+    title: "Chuẩn bị trang trước khi chạy",
+    body: "Chọn trang cần lấy, xoay trang nghiêng, cắt vùng chứa chữ trong wizard trước khi gửi đi.",
   },
 ];
 
 const INPUT_FORMATS = ["JPG", "PNG", "WebP", "PDF"];
-const OUTPUT_FORMATS = ["MD", "HTML", "DOCX", "PDF"];
+
+const GALLERY = [
+  {
+    src: "/screenshots/jobs-list.png",
+    alt: "Danh sách công việc img2text kèm quota badge",
+    caption: "Danh sách công việc, quota hiển thị trên nav.",
+  },
+  {
+    src: "/screenshots/jobdetail-vanban.png",
+    alt: "Bản xem trước văn bản proofread, bấm vào vùng lỗi để sửa",
+    caption: "Khung văn bản: sửa từng vùng lỗi bằng cách bấm.",
+  },
+  {
+    src: "/screenshots/jobdetail-layout.png",
+    alt: "Bản xem trước layout dựng trang giữ cột và canh lề gốc",
+    caption: "Khung layout: trang có-format ghép lại từ phần đã sửa.",
+  },
+  {
+    src: "/screenshots/extraction.png",
+    alt: "Màn hình trích xuất ảnh và PDF thành văn bản có cấu trúc",
+    caption: "Màn hình trích xuất: ảnh và kết quả so song.",
+  },
+];
 
 export default function Landing() {
   const reduce = useReducedMotion();
   return (
-    <div data-testid="landing" className="mx-auto max-w-6xl px-4 pb-24">
-      {/* Hero: asymmetric split, motion entry. */}
+    <div data-testid="landing" className="mx-auto max-w-6xl px-4 pb-0">
+      {/* Hero: split, clamp typography, motion entry. */}
       <section
         data-testid="landing-hero"
-        className="grid items-center gap-10 pt-20 pb-16 md:grid-cols-[1.2fr_1fr] md:pt-24"
+        className="grid items-center gap-10 pt-16 pb-16 md:grid-cols-[1.1fr_1fr] md:pt-24"
       >
         <motion.div
           initial={reduce ? false : { opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
         >
-          <h1 className="text-4xl font-bold leading-tight tracking-tight md:text-5xl lg:text-6xl">
+          <h1 className="text-[clamp(2rem,5vw,3.5rem)] font-bold leading-[1.15] tracking-tight">
             Biến ảnh và PDF thành văn bản sửa được
           </h1>
-          <p className="mt-4 max-w-[45ch] text-muted">
-            Tải lên, chọn trang, cắt vùng, xuất MD, DOCX, PDF. Chạy trên Colab miễn phí.
+          <p className="mt-5 max-w-[45ch] text-muted">
+            Ảnh chụp đề thi, sách, tài liệu scan thành văn bản có cấu trúc. Sửa từng vùng lỗi, xuất file bạn cần.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-4">
             <Link to="/signin" data-testid="landing-cta" className={buttonClasses("primary", "md")}>
               Bắt đầu
             </Link>
-            <a href="#how" className="text-accent hover:underline">
+            <a href="#how" className="text-accent-text hover:underline">
               Xem cách hoạt động
             </a>
           </div>
         </motion.div>
         <Reveal delay={0.15}>
-          <JobsMiniPreview />
+          <Shot
+            src="/screenshots/landing-hero.png"
+            alt="Giao diện img2text trên nền tối"
+            caption="Toàn bộ trang trên nền tối."
+          />
         </Reveal>
       </section>
 
-      {/* #how: stacked numbered list, verb-noun labels, no equal cards. */}
+      {/* #how: pipeline OCR → IR → Layout, so numbered list, verb-noun labels. */}
       <section data-testid="landing-how" id="how" className="py-16 md:py-24">
-        <h2 className="text-2xl font-semibold md:text-3xl">Cách hoạt động</h2>
+        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Cách hoạt động</h2>
         <ol className="mt-8 divide-y divide-border">
           {HOW_STEPS.map((step, i) => (
             <Reveal
@@ -173,26 +179,25 @@ export default function Landing() {
               </span>
               <div>
                 <h3 className="text-lg font-semibold">{step.label}</h3>
-                <p className="mt-1 text-muted">{step.body}</p>
+                <p className="mt-1 max-w-[65ch] text-muted">{step.body}</p>
               </div>
             </Reveal>
           ))}
         </ol>
       </section>
 
-      {/* Features: bento, exactly 5 cells, 2 image cells + 1 tinted cell. */}
+      {/* Features: bento, exactly 5 cells, 2-span + tinted cell for rhythm. */}
       <section data-testid="landing-features" className="py-16 md:py-24">
-        <h2 className="text-2xl font-semibold md:text-3xl">Tính năng</h2>
+        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Tính năng</h2>
         <div className="mt-8 grid gap-4 md:grid-cols-3">
           {FEATURES.map((f, i) => (
             <Reveal
               key={f.title}
               delay={(i % 3) * 0.06}
-              className={`rounded-card border border-border bg-surface p-4 ${f.className ?? ""}`}
+              className={`rounded-card border border-border bg-surface p-5 ${f.className ?? ""}`}
             >
               <div data-testid="feature-cell">
-                {f.visual}
-                <h3 className="mt-3 text-lg font-semibold">{f.title}</h3>
+                <h3 className="text-lg font-semibold">{f.title}</h3>
                 <p className="mt-1 text-muted">{f.body}</p>
               </div>
             </Reveal>
@@ -200,9 +205,9 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Formats + Colab strip. */}
+      {/* Formats strip: nhận vào / xuất ra + Colab. */}
       <section data-testid="landing-formats" className="py-16 md:py-24">
-        <h2 className="text-2xl font-semibold md:text-3xl">Định dạng</h2>
+        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Định dạng</h2>
         <Reveal className="mt-8 space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">Nhận vào:</span>
@@ -214,7 +219,7 @@ export default function Landing() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">Xuất ra:</span>
-            {OUTPUT_FORMATS.map((fmt) => (
+            {["MD", "HTML", "DOCX", "PDF"].map((fmt) => (
               <Badge key={fmt} tone="info">
                 {fmt}
               </Badge>
@@ -224,10 +229,24 @@ export default function Landing() {
         </Reveal>
       </section>
 
-      {/* Final CTA: same label "Bắt đầu". */}
+      {/* Gallery: real screenshots (placeholder-friendly khi anh chua chup). */}
+      <section data-testid="landing-gallery" className="py-16 md:py-24">
+        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Xem trước</h2>
+        <div className="mt-8 grid gap-6 sm:grid-cols-2">
+          {GALLERY.map((shot, i) => (
+            <Reveal key={shot.src} delay={(i % 2) * 0.06}>
+              <Shot {...shot} />
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
+      {/* Final CTA: same label "Bắt đầu" (one signup intent, one label). */}
       <section className="py-16 text-center md:py-24">
         <Reveal>
-          <h2 className="text-2xl font-semibold md:text-3xl">Tải ảnh đầu tiên của bạn</h2>
+          <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
+            Tải ảnh đầu tiên của bạn
+          </h2>
           <div className="mt-8">
             <Link to="/signin" className={buttonClasses("primary", "md")}>
               Bắt đầu
@@ -235,6 +254,21 @@ export default function Landing() {
           </div>
         </Reveal>
       </section>
+
+      {/* Footer: brand + 2 auth links, muted, hairline top. */}
+      <footer data-testid="landing-footer" className="border-t border-border py-8">
+        <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-muted">
+          <span className="font-semibold text-text">img2text</span>
+          <nav className="flex gap-4" aria-label="Liên kết chân trang">
+            <Link to="/signin" className="hover:text-text">
+              Đăng nhập
+            </Link>
+            <Link to="/signup" className="hover:text-text">
+              Đăng ký
+            </Link>
+          </nav>
+        </div>
+      </footer>
     </div>
   );
 }
