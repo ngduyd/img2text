@@ -52,7 +52,7 @@ export default function AdminUsers() {
 
   function saveQuota(u: User) {
     const draft = drafts[u.id];
-    const read = (field: "daily" | "weekly", fallback: number | null): number | null => {
+    const read = (field: "daily" | "weekly", fallback: number | null | undefined): number | null => {
       const raw = (draft?.[field] ?? String(fallback ?? "")).trim();
       return /^\d+$/.test(raw) ? Number(raw) : null;
     };
