@@ -276,6 +276,7 @@ def test_prompt_guards_empty_zones():
     assert "empty zones" in low
     assert "do not invent" in low
     assert "render nothing" in low
+    assert "do not wrap in json" in low
 
 async def test_fallback_stats_counter(monkeypatch, caplog):
     """Fallback → _FALLBACK_STATS tăng + warning HEURISTIC FALLBACK tỉ lệ n/total."""

@@ -398,7 +398,8 @@ RENDER_DOCX_PROMPT = (
     "Mỗi page IR → thẻ <page-break/> giữa các page.\n"
     "Align/indent khác mặc định → style=\"text-align:center|right|justify\" "
     "và style=\"padding-left: Nem\" (1em = 0.5 inch).\n"
-    "Output raw HTML only (no code fences).\n\n"
+    "Output raw HTML only (no code fences).\n"
+    "Output raw only — do NOT wrap in JSON.\n\n"
     "Pages (index → width/height): {page_dims}\n"
     "Document IR:\n{ir_json}"
 )

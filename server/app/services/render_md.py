@@ -416,7 +416,8 @@ RENDER_MD_PROMPT = (
     "Empty zones (header/content/footer = []) → render NOTHING for that zone; "
     "do NOT invent content for missing zones. A page may have only content, "
     "only header+content, etc.\n"
-    "Output raw markdown only (no code fences).\n\n"
+    "Output raw markdown only (no code fences).\n"
+    "Output raw only — do NOT wrap in JSON.\n\n"
     "Pages (index → width/height): {page_dims}\n"
     "Document IR:\n{ir_json}"
 )
