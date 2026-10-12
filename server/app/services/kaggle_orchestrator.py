@@ -628,6 +628,23 @@ async def _ingest_batch_result(session_factory, job_id: int, out_dir: Path) -> N
             return
     logger.info("kaggle batch: job %s done (%d pages)", job_id, len(body.pages))
 
+async def _ingest_batch_crops(job_id: int, out_dir: Path) -> None:
+    """WS-PIPE task 3: {job_id}_crop_{rid}.png (kernel output) →
+    storage.put exports/{job_id}/crops/{rid}.png. Optional artifact: 1 crop
+    lỗi (storage/không đọc được) chỉ log + bỏ crop đó — không bao giờ fail job."""
+    storage = _get_storage()
+    prefix = f"{job_id}_crop_"
+    for f in sorted(out_dir.glob(f"{job_id}_crop_*.png")):
+        rid = f.stem[len(prefix):]
+        key = f"exports/{job_id}/crops/{rid}.png"
+        try:
+            await storage.put(key, f.read_bytes())
+        except Exception:
+            logger.warning(
+                "kaggle batch: crop %s ingest fail (bỏ, job không ảnh hưởng)",
+                key, exc_info=True,
+            )
+
 async def _ingest_complete_run(api, session_factory, run: dict) -> None:
     """kernel complete → ONE kernels_output pull → each job ingests its OWN
     {job_id}_result.json (N files, no overwrite). Partial-fail policy: a job
@@ -658,6 +675,9 @@ async def _ingest_complete_run(api, session_factory, run: dict) -> None:
                     error, exc, job_id,
                 )
                 await _fail_job_extracting(session_factory, job_id, error)
+            else:
+                # crops SAU result OK — result fail → không put (tránh mồ côi)
+                await _ingest_batch_crops(job_id, out_dir)  # optional, partial-fail
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)
 

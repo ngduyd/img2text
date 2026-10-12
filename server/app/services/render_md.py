@@ -28,6 +28,10 @@ from app.core.schemas import IMAGE_MARKER
 from app.services.ir import DocumentIR, IR_PROMPT, validate_ir, IRValidationError
 from app.services.runtime_settings import get_runtime_setting
 
+# marker template prefix ("**[Hình ảnh chưa trích xuất: vùng ") — dùng để
+# quét marker trong md render (embed_crop_urls)
+IMAGE_MARKER_PREFIX = IMAGE_MARKER.split("{region_id}")[0]
+
 logger = logging.getLogger("render_md")
 
 # ---------------------------------------------------------------- constants
@@ -536,6 +540,34 @@ async def generate_ir(result: dict) -> dict | None:
         logger.warning("IR generation failed: %s", exc)
         return None
 
+
+# ---------------------------------------------------------------- crop embed (WS-PIPE)
+CROP_PRESIGN_EXPIRES = 86400
+
+async def embed_crop_keys(markdown: str, job_id: int, storage) -> str:
+    """RENDER-time: IMAGE_MARKER → `![vùng {rid}](crops/{rid}.png)` RELATIVE
+    key khi crop artifact tồn tại; thiếu → giữ marker. Artifact KHÔNG chứa
+    URL presigned (24h hết hạn → link chết); serve-time re-embed qua
+    embed_crop_urls."""
+    for m in re.finditer(re.escape(IMAGE_MARKER_PREFIX) + r"([^\]]+)\]\*\*", markdown):
+        rid = m.group(1)
+        if not await storage.exists(f"exports/{job_id}/crops/{rid}.png"):
+            continue
+        markdown = markdown.replace(m.group(0), f"![vùng {rid}](crops/{rid}.png)")
+    return markdown
+
+_CROP_REL_RE = re.compile(r"!\[vùng ([^\]]+)\]\(crops/([^\)]+)\)")
+
+async def embed_crop_urls(markdown: str, job_id: int, storage) -> str:
+    """SERVE-time (download md-layout): relative `crops/{f}` → presigned 24h
+    FRESH mỗi lần serve — URL trong artifact không bao giờ cache."""
+    for m in _CROP_REL_RE.finditer(markdown):
+        rid, fname = m.group(1), m.group(2)
+        url = await storage.presign_get(
+            f"exports/{job_id}/crops/{fname}", CROP_PRESIGN_EXPIRES
+        )
+        markdown = markdown.replace(m.group(0), f"![vùng {rid}]({url})")
+    return markdown
 
 # ---------------------------------------------------------------- main API
 async def build_md(

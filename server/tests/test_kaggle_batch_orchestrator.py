@@ -90,6 +90,7 @@ class BatchStubKaggleApi:
         self.status = {"status": SimpleNamespace(name="COMPLETE")}
         self.dataset_items: list = []
         self.result_doc: dict | None = None
+        self.crops: dict[int, dict[str, bytes]] = {}  # job_id → {rid: png}
         self.output_error: Exception | None = None
         self.missing_outputs: set[int] = set()  # jobs the kernel wrote NOTHING for
         self.dataset_exists = True  # private dataset present (prod state)
@@ -157,6 +158,10 @@ class BatchStubKaggleApi:
         # production shape: per-job output named from the batch's job ids
         # (F3: parsed from the staged manifest.json)
         for job_id in self.staged_job_ids:
+            # kernel ghi crops TRƯỚC result (process_job) — result crash
+            # giữa chừng → crop vẫn nằm trong output dir
+            for rid, png in self.crops.get(job_id, {}).items():
+                (Path(path) / f"{job_id}_crop_{rid}.png").write_bytes(png)
             if job_id in self.missing_outputs:
                 continue
             (Path(path) / f"{job_id}_result.json").write_text(
@@ -499,6 +504,53 @@ async def test_batch_ingests_every_jobs_own_output(
     finally:
         gate.set()
         await drain_auto_output()
+
+async def test_batch_ingest_crops_to_storage(
+    kaggle_batch_env, api, storage_env, seed_job, db_session, monkeypatch
+):
+    """WS-PIPE task 3: kernel output {id}_crop_{rid}.png →
+    storage.put exports/{id}/crops/{rid}.png; result ingests như cũ."""
+    api.result_doc = RESULT_DOC
+    api.crops = {seed_job: {"p1_b3": b"\x89PNG\r\n\x1a\nCLEAN"}}
+    async def _md_ok(*args, **kwargs):
+        return "# md"
+    monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
+    assert await orch.ensure_worker(SessionLocal) is True
+    api.status = {"status": SimpleNamespace(name="COMPLETE")}
+    assert await orch.ensure_worker(SessionLocal) is False  # pull + ingest
+    await drain_auto_output()
+    key = f"exports/{seed_job}/crops/p1_b3.png"
+    assert await storage_env.exists(key)
+    assert (await storage_env.get(key)) == b"\x89PNG\r\n\x1a\nCLEAN"
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.status == "done"  # crop fail không được đổi lifecycle
+
+async def test_batch_ingest_crops_partial_fail_keeps_job(
+    kaggle_batch_env, api, storage_env, seed_job, db_session, monkeypatch
+):
+    """WS-PIPE task 3: 1 crop storage.put lỗi → job VẪN ingest bình thường
+    (crops là optional artifact)."""
+    api.result_doc = RESULT_DOC
+    api.crops = {seed_job: {"p1_b3": b"x", "p2_b0": b"y"}}
+    real_put = storage_env.put
+    async def _flaky_put(key, data):
+        if key.endswith("crops/p1_b3.png"):
+            raise RuntimeError("s3 503")
+        return await real_put(key, data)
+    monkeypatch.setattr(storage_env, "put", _flaky_put)
+    async def _md_ok(*args, **kwargs):
+        return "# md"
+    monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
+    assert await orch.ensure_worker(SessionLocal) is True
+    api.status = {"status": SimpleNamespace(name="COMPLETE")}
+    assert await orch.ensure_worker(SessionLocal) is False
+    await drain_auto_output()
+    assert not await storage_env.exists(f"exports/{seed_job}/crops/p1_b3.png")
+    assert await storage_env.exists(f"exports/{seed_job}/crops/p2_b0.png")
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.status == "done" and job.result is not None
 
 async def test_batch_missing_job_output_fails_only_that_job(
     kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session,
@@ -1045,3 +1097,22 @@ def test_norm_status_enum_and_string_forms():
     assert orch._norm_status({"status": "KernelWorkerStatus.FAILED"}) == "failed"
     assert orch._norm_status({"status": "running"}) == "running"
     assert orch._norm_status({"status": None}) is None
+
+async def test_batch_result_missing_crops_not_ingested(
+    kaggle_batch_env, api, storage_env, seed_job, db_session, monkeypatch
+):
+    """P2: crops ingest SAU result OK — job thiếu result (crash trước khi ghi)
+    → crops KHÔNG put (tránh artifact mồ côi)."""
+    api.result_doc = RESULT_DOC
+    api.missing_outputs = {seed_job}  # result.json missing
+    api.crops = {seed_job: {"p1_b3": b"\x89PNG\r\n\x1a\nX"}}  # crop vẫn có
+    async def _md_ok(*args, **kwargs):
+        return "# md"
+    monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
+    assert await orch.ensure_worker(SessionLocal) is True
+    api.status = {"status": SimpleNamespace(name="COMPLETE")}
+    assert await orch.ensure_worker(SessionLocal) is False  # pull + ingest
+    assert not await storage_env.exists(f"exports/{seed_job}/crops/p1_b3.png")
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.status == "failed" and job.failed_step == "extracting"

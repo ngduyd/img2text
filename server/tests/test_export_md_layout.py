@@ -396,3 +396,37 @@ async def test_export_md_layout_fallback_keeps_image_marker(
     md = (await storage.get(f"exports/{job_id}/md-layout")).decode("utf-8")
     assert "Nội dung" in md
     assert "**[Hình ảnh chưa trích xuất: vùng b1]**" in md
+
+# --- WS-PIPE P1: md-layout artifact không bake presigned URL (hết hạn 24h) ---
+
+async def test_md_layout_artifact_relative_key_download_fresh_url(
+    auth_client, done_job_with_result, storage_spy, monkeypatch
+):
+    from app.core.schemas import IMAGE_MARKER
+
+    rid = "p1_b3"
+    marker = IMAGE_MARKER.format(region_id=rid)
+    await storage_spy.put(f"exports/{done_job_with_result}/crops/{rid}.png", b"\x89PNG\r\n\x1a\nx")
+    fake_llm(monkeypatch, [_ir_response(), FakeResponse(f"# X\n\n{marker}")])
+    r = await auth_client.post(
+        f"/api/jobs/{done_job_with_result}/export", json={"fmt": "md-layout"}
+    )
+    assert r.status_code == 200, r.text
+    body = (await storage_spy.get(f"exports/{done_job_with_result}/md-layout")).decode()
+    assert f"](crops/{rid}.png)" in body  # relative key trong artifact
+    assert "http" not in body             # KHÔNG hostname presigned baked
+
+    r1 = await auth_client.get(
+        f"/api/jobs/{done_job_with_result}/export/md-layout/download"
+    )
+    r2 = await auth_client.get(
+        f"/api/jobs/{done_job_with_result}/export/md-layout/download"
+    )
+    assert r1.status_code == 200
+    for r_ in (r1, r2):
+        assert f"crops/{rid}.png" in r_.text   # URL trỏ đúng key
+        assert "http" in r_.text               # presigned fresh tại serve
+    # presign GỌI MỖI lần serve (URL ký theo timestamp giây — spy chứng minh
+    # fresh, không cache)
+    n = storage_spy.presign_get.await_count
+    assert n >= 2  # ≥1 call/serve

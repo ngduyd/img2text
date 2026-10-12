@@ -8,12 +8,15 @@ the web word mode starts emitting them.
 """
 
 import io
+import logging
 import re
 from html.parser import HTMLParser
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt
+
+logger = logging.getLogger(__name__)
 
 _ALIGN = {
     "left": WD_ALIGN_PARAGRAPH.LEFT,
@@ -27,6 +30,8 @@ _BLOCKS = {"p", "div", "h1", "h2", "h3", "li"}
 _SKIP_CONTENT = {"script", "style", "head", "title", "meta", "link"}
 # font-size: "14pt" | "18.5px" | "14" (execCommand styleWithCSS variants)
 _SIZE_RE = re.compile(r"([\d.]+)\s*(pt|px)?")
+# crop ref: src chứa "crops/{rid}.png" (relative HOẶC presigned URL đầy đủ)
+CROP_SRC_RE = re.compile(r"crops/([^/?#]+)\.[a-z]+", re.IGNORECASE)
 
 
 class _Node:
@@ -102,8 +107,9 @@ def _style_of(node: "_Node") -> dict:
 class _Walker:
     """Tree → python-docx. Inline style stack + lazy current paragraph."""
 
-    def __init__(self) -> None:
+    def __init__(self, crops: dict[str, bytes] | None = None) -> None:
         self.doc = Document()
+        self.crops = crops or {}
         self.para = None  # open paragraph (None → created lazily on text)
         self.container = self.doc  # current target (doc | table cell)
         self.pending: dict = {}  # paragraph props for the NEXT created para
@@ -160,6 +166,8 @@ class _Walker:
                 self._push(_style_of(node), node)
             elif tag == "br":
                 self._ensure().add_run().add_break()
+            elif tag == "img":
+                self._image(node)
             elif tag in _BLOCKS or tag == "div":
                 self._block(node, tag)
             elif tag in _LISTS:
@@ -171,6 +179,17 @@ class _Walker:
                 self._table(node)
             else:  # unknown/unsupported tag: unwrap, keep children
                 self.walk(node.kids)
+
+    def _image(self, node: "_Node") -> None:
+        """WS-PIPE: img src → crop bytes embed trực tiếp (không phụ thuộc URL
+        presigned — hết hạn cũng không hỏng export). Crop thiếu → drop (cũ)."""
+        m = CROP_SRC_RE.search(node.attrs.get("src", ""))
+        data = self.crops.get(m.group(1)) if m else None
+        if data:
+            try:
+                self._ensure().add_run().add_picture(io.BytesIO(data))
+            except Exception as exc:  # bytes hỏng → drop img như crop thiếu
+                logger.warning("docx: crop bytes hỏng, bỏ img: %s", exc)
 
     def _push(self, extra: dict, node: "_Node") -> None:
         """Inline element: recurse with merged style, restore after."""
@@ -287,11 +306,14 @@ def _cells(tr: "_Node") -> list:
     ]
 
 
-def html_to_docx(html: str) -> bytes:
-    """docx.html bytes-source → rendered .docx bytes (M3 export path)."""
+def html_to_docx(html: str, crops: dict[str, bytes] | None = None) -> bytes:
+    """docx.html bytes-source → rendered .docx bytes (M3 export path).
+
+    crops: {rid: png_bytes} — img src trỏ crop artifact (WS-PIPE) → embed
+    bytes; None/không khớp → img drop như trước."""
     parser = _TreeParser()
     parser.feed(html)
     parser.close()
-    walker = _Walker()
+    walker = _Walker(crops)
     walker.walk(parser.root.kids)
     return walker.render()

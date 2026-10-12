@@ -137,6 +137,7 @@ WHEELHOUSE_DEPS = [
     "pillow", "numpy", "opencv-python-headless", "rapidfuzz",
     "pymupdf", "paddlepaddle-gpu==3.2.1", "paddleocr[doc-parser]>=3.6.0",
     "safetensors", "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
+    "rembg",  # WS-PIPE crop — thiếu → extract_crops ImportError
 ]
 
 def _find_wheelhouse() -> str | None:
@@ -174,6 +175,7 @@ if __name__ == "__main__":
         [
             sys.executable, "-m", "pip", "install", "-q",
             "pillow", "numpy", "opencv-python-headless", "rapidfuzz", "PyMuPDF",
+            "rembg",  # WS-PIPE: crop remove-background (u2net, model cache U2NET_HOME)
         ],
         check=False,
     )
@@ -195,7 +197,7 @@ if __name__ == "__main__":
             # Repair: wheelhouse drift (thiếu paddle/doc-parser extras) →
             # cài full recipe proven từ network (paddle cu126 + doc-parser stack).
             if subprocess.run(
-                [VENV_PY, "-c", "import paddle, paddleocr"], capture_output=True
+                [VENV_PY, "-c", "import paddle, paddleocr, rembg"], capture_output=True
             ).returncode != 0:
                 print("[batch] wheelhouse thiếu deps — repair full recipe từ network", flush=True)
                 for cmd in (
@@ -203,7 +205,8 @@ if __name__ == "__main__":
                      "paddlepaddle-gpu==3.2.1", "--extra-index-url", PADDLE_PPU_INDEX],
                     ["uv", "pip", "install", "--python", VENV_PY,
                      "paddleocr[doc-parser]>=3.6.0", "safetensors",
-                     "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0"],
+                     "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
+                     "rembg"],
                 ):
                     subprocess.run(cmd, check=False)
         else:
@@ -217,6 +220,7 @@ if __name__ == "__main__":
                     "uv", "pip", "install", "--python", VENV_PY,
                     "paddleocr[doc-parser]>=3.6.0", "safetensors",
                     "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
+                    "rembg",
                 ],
             ):
                 subprocess.run(cmd, check=False)
@@ -229,7 +233,7 @@ if __name__ == "__main__":
         )
 
     _paddle_check = subprocess.run(
-        [VENV_PY, "-c", "import paddle, paddleocr; print(paddle.__version__, paddle.device.is_compiled_with_cuda())"],
+        [VENV_PY, "-c", "import paddle, paddleocr, rembg; print(paddle.__version__, paddle.device.is_compiled_with_cuda())"],
         check=False,
         capture_output=True,
         text=True,
@@ -465,6 +469,17 @@ def _write_outputs(job_id: int, json_str: str, md_str: str) -> None:
         )
 
 
+def _write_crop_outputs(job_id: int, crops: dict[str, bytes]) -> None:
+    """{job_id}_crop_{rid}.png → mọi output dir (cùng contract result.json:
+    script kernel capture /kaggle/working; orchestrator ingest từ đó)."""
+    for d in OUT_DIRS:
+        if not os.path.isdir(d):
+            continue
+        for rid, png in crops.items():
+            with open(os.path.join(d, f"{job_id}_crop_{rid}.png"), "wb") as f:
+                f.write(png)
+        print(f"crops ({d}): {sorted(crops)}", flush=True)
+
 def find_inputs(root: str = "/kaggle/input") -> list[tuple[int, str]]:
     """All staged inputs under root/** → (job_id, path), sorted by job_id.
 
@@ -622,6 +637,58 @@ def extract_blocks(raw: dict, page_no: int) -> list[dict]:
     return blocks
 
 
+def _to_original_bbox(bbox, scale):
+    """bbox px trên ảnh ĐÃ preprocess (OCR coord) → bbox trên trang/ảnh GỐC
+    (fitz clip coord). scale = original_size / preprocessed_size — CHUNG cho
+    PDF (page.rect pt) và image (page.rect px); preprocess resize giữ aspect
+    (rotate_keep_size không đổi kích thước) nên 1 factor đủ."""
+    x0, y0, x1, y1 = bbox
+    return [x0 * scale, y0 * scale, x1 * scale, y1 * scale]
+
+def extract_crops(input_path: str, pages_out: list, remove=None) -> dict[str, bytes]:
+    """WS-PIPE: image blocks (type==\"image\", có bbox) → PyMuPDF
+    page.get_pixmap(clip=bbox px→pt) → PNG → rembg.remove → {rid: png_bytes}.
+
+    bbox trong result là px @DPI trên ảnh đã rasterize → đổi sang pt (72dpi)
+    rồi scale ngược khi lấy pixmap (giữ ~DPI resolution). Input ảnh thường:
+    fitz mở 1 trang với rect = px → scale = rect.width/width_px. remove=None →
+    rembg lazy (kernel phase); test inject stub. Partial-fail: 1 crop lỗi →
+    log + bỏ region đó, không kill job (run_batch đã catch ở mức job)."""
+    import fitz
+    if remove is None:
+        # u2net.onnx cache trong wheelbuild dataset (task 1) → rembg không tải
+        hits = glob.glob("/kaggle/input/**/u2net.onnx", recursive=True)
+        if hits:
+            os.environ.setdefault("U2NET_HOME", os.path.dirname(hits[0]))
+        from rembg import remove as remove  # noqa: PLC0415 (lazy — import test cheap)
+    doc = fitz.open(input_path)
+    try:
+        crops: dict[str, bytes] = {}
+        for pg in pages_out:
+            w_px = pg.get("width") or 0
+            if not w_px or not (1 <= int(pg.get("page") or 0) <= doc.page_count):
+                continue
+            page = doc[int(pg["page"]) - 1]
+            # bbox = px ảnh preprocess (OCR đọc bản đó) → trang gốc:
+            # scale = original rect / preprocessed size (PDF pt, image px)
+            scale = page.rect.width / w_px
+            for b in pg.get("blocks") or []:
+                if b.get("type") != "image" or not b.get("bbox"):
+                    continue
+                rid = str(b["id"])
+                x0, y0, x1, y1 = _to_original_bbox(b["bbox"], scale)
+                clip = fitz.Rect(x0, y0, x1, y1)
+                try:
+                    # 72dpi mặc định → crop mờ; Matrix(2,2) = 144dpi đủ sharp
+                    pix = page.get_pixmap(clip=clip, matrix=fitz.Matrix(2, 2))
+                    png = pix.tobytes("png")
+                    crops[rid] = remove(png)
+                except Exception as exc:  # partial-fail 1 crop
+                    print(f"[batch] crop {rid} lỗi: {exc}", flush=True)
+        return crops
+    finally:
+        doc.close()
+
 def normalize(raw_paths: list[str], pre_info: dict,
               raw_dir: str, pre_dir: str) -> tuple[list[dict], list[str]]:
     """Cell-14 normalize → (pages_out, problems). Gated pages (no pre file)
@@ -705,6 +772,14 @@ def process_job(job_id: int, input_path: str) -> None:
 
     pages_out, problems = normalize(raw_paths, pre_info,
                                     ocr_raw_dir, pre_dir)
+    # WS-PIPE: image block → crop + rembg (partial-fail đã nuốt trong extract)
+    try:
+        crops = extract_crops(input_path, pages_out)
+    except Exception as exc:  # rembg/fitz lỗi chung → job vẫn ra kết quả
+        crops = {}
+        print(f"job {job_id}: crop extract lỗi: {exc}", flush=True)
+    if crops:
+        _write_crop_outputs(job_id, crops)
     document = {"source_pdf": input_path, "dpi": DPI, "pages": pages_out,
                 "problems": problems}  # → server batch adapter maps to result warnings
     md_pages = []
