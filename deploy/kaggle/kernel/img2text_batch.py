@@ -624,8 +624,9 @@ def _apply_preprocess(page_paths: list[str], preprocess: dict | None
             continue
         v = int(rotate.get(str(n), 0) or 0)
         if v in cw:
-            im = Image.open(p)
-            im.transpose(cw[v]).save(p, "PNG")
+            # review r1 P1-5: `with` đóng handle (Image.open fp leak khi loop nhiều trang)
+            with Image.open(p) as im:
+                im.transpose(cw[v]).save(p, "PNG")
         out.append(p)
     return out
 

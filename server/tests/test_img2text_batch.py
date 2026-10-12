@@ -229,3 +229,41 @@ def test_apply_preprocess_select_and_rotate(tmp_path):
     Image.new("RGB", (4, 2)).save(lone, "PNG")
     assert kb._apply_preprocess([str(lone)], None) == [str(lone)]
     assert Image.open(lone).size == (4, 2)
+
+def test_apply_preprocess_real_png_select_rotate_closes_handles(tmp_path, monkeypatch):
+    """review r1 P1-5: PNG thật 2 trang — page-select + rotate 90 → file lưu
+    (size swap) + MỌI Image.open handle được close (`with` trong fix)."""
+    from PIL import Image
+
+    opened: list = []
+    real_open = Image.open
+
+    class _Spy:
+        def __init__(self, fp, *a, **k):
+            self._im = real_open(fp, *a, **k)
+            self.closed = False
+            opened.append(self)
+
+        def transpose(self, op):  # code cũ (chưa `with`) gọi thẳng trên object
+            return self._im.transpose(op)
+
+        def __enter__(self):
+            return self._im
+
+        def __exit__(self, *exc):
+            self._im.close()
+            self.closed = True
+            return False
+
+    monkeypatch.setattr(Image, "open", lambda fp, *a, **k: _Spy(fp, *a, **k))
+    p1, p2 = tmp_path / "page_0001.png", tmp_path / "page_0002.png"
+    Image.new("RGB", (20, 10), "blue").save(p1, "PNG")
+    Image.new("RGB", (10, 20), "red").save(p2, "PNG")
+    out = kb._apply_preprocess(
+        [str(p1), str(p2)], {"pages": [1, 2], "rotate": {"2": 90}}
+    )
+    assert [Path(p).name for p in out] == ["page_0001.png", "page_0002.png"]
+    with Image.open(p2) as im:
+        assert im.size == (20, 10)  # 90° CW → swap w/h, file đã lưu
+    assert p1.exists() and p2.exists()
+    assert opened and all(s.closed for s in opened), "Image.open phải đóng (with)"
