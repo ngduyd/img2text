@@ -117,3 +117,20 @@ async def test_delete_extracting_allowed(
         headers={"Authorization": f"Bearer {tok}"},
     )
     assert r.status_code == 404
+
+# --- review r1 P1-1: input object content-addressed dùng chung (refcount) ----
+
+async def test_delete_keeps_shared_input_until_last_job(
+    auth_client, upload, storage_spy, db_session
+):
+    """2 job cùng sha → cùng storage_key; xóa A không được đụng input khi B sống."""
+    a = (await upload(TEST_JPEG, "a.jpg", page_count=1)).json()["id"]
+    b = (await upload(TEST_JPEG, "b.jpg", page_count=1)).json()["id"]
+    key_a = (await db_session.get(Job, a)).storage_key
+    db_session.expire_all()
+    key_b = (await db_session.get(Job, b)).storage_key
+    assert key_a == key_b  # content-addressed dedupe
+    assert (await auth_client.delete(f"/api/jobs/{a}")).status_code == 204
+    assert await storage_spy.exists(key_a) is True  # job B vẫn sống → input giữ
+    assert (await auth_client.delete(f"/api/jobs/{b}")).status_code == 204
+    assert await storage_spy.exists(key_a) is False  # job cuối → input xóa

@@ -1335,7 +1335,17 @@ async def delete_job(
     await storage.delete_prefix(f"crops/{id}/")
     await storage.delete_prefix(f"versions/{id}/")
     if input_key:
-        await storage.delete_prefix(input_key)
+        # review r1 P1-1: input content-addressed dùng chung (2 job cùng sha)
+        # → chỉ xóa object khi KHÔNG job nào khác còn trỏ storage_key này.
+        others = (
+            await session.execute(
+                select(func.count())
+                .select_from(Job)
+                .where(Job.storage_key == input_key, Job.id != id)
+            )
+        ).scalar_one()
+        if others == 0:
+            await storage.delete_prefix(input_key)
     await session.execute(
         delete(DocumentVersion).where(DocumentVersion.job_id == id)
     )
