@@ -174,6 +174,7 @@ if __name__ == "__main__":
         [
             sys.executable, "-m", "pip", "install", "-q",
             "pillow", "numpy", "opencv-python-headless", "rapidfuzz", "PyMuPDF",
+            "rembg",  # WS-PIPE: crop remove-background (u2net, model cache U2NET_HOME)
         ],
         check=False,
     )
@@ -465,6 +466,17 @@ def _write_outputs(job_id: int, json_str: str, md_str: str) -> None:
         )
 
 
+def _write_crop_outputs(job_id: int, crops: dict[str, bytes]) -> None:
+    """{job_id}_crop_{rid}.png → mọi output dir (cùng contract result.json:
+    script kernel capture /kaggle/working; orchestrator ingest từ đó)."""
+    for d in OUT_DIRS:
+        if not os.path.isdir(d):
+            continue
+        for rid, png in crops.items():
+            with open(os.path.join(d, f"{job_id}_crop_{rid}.png"), "wb") as f:
+                f.write(png)
+        print(f"crops ({d}): {sorted(crops)}", flush=True)
+
 def find_inputs(root: str = "/kaggle/input") -> list[tuple[int, str]]:
     """All staged inputs under root/** → (job_id, path), sorted by job_id.
 
@@ -622,6 +634,51 @@ def extract_blocks(raw: dict, page_no: int) -> list[dict]:
     return blocks
 
 
+def extract_crops(input_path: str, pages_out: list, remove=None) -> dict[str, bytes]:
+    """WS-PIPE: image blocks (type==\"image\", có bbox) → PyMuPDF
+    page.get_pixmap(clip=bbox px→pt) → PNG → rembg.remove → {rid: png_bytes}.
+
+    bbox trong result là px @DPI trên ảnh đã rasterize → đổi sang pt (72dpi)
+    rồi scale ngược khi lấy pixmap (giữ ~DPI resolution). Input ảnh thường:
+    fitz mở 1 trang với rect = px → scale = rect.width/width_px. remove=None →
+    rembg lazy (kernel phase); test inject stub. Partial-fail: 1 crop lỗi →
+    log + bỏ region đó, không kill job (run_batch đã catch ở mức job)."""
+    import fitz
+    if remove is None:
+        # u2net.onnx cache trong wheelbuild dataset (task 1) → rembg không tải
+        hits = glob.glob("/kaggle/input/**/u2net.onnx", recursive=True)
+        if hits:
+            os.environ.setdefault("U2NET_HOME", os.path.dirname(hits[0]))
+        from rembg import remove as remove  # noqa: PLC0415 (lazy — import test cheap)
+    doc = fitz.open(input_path)
+    try:
+        crops: dict[str, bytes] = {}
+        for pg in pages_out:
+            w_px = pg.get("width") or 0
+            if not w_px or not (1 <= int(pg.get("page") or 0) <= doc.page_count):
+                continue
+            page = doc[int(pg["page"]) - 1]
+            # px→pt: ảnh pdf rasterize @DPI (rect pt = px*72/DPI); ảnh input →
+            # fitz tự gán rect theo px → scale=1 từ 72dpi gốc
+            scale = 72.0 / (DPI if input_path.lower().endswith(".pdf") else 72.0)
+            if not input_path.lower().endswith(".pdf"):
+                scale = page.rect.width / w_px  # px→fitz pt units for image pages
+            for b in pg.get("blocks") or []:
+                if b.get("type") != "image" or not b.get("bbox"):
+                    continue
+                rid = str(b["id"])
+                x0, y0, x1, y1 = b["bbox"]
+                clip = fitz.Rect(x0 * scale, y0 * scale, x1 * scale, y1 * scale)
+                try:
+                    pix = page.get_pixmap(clip=clip)
+                    png = pix.tobytes("png")
+                    crops[rid] = remove(png)
+                except Exception as exc:  # partial-fail 1 crop
+                    print(f"[batch] crop {rid} lỗi: {exc}", flush=True)
+        return crops
+    finally:
+        doc.close()
+
 def normalize(raw_paths: list[str], pre_info: dict,
               raw_dir: str, pre_dir: str) -> tuple[list[dict], list[str]]:
     """Cell-14 normalize → (pages_out, problems). Gated pages (no pre file)
@@ -705,6 +762,14 @@ def process_job(job_id: int, input_path: str) -> None:
 
     pages_out, problems = normalize(raw_paths, pre_info,
                                     ocr_raw_dir, pre_dir)
+    # WS-PIPE: image block → crop + rembg (partial-fail đã nuốt trong extract)
+    try:
+        crops = extract_crops(input_path, pages_out)
+    except Exception as exc:  # rembg/fitz lỗi chung → job vẫn ra kết quả
+        crops = {}
+        print(f"job {job_id}: crop extract lỗi: {exc}", flush=True)
+    if crops:
+        _write_crop_outputs(job_id, crops)
     document = {"source_pdf": input_path, "dpi": DPI, "pages": pages_out,
                 "problems": problems}  # → server batch adapter maps to result warnings
     md_pages = []
