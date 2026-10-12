@@ -283,7 +283,7 @@ async def test_fallback_stats_counter(monkeypatch, caplog):
     monkeypatch.setattr(
         render_md, "_FALLBACK_STATS", {"fallback": 0, "total": 0}
     )
-    caplog.set_level("WARNING", logger="render_md")
+    caplog.set_level("WARNING", logger="app.services.render_md")
     fake_llm(monkeypatch, [httpx.ConnectError("refused"), httpx.ConnectError("refused")])
     await build_md(_ocr_result())  # LLMError → heuristic
     stats = render_md._FALLBACK_STATS
