@@ -304,3 +304,34 @@ def test_rasterize_heif_input_decodes(tmp_path):
     assert len(out) == 1
     with Image.open(out[0]) as im:
         assert im.size == (8, 8)
+
+def test_rasterize_image_input_closes_handles(tmp_path, monkeypatch):
+    """review r1 P2: Image.open đầu tiên trong rasterize (đọc size) phải
+    được close — spy mọi handle mở ra."""
+    from PIL import Image
+
+    opened: list = []
+    real_open = Image.open
+
+    class _Spy:
+        def __init__(self, fp, *a, **k):
+            self._im = real_open(fp, *a, **k)
+            self.closed = False
+            opened.append(self)
+
+        def __getattr__(self, name):
+            return getattr(self._im, name)
+
+        def __enter__(self):
+            return self._im
+
+        def __exit__(self, *exc):
+            self._im.close()
+            self.closed = True
+            return False
+
+    monkeypatch.setattr(Image, "open", lambda fp, *a, **k: _Spy(fp, *a, **k))
+    src = tmp_path / "in.jpg"
+    Image.new("RGB", (10, 6), "red").save(src, "JPEG")
+    kb.rasterize_to_pages(str(src), str(tmp_path / "raw"))
+    assert opened and all(s.closed for s in opened), "mọi Image.open phải đóng"

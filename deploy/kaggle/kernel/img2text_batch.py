@@ -607,8 +607,8 @@ def rasterize_to_pages(input_path: str, raw_dir: str) -> list[str]:
     if input_path.lower().endswith(".pdf"):
         raster = default_pdftoppm(data, "pdf")
     else:
-        im = Image.open(io.BytesIO(data))
-        raster = [(data, im.size[0], im.size[1])]
+        with Image.open(io.BytesIO(data)) as im:
+            raster = [(data, im.size[0], im.size[1])]
     out = []
     for i, (png, _w, _h) in enumerate(raster, 1):
         p = os.path.join(raw_dir, f"page_{i:04d}.png")
@@ -622,7 +622,7 @@ def rasterize_to_pages(input_path: str, raw_dir: str) -> list[str]:
     return out
 
 
-def _apply_preprocess(page_paths: list[str], preprocess: dict | None
+def _apply_preprocess(page_paths: list[str], preprocess_spec: dict | None
                       ) -> list[str]:
     """Chọn trang + xoay CLOCKWISE trước OCR (wave-2 #4; worker loop
     _apply_preprocess pattern — bản file-based).
@@ -633,10 +633,10 @@ def _apply_preprocess(page_paths: list[str], preprocess: dict | None
     = bytes giữ nguyên). None/pages thiếu → giữ nguyên mọi trang."""
     from PIL import Image, ImageOps
     _register_heif_opener()
-    if not preprocess:
+    if not preprocess_spec:
         return page_paths
-    pages_sel = preprocess.get("pages")
-    rotate = preprocess.get("rotate") or {}
+    pages_sel = preprocess_spec.get("pages")
+    rotate = preprocess_spec.get("rotate") or {}
     cw = {90: Image.ROTATE_270, 180: Image.ROTATE_180, 270: Image.ROTATE_90}
     out: list[str] = []
     for p in page_paths:
