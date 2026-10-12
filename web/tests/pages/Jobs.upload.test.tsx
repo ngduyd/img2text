@@ -143,9 +143,8 @@ it("Gửi → presign → XHR progress → pdf.js count → metadata-only create
   // create xong → phase idle: chữ đếm trang biến mất
   await waitFor(() => expect(screen.queryByTestId("upload-counting")).not.toBeInTheDocument());
   // T6: badge quota trong Jobs header + invalidate sau khi tạo job → refetch
-  expect(screen.getByTestId("quota-remaining")).toHaveTextContent(
-    "Còn 10 trang hôm nay · 105 tuần này",
-  );
+  expect(screen.getByTestId("quota-remaining")).toHaveTextContent("Còn 10/25 trang hôm nay");
+  expect(screen.getByTestId("quota-remaining")).toHaveTextContent("105/150 trang tuần này");
   await waitFor(() =>
     expect(fetchSpy.mock.calls.filter((c) => String(c[0]) === "/api/quota/me").length).toBeGreaterThan(1),
   );

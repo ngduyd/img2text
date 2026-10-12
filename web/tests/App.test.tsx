@@ -16,6 +16,8 @@ vi.mock("../src/api/client", async (importOriginal) => {
       logout: vi.fn(),
       listJobs: vi.fn(),
       uploadJob: vi.fn(),
+      // Lane B Task 4: AppNav mount QuotaBadge — mock null (ẩn) cho phần lớn test.
+      getMyQuota: vi.fn(async () => null),
     },
   };
 });
@@ -156,6 +158,29 @@ it("logged-in user sees badge-ocr success + avatar + profile + logout in auth-zo
   expect(within(menu).getByTestId("btn-profile")).toHaveTextContent("Hồ sơ");
   expect(within(menu).getByTestId("btn-logout")).toHaveTextContent("Đăng xuất");
   expect(zone.queryByTestId("btn-login")).not.toBeInTheDocument();
+});
+
+/** Lane B Task 4: QuotaBadge mount vào AppNav (header) — quota → hiện, null → ẩn. */
+it("header renders quota-remaining when quota resolves; hidden when null", async () => {
+  vi.mocked(api.me).mockResolvedValue({
+    id: 1,
+    email: "user@x.io",
+    role: "user",
+    ocr_enabled: true,
+  } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  vi.mocked(api.getMyQuota).mockResolvedValue({
+    daily_limit: 25,
+    daily_used: 10,
+    weekly_limit: 150,
+    weekly_used: 40,
+    daily_remaining: 15,
+    weekly_remaining: 110,
+  });
+  render(<App />);
+  const badge = await screen.findByTestId("quota-remaining");
+  expect(badge).toHaveTextContent("Còn 15/25 trang hôm nay");
+  expect(badge).toHaveTextContent("110/150 trang tuần này");
 });
 
 it("user without OCR sees badge-ocr warning in auth-zone", async () => {
