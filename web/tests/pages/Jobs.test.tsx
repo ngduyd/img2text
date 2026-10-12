@@ -274,13 +274,13 @@ it("pagination shows page controls and click page 2 refetches the list", async (
     Promise.resolve({ items: page === 2 ? [pageTwo] : [pageOne], total: 12, page, page_size: 10 }),
   );
   renderWithRouter(<Jobs />);
-  expect(api.listJobs).toHaveBeenCalledWith(1);
+  expect(api.listJobs).toHaveBeenCalledWith(1, 10, expect.anything());
   await screen.findByTestId("job-row-11");
   // Trang 1: prev disabled.
   expect(screen.getByTestId("btn-page-prev")).toBeDisabled();
   await userEvent.click(screen.getByTestId("btn-page-2"));
   await screen.findByTestId("job-row-21");
-  expect(api.listJobs).toHaveBeenCalledWith(2);
+  expect(api.listJobs).toHaveBeenCalledWith(2, 10, expect.anything());
   await waitFor(() => expect(screen.getByTestId("btn-page-2")).toHaveAttribute("aria-current", "page"));
 });
 
@@ -419,4 +419,53 @@ it("windowed pagination: 1 + last + ±2 quanh current, ellipsis giữa gap", asy
   expect(pageWindow(10, 10)).toEqual([1, "…", 8, 9, 10]);
   expect(pageWindow(1, 1)).toEqual([1]);
   expect(pageWindow(3, 5)).toEqual([1, 2, 3, 4, 5]);
+});
+
+// Spec #3: search debounced 300ms + sort select + status đẩy server-side.
+it("search input debounced → listJobs receives q param", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  renderWithRouter(<Jobs />);
+  await screen.findByTestId("jobs-search");
+  const user = userEvent.setup();
+  await user.type(screen.getByTestId("jobs-search"), "sach");
+  await waitFor(
+    () =>
+      expect(api.listJobs).toHaveBeenCalledWith(
+        1,
+        10,
+        expect.objectContaining({ q: "sach" }),
+      ),
+    { timeout: 2000 },
+  );
+});
+
+it("sort select change → listJobs receives sort param", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  renderWithRouter(<Jobs />);
+  await screen.findByTestId("jobs-sort");
+  await userEvent.selectOptions(screen.getByTestId("jobs-sort"), "oldest");
+  await waitFor(() =>
+    expect(api.listJobs).toHaveBeenCalledWith(
+      1,
+      10,
+      expect.objectContaining({ sort: "oldest" }),
+    ),
+  );
+});
+
+it("status filter tab pushes status param server-side", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  renderWithRouter(<Jobs />);
+  await screen.findByTestId("filter-done");
+  await userEvent.click(screen.getByTestId("filter-done"));
+  await waitFor(() =>
+    expect(api.listJobs).toHaveBeenCalledWith(
+      1,
+      10,
+      expect.objectContaining({ status: "done" }),
+    ),
+  );
 });

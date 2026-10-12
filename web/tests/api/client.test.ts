@@ -139,6 +139,7 @@ describe("api client", () => {
     expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
       storage_key: PRESIGN.storage_key,
       page_count: 1,
+      filename: "a.jpg",
       output_format: "docx",
       mode: "extract_only",
       preprocess: { pages: [1, 3], rotate: { "2": 90 } },
@@ -160,6 +161,7 @@ describe("api client", () => {
     expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
       storage_key: PRESIGN.storage_key,
       page_count: 1,
+      filename: "a.jpg",
     });
   });
 
@@ -401,5 +403,17 @@ describe("api client", () => {
     const [url, opts] = spy.mock.calls[0];
     expect(url).toBe("/api/jobs/5/versions/9/restore");
     expect(opts.method).toBe("POST");
+  });
+});
+
+describe("listJobs filters (spec #3)", () => {
+  it("appends q/sort/status params", async () => {
+    const spy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ items: [], total: 0 }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", spy);
+    await api.listJobs(1, 10, { q: "sach", sort: "oldest", status: "done" });
+    const [url] = spy.mock.calls[0];
+    expect(url).toBe("/api/jobs?page=1&page_size=10&q=sach&sort=oldest&status=done");
   });
 });

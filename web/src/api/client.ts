@@ -133,6 +133,8 @@ async function uploadPresigned(
   const page_count =
     content_type === "application/pdf" ? (await loadPdf(file as File)).numPages : 1;
   const body: Record<string, unknown> = { storage_key: presign.storage_key, page_count };
+  // Spec #3 steer: create body gửi tên file gốc (server lưu cột jobs.filename → search q).
+  body.filename = filename;
   if (opts?.preprocess !== undefined) body.preprocess = opts.preprocess;
   if (opts?.output_format !== undefined) body.output_format = opts.output_format;
   if (opts?.mode !== undefined) body.mode = opts.mode;
@@ -154,8 +156,14 @@ export const api = {
   resetPassword: (token: string, password: string) =>
     request<unknown>("/api/auth/password/reset", { method: "POST", body: { token, password } }),
   // Phase 4: server-side pagination (page default 1, page_size default 10 max 100).
-  listJobs: (page = 1, page_size = 10) =>
-    request<JobsPage>(`/api/jobs?page=${page}&page_size=${page_size}`),
+  // Spec #3: filters q (filename ILIKE) / sort (newest|oldest) / status — server-side.
+  listJobs: (page = 1, page_size = 10, filters?: { q?: string; sort?: string; status?: string }) => {
+    const q = new URLSearchParams({ page: String(page), page_size: String(page_size) });
+    if (filters?.q) q.set("q", filters.q);
+    if (filters?.sort) q.set("sort", filters.sort);
+    if (filters?.status) q.set("status", filters.status);
+    return request<JobsPage>(`/api/jobs?${q.toString()}`);
+  },
   getJob: (id: number | string) => request<Job>(`/api/jobs/${id}`),
   // Spec #8: Document IR JSON (404 khi chưa render — UI ẩn nút copy).
   getIr: (id: number | string) => request<Record<string, unknown>>(`/api/jobs/${id}/ir`),
