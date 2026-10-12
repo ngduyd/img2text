@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     kaggle_min_gap_seconds: int = 600
     # Batch one-run (spec 2026-10-09): max queued jobs staged into ONE kernel
     # run (env KAGGLE_BATCH_MAX_JOBS; extra jobs wait for the next tick).
+    # 0 hoặc -1 = unlimited — gom hết queued trong một run.
     kaggle_batch_max_jobs: int = 20
     # P2-5: unified page cap — MỘT config cho presign/create (server);
     # default = kernel hard cap (deploy/kaggle MAX_PDF_PAGES=100). Web upload

@@ -1116,3 +1116,17 @@ async def test_batch_result_missing_crops_not_ingested(
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
     assert job.status == "failed" and job.failed_step == "extracting"
+
+async def test_batch_max_jobs_zero_unlimited(
+    kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session,
+    monkeypatch,
+):
+    """KAGGLE_BATCH_MAX_JOBS=0 (hoặc -1) = unlimited — stage TẤT CẢ queued."""
+    monkeypatch.setattr(settings, "kaggle_batch_max_jobs", 0)
+    job2 = await _extra_queued_job(auth_client, storage_env, "seed2")
+    job3 = await _extra_queued_job(auth_client, storage_env, "seed3")
+    assert await orch.ensure_worker(SessionLocal) is True
+    creates = [c for c in api.calls if c[0] == "dataset_create_new"]
+    assert len(creates) == 1
+    entries = json.loads(creates[0][2]["manifest.json"])["jobs"]
+    assert [e["job_id"] for e in entries] == [seed_job, job2, job3]
