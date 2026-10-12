@@ -223,7 +223,10 @@ async def presign_upload(
         raise HTTPException(
             status_code=422, detail="Định dạng file không được hỗ trợ."
         )
-    if body.content_type != CONTENT_TYPE_BY_EXT[ext]:
+    # browser không chuẩn (Android/Windows) report .jpg là image/jpg —
+    # alias cùng media type (RFC 2046) map về image/jpeg trước validate.
+    declared = {"image/jpg": "image/jpeg"}.get(body.content_type, body.content_type)
+    if declared != CONTENT_TYPE_BY_EXT[ext]:
         raise HTTPException(
             status_code=422, detail="Định dạng file không được hỗ trợ."
         )

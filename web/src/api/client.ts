@@ -125,7 +125,7 @@ async function uploadPresigned(
   const blob = file as Blob;
   const filename = opts?.filename ?? (file as File).name;
   const ext = filename.split(".").pop()?.toLowerCase() ?? "";
-  const content_type = blob.type || TYPE_BY_EXT[ext] || "application/octet-stream";
+  const content_type = TYPE_BY_EXT[ext] || blob.type || "application/octet-stream";
   const sha256 = await sha256Hex(blob);
   const presign = await api.presignUpload({
     filename,
