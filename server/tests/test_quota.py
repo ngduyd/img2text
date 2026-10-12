@@ -143,6 +143,19 @@ async def test_presign_429_over_daily_quota(auth_client, db_session):
     assert r.status_code == 429
     assert r.json()["detail"] == "Hôm nay bạn đã hết quota (1 trang). Quay lại sau."
 
+async def test_presign_bad_sha_over_quota_422(auth_client, db_session):
+    """Review R1 P2: validate sha256 TRƯỚC quota — input sai → 422, không 429."""
+    user = await _latest_user(db_session)
+    user.daily_page_limit = 1
+    await db_session.commit()
+    lo, _hi = daily_window()
+    await _seed_job(db_session, user.id, pages=1, status="done", created_at=lo)
+    r = await auth_client.post(
+        "/api/jobs/presign", json=_presign_body(page_count=3, sha256="zz")
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"] == "sha256 không hợp lệ."
+
 async def test_create_429_over_quota(auth_client, app, db_session):
     """POST /api/jobs: quota gate sau 422 validations — presign thông qua
     (chưa có page_count) nhưng create với page_count thật bị 429."""

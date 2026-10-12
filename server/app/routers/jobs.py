@@ -220,11 +220,11 @@ async def presign_upload(
         bad = _bad_page_count(ext, body.page_count)
         if bad is not None:
             raise HTTPException(status_code=422, detail=bad)
-    # WS-ADMIN quota: pre-create gate (page_count None → coi như 1 trang)
-    await ensure_quota(session, user, body.page_count)
     sha = body.sha256.lower()
     if not SHA256_RE.fullmatch(sha):
         raise HTTPException(status_code=422, detail="sha256 không hợp lệ.")
+    # WS-ADMIN quota: pre-create gate (page_count None → coi như 1 trang)
+    await ensure_quota(session, user, body.page_count)
     key = f"uploads/{sha}.{ext}"
     try:
         url = await storage.presign_put(key, PRESIGN_EXPIRES_SECONDS)
