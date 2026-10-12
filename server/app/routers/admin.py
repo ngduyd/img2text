@@ -8,7 +8,7 @@ from pathlib import Path
 
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, StrictBool
+from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
 from sqlalchemy import Date, Float, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +19,14 @@ from app.core.models import Job, PageView, RequestLog, Setting, User
 from app.services.runtime_settings import (
     RUNTIME_SETTING_KEYS,
     get_runtime_setting_entry,
+)
+from app.services.quota import (
+    DAILY_DEFAULT,
+    WEEKLY_DEFAULT,
+    daily_window,
+    limit_of,
+    usage_map,
+    weekly_window,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -58,7 +66,50 @@ async def list_users(
             select(User).order_by(User.id).offset((page - 1) * size).limit(size)
         )
     ).all()
-    return {"items": [_user_json(u) for u in rows], "total": total}
+    # WS-ADMIN T5: quota per user (1 query/window thay vì N)
+    ids = [u.id for u in rows]
+    daily_used = await usage_map(session, ids, daily_window())
+    weekly_used = await usage_map(session, ids, weekly_window())
+    items = []
+    for u in rows:
+        d, w = daily_used.get(u.id, 0), weekly_used.get(u.id, 0)
+        dl = limit_of(u.daily_page_limit, DAILY_DEFAULT)
+        wl = limit_of(u.weekly_page_limit, WEEKLY_DEFAULT)
+        items.append({
+            **_user_json(u),
+            "daily_limit": dl,
+            "daily_used": d,
+            "daily_remaining": max(dl - d, 0),
+            "weekly_limit": wl,
+            "weekly_used": w,
+            "weekly_remaining": max(wl - w, 0),
+        })
+    return {"items": items, "total": total}
+
+class QuotaPatch(BaseModel):
+    # StrictInt: "5" must 422 (không coerce); range check → detail VN dưới đây
+    daily_page_limit: StrictInt
+    weekly_page_limit: StrictInt
+
+@router.patch("/users/{user_id}/quota", status_code=204)
+async def patch_user_quota(
+    user_id: int,
+    body: QuotaPatch,
+    session: AsyncSession = Depends(get_session),
+    _: User = Depends(_admin_user),
+) -> None:
+    """Inline edit 2 ô limit (admin UI T5) — 204 no body."""
+    if not (0 <= body.daily_page_limit <= 10000 and 0 <= body.weekly_page_limit <= 10000):
+        raise HTTPException(
+            status_code=422,
+            detail="Giới hạn trang phải trong khoảng 0–10000.",
+        )
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    user.daily_page_limit = body.daily_page_limit
+    user.weekly_page_limit = body.weekly_page_limit
+    await session.commit()
 
 @router.patch("/users/{user_id}")
 async def patch_user(

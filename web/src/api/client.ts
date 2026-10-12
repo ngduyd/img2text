@@ -1,4 +1,4 @@
-import type { AdminStatsDay, Job, JobsPage, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion } from "./types";
+import type { AdminStatsDay, Job, JobsPage, QuotaPatch, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion } from "./types";
 import { loadPdf } from "../lib/pdfjs";
 
 /** Thrown for any non-2xx response; `detail` mirrors FastAPI {detail} bodies. */
@@ -281,6 +281,9 @@ export const api = {
     request<{ items: User[]; total: number }>(`/api/admin/users?page=${page}`),
   adminPatchUser: (id: number | string, body: { ocr_enabled: boolean }) =>
     request<User>(`/api/admin/users/${id}`, { method: "PATCH", body }),
+  // WS-ADMIN T5: inline edit 2 limit quota (204 no body)
+  adminPatchQuota: (id: number | string, body: QuotaPatch) =>
+    request<void>(`/api/admin/users/${id}/quota`, { method: "PATCH", body }),
   adminStats: (from: string, to: string) =>
     request<{ days: AdminStatsDay[] }>(`/api/admin/stats?from=${from}&to=${to}`),
   adminLogs: (filters: { status_class?: string; ip?: string; limit?: number }) => {

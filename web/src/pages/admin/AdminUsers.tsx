@@ -5,7 +5,9 @@ import { api } from "../../api/client";
 import { mapApiError } from "../../lib/errors";
 import type { User } from "../../api/types";
 import Badge from "../../components/ui/Badge";
+import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
+import Input from "../../components/ui/Input";
 import Skeleton from "../../components/ui/Skeleton";
 
 /** Admin user list — DESIGN.md §5 density 6: sticky thead (surface-2 + border-b),
@@ -24,6 +26,38 @@ export default function AdminUsers() {
     },
     onError: (err) => toast.error(mapApiError(err)),
   });
+
+  // WS-ADMIN T5: inline edit 2 limit (0–10000 — mirror server 422)
+  const patchQuota = useMutation({
+    mutationFn: (vars: { id: number; daily: number; weekly: number }) =>
+      api.adminPatchQuota(vars.id, {
+        daily_page_limit: vars.daily,
+        weekly_page_limit: vars.weekly,
+      }),
+    onSuccess: () => {
+      toast.success("Đã lưu.");
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+    onError: (err) => toast.error(mapApiError(err)),
+  });
+
+  function saveQuota(id: number) {
+    const read = (field: "daily" | "weekly"): number | null => {
+      const el = document.getElementById(`${field}-limit-${id}`) as HTMLInputElement | null;
+      if (!el || !/^\d+$/.test(el.value.trim())) return null;
+      return Number(el.value);
+    };
+    const daily = read("daily");
+    const weekly = read("weekly");
+    if (
+      daily === null || weekly === null ||
+      daily > 10000 || weekly > 10000
+    ) {
+      toast.error("Giới hạn phải là số nguyên trong khoảng 0–10000.");
+      return;
+    }
+    patchQuota.mutate({ id, daily, weekly });
+  }
 
   const items = data?.items ?? [];
 
@@ -56,10 +90,10 @@ export default function AdminUsers() {
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[760px] border-collapse text-left text-sm">
             <thead>
               <tr>
-                {["ID", "Email", "Vai trò", "Ngày tạo", "OCR"].map((h) => (
+                {["ID", "Email", "Vai trò", "Ngày tạo", "Quota", "OCR"].map((h) => (
                   <th
                     key={h}
                     scope="col"
@@ -91,6 +125,46 @@ export default function AdminUsers() {
                     </td>
                     <td className="px-4 py-3 font-mono">
                       {u.created_at ? new Date(u.created_at).toLocaleDateString("vi-VN") : ""}
+                    </td>
+                    <td className="px-4 py-3" data-testid={`quota-${u.id}`}>
+                      <div className="flex flex-wrap items-end gap-2">
+                        <div className="font-mono text-xs leading-tight">
+                          <div data-testid={`quota-daily-${u.id}`}>
+                            {u.daily_used}/{u.daily_limit} hôm nay (còn {u.daily_remaining})
+                          </div>
+                          <div data-testid={`quota-weekly-${u.id}`} className="text-muted">
+                            {u.weekly_used}/{u.weekly_limit} tuần (còn {u.weekly_remaining})
+                          </div>
+                        </div>
+                        <Input
+                          label="Ngày"
+                          testid={`daily-limit-${u.id}`}
+                          name={`daily-limit-${u.id}`}
+                          type="number"
+                          min={0}
+                          max={10000}
+                          defaultValue={String(u.daily_limit ?? "")}
+                          className="w-20"
+                        />
+                        <Input
+                          label="Tuần"
+                          testid={`weekly-limit-${u.id}`}
+                          name={`weekly-limit-${u.id}`}
+                          type="number"
+                          min={0}
+                          max={10000}
+                          defaultValue={String(u.weekly_limit ?? "")}
+                          className="w-20"
+                        />
+                        <Button
+                          type="button"
+                          testid={`save-quota-${u.id}`}
+                          onClick={() => saveQuota(u.id)}
+                          loading={patchQuota.isPending}
+                        >
+                          Lưu quota
+                        </Button>
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <button
