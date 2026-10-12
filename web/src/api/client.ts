@@ -1,4 +1,4 @@
-import type { AdminStatsDay, Job, JobsPage, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion } from "./types";
+import type { AdminStatsDay, Job, JobsPage, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion, WorkersResponse } from "./types";
 import { loadPdf } from "../lib/pdfjs";
 
 /** Thrown for any non-2xx response; `detail` mirrors FastAPI {detail} bodies. */
@@ -296,6 +296,8 @@ export const api = {
     request<User>(`/api/admin/users/${id}`, { method: "PATCH", body }),
   adminStats: (from: string, to: string) =>
     request<{ days: AdminStatsDay[] }>(`/api/admin/stats?from=${from}&to=${to}`),
+  // Spec #7: worker heartbeats (admin-only) — 403/401 → UI ẩn card.
+  getWorkers: () => request<WorkersResponse>("/api/admin/workers"),
   adminLogs: (filters: { status_class?: string; ip?: string; limit?: number }) => {
     const q = new URLSearchParams();
     if (filters.status_class !== undefined) q.set("status_class", filters.status_class);

@@ -143,6 +143,20 @@ export interface JobsPage {
   page_size?: number;
 }
 
+/** Spec #7: GET /api/admin/workers row + derived silent_seconds. */
+export interface WorkerRow {
+  worker_id: string;
+  kind: string;
+  last_seen: string;
+  current_job_id: number | null;
+  silent_seconds: number;
+}
+
+export interface WorkersResponse {
+  workers: WorkerRow[];
+  queue_depth: number;
+}
+
 export interface AdminStatsDay {
   date: string;
   users_registered: number;
