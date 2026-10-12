@@ -289,3 +289,18 @@ def test_rasterize_exif_orientation_6_transposed(tmp_path):
     out = kb.rasterize_to_pages(str(src), str(tmp_path / "raw"))
     with Image.open(out[0]) as im:
         assert im.size == (50, 100)
+
+def test_rasterize_heif_input_decodes(tmp_path):
+    """review r1 P0-2: kernel nhận .heif/.heic (server cho phép) —
+    rasterize register pillow_heif opener; env thiếu lib → skip."""
+    pillow_heif = pytest.importorskip("pillow_heif")
+    from PIL import Image
+
+    src = tmp_path / "anh.heif"
+    # HeifFile.save ghi bytes trực tiếp — KHÔNG register opener vào PIL
+    # process test → Image.open chỉ mở được nhờ kernel tự register (RED thật).
+    pillow_heif.from_pillow(Image.new("RGB", (8, 8), "red")).save(str(src))
+    out = kb.rasterize_to_pages(str(src), str(tmp_path / "raw"))
+    assert len(out) == 1
+    with Image.open(out[0]) as im:
+        assert im.size == (8, 8)

@@ -138,6 +138,7 @@ WHEELHOUSE_DEPS = [
     "pymupdf", "paddlepaddle-gpu==3.2.1", "paddleocr[doc-parser]>=3.6.0",
     "safetensors", "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
     "rembg[cpu]",  # WS-PIPE crop — thiếu → extract_crops ImportError
+    "pillow-heif",  # review r1 P0-2 — server cho phép heic/heif; thiếu → Image.open chết
 ]
 
 def _find_wheelhouse() -> str | None:
@@ -176,6 +177,7 @@ if __name__ == "__main__":
             sys.executable, "-m", "pip", "install", "-q",
             "pillow", "numpy", "opencv-python-headless", "rapidfuzz", "PyMuPDF",
             "rembg[cpu]",  # WS-PIPE: crop remove-background (u2net, model cache U2NET_HOME)
+            "pillow-heif",  # review r1 P0-2: rasterize ở PARENT phase — heic/heif decode
         ],
         check=False,
     )
@@ -204,7 +206,7 @@ if __name__ == "__main__":
                     ["uv", "pip", "install", "--python", VENV_PY,
                      "paddlepaddle-gpu==3.2.1", "--extra-index-url", PADDLE_PPU_INDEX],
                     ["uv", "pip", "install", "--python", VENV_PY,
-                     "paddleocr[doc-parser]>=3.6.0", "safetensors",
+                     "paddleocr[doc-parser]>=3.6.0", "safetensors", "pillow-heif",
                      "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
                      "rembg[cpu]"],
                 ):
@@ -218,7 +220,7 @@ if __name__ == "__main__":
                 ],
                 [
                     "uv", "pip", "install", "--python", VENV_PY,
-                    "paddleocr[doc-parser]>=3.6.0", "safetensors",
+                    "paddleocr[doc-parser]>=3.6.0", "safetensors", "pillow-heif",
                     "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
                     "rembg[cpu]",
                 ],
@@ -581,6 +583,16 @@ def fetch_manifest_jobs(jobs: list[dict], dest_dir: str,
         out.append((job_id, fallback, None))  # mount fallback: không có manifest → không preprocess
     return out
 
+def _register_heif_opener() -> None:
+    """review r1 P0-2: server cho phép heic/heif nhưng Pillow native không
+    decode HEIF — pillow-heif optional (wheelhouse + network recipe). Import
+    lỗi → bỏ qua (env không có lib; AVIF Pillow native)."""
+    try:
+        import pillow_heif
+    except ImportError:
+        return
+    pillow_heif.register_heif_opener()
+
 def rasterize_to_pages(input_path: str, raw_dir: str) -> list[str]:
     """Input → page_0001.png.. (raw_dir); returns sorted page paths.
 
@@ -588,6 +600,7 @@ def rasterize_to_pages(input_path: str, raw_dir: str) -> list[str]:
     exif_transpose → PNG đúng chiều thật (OCR đọc pixels, không đọc EXIF)."""
     from PIL import Image, ImageOps
 
+    _register_heif_opener()
     os.makedirs(raw_dir, exist_ok=True)
     with open(input_path, "rb") as f:
         data = f.read()
@@ -619,6 +632,7 @@ def _apply_preprocess(page_paths: list[str], preprocess: dict | None
     bị XÓA khỏi disk. rotate: {"<page>": 90|180|270} xoay tại chỗ (0/absent
     = bytes giữ nguyên). None/pages thiếu → giữ nguyên mọi trang."""
     from PIL import Image, ImageOps
+    _register_heif_opener()
     if not preprocess:
         return page_paths
     pages_sel = preprocess.get("pages")
