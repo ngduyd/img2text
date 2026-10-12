@@ -221,6 +221,17 @@ async def test_build_docx_llm_down_raises(
     )
     assert any(r.levelname == "WARNING" for r in caplog.records)
 
+async def test_docx_render_call_no_response_format(
+    monkeypatch, VALID_RESULT_JSONB
+):
+    """json_mode: IR call CÓ response_format, render HTML call KHÔNG."""
+    calls = fake_llm(
+        monkeypatch, [FakeResponse(json.dumps(FAKE_IR)), FakeResponse(FAKE_IR_HTML)]
+    )
+    await build_docx(VALID_RESULT_JSONB)
+    assert "response_format" in calls[0][1]    # llm_ir → json_mode=True
+    assert "response_format" not in calls[1][1]  # llm_render_docx → False
+
 async def test_build_docx_retries_without_response_format(
     monkeypatch, VALID_RESULT_JSONB
 ):

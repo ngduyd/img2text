@@ -160,6 +160,16 @@ class TestBuildMDFromIR:
         assert "bbox" in json.dumps(calls[1][1])
         assert "800" in json.dumps(calls[1][1])
 
+    async def test_render_call_no_response_format_ir_call_has(self, monkeypatch):
+        """json_mode: IR call CÓ response_format, render call KHÔNG."""
+        calls = fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(_ir_response())),
+            FakeResponse(_md_response()),
+        ])
+        await build_md(_ocr_result())
+        assert "response_format" in calls[0][1]   # llm_ir → json_mode=True
+        assert "response_format" not in calls[1][1]  # llm_render_md → False
+
     async def test_build_md_bbox_filled_when_missing(self, monkeypatch):
         """Node thiếu bbox → validator union từ source_block_ids → render OK."""
         ir = _ir_response()

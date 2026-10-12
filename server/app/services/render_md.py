@@ -309,14 +309,17 @@ async def _llm_config() -> tuple[str, str, str, float]:
     return base_url, model, api_key, timeout
 
 
-async def _chat(user_content: str) -> str:
+async def _chat(user_content: str, json_mode: bool = True) -> str:
     base_url, model, api_key, timeout = await _llm_config()
     payload: dict = {
         "model": model,
         "messages": [{"role": "user", "content": user_content}],
         "temperature": 0,
-        "response_format": {"type": "json_object"},
     }
+    # json_mode=False (render md): KHÔNG gửi response_format — json_object
+    # ép model echo IR/bọc envelope thay vì markdown thô.
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
     url = base_url.rstrip("/") + "/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -337,7 +340,7 @@ async def _chat(user_content: str) -> str:
                     return resp.json()["choices"][0]["message"]["content"]
                 except (ValueError, KeyError, IndexError, TypeError) as exc:
                     raise LLMError(f"phản hồi thiếu content: {exc}") from exc
-            if resp.status_code in (400, 422):
+            if resp.status_code in (400, 422) and json_mode:
                 payload.pop("response_format", None)
             elif resp.status_code not in (429, 500, 502, 503, 504):
                 raise LLMError(f"LLM HTTP {resp.status_code}")
@@ -416,7 +419,7 @@ async def llm_render_md(ir_doc: DocumentIR, result: dict) -> str:
     content = RENDER_MD_PROMPT.replace(
         "{page_dims}", json.dumps(_page_dims(result), ensure_ascii=False)
     ).replace("{ir_json}", ir_doc.model_dump_json())
-    raw = await _chat(content)
+    raw = await _chat(content, json_mode=False)
     text = raw.strip()
     m = _FENCE_RE.match(text)
     if m:
