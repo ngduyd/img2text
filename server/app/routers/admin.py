@@ -236,12 +236,24 @@ class RuntimeSettingsPut(BaseModel):
     llm_model: str | None = None
     proofread_llm_model: str | None = None
     llm_api_key: str | None = None
+    llm_timeout: int | None = None
+
+def _mask_api_key(value) -> str | None:
+    """WS-ADMIN write-only: "sk-…last4" (or "***" short), empty → null.
+    Full key stays in the Setting row — render/proofread read it directly;
+    never echoed in a response (and never logged: middleware logs no body)."""
+    if not value:
+        return None
+    s = str(value)
+    return f"{s[:3]}…{s[-4:]}" if len(s) >= 8 else "***"
 
 async def _runtime_settings(session_factory) -> dict:
-    return {
+    out = {
         key: await get_runtime_setting_entry(session_factory, key)
         for key in RUNTIME_SETTING_KEYS
     }
+    out["llm_api_key"]["value"] = _mask_api_key(out["llm_api_key"]["value"])
+    return out
 
 def _reschedule_reap(app, seconds: int) -> bool:
     """Live apply: retarget the reap-leases interval trigger (no restart)."""
@@ -284,6 +296,11 @@ async def put_settings(
         value = getattr(body, key)
         if value is not None and value < floor:
             raise HTTPException(status_code=422, detail=message)
+    if body.llm_timeout is not None and not 30 <= body.llm_timeout <= 600:
+        raise HTTPException(
+            status_code=422,
+            detail="llm_timeout phải trong khoảng 30–600 giây.",
+        )
     for key in _SETTING_FLOORS:
         value = getattr(body, key)
         if value is None:
@@ -293,7 +310,13 @@ async def put_settings(
             session.add(Setting(key=key, value=str(value)))
         else:
             row.value = str(value)
-    for key in ("llm_base_url", "llm_model", "proofread_llm_model", "llm_api_key"):
+    for key in (
+        "llm_base_url",
+        "llm_model",
+        "proofread_llm_model",
+        "llm_api_key",
+        "llm_timeout",
+    ):
         value = getattr(body, key)
         if value is None:
             continue
