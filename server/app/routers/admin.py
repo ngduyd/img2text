@@ -384,10 +384,10 @@ async def put_settings(
         value = getattr(body, key)
         if value is not None and value < floor:
             raise HTTPException(status_code=422, detail=message)
-    if body.llm_timeout is not None and not 30 <= body.llm_timeout <= 600:
+    if body.llm_timeout is not None and not 120 <= body.llm_timeout <= 600:
         raise HTTPException(
             status_code=422,
-            detail="llm_timeout phải trong khoảng 30–600 giây.",
+            detail="llm_timeout phải trong khoảng 120–600 giây.",
         )
     for key in _SETTING_FLOORS:
         value = getattr(body, key)
@@ -406,7 +406,9 @@ async def put_settings(
         "llm_timeout",
     ):
         value = getattr(body, key)
-        if value is None:
+        # Lane C: write-only key — form để trống = giữ nguyên (không echo nên
+        # client không thể phân biệt "chưa set" vs "muốn xóa").
+        if value is None or (key == "llm_api_key" and not value):
             continue
         row = await session.get(Setting, key)
         if row is None:

@@ -112,10 +112,11 @@ async def test_put_llm_string_keys(admin_client):
 # --- WS-ADMIN: llm_timeout bounds + llm_api_key write-only mask ---
 
 async def test_put_llm_timeout_bounds_422(admin_client):
-    for bad in (29, 601):
+    # spec §User-facing #7: admin input 120–600s
+    for bad in (29, 119, 601):
         r = await admin_client.put("/api/admin/settings", json={"llm_timeout": bad})
         assert r.status_code == 422
-        assert r.json()["detail"] == "llm_timeout phải trong khoảng 30–600 giây."
+        assert r.json()["detail"] == "llm_timeout phải trong khoảng 120–600 giây."
     r = await admin_client.put("/api/admin/settings", json={"llm_timeout": 300})
     assert r.status_code == 200
     assert r.json()["llm_timeout"] == {"value": 300, "source": "db"}
@@ -133,6 +134,18 @@ async def test_llm_api_key_write_only_mask(admin_client, db_session):
     # write-only ≠ not stored: consumers (render/proofread) read the full row
     row = await db_session.get(Setting, "llm_api_key")
     assert row is not None and row.value == "sk-secret-abcdef1234"
+
+async def test_put_llm_api_key_empty_keeps_existing(admin_client, db_session):
+    """Lane C: PATCH để trống = giữ nguyên (write-only form không echo key)."""
+    r = await admin_client.put(
+        "/api/admin/settings", json={"llm_api_key": "sk-secret-abcdef1234"}
+    )
+    assert r.status_code == 200
+    r = await admin_client.put("/api/admin/settings", json={"llm_api_key": ""})
+    assert r.status_code == 200
+    assert r.json()["llm_api_key"]["value"] == "sk-…1234"  # mask giữ nguyên
+    row = await db_session.get(Setting, "llm_api_key")
+    assert row.value == "sk-secret-abcdef1234"  # full key không bị xóa
 
 async def test_put_anon_401(client):
     r = await client.put("/api/admin/settings", json={"kaggle_min_queue": 2})
