@@ -2,13 +2,15 @@ import type { Query } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, FileQuestion, PenLine, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import type { DocumentVersion, Job } from "../api/types";
 import { mapApiError } from "../lib/errors";
 import { STATUS_TEXT, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
+import { useJobDoneToasts } from "../hooks/useJobDoneToasts";
 import ExportBar from "../components/ExportBar";
+import ConfirmDialog from "../components/ConfirmDialog";
 import InfoPanel from "../components/panels/InfoPanel";
 import OriginalFilePanel from "../components/panels/OriginalFilePanel";
 import LayoutPreview from "../components/LayoutPreview";
@@ -31,12 +33,19 @@ const jobRefetchInterval = (q: Query<Job>): number | false =>
  */
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: job, isPending, isError, error } = useQuery({
     queryKey: ["job", id],
     queryFn: () => api.getJob(id!),
     refetchInterval: jobRefetchInterval,
   });
+  // Spec #2: pending → done/failed trong poll → toast + Notification (best-effort).
+  useJobDoneToasts(
+    job ? [{ id: job.id, status: job.status, error: job.error }] : undefined,
+  );
+  /** Spec #1: confirm xóa job (destructive) — mở từ header. */
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   /** JD2: btn-edit-doc = inline edit ON THIS PAGE — section Layout: preview ↔ editor. */
   const [editing, setEditing] = useState(false);
@@ -247,8 +256,35 @@ export default function JobDetail() {
           >
             Lịch sử
           </Button>
+          {/* Spec #1: Xóa job — destructive, confirm dialog → DELETE → về list. */}
+          <Button
+            testid="btn-delete-job"
+            variant="danger"
+            onClick={() => setConfirmDelete(true)}
+          >
+            Xóa job
+          </Button>
         </div>
       </header>
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Xóa job #${job.id}?`}
+        message="Toàn bộ dữ liệu (file gốc, kết quả, phiên bản) sẽ bị xóa vĩnh viễn. Không thể hoàn tác."
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          setConfirmDelete(false);
+          void (async () => {
+            try {
+              await api.deleteJob(id!);
+              toast.success("Đã xóa job");
+              await queryClient.invalidateQueries({ queryKey: ["jobs"] });
+              navigate("/jobs");
+            } catch (err) {
+              toast.error(mapApiError(err));
+            }
+          })();
+        }}
+      />
       {showHistory && (
         <section
           id="version-history"

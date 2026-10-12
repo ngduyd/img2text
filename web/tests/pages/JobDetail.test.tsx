@@ -23,6 +23,7 @@ vi.mock("../../src/api/client", async (importOriginal) => {
       retryJob: vi.fn(),
       retryLayout: vi.fn(),
       cancelJob: vi.fn(),
+      deleteJob: vi.fn(),
       exportJob: vi.fn(),
       downloadExport: vi.fn(),
       listVersions: vi.fn(),
@@ -565,4 +566,29 @@ it("Escape key closes history panel", async () => {
   fireEvent.keyDown(panel, { key: "Escape" });
   expect(screen.queryByTestId("version-history")).not.toBeInTheDocument();
   expect(screen.getByTestId("btn-version-history")).toHaveAttribute("aria-expanded", "false");
+});
+
+// Spec #1: JobDetail nút "Xóa job" → confirm → deleteJob + navigate về list.
+it("delete job: confirm → deleteJob + invalidate + navigate /jobs", async () => {
+  mockJob({ ...DONE_JOB });
+  vi.mocked(api.deleteJob).mockResolvedValue(undefined);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await screen.findByTestId("job-header");
+  await userEvent.click(screen.getByTestId("btn-delete-job"));
+  expect(screen.getByTestId("confirm-dialog")).toBeInTheDocument();
+  const invalidate = vi.spyOn(lastQueryClient!, "invalidateQueries");
+  await userEvent.click(screen.getByTestId("confirm-accept"));
+  expect(api.deleteJob).toHaveBeenCalledWith("5");
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs"));
+});
+
+it("delete job: hủy → không gọi deleteJob", async () => {
+  mockJob({ ...DONE_JOB });
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await screen.findByTestId("job-header");
+  await userEvent.click(screen.getByTestId("btn-delete-job"));
+  await userEvent.click(screen.getByTestId("confirm-cancel"));
+  expect(screen.queryByTestId("confirm-dialog")).not.toBeInTheDocument();
+  expect(api.deleteJob).not.toHaveBeenCalled();
 });

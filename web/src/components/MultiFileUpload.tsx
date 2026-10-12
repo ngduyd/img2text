@@ -163,7 +163,9 @@ export default function MultiFileUpload({
       const pdf = await mergeToPdf(
         entries.map((e) => ({ kind: e.kind, blob: e.blob, name: e.name, pages: e.pages })),
       );
-      const ok = await onSubmit(pdf, { page_count: total(entries), filename: "tong-hop.pdf" });
+      // P1: 1 file → tên gốc; nhiều file → tên file đầu tiên (search theo filename sống).
+      const name = entries[0]?.name?.trim() || `hop-the-${entries.length}-anh.pdf`;
+      const ok = await onSubmit(pdf, { page_count: total(entries), filename: name });
       if (ok === false) return;
       clear();
     } catch (err) {

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Inbox } from "lucide-react";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import QuotaBadge from "../components/QuotaBadge";
 import StatusFilterTabs from "../components/StatusFilterTabs";
 import SubmitModal, { type SubmitFormat } from "../components/SubmitModal";
 import { mapApiError } from "../lib/errors";
+import { useJobDoneToasts } from "../hooks/useJobDoneToasts";
 import type { StatusFilter } from "../components/StatusFilterTabs";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
@@ -37,17 +38,33 @@ export default function Jobs() {
   const queryClient = useQueryClient();
   // Phase 4: server-side page state — mỗi trang 10 job (mặc định server).
   const [page, setPage] = useState(1);
+  // Spec #3: search debounced 300ms + sort server-side.
+  const [search, setSearch] = useState("");
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState<"newest" | "oldest">("newest");
+  useEffect(() => {
+    const t = setTimeout(() => setQ(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
   // Phase 4: selection cho bulk retry — đổi trang → reset (chọn chỉ sống trong trang hiện tại).
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const changePage = (next: number) => {
     setSelected(new Set());
     setPage(next);
   };
-  const { data: jobs, isLoading } = useQuery({
-    queryKey: ["jobs", page],
-    queryFn: () => api.listJobs(page),
-  });
+  // Spec #3: đổi search/sort/filter → về trang 1 (params khác → list khác).
+  const resetToFirstPage = () => {
+    setSelected(new Set());
+    setPage(1);
+  };
   const [filter, setFilter] = useState<StatusFilter>("all");
+  const { data: jobs, isLoading } = useQuery({
+    queryKey: ["jobs", page, q, sort, filter],
+    queryFn: () => api.listJobs(page, 10, { q, sort, status: filter === "all" ? undefined : filter }),
+    // Spec #2: poll 3s khi còn pending — chuyển done/failed mới thấy được để toast.
+    refetchInterval: (q) =>
+      q.state.data?.items.some((j) => PENDING_STATUSES.includes(j.status)) ? 3000 : false,
+  });
   // Upload flow (spec U1-U3): Gửi → SubmitModal (mode+format) → merge → presign (R2) → tạo job.
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
   // ponytail: gate only after me resolves — server enforces anyway.
@@ -65,6 +82,10 @@ export default function Jobs() {
   const [pageEntry, setPageEntry] = useState<PageSelectEntry | null>(null);
   const pagesDone = useRef<((pages: number[] | null) => void) | null>(null);
   const items = jobs?.items ?? [];
+  // P1 empty-filter: q/filter active + total 0 → không được hiện empty-state ("Tải file lên").
+  const filtering = q !== "" || filter !== "all";
+  // Spec #2: theo dõi transition pending → done/failed của danh sách đang poll.
+  useJobDoneToasts(items);
   // Stats + filter tabs are trang hiện tại (server total sống riêng ở stats-total + pagination).
   const visible = filter === "all" ? items : items.filter((j) => j.status === filter);
   const pending = items.filter((j) => PENDING_STATUSES.includes(j.status)).length;
@@ -153,9 +174,47 @@ export default function Jobs() {
         </dl>
       </header>
 
-      {/* Toolbar: filter tabs — the format picker moved into the upload split button. */}
+      {/* Toolbar: search + sort + filter tabs — spec #3 (q/sort/status server-side). */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <StatusFilterTabs items={items} value={filter} onChange={setFilter} />
+        <div className="flex flex-1 flex-wrap items-center gap-2">
+          <label className="relative min-w-40 flex-1 sm:max-w-xs">
+            <span className="sr-only">Tìm theo tên file</span>
+            <input
+              type="search"
+              data-testid="jobs-search"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                resetToFirstPage();
+              }}
+              placeholder="Tìm theo tên file..."
+              className="w-full rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-text placeholder:text-muted focus-visible:outline-2 focus-visible:outline-accent"
+            />
+          </label>
+          <label className="inline-flex items-center gap-2 text-sm text-muted">
+            <span>Sắp xếp</span>
+            <select
+              data-testid="jobs-sort"
+              value={sort}
+              onChange={(e) => {
+                setSort(e.target.value as "newest" | "oldest");
+                resetToFirstPage();
+              }}
+              className="cursor-pointer rounded-md border border-border bg-surface px-2 py-1.5 text-sm text-text focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              <option value="newest">Mới nhất</option>
+              <option value="oldest">Cũ nhất</option>
+            </select>
+          </label>
+        </div>
+        <StatusFilterTabs
+          items={items}
+          value={filter}
+          onChange={(v) => {
+            setFilter(v);
+            resetToFirstPage();
+          }}
+        />
       </div>
 
       {/* Spec U3: Gửi → modal mode/format; U1: multi-file cards + crop/page-select. */}
@@ -305,7 +364,7 @@ export default function Jobs() {
               </li>
             ))}
           </ul>
-        ) : jobs && jobs.total === 0 ? (
+        ) : jobs && jobs.total === 0 && !filtering ? (
           /* Composed empty state: icon + title + guidance + CTA hint (DESIGN.md §4). */
           <Card testid="empty-state">
             <div className="flex flex-col items-center px-2 py-6 text-center">

@@ -130,9 +130,15 @@ it("Gửi → presign → XHR progress → pdf.js count → metadata-only create
 
   resolveCreate(new Response(JSON.stringify({ id: 42, status: "queued" }), { status: 201 }));
   await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý."));
-  // create = metadata-only (storage_key + page_count từ pdf.js mock = 3)
+  // create = metadata-only (storage_key + page_count từ pdf.js mock = 3; P1: filename = tên gốc)
   expect(createBodies).toEqual([
-    { storage_key: PRESIGN.storage_key, page_count: 3, output_format: "md", mode: "layout" },
+    {
+      storage_key: PRESIGN.storage_key,
+      page_count: 3,
+      output_format: "md",
+      mode: "layout",
+      filename: "photo.png",
+    },
   ]);
   // create xong → phase idle: chữ đếm trang biến mất
   await waitFor(() => expect(screen.queryByTestId("upload-counting")).not.toBeInTheDocument());

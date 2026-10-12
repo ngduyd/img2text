@@ -1,4 +1,4 @@
-import type { AdminStatsDay, Job, JobsPage, QuotaPatch, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion } from "./types";
+import type { AdminStatsDay, Job, JobsPage, QuotaPatch, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion, WorkersResponse } from "./types";
 import { loadPdf } from "../lib/pdfjs";
 
 /** Thrown for any non-2xx response; `detail` mirrors FastAPI {detail} bodies. */
@@ -143,6 +143,8 @@ async function uploadPresigned(
   const page_count =
     content_type === "application/pdf" ? (await loadPdf(file as File)).numPages : 1;
   const body: Record<string, unknown> = { storage_key: presign.storage_key, page_count };
+  // Spec #3 steer: create body gửi tên file gốc (server lưu cột jobs.filename → search q).
+  body.filename = filename;
   if (opts?.preprocess !== undefined) body.preprocess = opts.preprocess;
   if (opts?.output_format !== undefined) body.output_format = opts.output_format;
   if (opts?.mode !== undefined) body.mode = opts.mode;
@@ -164,9 +166,17 @@ export const api = {
   resetPassword: (token: string, password: string) =>
     request<unknown>("/api/auth/password/reset", { method: "POST", body: { token, password } }),
   // Phase 4: server-side pagination (page default 1, page_size default 10 max 100).
-  listJobs: (page = 1, page_size = 10) =>
-    request<JobsPage>(`/api/jobs?page=${page}&page_size=${page_size}`),
+  // Spec #3: filters q (filename ILIKE) / sort (newest|oldest) / status — server-side.
+  listJobs: (page = 1, page_size = 10, filters?: { q?: string; sort?: string; status?: string }) => {
+    const q = new URLSearchParams({ page: String(page), page_size: String(page_size) });
+    if (filters?.q) q.set("q", filters.q);
+    if (filters?.sort) q.set("sort", filters.sort);
+    if (filters?.status) q.set("status", filters.status);
+    return request<JobsPage>(`/api/jobs?${q.toString()}`);
+  },
   getJob: (id: number | string) => request<Job>(`/api/jobs/${id}`),
+  // Spec #8: Document IR JSON (404 khi chưa render — UI ẩn nút copy).
+  getIr: (id: number | string) => request<Record<string, unknown>>(`/api/jobs/${id}/ir`),
   // R2 presign: sanity-check metadata → presigned PUT URL — browser PUTs
   // ArrayBuffer thẳng vào storage (không chạm backend).
   presignUpload: (body: {
@@ -202,6 +212,9 @@ export const api = {
   // Hủy job: queued|extracting|rendering → cancelled (204; terminal 409).
   cancelJob: (id: number | string) =>
     request<void>(`/api/jobs/${id}/cancel`, { method: "POST" }),
+  // Spec #1: DELETE → 204 (no body — request() đã xử lý).
+  deleteJob: (id: number | string) =>
+    request<void>(`/api/jobs/${id}`, { method: "DELETE" }),
   // Phase 4: bulk retry — per-job settle; một job fail KHÔNG abort cả batch.
   retryJobs: async (ids: Array<number | string>): Promise<{ ok: number; errors: string[] }> => {
     const results = await Promise.allSettled(ids.map((id) => api.retryJob(id)));
@@ -303,6 +316,8 @@ export const api = {
     request<void>(`/api/admin/users/${id}/quota`, { method: "PATCH", body }),
   adminStats: (from: string, to: string) =>
     request<{ days: AdminStatsDay[] }>(`/api/admin/stats?from=${from}&to=${to}`),
+  // Spec #7: worker heartbeats (admin-only) — 403/401 → UI ẩn card.
+  getWorkers: () => request<WorkersResponse>("/api/admin/workers"),
   adminLogs: (filters: { status_class?: string; ip?: string; limit?: number }) => {
     const q = new URLSearchParams();
     if (filters.status_class !== undefined) q.set("status_class", filters.status_class);

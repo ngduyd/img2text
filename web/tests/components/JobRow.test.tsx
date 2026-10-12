@@ -17,6 +17,7 @@ vi.mock("../../src/api/client", async (importOriginal) => {
       downloadJobFile: vi.fn(),
       retryJob: vi.fn(),
       cancelJob: vi.fn(),
+      deleteJob: vi.fn(),
     },
   };
 });
@@ -209,4 +210,26 @@ it("cụm actions flex-wrap + nút Tải bản gốc icon-only <sm (aria-label)"
   expect(dl).toHaveAttribute("aria-label", "Tải bản gốc");
   expect(dl.querySelector("svg")).not.toBeNull();
   expect(dl.parentElement).toHaveClass("flex-wrap", "justify-end");
+});
+
+// Spec #1: nút Xóa → confirm dialog → deleteJob + invalidate; hủy → không gọi.
+it("delete: confirm → api.deleteJob + invalidate jobs + toast", async () => {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+  vi.mocked(api.deleteJob).mockResolvedValue(undefined);
+  renderRow(job({ status: "done" }), queryClient);
+  await userEvent.click(screen.getByTestId("btn-delete-job-7"));
+  expect(screen.getByTestId("confirm-dialog")).toBeInTheDocument();
+  await userEvent.click(screen.getByTestId("confirm-accept"));
+  expect(api.deleteJob).toHaveBeenCalledWith(7);
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
+  expect(toast.success).toHaveBeenCalledWith("Đã xóa job");
+});
+
+it("delete: hủy confirm → không gọi deleteJob", async () => {
+  renderRow(job({ status: "done" }));
+  await userEvent.click(screen.getByTestId("btn-delete-job-7"));
+  await userEvent.click(screen.getByTestId("confirm-cancel"));
+  expect(screen.queryByTestId("confirm-dialog")).not.toBeInTheDocument();
+  expect(api.deleteJob).not.toHaveBeenCalled();
 });

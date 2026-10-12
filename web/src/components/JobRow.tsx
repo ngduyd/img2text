@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Download, FileText, Image as ImageIcon, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
@@ -9,6 +10,7 @@ import { mapApiError } from "../lib/errors";
 import { STATUS_TEXT, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
+import ConfirmDialog from "./ConfirmDialog";
 
 const DATE_FORMAT = new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" });
 
@@ -48,6 +50,15 @@ export default function JobRow({
     },
     onError: (err) => toast.error(mapApiError(err)),
   });
+  const deleteJob = useMutation({
+    mutationFn: () => api.deleteJob(job.id),
+    onSuccess: () => {
+      toast.success("Đã xóa job");
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+    },
+    onError: (err) => toast.error(mapApiError(err)),
+  });
+  const [confirmDelete, setConfirmDelete] = useState(false);
   // Hủy job: pending bucket (queued|extracting|rendering) — lib/status single spelling.
   const cancellable = PENDING_STATUSES.includes(job.status);
   // Duration only when both timestamps present — server list omits them today (R52).
@@ -158,7 +169,26 @@ export default function JobRow({
             Hủy
           </Button>
         )}
+        {/* Spec #1: xóa job — destructive, confirm trước khi gọi DELETE. */}
+        <Button
+          testid={`btn-delete-job-${job.id}`}
+          size="sm"
+          variant="danger"
+          onClick={() => setConfirmDelete(true)}
+        >
+          Xóa
+        </Button>
       </div>
+      <ConfirmDialog
+        open={confirmDelete}
+        title={`Xóa job #${job.id}?`}
+        message="Toàn bộ dữ liệu (file gốc, kết quả, phiên bản) sẽ bị xóa vĩnh viễn. Không thể hoàn tác."
+        onCancel={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          setConfirmDelete(false);
+          deleteJob.mutate();
+        }}
+      />
     </li>
   );
 }

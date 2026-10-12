@@ -1,7 +1,16 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, within } from "@testing-library/react";
 import { expect, it } from "vitest";
 import type { Job } from "../../../src/api/types";
 import InfoPanel from "../../../src/components/panels/InfoPanel";
+
+// InfoPanel chứa IrViewer (useQuery) → cần provider.
+const renderPanel = (job: Job) =>
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <InfoPanel job={job} />
+    </QueryClientProvider>,
+  );
 
 const DONE_JOB: Job = {
   id: 5,
@@ -24,7 +33,7 @@ const DONE_JOB: Job = {
 };
 
 it("renders status badge + vi-VN dates, page count, gpu + model", () => {
-  render(<InfoPanel job={DONE_JOB} />);
+  renderPanel(DONE_JOB);
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
   expect(screen.getByTestId("status-5")).toHaveTextContent("Hoàn tất");
   // vi-VN date (env ICU: "2/1/2026") on all three timestamps.
@@ -45,7 +54,7 @@ it("queued job without result omits gpu/model/finished", () => {
     finished_at: null,
     result: null,
   };
-  render(<InfoPanel job={job} />);
+  renderPanel(job);
   const panel = screen.getByTestId("panel-info");
   expect(within(panel).getByTestId("status-5")).toHaveTextContent("Đang lập lịch");
   expect(within(panel).queryByText(/GPU/)).toBeNull();

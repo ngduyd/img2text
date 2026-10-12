@@ -9,6 +9,7 @@ import AdminOverview from "./admin/AdminOverview";
 import type { AdminTabId } from "./admin/AdminOverview";
 import AdminSettings from "./admin/AdminSettings";
 import AdminStats from "./admin/AdminStats";
+import AdminWorkers from "./admin/AdminWorkers";
 import AdminUsers from "./admin/AdminUsers";
 
 // Plan V3: desktop ≥md = vertical sub-rail (icon + label); mobile = horizontal scroll pills. Testids tab-* kept (R51).
@@ -78,6 +79,10 @@ export default function Admin() {
             </div>
           ) : (
             <>
+              {/* Spec #7: card Workers — poll 30s, 403/401 → ẩn. */}
+              <div className="mb-4">
+                <AdminWorkers />
+              </div>
               {tab === "overview" && <AdminOverview onNavigate={setTab} />}
               {tab === "users" && <AdminUsers />}
               {tab === "api" && <AdminApi />}

@@ -1,5 +1,6 @@
 import type { Job } from "../../api/types";
 import { STATUS_TEXT, STATUS_TONE } from "../../lib/status";
+import IrViewer from "../IrViewer";
 import Badge from "../ui/Badge";
 import Card from "../ui/Card";
 
@@ -58,6 +59,8 @@ export default function InfoPanel({ job }: { job: Job }) {
           </>
         )}
       </dl>
+      {/* Spec #8: IR (JSON) collapsible — lazy fetch, status ≠ done → ẩn. */}
+      <IrViewer jobId={job.id} status={job.status} />
     </Card>
   );
 }
