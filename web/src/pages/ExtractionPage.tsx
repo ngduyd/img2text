@@ -1,4 +1,4 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -21,6 +21,12 @@ export default function ExtractionPage() {
   /** Task 4: layouts không sync được trong lần save gần nhất → cần vẽ lại. */
   const [needsRender, setNeedsRender] = useState<string[]>([]);
   const [redrawing, setRedrawing] = useState(false);
+
+  /** P2-3 review r1: file_type của job → TextSection (crop chỉ fetch khi "image"). */
+  const { data: job } = useQuery({
+    queryKey: ["job", id],
+    queryFn: () => api.getJob(id!),
+  });
 
   const handleRedraw = async () => {
     setRedrawing(true);
@@ -83,6 +89,7 @@ export default function ExtractionPage() {
       )}
       <TextSection
         jobId={id!}
+        fileType={job?.file_type}
         onSaved={(result: ExtractionSaveResult) =>
           setNeedsRender(result.needs_render)
         }

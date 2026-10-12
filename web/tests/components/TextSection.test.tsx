@@ -68,6 +68,14 @@ it("no regions (extraction page) → no issues panel", async () => {
   expect(screen.queryByTestId("issues-toggle")).toBeNull();
 });
 
+// P2-3 review r1: fileType unknown (không prop) → KHÔNG fetch crop (không default "image").
+it("regions without fileType → no crop fetch", async () => {
+  renderSection(<TextSection jobId="5" regions={REGIONS} />);
+  expect(await screen.findByTestId("issues-toggle")).toBeInTheDocument();
+  expect(await screen.findByTestId("issue-p1r0")).toBeInTheDocument();
+  expect(api.getCropUrl).not.toHaveBeenCalled();
+});
+
 it("Sửa khác… custom input → saveExtraction with custom phrase", async () => {
   const user = userEvent.setup();
   vi.mocked(api.saveExtraction).mockResolvedValue({

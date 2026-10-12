@@ -5,7 +5,7 @@ import type { ReactElement } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "../../src/api/client";
-import type { Suggestion } from "../../src/api/types";
+import type { Job, Suggestion } from "../../src/api/types";
 import ExtractionPage from "../../src/pages/ExtractionPage";
 
 vi.mock("../../src/api/client", async (importOriginal) => {
@@ -19,6 +19,8 @@ vi.mock("../../src/api/client", async (importOriginal) => {
       saveExtraction: vi.fn(),
       retryLayout: vi.fn(),
       rejectSuggestion: vi.fn(),
+      getJob: vi.fn(),
+      getCropUrl: vi.fn(),
     },
   };
 });
@@ -44,9 +46,25 @@ function renderRoute(ui: ReactElement, route = "/jobs/5/extraction") {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(api.getSuggestions).mockResolvedValue([]);
+  // P2-3: trang trích xuất fetch job để thread file_type vào TextSection.
+  vi.mocked(api.getJob).mockResolvedValue(PDF_JOB);
 });
 
 const TEXT = "Xin chao ban, chao nhe";
+
+/** P2-3: PDF job → file_type phải được thread xuống TextSection (crop bị disable). */
+const PDF_JOB = {
+  id: 5,
+  status: "done",
+  file_type: "pdf",
+  page_count: 2,
+  error: null,
+  result: null,
+  created_at: "2026-01-02T03:04:05Z",
+  started_at: null,
+  finished_at: null,
+  text_version: 3,
+} as Job;
 
 function pendingSuggestion(over: Partial<Suggestion>): Suggestion {
   return {
@@ -309,4 +327,14 @@ it("popover recompute position on resize while open (không stale)", async () =>
   );
   spy.mockRestore();
   widthSpy.mockRestore();
+});
+
+// --- P2-3 review r1: route extraction thread job.file_type (PDF → không crop fetch) ---
+
+it("PDF job trên route extraction → fetch job + không gọi getCropUrl", async () => {
+  vi.mocked(api.getExtraction).mockResolvedValue({ text: TEXT, text_version: 3 });
+  renderRoute(<ExtractionPage />);
+  expect(await screen.findByTestId("extraction-text")).toBeInTheDocument();
+  expect(api.getJob).toHaveBeenCalledWith("5");
+  expect(api.getCropUrl).not.toHaveBeenCalled();
 });

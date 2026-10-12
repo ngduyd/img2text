@@ -353,11 +353,13 @@ export default function TextSection({
         </div>
       )}
       {/* WS-UI: panel "Kiểm tra lỗi" chuyển vào section Văn bản (dưới text). */}
+      {/* P2-3: fileType unknown (route trích xuất chưa fetch job) → KHÔNG default
+          "image": IssuesPanel chỉ fetch crop khi đúng "image". */}
       {regions != null && (
         <IssuesPanel
           jobId={jobId}
           regions={regions}
-          fileType={fileType ?? "image"}
+          fileType={fileType}
         />
       )}
     </div>

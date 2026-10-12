@@ -46,7 +46,8 @@ export default function IssuesPanel({
 }: {
   jobId: string;
   regions: RegionOut[];
-  fileType: string;
+  /** P2-3: vắng (unknown) → không fetch crop — chỉ "image" mới có crop artifact. */
+  fileType?: string;
   onRegionUpdated?: (rid: string, text: string) => void;
 }) {
   const [open, setOpen] = useState(false);
