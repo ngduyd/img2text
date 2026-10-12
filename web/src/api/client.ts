@@ -1,4 +1,4 @@
-import type { AdminStatsDay, Job, JobsPage, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion } from "./types";
+import type { AdminStatsDay, Job, JobsPage, QuotaPatch, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion } from "./types";
 import { loadPdf } from "../lib/pdfjs";
 
 /** Thrown for any non-2xx response; `detail` mirrors FastAPI {detail} bodies. */
@@ -58,6 +58,16 @@ export interface PresignResponse {
   storage_key: string;
   url: string;
   max_bytes: number;
+}
+
+/** GET /api/quota/me (WS-ADMIN T6): quota hiện tại — null = 401/403 (ẩn widget). */
+export interface QuotaMe {
+  daily_limit: number;
+  daily_used: number;
+  weekly_limit: number;
+  weekly_used: number;
+  daily_remaining: number;
+  weekly_remaining: number;
 }
 
 const TYPE_BY_EXT: Record<string, string> = {
@@ -180,6 +190,13 @@ export const api = {
       onPhase?: (phase: "uploading" | "counting") => void;
     },
   ) => uploadPresigned(file, opts),
+  getMyQuota: async (): Promise<QuotaMe | null> => {
+    // fetch trực tiếp (request() redirect 401 → /signin): 401/403 = ẩn widget
+    const res = await fetch("/api/quota/me", { credentials: "include" });
+    if (res.status === 401 || res.status === 403) return null;
+    if (!res.ok) throw new ApiError(`HTTP ${res.status}`);
+    return (await res.json()) as QuotaMe;
+  },
   retryJob: (id: number | string) =>
     request<void>(`/api/jobs/${id}/retry`, { method: "POST" }),
   // Hủy job: queued|extracting|rendering → cancelled (204; terminal 409).
@@ -281,6 +298,9 @@ export const api = {
     request<{ items: User[]; total: number }>(`/api/admin/users?page=${page}`),
   adminPatchUser: (id: number | string, body: { ocr_enabled: boolean }) =>
     request<User>(`/api/admin/users/${id}`, { method: "PATCH", body }),
+  // WS-ADMIN T5: inline edit 2 limit quota (204 no body)
+  adminPatchQuota: (id: number | string, body: QuotaPatch) =>
+    request<void>(`/api/admin/users/${id}/quota`, { method: "PATCH", body }),
   adminStats: (from: string, to: string) =>
     request<{ days: AdminStatsDay[] }>(`/api/admin/stats?from=${from}&to=${to}`),
   adminLogs: (filters: { status_class?: string; ip?: string; limit?: number }) => {

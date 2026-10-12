@@ -132,6 +132,7 @@ async def _call_llm(page_text: str, hint: str) -> list[dict]:
     model = await get_runtime_setting(SessionLocal, "proofread_llm_model", settings.proofread_llm_model)
     base_url = await get_runtime_setting(SessionLocal, "llm_base_url", settings.llm_base_url)
     api_key = await get_runtime_setting(SessionLocal, "llm_api_key", settings.llm_api_key)
+    timeout = await get_runtime_setting(SessionLocal, "llm_timeout", settings.llm_timeout)
     payload: dict = {
         "model": model,
         "messages": [
@@ -146,7 +147,7 @@ async def _call_llm(page_text: str, hint: str) -> list[dict]:
         if api_key
         else {}  # empty key = no auth header (local compatible)
     )
-    async with AsyncClient(timeout=settings.llm_timeout) as client:
+    async with AsyncClient(timeout=timeout) as client:
         started = time.perf_counter()
         attempts = 0
         while True:

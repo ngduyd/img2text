@@ -23,6 +23,7 @@ RUNTIME_SETTING_KEYS = (
     "llm_model",
     "proofread_llm_model",
     "llm_api_key",
+    "llm_timeout",
 )
 
 def _parse(value: str, default):

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, StrictBool
+from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
 from sqlalchemy import Date, Float, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +19,14 @@ from app.core.models import Job, PageView, RequestLog, Setting, User
 from app.services.runtime_settings import (
     RUNTIME_SETTING_KEYS,
     get_runtime_setting_entry,
+)
+from app.services.quota import (
+    DAILY_DEFAULT,
+    WEEKLY_DEFAULT,
+    daily_window,
+    limit_of,
+    usage_map,
+    weekly_window,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -58,7 +66,50 @@ async def list_users(
             select(User).order_by(User.id).offset((page - 1) * size).limit(size)
         )
     ).all()
-    return {"items": [_user_json(u) for u in rows], "total": total}
+    # WS-ADMIN T5: quota per user (1 query/window thay vì N)
+    ids = [u.id for u in rows]
+    daily_used = await usage_map(session, ids, daily_window())
+    weekly_used = await usage_map(session, ids, weekly_window())
+    items = []
+    for u in rows:
+        d, w = daily_used.get(u.id, 0), weekly_used.get(u.id, 0)
+        dl = limit_of(u.daily_page_limit, DAILY_DEFAULT)
+        wl = limit_of(u.weekly_page_limit, WEEKLY_DEFAULT)
+        items.append({
+            **_user_json(u),
+            "daily_limit": dl,
+            "daily_used": d,
+            "daily_remaining": max(dl - d, 0),
+            "weekly_limit": wl,
+            "weekly_used": w,
+            "weekly_remaining": max(wl - w, 0),
+        })
+    return {"items": items, "total": total}
+
+class QuotaPatch(BaseModel):
+    # StrictInt: "5" must 422 (không coerce); range check → detail VN dưới đây
+    daily_page_limit: StrictInt
+    weekly_page_limit: StrictInt
+
+@router.patch("/users/{user_id}/quota", status_code=204)
+async def patch_user_quota(
+    user_id: int,
+    body: QuotaPatch,
+    session: AsyncSession = Depends(get_session),
+    _: User = Depends(_admin_user),
+) -> None:
+    """Inline edit 2 ô limit (admin UI T5) — 204 no body."""
+    if not (0 <= body.daily_page_limit <= 10000 and 0 <= body.weekly_page_limit <= 10000):
+        raise HTTPException(
+            status_code=422,
+            detail="Giới hạn trang phải trong khoảng 0–10000.",
+        )
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    user.daily_page_limit = body.daily_page_limit
+    user.weekly_page_limit = body.weekly_page_limit
+    await session.commit()
 
 @router.patch("/users/{user_id}")
 async def patch_user(
@@ -236,12 +287,24 @@ class RuntimeSettingsPut(BaseModel):
     llm_model: str | None = None
     proofread_llm_model: str | None = None
     llm_api_key: str | None = None
+    llm_timeout: int | None = None
+
+def _mask_api_key(value) -> str | None:
+    """WS-ADMIN write-only: "sk-…last4" (or "***" short), empty → null.
+    Full key stays in the Setting row — render/proofread read it directly;
+    never echoed in a response (and never logged: middleware logs no body)."""
+    if not value:
+        return None
+    s = str(value)
+    return f"{s[:3]}…{s[-4:]}" if len(s) >= 8 else "***"
 
 async def _runtime_settings(session_factory) -> dict:
-    return {
+    out = {
         key: await get_runtime_setting_entry(session_factory, key)
         for key in RUNTIME_SETTING_KEYS
     }
+    out["llm_api_key"]["value"] = _mask_api_key(out["llm_api_key"]["value"])
+    return out
 
 def _reschedule_reap(app, seconds: int) -> bool:
     """Live apply: retarget the reap-leases interval trigger (no restart)."""
@@ -284,6 +347,11 @@ async def put_settings(
         value = getattr(body, key)
         if value is not None and value < floor:
             raise HTTPException(status_code=422, detail=message)
+    if body.llm_timeout is not None and not 30 <= body.llm_timeout <= 600:
+        raise HTTPException(
+            status_code=422,
+            detail="llm_timeout phải trong khoảng 30–600 giây.",
+        )
     for key in _SETTING_FLOORS:
         value = getattr(body, key)
         if value is None:
@@ -293,7 +361,13 @@ async def put_settings(
             session.add(Setting(key=key, value=str(value)))
         else:
             row.value = str(value)
-    for key in ("llm_base_url", "llm_model", "proofread_llm_model", "llm_api_key"):
+    for key in (
+        "llm_base_url",
+        "llm_model",
+        "proofread_llm_model",
+        "llm_api_key",
+        "llm_timeout",
+    ):
         value = getattr(body, key)
         if value is None:
             continue

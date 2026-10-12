@@ -9,6 +9,19 @@ export interface User {
   ocr_enabled: boolean;
   /** Present on /api/admin/users items; /api/auth/me (UserOut) omits it. */
   created_at?: string;
+  /** Admin list only (GET /api/admin/users) — cột quota T5. */
+  daily_limit?: number;
+  daily_used?: number;
+  daily_remaining?: number;
+  weekly_limit?: number;
+  weekly_used?: number;
+  weekly_remaining?: number;
+}
+
+/** PATCH /api/admin/users/{id}/quota — inline edit 2 limit (204 no body). */
+export interface QuotaPatch {
+  daily_page_limit: number;
+  weekly_page_limit: number;
 }
 
 export interface RegionOut {

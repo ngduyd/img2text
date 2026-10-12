@@ -25,7 +25,14 @@ KEYS = (
     "llm_model",
     "proofread_llm_model",
     "llm_api_key",
+    "llm_timeout",
 )
+
+# Write-only key masking (WS-ADMIN): "sk-…last4", empty → null.
+def _masked(value) -> str | None:
+    if not value:
+        return None
+    return f"{value[:3]}…{value[-4:]}" if len(value) >= 8 else "***"
 
 # --- GET ---
 
@@ -35,8 +42,10 @@ async def test_get_settings_shape_default_source_env(admin_client):
     data = r.json()
     assert set(data) == set(KEYS)
     for key in KEYS:
-        # no rows (db_truncate) → env default, source "env"
-        assert data[key] == {"value": getattr(settings, key), "source": "env"}
+        # no rows (db_truncate) → env default, source "env"; api key is
+        # write-only → masked (None when the env default is empty)
+        want = _masked(getattr(settings, key)) if key == "llm_api_key" else getattr(settings, key)
+        assert data[key] == {"value": want, "source": "env"}
 
 async def test_get_settings_non_admin_403(auth_client):
     assert (await auth_client.get("/api/admin/settings")).status_code == 403
@@ -88,7 +97,8 @@ async def test_put_llm_string_keys(admin_client):
     assert body["llm_base_url"] == {"value": "http://llm.example/v1", "source": "db"}
     assert body["llm_model"] == {"value": "custom-layout-model", "source": "db"}
     assert body["proofread_llm_model"] == {"value": "custom-proofread-model", "source": "db"}
-    assert body["llm_api_key"] == {"value": "sk-test-key", "source": "db"}
+    # write-only: PUT echoes the MASK, full key never leaves the server
+    assert body["llm_api_key"] == {"value": "sk-…-key", "source": "db"}
     # upsert: second PUT rewrites
     r = await admin_client.put(
         "/api/admin/settings", json={"llm_model": "another-model"}
@@ -98,6 +108,31 @@ async def test_put_llm_string_keys(admin_client):
     # untouched keys stay env
     assert r.json()["llm_base_url"]["source"] == "db"
     assert r.json()["proofread_llm_model"]["source"] == "db"
+
+# --- WS-ADMIN: llm_timeout bounds + llm_api_key write-only mask ---
+
+async def test_put_llm_timeout_bounds_422(admin_client):
+    for bad in (29, 601):
+        r = await admin_client.put("/api/admin/settings", json={"llm_timeout": bad})
+        assert r.status_code == 422
+        assert r.json()["detail"] == "llm_timeout phải trong khoảng 30–600 giây."
+    r = await admin_client.put("/api/admin/settings", json={"llm_timeout": 300})
+    assert r.status_code == 200
+    assert r.json()["llm_timeout"] == {"value": 300, "source": "db"}
+
+async def test_llm_api_key_write_only_mask(admin_client, db_session):
+    r = await admin_client.put(
+        "/api/admin/settings", json={"llm_api_key": "sk-secret-abcdef1234"}
+    )
+    assert r.status_code == 200
+    assert r.json()["llm_api_key"]["value"] == "sk-…1234"  # PUT echo masked
+    r = await admin_client.get("/api/admin/settings")
+    assert r.status_code == 200
+    assert r.json()["llm_api_key"]["value"] == "sk-…1234"
+    assert "sk-secret-abcdef1234" not in r.text  # full value never in a response
+    # write-only ≠ not stored: consumers (render/proofread) read the full row
+    row = await db_session.get(Setting, "llm_api_key")
+    assert row is not None and row.value == "sk-secret-abcdef1234"
 
 async def test_put_anon_401(client):
     r = await client.put("/api/admin/settings", json={"kaggle_min_queue": 2})

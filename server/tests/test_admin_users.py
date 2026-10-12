@@ -75,3 +75,59 @@ async def test_patch_ocr_disable_keeps_queued_job_claimable(
     assert job.status == "queued"  # require_ocr gates upload, NOT claim
     r = await worker_client.get("/api/jobs/next")
     assert r.status_code == 200 and r.json()["job_id"] == job_id
+
+# --- WS-ADMIN T5: cột quota (đã dùng/còn) + inline edit 2 limit ---
+
+async def test_list_users_quota_fields(admin_client, db_session, seeded_users_5):
+    from app.services.quota import daily_window
+
+    lo, _hi = daily_window()
+    db_session.add(
+        Job(
+            user_id=2, status="done", storage_key="uploads/x.pdf",
+            file_type="pdf", page_count=3, created_at=lo,
+        )
+    )
+    await db_session.commit()
+    r = await admin_client.get("/api/admin/users?page=1&size=10")
+    assert r.status_code == 200
+    items = {u["id"]: u for u in r.json()["items"]}
+    assert items[2]["daily_limit"] == 25
+    assert items[2]["daily_used"] == 3
+    assert items[2]["daily_remaining"] == 22
+    assert items[2]["weekly_used"] == 3
+    assert items[1]["daily_used"] == 0  # không có job
+
+async def test_patch_quota_inline(admin_client, db_session, seeded_users_5):
+    r = await admin_client.patch(
+        "/api/admin/users/2/quota",
+        json={"daily_page_limit": 5, "weekly_page_limit": 50},
+    )
+    assert r.status_code == 204
+    u = await db_session.get(User, 2)
+    assert (u.daily_page_limit, u.weekly_page_limit) == (5, 50)
+
+async def test_patch_quota_validation_422(admin_client, seeded_users_5):
+    bad_bodies = [
+        {"daily_page_limit": -1, "weekly_page_limit": 50},
+        {"daily_page_limit": 5, "weekly_page_limit": 100001},
+        {"daily_page_limit": "5", "weekly_page_limit": 50},
+    ]
+    for body in bad_bodies:
+        r = await admin_client.patch("/api/admin/users/2/quota", json=body)
+        assert r.status_code == 422, body
+
+async def test_patch_quota_non_admin_403(auth_client, seeded_users_5):
+    """Review R1 P1: quota endpoint cũng gate admin (guard pin)."""
+    r = await auth_client.patch(
+        "/api/admin/users/2/quota",
+        json={"daily_page_limit": 5, "weekly_page_limit": 50},
+    )
+    assert r.status_code == 403
+
+async def test_patch_quota_404_unknown(admin_client, seeded_users_5):
+    r = await admin_client.patch(
+        "/api/admin/users/9999/quota",
+        json={"daily_page_limit": 5, "weekly_page_limit": 50},
+    )
+    assert r.status_code == 404
