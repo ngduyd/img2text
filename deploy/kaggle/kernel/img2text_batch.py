@@ -199,7 +199,7 @@ if __name__ == "__main__":
             # Repair: wheelhouse drift (thiếu paddle/doc-parser extras) →
             # cài full recipe proven từ network (paddle cu126 + doc-parser stack).
             if subprocess.run(
-                [VENV_PY, "-c", "import paddle, paddleocr, rembg"], capture_output=True
+                [VENV_PY, "-c", "import paddle, paddleocr, rembg, pillow_heif"], capture_output=True
             ).returncode != 0:
                 print("[batch] wheelhouse thiếu deps — repair full recipe từ network", flush=True)
                 for cmd in (
@@ -235,7 +235,7 @@ if __name__ == "__main__":
         )
 
     _paddle_check = subprocess.run(
-        [VENV_PY, "-c", "import paddle, paddleocr, rembg; print(paddle.__version__, paddle.device.is_compiled_with_cuda())"],
+        [VENV_PY, "-c", "import paddle, paddleocr, rembg, pillow_heif; print(paddle.__version__, paddle.device.is_compiled_with_cuda())"],
         check=False,
         capture_output=True,
         text=True,
