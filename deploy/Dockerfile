@@ -5,7 +5,7 @@ FROM python:3.11-slim
 ARG PANDOC_VERSION=3.10.2
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl poppler-utils libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libfontconfig1 \
-        fonts-dejavu-core \
+        fontconfig fonts-dejavu-extra \
     && curl -fsSL -o /tmp/pandoc.tar.gz \
         "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz" \
     && tar -xzf /tmp/pandoc.tar.gz -C /tmp \
