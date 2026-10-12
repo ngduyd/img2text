@@ -248,6 +248,19 @@ async def test_docx_render_json_missing_field_falls_back(monkeypatch, VALID_RESU
     assert not any(t.startswith("{") for t in texts)
     assert any("fallback" in r.getMessage().lower() for r in caplog.records)
 
+async def test_docx_render_echo_ir_json_falls_back(monkeypatch, VALID_RESULT_JSONB):
+    """Render LLM echo IR JSON → không unwrap được → heuristic (không crash, không docx trắng)."""
+    fake_llm(monkeypatch, [
+        FakeResponse(json.dumps(FAKE_IR)),
+        FakeResponse(json.dumps(FAKE_IR)),  # echo IR thay vì render HTML
+    ])
+    data = await build_docx(VALID_RESULT_JSONB)
+    assert data[:2] == b"PK"
+    doc = Document(io.BytesIO(data))
+    texts = [p.text for p in doc.paragraphs]
+    assert any(t.strip() for t in texts)  # heuristic content, not blank
+    assert not any(t.startswith("{") for t in texts)  # không rò JSON
+
 async def test_docx_render_no_block_tag_falls_back(monkeypatch, VALID_RESULT_JSONB):
     """HTML không match tag block nào → LLMError → heuristic (chặn file trắng 200)."""
     fake_llm(monkeypatch, [
