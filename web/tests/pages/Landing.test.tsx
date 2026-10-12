@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, it, vi } from "vitest";
 import Landing from "../../src/pages/Landing";
@@ -66,6 +66,22 @@ it("reduced-motion path renders statically: no transform animation values", () =
   for (const el of styled) {
     expect(el.getAttribute("style")).toMatch(/transform:\s*none/);
   }
+});
+
+it("gallery shows exactly 6 screenshot slots (hero, login, jobdetail, layout, export, admin)", () => {
+  renderLanding();
+  const gallery = screen.getByTestId("landing-gallery");
+  const shots = within(gallery).getAllByTestId("gallery-shot");
+  expect(shots).toHaveLength(6);
+  const srcs = shots.map((s) => s.querySelector("img")?.getAttribute("src"));
+  expect(srcs).toEqual([
+    "/screenshots/landing-hero.png",
+    "/screenshots/login.png",
+    "/screenshots/jobdetail.png",
+    "/screenshots/layout-preview.png",
+    "/screenshots/export-menu.png",
+    "/screenshots/admin-users.png",
+  ]);
 });
 
 it("rendered text contains zero em-dashes", () => {
