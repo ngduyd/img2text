@@ -374,6 +374,18 @@ it("extract_only done hides section-layout and export groups", async () => {
   expect(screen.queryByTestId("export-bar")).not.toBeInTheDocument();
 });
 
+/** Lane B Task 1: 2 section cuộn dọc (h2 + spacing token) — KHÔNG còn tab Extraction/Layout. */
+it("2 section h2 'Văn bản' + 'Layout', không còn tab buttons", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await screen.findByTestId("section-text");
+  await screen.findByTestId("section-layout");
+  expect(screen.getByRole("heading", { level: 2, name: "Văn bản" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { level: 2, name: "Layout" })).toBeInTheDocument();
+  expect(screen.queryAllByRole("tab")).toHaveLength(0);
+  expect(screen.queryByRole("tablist")).toBeNull();
+});
+
 /** JD2: header static trên mobile (3-4 dòng che viewport) — sticky ≥lg, bám dưới AppNav h-16. */
 it("header sticky chỉ ≥lg (mobile static) với blurred surface bg", async () => {
   mockJob(DONE_JOB);
