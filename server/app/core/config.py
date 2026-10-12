@@ -125,5 +125,12 @@ class Settings(BaseSettings):
             raise ValueError("kaggle_mode phải là batch hoặc loop")
         return v
 
+    @field_validator("llm_api_key")
+    @classmethod
+    def _empty_llm_key_is_none(cls, v: str | None) -> str | None:
+        """LLM_API_KEY= (rỗng trong env) → None, không giữ "" (falsy cả hai nhưng
+        contract test `is None` + consumers check `if api_key` cần nhất quán)."""
+        return v or None
+
 
 settings = Settings()
