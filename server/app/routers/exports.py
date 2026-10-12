@@ -30,7 +30,7 @@ from app.core.models import Job, User
 from app.core.schemas import IMAGE_MARKER
 from app.routers.jobs import _job_or_403, _text_bytes, bump_text_after_edit
 from app.services.render_docx import LLMError as DocxLLMError, build_docx
-from app.services.render_md import LLMError, build_md, embed_crop_urls
+from app.services.render_md import LLMError, build_md, embed_crop_keys, embed_crop_urls
 from app.services.doc_versions import save_version, snapshot_current_layout
 from app.services.html_to_docx import html_to_docx, CROP_SRC_RE
 from app.services.storage import StorageDriver, get_storage
@@ -454,7 +454,8 @@ async def _llm_md_export(
     try:
         md = await build_md(result, ir_sink=ir_sink)
         if storage is not None:
-            md = await embed_crop_urls(md, job_id, storage)
+            # render: relative crops/{f} key (presigned 24h hết hạn → chết)
+            md = await embed_crop_keys(md, job_id, storage)
         return md.encode("utf-8")
     except LLMError as exc:
         logger.warning("md-layout LLM failure job=%s: %s", job_id, exc)
@@ -616,6 +617,10 @@ async def download_export(
         data = await storage.get(f"exports/{id}/{fmt}")
     except KeyError:
         raise HTTPException(status_code=404, detail="Chưa xuất file.")
+    if fmt == "md-layout":
+        # serve-time: relative crops/{f} → presigned 24h FRESH (URL không hết hạn)
+        md = await embed_crop_urls(data.decode("utf-8"), id, storage)
+        data = md.encode("utf-8")
     return Response(content=data, media_type=EXPORT_CONTENT_TYPES[fmt])
 
 # --- Region crops: GET /api/jobs/{id}/regions/{rid}/crop ---

@@ -11,7 +11,7 @@ from docx import Document
 
 from app.core.schemas import IMAGE_MARKER
 from app.services.html_to_docx import html_to_docx
-from app.services.render_md import embed_crop_urls
+from app.services.render_md import embed_crop_keys, embed_crop_urls
 
 RID = "p1_b3"
 KEY = f"exports/7/crops/{RID}.png"
@@ -30,20 +30,28 @@ class _FakeStorage:
         return f"https://cdn.example/{key}?sig=abc"
 
 
-async def test_embed_crop_urls_marker_to_presigned():
+async def test_embed_crop_keys_marker_to_relative_key():
+    """render: marker → RELATIVE key crops/{rid}.png — KHÔNG presign (URL
+    24h baked vào artifact → hết hạn chết)."""
     md = f"chào\n\n{MARKER}\n\nhết"
+    out = await embed_crop_keys(md, 7, _FakeStorage({KEY}))
+    assert out == f"chào\n\n![vùng {RID}](crops/{RID}.png)\n\nhết"
+    assert "http" not in out  # không hostname trong artifact
+
+async def test_embed_crop_urls_relative_key_to_presigned():
+    """serve/download: relative key → presigned 24h FRESH tại serve-time."""
+    md = f"chào\n\n![vùng {RID}](crops/{RID}.png)\n\nhết"
     out = await embed_crop_urls(md, 7, _FakeStorage({KEY}))
     assert f"![vùng {RID}](https://cdn.example/{KEY}?sig=abc)" in out
-    assert MARKER not in out
 
 
-async def test_embed_crop_urls_missing_crop_keeps_marker():
+async def test_embed_crop_keys_missing_crop_keeps_marker():
     md = f"a\n\n{MARKER}"
     out = await embed_crop_urls(md, 7, _FakeStorage(set()))
     assert out == md  # nguyên vẹn, không thay
 
 
-async def test_embed_crop_urls_no_marker_untouched():
+async def test_embed_crop_urls_no_key_untouched():
     md = "# thuần văn bản"
     assert await embed_crop_urls(md, 7, _FakeStorage({KEY})) == md
 

@@ -543,16 +543,28 @@ async def generate_ir(result: dict) -> dict | None:
 # ---------------------------------------------------------------- crop embed (WS-PIPE)
 CROP_PRESIGN_EXPIRES = 86400
 
-async def embed_crop_urls(markdown: str, job_id: int, storage) -> str:
-    """IMAGE_MARKER → `![vùng {rid}]({presigned 24h})` khi crop artifact
-    exports/{job_id}/crops/{rid}.png tồn tại; KHÔNG có → giữ nguyên marker
-    (Global Constraints: không mất thông tin khi crop chưa ingest)."""
+async def embed_crop_keys(markdown: str, job_id: int, storage) -> str:
+    """RENDER-time: IMAGE_MARKER → `![vùng {rid}](crops/{rid}.png)` RELATIVE
+    key khi crop artifact tồn tại; thiếu → giữ marker. Artifact KHÔNG chứa
+    URL presigned (24h hết hạn → link chết); serve-time re-embed qua
+    embed_crop_urls."""
     for m in re.finditer(re.escape(IMAGE_MARKER_PREFIX) + r"([^\]]+)\]\*\*", markdown):
         rid = m.group(1)
-        key = f"exports/{job_id}/crops/{rid}.png"
-        if not await storage.exists(key):
+        if not await storage.exists(f"exports/{job_id}/crops/{rid}.png"):
             continue
-        url = await storage.presign_get(key, CROP_PRESIGN_EXPIRES)
+        markdown = markdown.replace(m.group(0), f"![vùng {rid}](crops/{rid}.png)")
+    return markdown
+
+_CROP_REL_RE = re.compile(r"!\[vùng ([^\]]+)\]\(crops/([^\)]+)\)")
+
+async def embed_crop_urls(markdown: str, job_id: int, storage) -> str:
+    """SERVE-time (download md-layout): relative `crops/{f}` → presigned 24h
+    FRESH mỗi lần serve — URL trong artifact không bao giờ cache."""
+    for m in _CROP_REL_RE.finditer(markdown):
+        rid, fname = m.group(1), m.group(2)
+        url = await storage.presign_get(
+            f"exports/{job_id}/crops/{fname}", CROP_PRESIGN_EXPIRES
+        )
         markdown = markdown.replace(m.group(0), f"![vùng {rid}]({url})")
     return markdown
 
