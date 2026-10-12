@@ -104,6 +104,25 @@ class TestBuildMDFromIR:
         out = await build_md(_ocr_result())
         assert out == _md_response()  # render markdown tốt giữ nguyên
 
+    async def test_render_envelope_output_unwrapped(self, monkeypatch):
+        """Render trả envelope {\"output\": md} → unwrap đúng md."""
+        fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(_ir_response())),
+            FakeResponse('{"output":"## X"}'),
+        ])
+        out = await build_md(_ocr_result())
+        assert out == "## X"
+
+    async def test_render_json_missing_field_falls_back(self, monkeypatch):
+        """JSON thiếu field output/markdown → LLMError → heuristic."""
+        fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(_ir_response())),
+            FakeResponse('{"foo":"bar"}'),
+        ])
+        out = await build_md(_ocr_result())
+        assert "chú thích" in out  # heuristic, không phải "{...}"
+        assert not out.lstrip().startswith("{")
+
     async def test_build_md_render_echo_ir_json_fallback(self, monkeypatch):
         """Render LLM echo IR JSON → LLMError → heuristic (chứa text OCR)."""
         fake_llm(monkeypatch, [
@@ -159,6 +178,16 @@ class TestBuildMDFromIR:
         # render prompt: bbox + page width trong page_dims
         assert "bbox" in json.dumps(calls[1][1])
         assert "800" in json.dumps(calls[1][1])
+
+    async def test_render_call_no_response_format_ir_call_has(self, monkeypatch):
+        """json_mode: IR call CÓ response_format, render call KHÔNG."""
+        calls = fake_llm(monkeypatch, [
+            FakeResponse(json.dumps(_ir_response())),
+            FakeResponse(_md_response()),
+        ])
+        await build_md(_ocr_result())
+        assert "response_format" in calls[0][1]   # llm_ir → json_mode=True
+        assert "response_format" not in calls[1][1]  # llm_render_md → False
 
     async def test_build_md_bbox_filled_when_missing(self, monkeypatch):
         """Node thiếu bbox → validator union từ source_block_ids → render OK."""
@@ -270,3 +299,31 @@ class TestLLMLogLoudness:
         assert out
         msgs = [r.getMessage() for r in caplog.records]
         assert any("HEURISTIC FALLBACK render" in m for m in msgs), msgs
+
+
+def test_prompt_no_json_wrapper():
+    """Prompt pin 'do NOT wrap in JSON' (model free hay bọc envelope)."""
+    assert "do not wrap in json" in RENDER_MD_PROMPT.lower()
+
+async def test_fallback_stats_counter(monkeypatch, caplog):
+    """Fallback → _FALLBACK_STATS tăng + warning HEURISTIC FALLBACK tỉ lệ n/total."""
+    from app.services import render_md
+    monkeypatch.setattr(
+        render_md, "_FALLBACK_STATS", {"fallback": 0, "total": 0}
+    )
+    caplog.set_level("WARNING", logger="app.services.render_md")
+    fake_llm(monkeypatch, [httpx.ConnectError("refused"), httpx.ConnectError("refused")])
+    await build_md(_ocr_result())  # LLMError → heuristic
+    stats = render_md._FALLBACK_STATS
+    assert stats == {"fallback": 1, "total": 1}
+    msg = [r.getMessage() for r in caplog.records if "tỉ lệ 1/1" in r.getMessage()]
+    assert msg == ["HEURISTIC FALLBACK LLMError — tỉ lệ 1/1"]
+
+async def test_render_empty_response_falls_back(monkeypatch):
+    """Fake _chat trả rỗng → LLMError → heuristic (md thật từ OCR)."""
+    fake_llm(monkeypatch, [
+        FakeResponse(json.dumps(_ir_response())),
+        FakeResponse("   "),
+    ])
+    out = await build_md(_ocr_result())
+    assert "chú thích" in out  # heuristic content

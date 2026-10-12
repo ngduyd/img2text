@@ -234,6 +234,7 @@ def test_prompt_guards_empty_zones():
     assert "empty zones" in low
     assert "do not invent" in low
     assert "render nothing" in low
+    assert "do not wrap in json" in low
 
     async def test_build_docx_table_block(self, monkeypatch):
         """HTML table in OCR → docx table."""

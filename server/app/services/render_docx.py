@@ -256,14 +256,17 @@ async def _llm_config() -> tuple[str, str, str, float]:
     return base_url, model, api_key, timeout
 
 
-async def _chat(user_content: str) -> str:
+async def _chat(user_content: str, json_mode: bool = True) -> str:
     base_url, model, api_key, timeout = await _llm_config()
     payload: dict = {
         "model": model,
         "messages": [{"role": "user", "content": user_content}],
         "temperature": 0,
-        "response_format": {"type": "json_object"},
     }
+    # json_mode=False (render HTML): KHÔNG gửi response_format — json_object
+    # ép model echo IR/bọc envelope thay vì HTML thô.
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
     url = base_url.rstrip("/") + "/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -285,7 +288,7 @@ async def _chat(user_content: str) -> str:
                     return resp.json()["choices"][0]["message"]["content"]
                 except (ValueError, KeyError, IndexError, TypeError) as exc:
                     raise LLMError(f"phản hồi thiếu content: {exc}") from exc
-            if resp.status_code in (400, 422):
+            if resp.status_code in (400, 422) and json_mode:
                 payload.pop("response_format", None)
             elif resp.status_code not in (429, 500, 502, 503, 504):
                 raise LLMError(f"LLM HTTP {resp.status_code}")
@@ -395,7 +398,8 @@ RENDER_DOCX_PROMPT = (
     "Mỗi page IR → thẻ <page-break/> giữa các page.\n"
     "Align/indent khác mặc định → style=\"text-align:center|right|justify\" "
     "và style=\"padding-left: Nem\" (1em = 0.5 inch).\n"
-    "Output raw HTML only (no code fences).\n\n"
+    "Output raw HTML only (no code fences).\n"
+    "Output raw only — do NOT wrap in JSON.\n\n"
     "Pages (index → width/height): {page_dims}\n"
     "Document IR:\n{ir_json}"
 )
@@ -411,24 +415,84 @@ async def llm_render_docx(ir_doc: DocumentIR, result: dict) -> str:
     content = RENDER_DOCX_PROMPT.replace(
         "{page_dims}", json.dumps(_page_dims(result), ensure_ascii=False)
     ).replace("{ir_json}", ir_doc.model_dump_json())
-    raw = await _chat(content)
+    raw = await _chat(content, json_mode=False)
     html = raw.strip()
     m = _FENCE_RE.match(html)
     if m:
         html = m.group(1).strip()
     if not html:
         raise LLMError("LLM render trả về rỗng")
-    # LLM thỉnh thoảng echo lại IR JSON thay vì render HTML → coi là fail,
-    # rơi về heuristic (render thủ công). HTML không bao giờ bắt đầu bằng {.
-    if html.startswith("{") and ('"document_id"' in html or '"pages"' in html):
-        raise LLMError("LLM render trả về IR JSON, không phải HTML")
+    # Model free thường bọc HTML trong JSON envelope {"output": ...} hoặc
+    # echo IR JSON → unwrap field; thiếu/parsing fail → LLMError → heuristic.
+    if html.startswith("{"):
+        html = _unwrap_envelope(html, ("output", "html")).strip()
+        if not html:
+            raise LLMError("LLM render trả về rỗng")
+    # HTML không tag block nào → LLMError → heuristic (chặn docx trắng 200).
+    if not _BLOCK_HTML_RE.search(html) and not _TABLE_HTML_RE.search(html):
+        raise LLMError("LLM render HTML không chứa tag block")
     return html
 
+
+def _unwrap_envelope(text: str, keys: tuple[str, ...]) -> str:
+    """JSON envelope {\"output\": ...} → field string. Fail → LLMError (heuristic)."""
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(text)
+    except (ValueError, TypeError) as exc:
+        raise LLMError(f"LLM render JSON hỏng: {exc}") from exc
+    if isinstance(obj, dict):
+        for key in keys:
+            val = obj.get(key)
+            if isinstance(val, str) and val.strip():
+                return val
+    raise LLMError(f"LLM render JSON thiếu field {'/'.join(keys)}")
+
 _BLOCK_HTML_RE = re.compile(
-    r"<(h1|h2|h3|p|blockquote)\b([^>]*)>(.*?)</\1>", re.DOTALL | re.IGNORECASE
+    r"<(h1|h2|h3|p|blockquote|ul|li)\b([^>]*)>(.*?)</\1>", re.DOTALL | re.IGNORECASE
 )
 _TABLE_HTML_RE = re.compile(r"<table[^>]*>(.*?)</table>", re.DOTALL | re.IGNORECASE)
 _PAGE_BREAK_RE = re.compile(r"<page-break\s*/?>|<!--\s*page-break\s*-->", re.IGNORECASE)
+# inline tối thiểu (không HTML parser): <br> → ngắt dòng, b/i → run bold/italic
+# capture group bắt buộc: split giữ lại tag → nhánh <br>/bold mới chạy
+_INLINE_RE = re.compile(r"(<br\s*/?>|</?(?:strong|b|em|i)\b[^>]*>)", re.IGNORECASE)
+
+
+def _add_rich_text(para, raw: str) -> None:
+    """text + inline <br>/<b>/<strong>/<em>/<i> → runs (newline/bold/italic)."""
+    bold = italic = False
+    for part in _INLINE_RE.split(raw):
+        low = part.lower()
+        if low.startswith("<br"):
+            para.add_run("\n")
+        elif low.startswith("</"):
+            if low in ("</b>", "</strong>"):
+                bold = False
+            elif low in ("</i>", "</em>"):
+                italic = False
+        elif low.startswith("<"):
+            if low.startswith(("<b", "<strong")):
+                bold = True
+            elif low.startswith(("<i", "<em")):
+                italic = True
+        else:
+            txt = re.sub(r"<[^>]+>", "", part)
+            if txt:
+                run = para.add_run(txt)
+                if bold:
+                    run.bold = True
+                if italic:
+                    run.italic = True
+
+
+def _list_para(doc):
+    """li → List Bullet; style thiếu → KeyError fallback indent 1 level."""
+    try:
+        return doc.add_paragraph(style="List Bullet")
+    except KeyError:
+        para = doc.add_paragraph()
+        para.paragraph_format.left_indent = Inches(0.5)
+        return para
+
 
 def _html_to_docx(html: str, style_overrides: dict | None = None) -> bytes:
     """HTML (từ LLM render) → DOCX bytes."""
@@ -447,8 +511,16 @@ def _html_to_docx(html: str, style_overrides: dict | None = None) -> bytes:
                 doc.add_heading(inner, level=1)
             elif tag == "h3":
                 doc.add_heading(inner, level=2)
-            elif inner:
-                para = doc.add_paragraph(inner)
+            elif tag in ("ul", "li"):
+                items = (
+                    re.findall(r"<li[^>]*>(.*?)</li>", m.group(3), re.DOTALL | re.IGNORECASE)
+                    if tag == "ul" else [m.group(3)]
+                )
+                for li in items:
+                    _add_rich_text(_list_para(doc), li)
+            elif inner or _INLINE_RE.search(m.group(3)):
+                para = doc.add_paragraph()
+                _add_rich_text(para, m.group(3))
                 align = re.search(r"text-align:\s*(center|right|justify)", attrs)
                 if align:
                     para.alignment = _ALIGN_MAP[align.group(1)]
@@ -563,6 +635,17 @@ def render_from_heuristic(
     return buf.getvalue()
 
 
+# tỉ lệ heuristic fallback / tổng lần build — quan sát model free echo/envelope
+_FALLBACK_STATS = {"fallback": 0, "total": 0}
+
+
+def _log_fallback(exc: Exception) -> None:
+    _FALLBACK_STATS["fallback"] += 1
+    logger.warning(
+        "HEURISTIC FALLBACK %s — tỉ lệ %d/%d",
+        type(exc).__name__, _FALLBACK_STATS["fallback"], _FALLBACK_STATS["total"],
+    )
+
 # ---------------------------------------------------------------- main API
 async def build_docx(
     result: dict,
@@ -579,6 +662,7 @@ async def build_docx(
     (user's saved style wins the IR). ir_sink: optional dict filled with
     the validated IR on the LLM path (auto-gen job.ir_json — no extra call).
     """
+    _FALLBACK_STATS["total"] += 1
     if use_llm:
         try:
             ir_dict = await llm_ir(result)
@@ -589,6 +673,7 @@ async def build_docx(
             return _html_to_docx(html, style_overrides)
         except (LLMError, IRValidationError) as exc:
             logger.warning("HEURISTIC FALLBACK render — layout tạm: %r", exc)
+            _log_fallback(exc)
 
     # Heuristic fallback
     return render_from_heuristic(result, style_overrides)

@@ -309,14 +309,17 @@ async def _llm_config() -> tuple[str, str, str, float]:
     return base_url, model, api_key, timeout
 
 
-async def _chat(user_content: str) -> str:
+async def _chat(user_content: str, json_mode: bool = True) -> str:
     base_url, model, api_key, timeout = await _llm_config()
     payload: dict = {
         "model": model,
         "messages": [{"role": "user", "content": user_content}],
         "temperature": 0,
-        "response_format": {"type": "json_object"},
     }
+    # json_mode=False (render md): KHÔNG gửi response_format — json_object
+    # ép model echo IR/bọc envelope thay vì markdown thô.
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
     url = base_url.rstrip("/") + "/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -337,7 +340,7 @@ async def _chat(user_content: str) -> str:
                     return resp.json()["choices"][0]["message"]["content"]
                 except (ValueError, KeyError, IndexError, TypeError) as exc:
                     raise LLMError(f"phản hồi thiếu content: {exc}") from exc
-            if resp.status_code in (400, 422):
+            if resp.status_code in (400, 422) and json_mode:
                 payload.pop("response_format", None)
             elif resp.status_code not in (429, 500, 502, 503, 504):
                 raise LLMError(f"LLM HTTP {resp.status_code}")
@@ -369,6 +372,19 @@ async def llm_ir(result: dict) -> dict:
 
 
 # ---------------------------------------------------------------- render from IR
+def _unwrap_envelope(text: str, keys: tuple[str, ...]) -> str:
+    """JSON envelope {\"output\": ...} → field string. Fail → LLMError (heuristic)."""
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(text)
+    except (ValueError, TypeError) as exc:
+        raise LLMError(f"LLM render JSON hỏng: {exc}") from exc
+    if isinstance(obj, dict):
+        for key in keys:
+            val = obj.get(key)
+            if isinstance(val, str) and val.strip():
+                return val
+    raise LLMError(f"LLM render JSON thiếu field {'/'.join(keys)}")
+
 def _table_md(html_text: str) -> list[str]:
     rows: list[list[str]] = []
     for row in _TABLE_ROW_RE.findall(html_text):
@@ -400,7 +416,8 @@ RENDER_MD_PROMPT = (
     "Empty zones (header/content/footer = []) → render NOTHING for that zone; "
     "do NOT invent content for missing zones. A page may have only content, "
     "only header+content, etc.\n"
-    "Output raw markdown only (no code fences).\n\n"
+    "Output raw markdown only (no code fences).\n"
+    "Output raw only — do NOT wrap in JSON.\n\n"
     "Pages (index → width/height): {page_dims}\n"
     "Document IR:\n{ir_json}"
 )
@@ -416,17 +433,20 @@ async def llm_render_md(ir_doc: DocumentIR, result: dict) -> str:
     content = RENDER_MD_PROMPT.replace(
         "{page_dims}", json.dumps(_page_dims(result), ensure_ascii=False)
     ).replace("{ir_json}", ir_doc.model_dump_json())
-    raw = await _chat(content)
+    raw = await _chat(content, json_mode=False)
     text = raw.strip()
     m = _FENCE_RE.match(text)
     if m:
         text = m.group(1).strip()
     if not text:
         raise LLMError("LLM render trả về rỗng")
-    # LLM thỉnh thoảng echo lại IR JSON thay vì render → coi là fail, rơi
-    # về heuristic (render thủ công). Markdown không bao giờ bắt đầu bằng {.
-    if text.startswith("{") and ('"document_id"' in text or '"pages"' in text):
-        raise LLMError("LLM render trả về IR JSON, không phải markdown")
+    # Model free thường bọc markdown trong JSON envelope {"output": ...}
+    # hoặc echo IR JSON → unwrap field; thiếu/parsing fail → LLMError →
+    # heuristic (markdown thô KHÔNG bao giờ bắt đầu bằng {).
+    if text.startswith("{"):
+        text = _unwrap_envelope(text, ("output", "markdown")).strip()
+        if not text:
+            raise LLMError("LLM render trả về rỗng")
     return text
 
 
@@ -570,6 +590,17 @@ async def embed_crop_urls(markdown: str, job_id: int, storage) -> str:
     return markdown
 
 # ---------------------------------------------------------------- main API
+# tỉ lệ heuristic fallback / tổng lần build — quan sát model free echo/envelope
+_FALLBACK_STATS = {"fallback": 0, "total": 0}
+
+
+def _log_fallback(exc: Exception) -> None:
+    _FALLBACK_STATS["fallback"] += 1
+    logger.warning(
+        "HEURISTIC FALLBACK %s — tỉ lệ %d/%d",
+        type(exc).__name__, _FALLBACK_STATS["fallback"], _FALLBACK_STATS["total"],
+    )
+
 async def build_md(
     result: dict, use_llm: bool = True, ir_sink: dict | None = None
 ) -> str:
@@ -581,6 +612,7 @@ async def build_md(
     ir_sink: optional dict filled with the validated IR on the LLM path —
     auto-gen reuses that single IR for job.ir_json (no extra LLM call).
     """
+    _FALLBACK_STATS["total"] += 1
     if use_llm:
         try:
             ir_dict = await llm_ir(result)
@@ -590,6 +622,7 @@ async def build_md(
             return await llm_render_md(ir_doc, result)
         except (LLMError, IRValidationError) as exc:
             logger.warning("HEURISTIC FALLBACK render — layout tạm: %r", exc)
+            _log_fallback(exc)
 
     # Heuristic fallback
     pages = extract_pages(result)

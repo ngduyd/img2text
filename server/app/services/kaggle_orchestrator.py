@@ -855,7 +855,9 @@ async def _ensure_batch_runs(api, session_factory) -> bool:
             )
         ).scalars().all()
     # batch one-run: stage ALL queued jobs (up to the cap) into ONE run
-    candidates = queued[: settings.kaggle_batch_max_jobs]
+    # KAGGLE_BATCH_MAX_JOBS 0/-1 = unlimited — không slice, gom hết queued
+    cap = settings.kaggle_batch_max_jobs
+    candidates = queued if cap <= 0 else queued[:cap]
     while candidates:
         try:
             tracked = await _spawn_batch_run(api, session_factory, candidates)
