@@ -290,3 +290,12 @@ async def test_fallback_stats_counter(monkeypatch, caplog):
     assert stats == {"fallback": 1, "total": 1}
     msg = [r.getMessage() for r in caplog.records if "HEURISTIC FALLBACK" in r.getMessage()]
     assert msg == ["HEURISTIC FALLBACK LLMError — tỉ lệ 1/1"]
+
+async def test_render_empty_response_falls_back(monkeypatch):
+    """Fake _chat trả rỗng → LLMError → heuristic (md thật từ OCR)."""
+    fake_llm(monkeypatch, [
+        FakeResponse(json.dumps(_ir_response())),
+        FakeResponse("   "),
+    ])
+    out = await build_md(_ocr_result())
+    assert "chú thích" in out  # heuristic content

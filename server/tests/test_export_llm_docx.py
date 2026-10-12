@@ -464,3 +464,10 @@ async def test_docx_fallback_stats_counter(monkeypatch, VALID_RESULT_JSONB, capl
     assert render_docx._FALLBACK_STATS == {"fallback": 1, "total": 1}
     msg = [r.getMessage() for r in caplog.records if "HEURISTIC FALLBACK" in r.getMessage()]
     assert msg == ["HEURISTIC FALLBACK LLMError — tỉ lệ 1/1"]
+
+async def test_docx_render_empty_response_falls_back(monkeypatch, VALID_RESULT_JSONB):
+    """Fake _chat trả rỗng → LLMError → heuristic (docx không trắng)."""
+    fake_llm(monkeypatch, [FakeResponse(json.dumps(FAKE_IR)), FakeResponse("  ")])
+    data = await build_docx(VALID_RESULT_JSONB)
+    doc = Document(io.BytesIO(data))
+    assert any(p.text.strip() for p in doc.paragraphs)
