@@ -52,6 +52,11 @@ async def _auto_output(job: Job, storage: StorageDriver) -> None:
                 .values(rerender_requested=False)
             )
             await session.commit()
+            # P1-1: mỗi pass render bằng row MỚI — user save GIỮA 2 pass đổi
+            # result/rerender_requested/mode; object truyền vào task là stale.
+            fresh = await session.get(Job, job.id)
+        if fresh is not None:
+            job = fresh  # session đóng → detached, attributes đã load
         try:
             # Phase 5: extract_only — no layout requested; OCR result alone
             # completes the job (no artifacts, no rendering phase failure).

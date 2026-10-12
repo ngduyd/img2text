@@ -601,3 +601,48 @@ async def test_auto_output_rerenders_once_then_guard_keeps_flag(
     assert job.status == "done"
     assert len(calls) == 2  # guard 2 — không render lần 3
     assert job.rerender_requested is True  # quá 2 → giữ cờ + log warning
+
+async def test_auto_output_pass2_reloads_result_saved_between_passes(
+    auth_client, db_session, VALID_RESULT_JSONB, monkeypatch
+):
+    """P1-1: user save GIỮA pass 1 và pass 2 → pass 2 phải render text MỚI."""
+    from sqlalchemy import update
+
+    from app.core.models import Job
+    from app.services import job_results
+
+    jid = await _rendering_job(db_session, VALID_RESULT_JSONB)
+    await db_session.execute(
+        update(Job).where(Job.id == jid).values(rerender_requested=True)
+    )
+    await db_session.commit()
+    seen: list[str | None] = []
+
+    async def _gen(job, storage):
+        seen.append((job.result or {}).get("extraction_text"))
+        if len(seen) == 1:
+            # user save NGAY trong lúc pass 1 render → result mới + cờ vẽ lại.
+            # Session RIÊNG (như POST /extraction thật) — không đụng object `job`.
+            from app.core.db import SessionLocal
+
+            async with SessionLocal() as save_session:
+                await save_session.execute(
+                    update(Job)
+                    .where(Job.id == jid)
+                    .values(
+                        result={
+                            **(job.result or {}),
+                            "extraction_text": "van ban moi",
+                        },
+                        rerender_requested=True,
+                    )
+                )
+                await save_session.commit()
+        return True
+
+    monkeypatch.setattr("app.routers.exports.auto_generate_output", _gen)
+    job = await db_session.get(Job, jid)
+    await db_session.refresh(job)
+    await job_results._auto_output(job, None)
+    assert len(seen) == 2  # cờ giữa chừng → render thêm 1 pass
+    assert seen[1] == "van ban moi"  # stale job object → pass 2 render text cũ
