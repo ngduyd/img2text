@@ -7,7 +7,7 @@ import Jobs from "../../src/pages/Jobs";
 
 // Port của Dropzone.upload.test (Dropzone đã xóa — spec U4): R2 presigned upload
 // (REAL client api): stubbed fetch (me/list/presign/create) + fake XMLHttpRequest
-// cho POST form → storage (upload.onprogress) + pdf.js đếm trang.
+// cho PUT ArrayBuffer → storage (upload.onprogress) + pdf.js đếm trang.
 
 vi.mock("../../src/lib/pdfjs", () => ({
   loadPdf: vi.fn(async () => ({ numPages: 3, getPage: vi.fn() })),
@@ -20,13 +20,14 @@ vi.mock("react-router-dom", async (importOriginal) => {
 
 const PRESIGN = {
   storage_key: `uploads/${"ab".repeat(32)}.pdf`,
-  url: "https://r2.example/bucket",
-  fields: { key: `uploads/${"ab".repeat(32)}.pdf`, "Content-Type": "application/pdf", policy: "fake-policy-b64" },
+  url: "https://r2.example/bucket/uploads/ab.pdf",
   max_bytes: 52428800,
 };
 
 let sentXhr: {
-  form: FormData | null;
+  method: string;
+  url: string;
+  body: unknown;
   upload: { onprogress: ((e: ProgressEvent) => void) | null };
   onload: (() => void) | null;
 } | null = null;
@@ -36,9 +37,11 @@ class FakeXHR {
   status = 200;
   onload: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  open() {}
-  send(form: FormData) {
-    sentXhr = { form, upload: this.upload, onload: () => this.onload?.() };
+  open(method: string, url: string) {
+    sentXhr = { method, url, body: null, upload: this.upload, onload: () => this.onload?.() };
+  }
+  send(body: unknown) {
+    if (sentXhr) sentXhr.body = body;
   }
 }
 
@@ -95,11 +98,11 @@ it("Gửi → presign → XHR progress → pdf.js count → metadata-only create
   await screen.findByTestId("submit-modal");
   fireEvent.click(screen.getByTestId("sm-confirm"));
 
-  // presign (fetch) → POST form thẳng tới storage qua XHR (không qua backend)
+  // presign (fetch) → PUT ArrayBuffer thẳng tới storage qua XHR (không qua backend)
   await vi.waitFor(() => expect(sentXhr).not.toBeNull());
-  expect(sentXhr!.form!.get("key")).toBe(PRESIGN.storage_key);
-  expect((sentXhr!.form!.get("file") as File).name).toBe("tong-hop.pdf");
-  expect(sentXhr!.form!.get("policy")).toBe("fake-policy-b64");
+  expect(sentXhr!.method).toBe("PUT");
+  expect(sentXhr!.url).toBe(PRESIGN.url);
+  expect(sentXhr!.body).toBeInstanceOf(ArrayBuffer);
 
   // progress bar hiện 0% → onprogress 42% → percent cập nhật
   expect(screen.getByTestId("upload-progress")).toBeInTheDocument();
