@@ -34,6 +34,13 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String)
     role: Mapped[str] = mapped_column(String, default="user")
     ocr_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # WS-ADMIN quota (spec 2026-10-13): trang/ngày (local Asia/Ho_Chi_Minh)
+    # và trang/tuần (T2→CN). Nullable ALTER-only (create_all never ALTERs):
+    #   ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_page_limit INT DEFAULT 25;
+    #   ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_page_limit INT DEFAULT 150;
+    # Readers fall back via app.services.quota.limit_of() (legacy NULL rows).
+    daily_page_limit: Mapped[int | None] = mapped_column(Integer, default=25)
+    weekly_page_limit: Mapped[int | None] = mapped_column(Integer, default=150)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
