@@ -102,26 +102,40 @@ const FEATURES: Feature[] = [
 
 const INPUT_FORMATS = ["JPG", "PNG", "WebP", "PDF"];
 
+/**
+ * 6 slot ảnh thật (spec §User-facing #8): hero, login, jobdetail 2 section,
+ * layout preview, export, admin. File chưa capture → onError placeholder.
+ */
 const GALLERY = [
   {
-    src: "/screenshots/jobs-list.png",
-    alt: "Danh sách công việc img2text kèm quota badge",
-    caption: "Danh sách công việc, quota hiển thị trên nav.",
+    src: "/screenshots/landing-hero.png",
+    alt: "Trang chủ img2text trên nền tối",
+    caption: "Trang chủ: hero và lời kêu gọi bắt đầu.",
   },
   {
-    src: "/screenshots/jobdetail-vanban.png",
-    alt: "Bản xem trước văn bản proofread, bấm vào vùng lỗi để sửa",
-    caption: "Khung văn bản: sửa từng vùng lỗi bằng cách bấm.",
+    src: "/screenshots/login.png",
+    alt: "Màn hình đăng nhập img2text",
+    caption: "Đăng nhập bằng email và mật khẩu.",
   },
   {
-    src: "/screenshots/jobdetail-layout.png",
-    alt: "Bản xem trước layout dựng trang giữ cột và canh lề gốc",
-    caption: "Khung layout: trang có-format ghép lại từ phần đã sửa.",
+    src: "/screenshots/jobdetail.png",
+    alt: "JobDetail 2 section: Văn bản trên, Layout dưới",
+    caption: "JobDetail 2 section: Văn bản và Layout cuộn dọc.",
   },
   {
-    src: "/screenshots/extraction.png",
-    alt: "Màn hình trích xuất ảnh và PDF thành văn bản có cấu trúc",
-    caption: "Màn hình trích xuất: ảnh và kết quả so song.",
+    src: "/screenshots/layout-preview.png",
+    alt: "Bản xem trước layout dựng trang có format",
+    caption: "Layout dựng trang có format, giữ cột và canh lề gốc.",
+  },
+  {
+    src: "/screenshots/export-menu.png",
+    alt: "Thanh xuất file với 2 nhóm Văn bản và Layout",
+    caption: "Xuất file: nhóm Văn bản và nhóm Layout.",
+  },
+  {
+    src: "/screenshots/admin-users.png",
+    alt: "Bảng quản trị người dùng",
+    caption: "Admin quản trị người dùng và quota.",
   },
 ];
 
