@@ -74,3 +74,11 @@ _PNG_BYTES = bytes.fromhex(
     "7753de0000000c4944415408d763f8cfc000000301010018dd8db0000000"
     "0049454e44ae426082"
 )
+
+def test_html_to_docx_invalid_crop_bytes_dropped_not_500():
+    """add_picture(bytes hỏng) raise → wrap: drop img như crop thiếu."""
+    html = f'<p>trước</p><img src="crops/{RID}.png"/><p>sau</p>'
+    data = html_to_docx(html, crops={RID: b"not-a-png"})
+    doc = Document(io.BytesIO(data))
+    assert len(doc.inline_shapes) == 0
+    assert [p.text for p in doc.paragraphs if p.text] == ["trước", "sau"]

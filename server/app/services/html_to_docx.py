@@ -8,12 +8,15 @@ the web word mode starts emitting them.
 """
 
 import io
+import logging
 import re
 from html.parser import HTMLParser
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt
+
+logger = logging.getLogger(__name__)
 
 _ALIGN = {
     "left": WD_ALIGN_PARAGRAPH.LEFT,
@@ -183,7 +186,10 @@ class _Walker:
         m = CROP_SRC_RE.search(node.attrs.get("src", ""))
         data = self.crops.get(m.group(1)) if m else None
         if data:
-            self._ensure().add_run().add_picture(io.BytesIO(data))
+            try:
+                self._ensure().add_run().add_picture(io.BytesIO(data))
+            except Exception as exc:  # bytes hỏng → drop img như crop thiếu
+                logger.warning("docx: crop bytes hỏng, bỏ img: %s", exc)
 
     def _push(self, extra: dict, node: "_Node") -> None:
         """Inline element: recurse with merged style, restore after."""
