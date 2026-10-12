@@ -118,6 +118,8 @@ export interface Job {
   layout_style?: LayoutStyle | null;
   /** Contract GET /api/jobs/{id}: text version hiện tại (badge "Hiện tại" lịch sử). */
   text_version: number;
+  /** Contract steer: server trả filename — toast/search dùng tên thật, fallback #id. */
+  filename?: string;
   /** Contract GET /api/jobs/{id}: layout đã lỗi thời so với text → cần đồng bộ (vắng/[] = ẩn badge). */
   stale_layouts?: ("md" | "docx")[];
 }
@@ -133,6 +135,8 @@ export interface JobListItem {
   created_at: string;
   started_at?: string | null;
   finished_at?: string | null;
+  /** Contract steer: server thêm serializer — search/toast theo tên file. */
+  filename?: string;
 }
 
 /** Phase 4: GET /api/jobs paginated envelope (page/page_size có từ Phase 4). */
@@ -153,7 +157,8 @@ export interface WorkerRow {
 }
 
 export interface WorkersResponse {
-  workers: WorkerRow[];
+  /** Server envelope: {items, queue_depth} — data.workers từng gây TypeError trắng. */
+  items: WorkerRow[];
   queue_depth: number;
 }
 

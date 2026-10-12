@@ -104,7 +104,7 @@ it("Gửi → modal → confirm: uploadJob(gộp PDF, layout+md) + toast + navig
   await waitFor(() =>
     expect(api.uploadJob).toHaveBeenCalledWith(
       expect.any(Blob),
-      expect.objectContaining({ filename: "tong-hop.pdf", mode: "layout", output_format: "md" }),
+      expect.objectContaining({ filename: "photo.png", mode: "layout", output_format: "md" }),
     ),
   );
   expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý.");
@@ -438,6 +438,19 @@ it("search input debounced → listJobs receives q param", async () => {
       ),
     { timeout: 2000 },
   );
+});
+
+it("q active + total 0 → empty-filter, không hiện empty-state", async () => {
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  renderWithRouter(<Jobs />);
+  await screen.findByTestId("empty-state"); // tổng 0, chưa search → empty-state
+  const user = userEvent.setup();
+  await user.type(screen.getByTestId("jobs-search"), "khongtainao");
+  await waitFor(() => expect(screen.getByTestId("empty-filter")).toBeInTheDocument(), {
+    timeout: 2000,
+  });
+  expect(screen.queryByTestId("empty-state")).not.toBeInTheDocument();
 });
 
 it("sort select change → listJobs receives sort param", async () => {

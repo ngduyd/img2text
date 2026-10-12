@@ -81,6 +81,8 @@ export default function Jobs() {
   const [pageEntry, setPageEntry] = useState<PageSelectEntry | null>(null);
   const pagesDone = useRef<((pages: number[] | null) => void) | null>(null);
   const items = jobs?.items ?? [];
+  // P1 empty-filter: q/filter active + total 0 → không được hiện empty-state ("Tải file lên").
+  const filtering = q !== "" || filter !== "all";
   // Spec #2: theo dõi transition pending → done/failed của danh sách đang poll.
   useJobDoneToasts(items);
   // Stats + filter tabs are trang hiện tại (server total sống riêng ở stats-total + pagination).
@@ -358,7 +360,7 @@ export default function Jobs() {
               </li>
             ))}
           </ul>
-        ) : jobs && jobs.total === 0 ? (
+        ) : jobs && jobs.total === 0 && !filtering ? (
           /* Composed empty state: icon + title + guidance + CTA hint (DESIGN.md §4). */
           <Card testid="empty-state">
             <div className="flex flex-col items-center px-2 py-6 text-center">

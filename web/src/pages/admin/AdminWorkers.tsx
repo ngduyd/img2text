@@ -31,11 +31,11 @@ export default function AdminWorkers() {
           {data.queue_depth}
         </span>
       </p>
-      {data.workers.length === 0 ? (
+      {data.items.length === 0 ? (
         <p className="text-sm text-muted">Chưa có worker nào báo heartbeat.</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {data.workers.map((w) => {
+          {data.items.map((w) => {
             const silent = w.silent_seconds > SILENT_THRESHOLD;
             return (
               <li

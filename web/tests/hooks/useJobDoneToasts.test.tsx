@@ -6,7 +6,7 @@ import type { JobStatus } from "../../src/api/types";
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-type Watched = { id: number; status: JobStatus; error?: string | null };
+type Watched = { id: number; status: JobStatus; error?: string | null; filename?: string | null };
 
 function hook(initial: Watched[]) {
   return renderHook(({ jobs }) => useJobDoneToasts(jobs), { initialProps: { jobs: initial } });
@@ -24,6 +24,12 @@ it("pending → done fires success toast once", () => {
   // Poll tiếp (done → done) KHÔNG toast lại.
   rerender({ jobs: [{ id: 1, status: "done" }] });
   expect(toast.success).toHaveBeenCalledTimes(1);
+});
+
+it("pending → done with filename → toast dùng tên file thật", () => {
+  const { rerender } = hook([{ id: 9, status: "queued", filename: "sach-viet.pdf" }]);
+  rerender({ jobs: [{ id: 9, status: "done", filename: "sach-viet.pdf" }] });
+  expect(toast.success).toHaveBeenCalledWith("Job đã xong: sach-viet.pdf");
 });
 
 it("pending → failed fires error toast", () => {

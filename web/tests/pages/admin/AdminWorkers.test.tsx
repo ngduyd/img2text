@@ -15,7 +15,8 @@ beforeEach(() => {
 
 it("renders worker rows with kind/last_seen + amber silent badge + queue_depth", async () => {
   vi.mocked(api.getWorkers).mockResolvedValue({
-    workers: [
+    // Server envelope pin: {items, queue_depth} (data.workers → TypeError trắng).
+    items: [
       { worker_id: "w1", kind: "colab-loop", last_seen: "2026-10-14T10:00:00Z", current_job_id: 7, silent_seconds: 10 },
       { worker_id: "w2", kind: "kaggle-batch", last_seen: "2026-10-14T09:00:00Z", current_job_id: null, silent_seconds: 3000 },
     ],

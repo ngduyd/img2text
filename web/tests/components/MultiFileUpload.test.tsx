@@ -94,6 +94,16 @@ it("P1-2: deselect-all → giữ selection cũ, không merge full PDF", async ()
   expect(out.getPageCount()).toBe(2);
 });
 
+it("P1: filename payload = tên gốc, không hardcode tong-hop.pdf", async () => {
+  const onSubmit = vi.fn();
+  render(<MultiFileUpload onSubmit={onSubmit} />);
+  add([await pdfBlob(3)]); // tên gốc "a.pdf"
+  await waitFor(() => expect(screen.getByTestId("muf-card-0")));
+  fireEvent.click(screen.getByTestId("muf-submit"));
+  await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+  expect(onSubmit.mock.calls[0][1].filename).toBe("a.pdf");
+});
+
 it("P2: total = 0 trang → disable nút Gửi", async () => {
   render(<MultiFileUpload onSubmit={vi.fn()} />);
   add([new File(["x"], "zero.pdf", { type: "application/pdf" })]);
