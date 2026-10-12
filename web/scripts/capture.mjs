@@ -5,6 +5,10 @@
  *   công khai; /jobs redirect về /signin khi chưa auth (đủ cho gallery).
  * - Output: web/public/screenshots/*.png (Landing gallery đọc trực tiếp).
  * Dùng: node scripts/capture.mjs   (chạy trong web/)
+ * LIMITATION (lane-d 2026-10-12): chromium khong chay duoc trong sandbox nay
+ * (chrome --dump-dom cung treo, exit 124). Anh chua chup duoc: gallery dung
+ * placeholder (onError an img, caption van doc). Chay lai script tren may co
+ * display/chromium binh thuong de thay the placeholder.
  */
 import { chromium } from "playwright";
 import { spawn } from "node:child_process";
@@ -24,7 +28,7 @@ const SHOTS = [
   { path: "/jobs", name: "jobs-empty" }, // chưa auth -> redirect /signin (Jobs list trống khi login capture-only)
 ];
 
-async function waitForServer(url, ms = 30_000) {
+async function waitForServer(url, ms = 120_000) {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
     try {
@@ -50,7 +54,7 @@ try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   for (const shot of SHOTS) {
-    await page.goto(BASE + shot.path, { waitUntil: "networkidle" });
+    await page.goto(BASE + shot.path, { waitUntil: "networkidle", timeout: 90_000 });
     await page.waitForTimeout(600); // motion entry + fonts settle
     const file = path.join(outDir, `${shot.name}.png`);
     await page.screenshot({ path: file });
