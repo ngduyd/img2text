@@ -87,8 +87,8 @@ const FEATURES: Feature[] = [
     className: "bg-accent/10 border-accent/30",
   },
   {
-    title: "Sáu nút xuất",
-    body: "Markdown, HTML, DOCX, PDF, cộng bản giữ nguyên layout cho Markdown và DOCX.",
+    title: "Năm định dạng xuất",
+    body: "Markdown, DOCX, PDF, cộng bản giữ nguyên layout cho Markdown và DOCX.",
   },
   {
     title: "Quota minh bạch",
@@ -104,24 +104,24 @@ const INPUT_FORMATS = ["JPG", "PNG", "WebP", "PDF"];
 
 const GALLERY = [
   {
-    src: "/screenshots/landing.png",
-    alt: "Trang giới thiệu img2text trên nền tối",
-    caption: "Trang giới thiệu.",
+    src: "/screenshots/jobs-list.png",
+    alt: "Danh sách công việc img2text kèm quota badge",
+    caption: "Danh sách công việc, quota hiển thị trên nav.",
   },
   {
-    src: "/screenshots/login.png",
-    alt: "Màn hình đăng nhập img2text",
-    caption: "Đăng nhập.",
+    src: "/screenshots/jobdetail-vanban.png",
+    alt: "Bản xem trước văn bản proofread, bấm vào vùng lỗi để sửa",
+    caption: "Khung văn bản: sửa từng vùng lỗi bằng cách bấm.",
   },
   {
-    src: "/screenshots/register.png",
-    alt: "Màn hình đăng ký img2text",
-    caption: "Đăng ký tài khoản mới.",
+    src: "/screenshots/jobdetail-layout.png",
+    alt: "Bản xem trước layout dựng trang giữ cột và canh lề gốc",
+    caption: "Khung layout: trang có-format ghép lại từ phần đã sửa.",
   },
   {
-    src: "/screenshots/jobs-empty.png",
-    alt: "Danh sách công việc đang trống kèm quota badge",
-    caption: "Danh sách công việc trống, quota hiển thị trên nav.",
+    src: "/screenshots/extraction.png",
+    alt: "Màn hình trích xuất ảnh và PDF thành văn bản có cấu trúc",
+    caption: "Màn hình trích xuất: ảnh và kết quả so song.",
   },
 ];
 
