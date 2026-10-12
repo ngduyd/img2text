@@ -8,6 +8,7 @@ import { ApiError, api } from "../api/client";
 import type { DocumentVersion, Job } from "../api/types";
 import { mapApiError } from "../lib/errors";
 import { STATUS_TEXT, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
+import { useJobDoneToasts } from "../hooks/useJobDoneToasts";
 import ExportBar from "../components/ExportBar";
 import InfoPanel from "../components/panels/InfoPanel";
 import OriginalFilePanel from "../components/panels/OriginalFilePanel";
@@ -37,6 +38,10 @@ export default function JobDetail() {
     queryFn: () => api.getJob(id!),
     refetchInterval: jobRefetchInterval,
   });
+  // Spec #2: pending → done/failed trong poll → toast + Notification (best-effort).
+  useJobDoneToasts(
+    job ? [{ id: job.id, status: job.status, error: job.error }] : undefined,
+  );
   const [retryError, setRetryError] = useState<string | null>(null);
   /** JD2: btn-edit-doc = inline edit ON THIS PAGE — section Layout: preview ↔ editor. */
   const [editing, setEditing] = useState(false);

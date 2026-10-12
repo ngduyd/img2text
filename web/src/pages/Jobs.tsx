@@ -12,6 +12,7 @@ import PageSelectDialog, { type PageSelectEntry } from "../components/PageSelect
 import StatusFilterTabs from "../components/StatusFilterTabs";
 import SubmitModal, { type SubmitFormat } from "../components/SubmitModal";
 import { mapApiError } from "../lib/errors";
+import { useJobDoneToasts } from "../hooks/useJobDoneToasts";
 import type { StatusFilter } from "../components/StatusFilterTabs";
 import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
@@ -45,6 +46,9 @@ export default function Jobs() {
   const { data: jobs, isLoading } = useQuery({
     queryKey: ["jobs", page],
     queryFn: () => api.listJobs(page),
+    // Spec #2: poll 3s khi còn pending — chuyển done/failed mới thấy được để toast.
+    refetchInterval: (q) =>
+      q.state.data?.items.some((j) => PENDING_STATUSES.includes(j.status)) ? 3000 : false,
   });
   const [filter, setFilter] = useState<StatusFilter>("all");
   // Upload flow (spec U1-U3): Gửi → SubmitModal (mode+format) → merge → presign (R2) → tạo job.
@@ -64,6 +68,8 @@ export default function Jobs() {
   const [pageEntry, setPageEntry] = useState<PageSelectEntry | null>(null);
   const pagesDone = useRef<((pages: number[] | null) => void) | null>(null);
   const items = jobs?.items ?? [];
+  // Spec #2: theo dõi transition pending → done/failed của danh sách đang poll.
+  useJobDoneToasts(items);
   // Stats + filter tabs are trang hiện tại (server total sống riêng ở stats-total + pagination).
   const visible = filter === "all" ? items : items.filter((j) => j.status === filter);
   const pending = items.filter((j) => PENDING_STATUSES.includes(j.status)).length;
