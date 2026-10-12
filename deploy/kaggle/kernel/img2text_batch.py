@@ -769,7 +769,8 @@ def normalize(raw_paths: list[str], pre_info: dict,
     return pages_out, problems
 
 
-def process_job(job_id: int, input_path: str, preprocess: dict | None = None) -> None:
+def process_job(job_id: int, input_path: str,
+                preprocess_spec: dict | None = None) -> None:
     """ONE staged input → pages → precheck gate → OCR → {job_id}_result.{json,md}.
 
     Per-job work dirs: page files are keyed page_0001.png — jobs sharing a
@@ -783,7 +784,7 @@ def process_job(job_id: int, input_path: str, preprocess: dict | None = None) ->
     os.makedirs(pre_dir, exist_ok=True)
 
     raw_paths = _apply_preprocess(
-        rasterize_to_pages(input_path, raw_dir), preprocess
+        rasterize_to_pages(input_path, raw_dir), preprocess_spec
     )
     print(f"job {job_id}: rendered {len(raw_paths)} trang")
 

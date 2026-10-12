@@ -39,6 +39,15 @@ def test_find_inputs_parses_job_prefix_sorted_and_skips(tmp_path, capsys):
     assert "noprefix.png" in capsys.readouterr().out  # skip is logged
 
 
+def test_process_job_param_does_not_shadow_preprocess_fn():
+    """Version 20 'NoneType' object is not callable: param `preprocess` của
+    process_job shadow module fn preprocess(path, out_path) → dòng
+    pre_info[name] = preprocess(p, ...) gọi None (đúng NoneType callable)."""
+    import inspect
+
+    assert callable(kb.preprocess)
+    assert "preprocess" not in inspect.signature(kb.process_job).parameters
+
 def test_find_inputs_empty_root_returns_empty(tmp_path):
     assert kb.find_inputs(str(tmp_path)) == []
 
