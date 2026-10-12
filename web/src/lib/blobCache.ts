@@ -7,6 +7,9 @@ import { api } from "../api/client";
  */
 const cache = new Map<string, Promise<Blob>>();
 
+/** P2-6: cap ≤ 4 entry — SPA session tích blob vô hạn → evict cũ nhất (insertion order). */
+const MAX_ENTRIES = 4;
+
 export function getJobBlob(jobId: string): Promise<Blob> {
   let p = cache.get(jobId);
   if (!p) {
@@ -14,6 +17,10 @@ export function getJobBlob(jobId: string): Promise<Blob> {
     // Lỗi không cache (retry lần saufetch lại); resolve → giữ vĩnh viễn.
     p.catch(() => cache.delete(jobId));
     cache.set(jobId, p);
+    if (cache.size > MAX_ENTRIES) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
   }
   return p;
 }
