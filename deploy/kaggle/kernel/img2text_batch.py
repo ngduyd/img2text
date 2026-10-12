@@ -137,7 +137,7 @@ WHEELHOUSE_DEPS = [
     "pillow", "numpy", "opencv-python-headless", "rapidfuzz",
     "pymupdf", "paddlepaddle-gpu==3.2.1", "paddleocr[doc-parser]>=3.6.0",
     "safetensors", "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
-    "rembg",  # WS-PIPE crop — thiếu → extract_crops ImportError
+    "rembg[cpu]",  # WS-PIPE crop — thiếu → extract_crops ImportError
 ]
 
 def _find_wheelhouse() -> str | None:
@@ -175,7 +175,7 @@ if __name__ == "__main__":
         [
             sys.executable, "-m", "pip", "install", "-q",
             "pillow", "numpy", "opencv-python-headless", "rapidfuzz", "PyMuPDF",
-            "rembg",  # WS-PIPE: crop remove-background (u2net, model cache U2NET_HOME)
+            "rembg[cpu]",  # WS-PIPE: crop remove-background (u2net, model cache U2NET_HOME)
         ],
         check=False,
     )
@@ -206,7 +206,7 @@ if __name__ == "__main__":
                     ["uv", "pip", "install", "--python", VENV_PY,
                      "paddleocr[doc-parser]>=3.6.0", "safetensors",
                      "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
-                     "rembg"],
+                     "rembg[cpu]"],
                 ):
                     subprocess.run(cmd, check=False)
         else:
@@ -220,7 +220,7 @@ if __name__ == "__main__":
                     "uv", "pip", "install", "--python", VENV_PY,
                     "paddleocr[doc-parser]>=3.6.0", "safetensors",
                     "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
-                    "rembg",
+                    "rembg[cpu]",
                 ],
             ):
                 subprocess.run(cmd, check=False)

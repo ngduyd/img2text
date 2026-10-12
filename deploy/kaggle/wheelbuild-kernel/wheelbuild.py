@@ -16,7 +16,7 @@ DEPS = [
     "pillow", "numpy", "opencv-python-headless", "rapidfuzz", "pymupdf",
     "paddlepaddle-gpu==3.2.1", "paddleocr[doc-parser]>=3.6.0",
     "safetensors", "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
-    "rembg",
+    "rembg[cpu]",
 ]
 # u2net.onnx (rembg model ~170MB) — download 1 lần vào wheels/ → dataset
 # wheelbuild-env; kernel set U2NET_HOME vào dir này (không tải lại mỗi run).
