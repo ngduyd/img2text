@@ -163,3 +163,14 @@ async def test_detail_stale_layouts_empty_when_current_or_absent(
 async def test_file_presign_owner(auth_client, seed_job):
     r = await auth_client.get(f"/api/jobs/{seed_job}/file")
     assert r.status_code == 200 and "uploads/" in r.json()["url"]
+
+# --- P1-2 review r1: GET job trả mode — web ẩn Section Layout khi extract_only ---
+
+async def test_detail_returns_mode(auth_client, seed_job, db_session):
+    body = (await auth_client.get(f"/api/jobs/{seed_job}")).json()
+    assert body["mode"] == "layout"  # default (legacy NULL row cũng phải là "layout")
+    job = await db_session.get(Job, seed_job)
+    job.mode = "extract_only"
+    await db_session.commit()
+    body = (await auth_client.get(f"/api/jobs/{seed_job}")).json()
+    assert body["mode"] == "extract_only"

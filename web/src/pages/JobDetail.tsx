@@ -117,8 +117,9 @@ export default function JobDetail() {
   const result = job.status === "done" ? job.result : null;
   /** Section "Văn bản": OCR xong (rendering/done) → GET /extraction 200. */
   const textReady = job.result !== null && (job.status === "rendering" || job.status === "done");
-  /** Section "Layout": layout artifact chỉ có khi done. */
-  const layoutReady = result !== null && job.status === "done";
+  /** Section "Layout": layout artifact chỉ có khi done. P1-2: extract_only không gen layout → ẩn. */
+  const layoutReady =
+    result !== null && job.status === "done" && job.mode !== "extract_only";
   const regions = (job.result?.pages ?? []).flatMap((p) => p.regions);
 
   return (

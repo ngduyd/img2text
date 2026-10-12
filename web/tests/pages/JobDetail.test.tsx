@@ -364,6 +364,15 @@ it("renders section-layout: preview + export below preview + original + info", a
   expect(api.downloadJobFile).toHaveBeenCalledTimes(1);
 });
 
+// P1-2 review r1: extract_only không gen layout → ẩn Section Layout + export-bar.
+it("extract_only done hides section-layout and export groups", async () => {
+  mockJob({ ...DONE_JOB, mode: "extract_only" });
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await screen.findByTestId("panel-result");
+  expect(screen.queryByTestId("section-layout")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("export-bar")).not.toBeInTheDocument();
+});
+
 /** JD2: header static trên mobile (3-4 dòng che viewport) — sticky ≥lg, bám dưới AppNav h-16. */
 it("header sticky chỉ ≥lg (mobile static) với blurred surface bg", async () => {
   mockJob(DONE_JOB);

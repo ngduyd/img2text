@@ -439,6 +439,8 @@ async def get_job(
         "page_count": job.page_count,
         "error": job.error,
         "output_format": job.output_format or "md",
+        # P1-2 review r1: web ẩn Section Layout + export nhóm layout khi extract_only
+        "mode": job.mode or "layout",
         "result": job.result if job.status == "done" else None,
         "created_at": job.created_at,
         "started_at": job.started_at,
