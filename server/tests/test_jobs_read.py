@@ -233,3 +233,13 @@ async def test_create_stores_filename(upload, db_session):
     assert r.status_code == 201, r.text
     job = await db_session.get(Job, r.json()["id"])
     assert job.filename == "ho-so.pdf"
+
+# --- wave2-web contract: list items thêm filename (nullable) ---
+
+async def test_list_items_include_filename(upload, auth_client):
+    from tests.conftest import TEST_PDF_3
+
+    r = await upload(TEST_PDF_3, "hop-dong.pdf", page_count=1)
+    assert r.status_code == 201, r.text
+    items = (await auth_client.get("/api/jobs")).json()["items"]
+    assert items[0]["filename"] == "hop-dong.pdf"

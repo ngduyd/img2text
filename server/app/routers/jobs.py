@@ -411,6 +411,8 @@ async def list_jobs(
             "status": j.status,
             "page_count": j.page_count,
             "file_type": j.file_type,
+            # wave2-web contract: hiển thị + toast (nullable = legacy row)
+            "filename": j.filename,
             "created_at": j.created_at,
             "error": j.error,
         }
