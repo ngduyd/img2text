@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     # OpenAI-compatible server, e.g. llm.cpp at localhost:20128).
     llm_base_url: str = "http://localhost:20128/v1"
     llm_model: str = "oc/muse-spark-1.3-contributor-free"
-    llm_timeout: int = 120
+    llm_timeout: int = 180  # LLM free chậm — 180s (2 retry → worst ~6 phút/call)
     # IR rewrite: LLM phân loại cấu trúc document (config: ir_llm_model)
     ir_llm_model: str = "oc/mimo-v2.6-flash-free"
     # Proofread dùng model riêng (khác layout model) — cùng endpoint.
