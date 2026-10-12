@@ -281,3 +281,24 @@ class OcrSuggestion(Base):
         default=lambda: datetime.now(timezone.utc),
         server_default=text("now()"),
     )
+
+class WorkerHeartbeat(Base):
+    """wave-2 #7 (spec 2026-10-14): worker liveness — 1 row/worker_id, upsert.
+
+    kind: "loop" (Colab /next loop, POST /api/worker/heartbeat) |
+    "kaggle-batch" (orchestrator marker: upsert khi spawn + mỗi poll status).
+    Hand-SQL migration (dev/prod; test tạo qua create_all):
+      CREATE TABLE IF NOT EXISTS worker_heartbeats (
+        worker_id text PRIMARY KEY,
+        kind text,
+        last_seen timestamptz NOT NULL,
+        current_job_id int null
+      );
+    """
+
+    __tablename__ = "worker_heartbeats"
+
+    worker_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    kind: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    current_job_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

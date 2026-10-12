@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import get_current_user, require_admin
-from app.core.models import Job, PageView, RequestLog, Setting, User
+from app.core.models import Job, PageView, RequestLog, Setting, User, WorkerHeartbeat
 from app.services.runtime_settings import (
     RUNTIME_SETTING_KEYS,
     get_runtime_setting_entry,
@@ -85,6 +85,36 @@ async def list_users(
             "weekly_remaining": max(wl - w, 0),
         })
     return {"items": items, "total": total}
+
+@router.get("/workers")
+async def list_workers(
+    session: AsyncSession = Depends(get_session),
+    _: User = Depends(_admin_user),
+) -> dict:
+    """wave-2 #7: heartbeat rows + silent_seconds (derived) + queue_depth.
+    Admin card "Workers" badge im lặng > 2 lease (web tự tính từ silent_seconds)."""
+    now = datetime.now(timezone.utc)
+    rows = (
+        await session.execute(
+            select(WorkerHeartbeat).order_by(WorkerHeartbeat.last_seen.desc())
+        )
+    ).scalars().all()
+    queue_depth = (
+        await session.scalar(select(func.count()).where(Job.status == "queued"))
+    ) or 0
+    return {
+        "items": [
+            {
+                "worker_id": r.worker_id,
+                "kind": r.kind,
+                "last_seen": r.last_seen,
+                "current_job_id": r.current_job_id,
+                "silent_seconds": int((now - r.last_seen).total_seconds()),
+            }
+            for r in rows
+        ],
+        "queue_depth": queue_depth,
+    }
 
 class QuotaPatch(BaseModel):
     # StrictInt: "5" must 422 (không coerce); range check → detail VN dưới đây

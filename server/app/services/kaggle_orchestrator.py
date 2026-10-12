@@ -42,9 +42,10 @@ from pathlib import Path
 
 from pydantic import ValidationError
 from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.config import settings
-from app.core.models import Job
+from app.core.models import Job, WorkerHeartbeat
 from app.core.schemas import IMAGE_MARKER, ResultBody
 from app.services.job_results import store_batch_result
 from app.services.runtime_settings import get_runtime_setting
@@ -199,6 +200,31 @@ async def _count_queued(session_factory) -> int:
             select(func.count()).where(Job.status == "queued")
         )
         return int(result.scalar_one())
+
+async def _touch_batch_heartbeat(
+    session_factory, current_job_id: int | None = None
+) -> None:
+    """wave-2 #7: orchestrator marker — upsert row worker_id="kaggle-batch"
+    kind="kaggle-batch" khi spawn + mỗi poll status. Telemetry only: lỗi
+    DB không được phá spawn/poll (warning + bỏ qua)."""
+    try:
+        async with session_factory() as session:
+            now = datetime.now(timezone.utc)
+            await session.execute(
+                pg_insert(WorkerHeartbeat)
+                .values(
+                    worker_id="kaggle-batch", kind="kaggle-batch",
+                    last_seen=now, current_job_id=current_job_id,
+                )
+                .on_conflict_do_update(
+                    index_elements=[WorkerHeartbeat.worker_id],
+                    set_={"kind": "kaggle-batch", "last_seen": now,
+                          "current_job_id": current_job_id},
+                )
+            )
+            await session.commit()
+    except Exception:
+        logger.warning("kaggle batch: heartbeat upsert lỗi", exc_info=True)
 
 # --- Plan K5: batch mode (kaggle_mode="batch") ---
 
@@ -560,6 +586,8 @@ async def _spawn_batch_run(api, session_factory, jobs: list[Job]) -> bool:
         "job_ids": marked,
         "ingest_failures": 0,
     }
+    # wave-2 #7: spawn → mark worker kaggle-batch sống (admin card)
+    await _touch_batch_heartbeat(session_factory, marked[0] if marked else None)
     return True
 
 async def _revert_job_queued(session_factory, job_id: int, why: str) -> None:
@@ -724,6 +752,8 @@ async def _poll_batch_run(api, session_factory, run: dict) -> None:
     queued + warning."""
     ref = str(run["ref"])
     job_ids: list[int] = list(run["job_ids"])
+    # wave-2 #7: mỗi poll status → refresh last_seen của marker kaggle-batch
+    await _touch_batch_heartbeat(session_factory, job_ids[0] if job_ids else None)
     status = _norm_status(await asyncio.to_thread(api.kernels_status, ref))
     if status == "complete":
         try:

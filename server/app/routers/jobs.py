@@ -17,13 +17,14 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import get_current_user, get_runner_key, require_ocr
 from app.core.limiter import DailyCounter
-from app.core.models import DocumentVersion, Job, OcrSuggestion, User
+from app.core.models import DocumentVersion, Job, OcrSuggestion, User, WorkerHeartbeat
 from app.core.schemas import PreprocessIn, ResultBody
 from app.services import proofread
 from app.services.doc_versions import (
@@ -1106,6 +1107,45 @@ async def restore_version(
         detached=False, session=session,
     )
     return Response(status_code=204)
+
+# --- wave-2 #7: POST /api/worker/heartbeat (liveness upsert, runner key) -----
+
+class WorkerHeartbeatBody(BaseModel):
+    worker_id: str
+    # "loop" mặc định (Colab loop); orchestrator ghi trực tiếp kind="kaggle-batch"
+    kind: str = "loop"
+    current_job_id: int | None = None
+
+@router.post("/api/worker/heartbeat")
+async def worker_heartbeat(
+    body: WorkerHeartbeatBody,
+    _: str = Depends(get_runner_key),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """spec 2026-10-14 #7: upsert last_seen/current_job_id (1 row/worker_id).
+    Auth = runner key (cùng worker surface với GET /api/jobs/next — loop
+    chưa có per-job token khi bắt đầu heartbeat)."""
+    worker_id = body.worker_id.strip()
+    kind = body.kind.strip() or "loop"
+    if not worker_id or len(worker_id) > 100 or len(kind) > 20:
+        raise HTTPException(status_code=422, detail="worker_id không hợp lệ.")
+    now = _utcnow()
+    await session.execute(
+        pg_insert(WorkerHeartbeat)
+        .values(
+            worker_id=worker_id,
+            kind=kind,
+            last_seen=now,
+            current_job_id=body.current_job_id,
+        )
+        .on_conflict_do_update(
+            index_elements=[WorkerHeartbeat.worker_id],
+            set_={"kind": kind, "last_seen": now,
+                  "current_job_id": body.current_job_id},
+        )
+    )
+    await session.commit()
+    return {"last_seen": now.isoformat()}
 
 # --- Worker protocol: heartbeat / result / fail (Task 4) ---
 
