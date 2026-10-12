@@ -204,7 +204,7 @@ async def test_auto_gen_snapshots_previous_md_layout(
     st = app.state.storage
     await st.put(f"exports/{jid}/md-layout", b"# ban cu")
 
-    async def fake_md(job_id, job, ir_sink=None):
+    async def fake_md(job_id, job, ir_sink=None, storage=None):
         return b"# ban moi"
 
     async def fake_docx(job_id, job, ir_sink=None):
@@ -235,7 +235,7 @@ async def test_auto_gen_snapshots_previous_docx_layout(
     st = app.state.storage
     await st.put(f"exports/{jid}/docx-layout", b"docx ban cu")
 
-    async def fake_md(job_id, job, ir_sink=None):
+    async def fake_md(job_id, job, ir_sink=None, storage=None):
         return b"# ban moi"
 
     async def fake_docx(job_id, job, ir_sink=None):
@@ -265,7 +265,7 @@ async def test_auto_gen_overwrites_stale_artifacts(
     await st.put(f"exports/{jid}/md-layout", b"# ban cu")
     await st.put(f"exports/{jid}/docx-layout", b"docx ban cu")
 
-    async def fake_md(job_id, job, ir_sink=None):
+    async def fake_md(job_id, job, ir_sink=None, storage=None):
         return b"# ban moi"
 
     async def fake_docx(job_id, job, ir_sink=None):

@@ -165,7 +165,7 @@ async def test_build_md_llm_down_warns_not_raises(monkeypatch, VALID_RESULT_JSON
     )
     out = await build_md(VALID_RESULT_JSONB)
     assert out
-    assert any("LLM IR failed" in r.getMessage() for r in caplog.records)
+    assert any("HEURISTIC FALLBACK" in r.getMessage() for r in caplog.records)
 
 
 async def test_build_md_retries_without_response_format(
