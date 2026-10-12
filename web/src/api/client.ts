@@ -76,6 +76,10 @@ const TYPE_BY_EXT: Record<string, string> = {
   png: "image/png",
   webp: "image/webp",
   pdf: "application/pdf",
+  // Lane B Task 5 (spec #1): ảnh phone — server CONTENT_TYPE_BY_EXT cùng value.
+  heic: "image/heic",
+  heif: "image/heif",
+  avif: "image/avif",
 };
 
 /** Content hash cho content-addressed key (uploads/{sha256}.{ext}). */

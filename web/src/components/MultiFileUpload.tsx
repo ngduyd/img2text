@@ -15,6 +15,16 @@ interface Entry {
   pages?: number[];
 }
 
+/** Ảnh (spec #1): jpg/png + ảnh phone heic/heif/avif — 1 file thô upload thẳng
+ * (pdf-lib không embed được HEIC/AVIF → chỉ merge khi ≥2 file). */
+const IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/heic",
+  "image/heif",
+  "image/avif",
+]);
+
 /**
  * Spec U1: multi-file (ảnh + PDF) với card per file, cap 25 trang, Gửi gộp → 1 PDF.
  * Crop/page-select là seam qua props — wizard cũ (lane R2) không bị đụng tới.
@@ -67,7 +77,7 @@ export default function MultiFileUpload({
     if (!files || disabled) return;
     let running = total(entriesRef.current);
     for (const f of Array.from(files)) {
-      if (f.type === "image/png" || f.type === "image/jpeg") {
+      if (IMAGE_TYPES.has(f.type)) {
         if (running + 1 > MAX_PAGES) {
           toast.error(`Tối đa ${MAX_PAGES} trang mỗi lần gửi.`);
           continue;
@@ -160,6 +170,15 @@ export default function MultiFileUpload({
     setBusy(true);
     try {
       if (beforeSubmit && !(await beforeSubmit())) return;
+      // 1 ảnh → gửi nguyên file (giữ đuôi + Content-Type; server rasterize —
+      // pdf-lib không embed HEIC/AVIF, và merged PDF + đuôi .png dính magic-sniff 422).
+      const single = entries.length === 1 ? entries[0] : undefined;
+      if (single?.kind === "image") {
+        const okSingle = await onSubmit(single.blob, { page_count: 1, filename: single.name });
+        if (okSingle === false) return;
+        clear();
+        return;
+      }
       const pdf = await mergeToPdf(
         entries.map((e) => ({ kind: e.kind, blob: e.blob, name: e.name, pages: e.pages })),
       );
@@ -214,7 +233,7 @@ export default function MultiFileUpload({
           data-testid="muf-input"
           type="file"
           multiple
-          accept="image/png,image/jpeg,application/pdf"
+          accept="image/png,image/jpeg,image/heic,image/heif,image/avif,application/pdf"
           className="hidden"
           disabled={disabled}
           onChange={(e) => {
