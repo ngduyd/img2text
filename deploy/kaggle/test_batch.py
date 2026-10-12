@@ -327,7 +327,7 @@ def test_wheelhouse_deps_include_rembg():
     """WS-PIPE P0: venv wheelhouse phải cài rembg — thiếu → extract_crops
     ImportError → crops={} im im."""
     src = BATCH_SCRIPT.read_text(encoding="utf-8")
-    m = re.search(r"WHEELHOUSE_DEPS = \[(.*?)\]", src, re.S)
+    m = re.search(r"WHEELHOUSE_DEPS = \[(.*?)\n\]", src, re.S)  # ,*? dừng ở ']' trong 'doc-parser]'
     assert m and '"rembg"' in m.group(1)
     assert "import paddle, paddleocr, rembg" in src  # repair/verify check
 
