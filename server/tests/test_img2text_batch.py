@@ -276,3 +276,16 @@ def test_apply_preprocess_real_png_select_rotate_closes_handles(tmp_path, monkey
         assert im.size == (20, 10)  # 90° CW → swap w/h, file đã lưu
     assert p1.exists() and p2.exists()
     assert opened and all(s.closed for s in opened), "Image.open phải đóng (with)"
+
+def test_rasterize_exif_orientation_6_transposed(tmp_path):
+    """EXIF-rotate trước OCR (spec §9b): JPEG 100x50 orientation=6 →
+    page PNG 50x100 (transpose áp orientation trước khi OCR đọc pixels)."""
+    from PIL import Image
+
+    src = tmp_path / "rot.jpg"
+    exif = Image.Exif()
+    exif[0x0112] = 6  # Orientation: rotate 90 CW để hiển thị đúng
+    Image.new("RGB", (100, 50), "red").save(src, "JPEG", exif=exif)
+    out = kb.rasterize_to_pages(str(src), str(tmp_path / "raw"))
+    with Image.open(out[0]) as im:
+        assert im.size == (50, 100)

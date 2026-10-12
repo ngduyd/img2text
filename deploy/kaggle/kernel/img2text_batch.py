@@ -582,7 +582,12 @@ def fetch_manifest_jobs(jobs: list[dict], dest_dir: str,
     return out
 
 def rasterize_to_pages(input_path: str, raw_dir: str) -> list[str]:
-    """Input → page_0001.png.. (raw_dir); returns sorted page paths."""
+    """Input → page_0001.png.. (raw_dir); returns sorted page paths.
+
+    EXIF-rotate trước OCR: ảnh JPEG orientation tag (phone camera) được
+    exif_transpose → PNG đúng chiều thật (OCR đọc pixels, không đọc EXIF)."""
+    from PIL import Image, ImageOps
+
     os.makedirs(raw_dir, exist_ok=True)
     with open(input_path, "rb") as f:
         data = f.read()
@@ -598,7 +603,8 @@ def rasterize_to_pages(input_path: str, raw_dir: str) -> list[str]:
             with open(p, "wb") as f:
                 f.write(png)
         else:  # jpg/webp input → PNG (OCR phase globs page_*.png)
-            Image.open(io.BytesIO(png)).save(p, "PNG")
+            with Image.open(io.BytesIO(png)) as im:
+                ImageOps.exif_transpose(im).save(p, "PNG")
         out.append(p)
     return out
 
@@ -612,7 +618,7 @@ def _apply_preprocess(page_paths: list[str], preprocess: dict | None
     (R55 — normalize derive page_no từ tên, không renumber); trang bị loại
     bị XÓA khỏi disk. rotate: {"<page>": 90|180|270} xoay tại chỗ (0/absent
     = bytes giữ nguyên). None/pages thiếu → giữ nguyên mọi trang."""
-    from PIL import Image
+    from PIL import Image, ImageOps
     if not preprocess:
         return page_paths
     pages_sel = preprocess.get("pages")
@@ -628,7 +634,9 @@ def _apply_preprocess(page_paths: list[str], preprocess: dict | None
         if v in cw:
             # review r1 P1-5: `with` đóng handle (Image.open fp leak khi loop nhiều trang)
             with Image.open(p) as im:
-                im.transpose(cw[v]).save(p, "PNG")
+                # exif_transpose trước xoay: PNG page đã transpose ở
+                # rasterize → no-op ở đây (defensive cho mount fallback)
+                ImageOps.exif_transpose(im).transpose(cw[v]).save(p, "PNG")
         out.append(p)
     return out
 
