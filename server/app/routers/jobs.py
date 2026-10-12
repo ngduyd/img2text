@@ -188,6 +188,26 @@ def _validate_output_settings(output_format: str, mode: str) -> None:
     if mode not in ("layout", "extract_only"):
         raise HTTPException(status_code=422, detail="Chế độ xử lý không hợp lệ.")
 
+def _sniff_kind(data: bytes) -> str | None:
+    """Magic-byte cross-check vs declared ext (spec 2026-10-13 §9b): metadata
+    is primary, sniff catches real mismatches ('.jpg' containing %PDF →
+    kernel 'cannot identify image file'). None = unidentified → pass
+    (no false positives on legit files with odd prefixes)."""
+    if data.startswith(b"%PDF"):
+        return "pdf"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    brand = data[4:12]  # ISO-BMFF ftyp brand (heic/heix/mif1/avif...)
+    if b"heic" in brand or b"heix" in brand or b"mif1" in brand:
+        return "heic"
+    if b"avif" in brand:
+        return "avif"
+    return None
+
 def _bad_page_count(ext: str, page_count: int) -> str | None:
     """pdf → ≤ settings.max_pages (P2-5: 1 config); image = 1 (rasterization
     always yields one page). None = ok."""
@@ -292,6 +312,16 @@ async def create_job(
         # oversize object = junk, xóa ngay (content-addressed key dedupe).
         await storage.delete_prefix(body.storage_key)
         raise HTTPException(status_code=422, detail="File vượt quá 50MB.")
+    # Magic-byte cross-check (spec §9b): metadata là primary, sniff chặn
+    # file sai đuôi thật sự; unidentified bytes pass (no false positive).
+    sniff_ext = {"jpeg": "jpg"}.get(ext, ext)
+    kind = _sniff_kind(await storage.get(body.storage_key))
+    if kind is not None and kind != sniff_ext:
+        await storage.delete_prefix(body.storage_key)
+        raise HTTPException(
+            status_code=422,
+            detail=f"File (.{ext}) không khớp nội dung file ({kind} thật)",
+        )
     bad = _bad_page_count(ext, body.page_count)
     if bad is not None:
         raise HTTPException(status_code=422, detail=bad)
