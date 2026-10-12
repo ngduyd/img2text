@@ -157,6 +157,8 @@ export const api = {
   listJobs: (page = 1, page_size = 10) =>
     request<JobsPage>(`/api/jobs?page=${page}&page_size=${page_size}`),
   getJob: (id: number | string) => request<Job>(`/api/jobs/${id}`),
+  // Spec #8: Document IR JSON (404 khi chưa render — UI ẩn nút copy).
+  getIr: (id: number | string) => request<Record<string, unknown>>(`/api/jobs/${id}/ir`),
   // R2 presign: sanity-check metadata → presigned PUT URL — browser PUTs
   // ArrayBuffer thẳng vào storage (không chạm backend).
   presignUpload: (body: {
