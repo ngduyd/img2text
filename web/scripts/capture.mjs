@@ -40,7 +40,11 @@ function waitForServer(url, tries = 60) {
   })();
 }
 
-function chromeShot(url, file) {
+/** Shot viewport cao — thấy cả 2 section (Văn bản + Layout) của JobDetail. */
+function chromeShotTall(url, file) {
+  return chromeShot(url, file, { height: 2600 });
+}
+function chromeShot(url, file, opts = {}) {
   return new Promise((resolve, reject) => {
     const args = [
       "--headless=new",
@@ -48,7 +52,7 @@ function chromeShot(url, file) {
       "--disable-dev-shm-usage",
       "--disable-gpu",
       `--screenshot=${file}`,
-      "--window-size=1440,900",
+      `--window-size=1440,${opts.height || 900}`,
       "--hide-scrollbars",
       "--virtual-time-budget=10000",
       url,
@@ -112,10 +116,13 @@ try {
       `${OUT}/jobdetail-vanban.png`,
     );
     console.log("shot:", `${OUT}/jobdetail-vanban.png`);
-    // jobdetail-layout cùng trang (khung layout nằm dưới khung văn bản —
-    // cần scroll; Chrome CLI screenshot viewport nên để trống, thêm khi có
-    // tool chụp full-page).
-    console.log("skip: jobdetail-layout.png (cần full-page screenshot)");
+    // jobdetail-layout: cùng trang /jobs/1 nhưng khung Layout nằm DƯỚI section
+    // Văn bản → viewport cao (1440x2600) để thấy cả 2 section trong 1 ảnh.
+    await chromeShotTall(
+      `http://localhost:${SEED_PORT}/jobs/1`,
+      `${OUT}/jobdetail-layout.png`,
+    );
+    console.log("shot:", `${OUT}/jobdetail-layout.png`);
   } else {
     console.log("skip: jobdetail-*.png — chưa có job thật, upload ảnh trước rồi chạy lại");
   }

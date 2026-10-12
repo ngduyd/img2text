@@ -87,8 +87,8 @@ const FEATURES: Feature[] = [
     className: "bg-accent/10 border-accent/30",
   },
   {
-    title: "Năm định dạng xuất",
-    body: "Markdown, DOCX, PDF, cộng bản giữ nguyên layout cho Markdown và DOCX.",
+    title: "Sáu định dạng xuất",
+    body: "Markdown, HTML, DOCX, PDF, cộng bản giữ nguyên layout cho Markdown và DOCX.",
   },
   {
     title: "Quota minh bạch",
@@ -156,7 +156,7 @@ export default function Landing() {
         </motion.div>
         <Reveal delay={0.15}>
           <Shot
-            src="/screenshots/landing.png"
+            src="/screenshots/landing-hero.png"
             alt="Giao diện img2text trên nền tối"
             caption="Toàn bộ trang trên nền tối."
           />
