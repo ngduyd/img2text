@@ -239,9 +239,11 @@ if __name__ == "__main__":
         text=True,
     )
     if _paddle_check.returncode != 0:
+        # hiện stderr thật — cài đặt OK nhưng import fail là lỗi khác hẳn
+        # (driver/CUDA/lib missing); message chung chung khiến log mù nguyên nhân.
+        detail = (_paddle_check.stderr or "").strip()[-1500:] or _paddle_check.stdout.strip()[-1500:]
         raise SystemExit(
-            "venv py3.12/paddle không cài được — kiểm tra GPU/quota Kaggle + "
-            "internet=true trong kernel Settings"
+            "venv py3.12/paddle: import FAIL (đã cài xong) — stderr:\n" + detail
         )
     print(f"venv paddle: {_paddle_check.stdout.strip()} (version, cuda_build)")
 
