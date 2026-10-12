@@ -659,7 +659,6 @@ async def _ingest_complete_run(api, session_factory, run: dict) -> None:
             api.kernels_output, ref, path=str(out_dir), quiet=False
         )
         for job_id in run["job_ids"]:
-            await _ingest_batch_crops(job_id, out_dir)  # optional, partial-fail
             try:
                 await _ingest_batch_result(session_factory, job_id, out_dir)
             except FileNotFoundError:
@@ -676,6 +675,9 @@ async def _ingest_complete_run(api, session_factory, run: dict) -> None:
                     error, exc, job_id,
                 )
                 await _fail_job_extracting(session_factory, job_id, error)
+            else:
+                # crops SAU result OK — result fail → không put (tránh mồ côi)
+                await _ingest_batch_crops(job_id, out_dir)  # optional, partial-fail
     finally:
         shutil.rmtree(out_dir, ignore_errors=True)
 
