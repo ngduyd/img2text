@@ -6,6 +6,7 @@ app.state.session_factory (set here). Routers mount order: auth, profile
 (same /api/auth prefix), admin, jobs, exports, region_edit.
 """
 
+import logging
 import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -24,6 +25,16 @@ from app.services.storage import build_storage
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # optional dep: HEIC/HEIF decode cho pipeline; thiếu → warning, heic
+    # upload sẽ fail ở rasterize thay vì fail boot.
+    try:
+        import pillow_heif
+
+        pillow_heif.register_heif_opener()
+    except ImportError:
+        logging.getLogger(__name__).warning(
+            "pillow-heif không cài — HEIC/HEIF không decode được"
+        )
     # ponytail: single create_all until schema stabilizes; upgrade to
     # Alembic before first deploy (Plan B adds jobs table).
     async with engine.begin() as conn:

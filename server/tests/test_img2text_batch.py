@@ -39,6 +39,15 @@ def test_find_inputs_parses_job_prefix_sorted_and_skips(tmp_path, capsys):
     assert "noprefix.png" in capsys.readouterr().out  # skip is logged
 
 
+def test_process_job_param_does_not_shadow_preprocess_fn():
+    """Version 20 'NoneType' object is not callable: param `preprocess` của
+    process_job shadow module fn preprocess(path, out_path) → dòng
+    pre_info[name] = preprocess(p, ...) gọi None (đúng NoneType callable)."""
+    import inspect
+
+    assert callable(kb.preprocess)
+    assert "preprocess" not in inspect.signature(kb.process_job).parameters
+
 def test_find_inputs_empty_root_returns_empty(tmp_path):
     assert kb.find_inputs(str(tmp_path)) == []
 
@@ -267,3 +276,62 @@ def test_apply_preprocess_real_png_select_rotate_closes_handles(tmp_path, monkey
         assert im.size == (20, 10)  # 90° CW → swap w/h, file đã lưu
     assert p1.exists() and p2.exists()
     assert opened and all(s.closed for s in opened), "Image.open phải đóng (with)"
+
+def test_rasterize_exif_orientation_6_transposed(tmp_path):
+    """EXIF-rotate trước OCR (spec §9b): JPEG 100x50 orientation=6 →
+    page PNG 50x100 (transpose áp orientation trước khi OCR đọc pixels)."""
+    from PIL import Image
+
+    src = tmp_path / "rot.jpg"
+    exif = Image.Exif()
+    exif[0x0112] = 6  # Orientation: rotate 90 CW để hiển thị đúng
+    Image.new("RGB", (100, 50), "red").save(src, "JPEG", exif=exif)
+    out = kb.rasterize_to_pages(str(src), str(tmp_path / "raw"))
+    with Image.open(out[0]) as im:
+        assert im.size == (50, 100)
+
+def test_rasterize_heif_input_decodes(tmp_path):
+    """review r1 P0-2: kernel nhận .heif/.heic (server cho phép) —
+    rasterize register pillow_heif opener; env thiếu lib → skip."""
+    pillow_heif = pytest.importorskip("pillow_heif")
+    from PIL import Image
+
+    src = tmp_path / "anh.heif"
+    # HeifFile.save ghi bytes trực tiếp — KHÔNG register opener vào PIL
+    # process test → Image.open chỉ mở được nhờ kernel tự register (RED thật).
+    pillow_heif.from_pillow(Image.new("RGB", (8, 8), "red")).save(str(src))
+    out = kb.rasterize_to_pages(str(src), str(tmp_path / "raw"))
+    assert len(out) == 1
+    with Image.open(out[0]) as im:
+        assert im.size == (8, 8)
+
+def test_rasterize_image_input_closes_handles(tmp_path, monkeypatch):
+    """review r1 P2: Image.open đầu tiên trong rasterize (đọc size) phải
+    được close — spy mọi handle mở ra."""
+    from PIL import Image
+
+    opened: list = []
+    real_open = Image.open
+
+    class _Spy:
+        def __init__(self, fp, *a, **k):
+            self._im = real_open(fp, *a, **k)
+            self.closed = False
+            opened.append(self)
+
+        def __getattr__(self, name):
+            return getattr(self._im, name)
+
+        def __enter__(self):
+            return self._im
+
+        def __exit__(self, *exc):
+            self._im.close()
+            self.closed = True
+            return False
+
+    monkeypatch.setattr(Image, "open", lambda fp, *a, **k: _Spy(fp, *a, **k))
+    src = tmp_path / "in.jpg"
+    Image.new("RGB", (10, 6), "red").save(src, "JPEG")
+    kb.rasterize_to_pages(str(src), str(tmp_path / "raw"))
+    assert opened and all(s.closed for s in opened), "mọi Image.open phải đóng"

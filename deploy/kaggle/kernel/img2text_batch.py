@@ -138,6 +138,7 @@ WHEELHOUSE_DEPS = [
     "pymupdf", "paddlepaddle-gpu==3.2.1", "paddleocr[doc-parser]>=3.6.0",
     "safetensors", "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
     "rembg[cpu]",  # WS-PIPE crop — thiếu → extract_crops ImportError
+    "pillow-heif",  # review r1 P0-2 — server cho phép heic/heif; thiếu → Image.open chết
 ]
 
 def _find_wheelhouse() -> str | None:
@@ -176,6 +177,7 @@ if __name__ == "__main__":
             sys.executable, "-m", "pip", "install", "-q",
             "pillow", "numpy", "opencv-python-headless", "rapidfuzz", "PyMuPDF",
             "rembg[cpu]",  # WS-PIPE: crop remove-background (u2net, model cache U2NET_HOME)
+            "pillow-heif",  # review r1 P0-2: rasterize ở PARENT phase — heic/heif decode
         ],
         check=False,
     )
@@ -197,14 +199,14 @@ if __name__ == "__main__":
             # Repair: wheelhouse drift (thiếu paddle/doc-parser extras) →
             # cài full recipe proven từ network (paddle cu126 + doc-parser stack).
             if subprocess.run(
-                [VENV_PY, "-c", "import paddle, paddleocr, rembg"], capture_output=True
+                [VENV_PY, "-c", "import paddle, paddleocr, rembg, pillow_heif"], capture_output=True
             ).returncode != 0:
                 print("[batch] wheelhouse thiếu deps — repair full recipe từ network", flush=True)
                 for cmd in (
                     ["uv", "pip", "install", "--python", VENV_PY,
                      "paddlepaddle-gpu==3.2.1", "--extra-index-url", PADDLE_PPU_INDEX],
                     ["uv", "pip", "install", "--python", VENV_PY,
-                     "paddleocr[doc-parser]>=3.6.0", "safetensors",
+                     "paddleocr[doc-parser]>=3.6.0", "safetensors", "pillow-heif",
                      "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
                      "rembg[cpu]"],
                 ):
@@ -218,7 +220,7 @@ if __name__ == "__main__":
                 ],
                 [
                     "uv", "pip", "install", "--python", VENV_PY,
-                    "paddleocr[doc-parser]>=3.6.0", "safetensors",
+                    "paddleocr[doc-parser]>=3.6.0", "safetensors", "pillow-heif",
                     "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
                     "rembg[cpu]",
                 ],
@@ -233,7 +235,7 @@ if __name__ == "__main__":
         )
 
     _paddle_check = subprocess.run(
-        [VENV_PY, "-c", "import paddle, paddleocr, rembg; print(paddle.__version__, paddle.device.is_compiled_with_cuda())"],
+        [VENV_PY, "-c", "import paddle, paddleocr, rembg, pillow_heif; print(paddle.__version__, paddle.device.is_compiled_with_cuda())"],
         check=False,
         capture_output=True,
         text=True,
@@ -581,16 +583,32 @@ def fetch_manifest_jobs(jobs: list[dict], dest_dir: str,
         out.append((job_id, fallback, None))  # mount fallback: không có manifest → không preprocess
     return out
 
+def _register_heif_opener() -> None:
+    """review r1 P0-2: server cho phép heic/heif nhưng Pillow native không
+    decode HEIF — pillow-heif optional (wheelhouse + network recipe). Import
+    lỗi → bỏ qua (env không có lib; AVIF Pillow native)."""
+    try:
+        import pillow_heif
+    except ImportError:
+        return
+    pillow_heif.register_heif_opener()
+
 def rasterize_to_pages(input_path: str, raw_dir: str) -> list[str]:
-    """Input → page_0001.png.. (raw_dir); returns sorted page paths."""
+    """Input → page_0001.png.. (raw_dir); returns sorted page paths.
+
+    EXIF-rotate trước OCR: ảnh JPEG orientation tag (phone camera) được
+    exif_transpose → PNG đúng chiều thật (OCR đọc pixels, không đọc EXIF)."""
+    from PIL import Image, ImageOps
+
+    _register_heif_opener()
     os.makedirs(raw_dir, exist_ok=True)
     with open(input_path, "rb") as f:
         data = f.read()
     if input_path.lower().endswith(".pdf"):
         raster = default_pdftoppm(data, "pdf")
     else:
-        im = Image.open(io.BytesIO(data))
-        raster = [(data, im.size[0], im.size[1])]
+        with Image.open(io.BytesIO(data)) as im:
+            raster = [(data, im.size[0], im.size[1])]
     out = []
     for i, (png, _w, _h) in enumerate(raster, 1):
         p = os.path.join(raw_dir, f"page_{i:04d}.png")
@@ -598,12 +616,13 @@ def rasterize_to_pages(input_path: str, raw_dir: str) -> list[str]:
             with open(p, "wb") as f:
                 f.write(png)
         else:  # jpg/webp input → PNG (OCR phase globs page_*.png)
-            Image.open(io.BytesIO(png)).save(p, "PNG")
+            with Image.open(io.BytesIO(png)) as im:
+                ImageOps.exif_transpose(im).save(p, "PNG")
         out.append(p)
     return out
 
 
-def _apply_preprocess(page_paths: list[str], preprocess: dict | None
+def _apply_preprocess(page_paths: list[str], preprocess_spec: dict | None
                       ) -> list[str]:
     """Chọn trang + xoay CLOCKWISE trước OCR (wave-2 #4; worker loop
     _apply_preprocess pattern — bản file-based).
@@ -612,11 +631,12 @@ def _apply_preprocess(page_paths: list[str], preprocess: dict | None
     (R55 — normalize derive page_no từ tên, không renumber); trang bị loại
     bị XÓA khỏi disk. rotate: {"<page>": 90|180|270} xoay tại chỗ (0/absent
     = bytes giữ nguyên). None/pages thiếu → giữ nguyên mọi trang."""
-    from PIL import Image
-    if not preprocess:
+    from PIL import Image, ImageOps
+    _register_heif_opener()
+    if not preprocess_spec:
         return page_paths
-    pages_sel = preprocess.get("pages")
-    rotate = preprocess.get("rotate") or {}
+    pages_sel = preprocess_spec.get("pages")
+    rotate = preprocess_spec.get("rotate") or {}
     cw = {90: Image.ROTATE_270, 180: Image.ROTATE_180, 270: Image.ROTATE_90}
     out: list[str] = []
     for p in page_paths:
@@ -628,7 +648,9 @@ def _apply_preprocess(page_paths: list[str], preprocess: dict | None
         if v in cw:
             # review r1 P1-5: `with` đóng handle (Image.open fp leak khi loop nhiều trang)
             with Image.open(p) as im:
-                im.transpose(cw[v]).save(p, "PNG")
+                # exif_transpose trước xoay: PNG page đã transpose ở
+                # rasterize → no-op ở đây (defensive cho mount fallback)
+                ImageOps.exif_transpose(im).transpose(cw[v]).save(p, "PNG")
         out.append(p)
     return out
 
@@ -769,7 +791,8 @@ def normalize(raw_paths: list[str], pre_info: dict,
     return pages_out, problems
 
 
-def process_job(job_id: int, input_path: str, preprocess: dict | None = None) -> None:
+def process_job(job_id: int, input_path: str,
+                preprocess_spec: dict | None = None) -> None:
     """ONE staged input → pages → precheck gate → OCR → {job_id}_result.{json,md}.
 
     Per-job work dirs: page files are keyed page_0001.png — jobs sharing a
@@ -783,7 +806,7 @@ def process_job(job_id: int, input_path: str, preprocess: dict | None = None) ->
     os.makedirs(pre_dir, exist_ok=True)
 
     raw_paths = _apply_preprocess(
-        rasterize_to_pages(input_path, raw_dir), preprocess
+        rasterize_to_pages(input_path, raw_dir), preprocess_spec
     )
     print(f"job {job_id}: rendered {len(raw_paths)} trang")
 

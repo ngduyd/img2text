@@ -62,6 +62,9 @@ _CONTENT_TYPES = {
     "png": "image/png",
     "webp": "image/webp",
     "pdf": "application/pdf",
+    "heic": "image/heic",
+    "heif": "image/heif",
+    "avif": "image/avif",
 }
 
 async def upload_job(

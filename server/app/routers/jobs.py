@@ -49,7 +49,7 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 # Spec 2026-10-10 sanity bound (was 50 on the removed server-side parse):
 # the client counts pages with pdf.js; presign/create check the METADATA.
 # P2-5: cap = settings.max_pages (1 config; default = kernel hard cap 100).
-ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "pdf"}
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "pdf", "heic", "heif", "avif"}
 # ext → canonical Content-Type (R2): presign binds the declared type to the
 # extension allowlist; the Plan V download route reuses the same map.
 CONTENT_TYPE_BY_EXT = {
@@ -58,11 +58,14 @@ CONTENT_TYPE_BY_EXT = {
     "png": "image/png",
     "webp": "image/webp",
     "pdf": "application/pdf",
+    "heic": "image/heic",
+    "heif": "image/heif",
+    "avif": "image/avif",
 }
 # content-addressed keys ONLY (sha256 hex from presign; legacy multipart keys
 # were built the same way) — trust boundary: a crafted key must not point the
 # create head-check at arbitrary storage paths.
-STORAGE_KEY_RE = re.compile(r"uploads/[0-9a-f]{64}\.(?:jpg|jpeg|png|webp|pdf)")
+STORAGE_KEY_RE = re.compile(r"uploads/[0-9a-f]{64}\.(?:jpg|jpeg|png|webp|pdf|heic|heif|avif)")
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 PRESIGN_EXPIRES_SECONDS = 3600
 LEASE_MINUTES = 45
@@ -188,6 +191,33 @@ def _validate_output_settings(output_format: str, mode: str) -> None:
     if mode not in ("layout", "extract_only"):
         raise HTTPException(status_code=422, detail="Chế độ xử lý không hợp lệ.")
 
+def _sniff_kind(data: bytes) -> str | None:
+    """Magic-byte cross-check vs declared ext (spec 2026-10-13 §9b): metadata
+    is primary, sniff catches real mismatches ('.jpg' containing %PDF →
+    kernel 'cannot identify image file'). None = unidentified → pass
+    (no false positives on legit files with odd prefixes)."""
+    if data.startswith(b"%PDF"):
+        return "pdf"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    # ISO-BMFF ftyp: quét TOÀN BỘ box — major brand alone miss avif file
+    # major-brand mif1 (generic container); avif/avis check TRƯỚC mif1.
+    box_size = int.from_bytes(data[:4], "big")
+    ftyp = (
+        data[4:box_size]
+        if data[4:8] == b"ftyp" and box_size <= len(data)
+        else data[4:12]
+    )
+    if b"avif" in ftyp or b"avis" in ftyp:
+        return "avif"
+    if b"heic" in ftyp or b"heix" in ftyp or b"mif1" in ftyp:
+        return "heic"
+    return None
+
 def _bad_page_count(ext: str, page_count: int) -> str | None:
     """pdf → ≤ settings.max_pages (P2-5: 1 config); image = 1 (rasterization
     always yields one page). None = ok."""
@@ -292,6 +322,19 @@ async def create_job(
         # oversize object = junk, xóa ngay (content-addressed key dedupe).
         await storage.delete_prefix(body.storage_key)
         raise HTTPException(status_code=422, detail="File vượt quá 50MB.")
+    # Magic-byte cross-check (spec §9b): metadata là primary, sniff chặn
+    # file sai đuôi thật sự; unidentified bytes pass (no false positive).
+    sniff_ext = {"jpeg": "jpg"}.get(ext, ext)
+    kind = _sniff_kind(await storage.get(body.storage_key))
+    # heic/heif là CÙNG 1 định dạng (brand "heic" cho cả 2 đuôi) — normalize
+    # thành 1 nhóm trước khi so, không 422 oan file .heif thật.
+    heif_bytes = kind == "heic" and sniff_ext in {"heic", "heif"}
+    if kind is not None and kind != sniff_ext and not heif_bytes:
+        await storage.delete_prefix(body.storage_key)
+        raise HTTPException(
+            status_code=422,
+            detail=f"File (.{ext}) không khớp nội dung file ({kind} thật)",
+        )
     bad = _bad_page_count(ext, body.page_count)
     if bad is not None:
         raise HTTPException(status_code=422, detail=bad)
