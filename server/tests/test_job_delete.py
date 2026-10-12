@@ -134,3 +134,26 @@ async def test_delete_keeps_shared_input_until_last_job(
     assert await storage_spy.exists(key_a) is True  # job B vẫn sống → input giữ
     assert (await auth_client.delete(f"/api/jobs/{b}")).status_code == 204
     assert await storage_spy.exists(key_a) is False  # job cuối → input xóa
+
+# --- review r1 P2: DELETE nulls worker_heartbeats.current_job_id -------------
+
+async def test_delete_nulls_worker_heartbeat_current_job(
+    auth_client, upload, db_session
+):
+    from datetime import datetime, timezone
+
+    from app.core.models import WorkerHeartbeat
+
+    job_id = (await upload(TEST_JPEG, "hb.jpg", page_count=1)).json()["id"]
+    db_session.add(
+        WorkerHeartbeat(
+            worker_id="w-del", kind="loop",
+            last_seen=datetime.now(timezone.utc), current_job_id=job_id,
+        )
+    )
+    await db_session.commit()
+    assert (await auth_client.delete(f"/api/jobs/{job_id}")).status_code == 204
+    db_session.expire_all()
+    row = await db_session.get(WorkerHeartbeat, "w-del")
+    assert row is not None  # heartbeat row không crash, giữ
+    assert row.current_job_id is None  # job gone → không trỏ mồ côi

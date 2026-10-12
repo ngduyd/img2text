@@ -1135,8 +1135,11 @@ async def worker_heartbeat(
     chưa có per-job token khi bắt đầu heartbeat)."""
     worker_id = body.worker_id.strip()
     kind = body.kind.strip() or "loop"
-    if not worker_id or len(worker_id) > 100 or len(kind) > 20:
+    if not worker_id or len(worker_id) > 100:
+        # review r1 P2: tách message theo field hỏng (kind riêng, không gộp)
         raise HTTPException(status_code=422, detail="worker_id không hợp lệ.")
+    if len(kind) > 20:
+        raise HTTPException(status_code=422, detail="kind không hợp lệ.")
     now = _utcnow()
     await session.execute(
         pg_insert(WorkerHeartbeat)
@@ -1348,6 +1351,12 @@ async def delete_job(
             await storage.delete_prefix(input_key)
     await session.execute(
         delete(DocumentVersion).where(DocumentVersion.job_id == id)
+    )
+    # review r1 P2: không để heartbeat trỏ job đã xóa (row giữ, upsert tự sửa)
+    await session.execute(
+        update(WorkerHeartbeat)
+        .where(WorkerHeartbeat.current_job_id == id)
+        .values(current_job_id=None)
     )
     await session.delete(job)
     await session.commit()

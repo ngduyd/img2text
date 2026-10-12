@@ -86,6 +86,13 @@ async def list_users(
         })
     return {"items": items, "total": total}
 
+def _silent_seconds(last_seen: datetime, now: datetime) -> int:
+    """review r1 P2: last_seen naive → coi UTC (legacy row); clamp 0 khi
+    last_seen ở tương lai (clock skew) — card web không thấy số âm."""
+    if last_seen.tzinfo is None:
+        last_seen = last_seen.replace(tzinfo=timezone.utc)
+    return max(0, int((now - last_seen).total_seconds()))
+
 @router.get("/workers")
 async def list_workers(
     session: AsyncSession = Depends(get_session),
@@ -107,9 +114,9 @@ async def list_workers(
             {
                 "worker_id": r.worker_id,
                 "kind": r.kind,
-                "last_seen": r.last_seen,
+                "last_seen": r.last_seen.isoformat(),  # RFC3339 string (pin)
                 "current_job_id": r.current_job_id,
-                "silent_seconds": int((now - r.last_seen).total_seconds()),
+                "silent_seconds": _silent_seconds(r.last_seen, now),
             }
             for r in rows
         ],

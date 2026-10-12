@@ -75,3 +75,46 @@ async def test_batch_marker_upsert(db_session):
     assert len(rows) == 1
     assert rows[0].kind == "kaggle-batch"
     assert rows[0].current_job_id is None  # update đè
+
+# --- review r1 P2: 422 tách worker_id vs kind -------------------------------
+
+async def test_heartbeat_422_separates_worker_id_and_kind(worker_client):
+    r = await worker_client.post(
+        "/api/worker/heartbeat", json={"worker_id": "   "}
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"] == "worker_id không hợp lệ."
+    r = await worker_client.post(
+        "/api/worker/heartbeat",
+        json={"worker_id": "w1", "kind": "k" * 21},
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"] == "kind không hợp lệ."
+
+# --- review r1 P2: silent_seconds naive-safe + clamp 0 -----------------------
+
+def test_silent_seconds_naive_utc_and_future_clamped():
+    from app.routers.admin import _silent_seconds
+
+    now = datetime(2026, 10, 14, 12, 0, 0, tzinfo=timezone.utc)
+    # naive = UTC (legacy row đọc khỏi DB không offset) → không crash
+    assert _silent_seconds(datetime(2026, 10, 14, 11, 59, 30), now) == 30
+    # clock skew: last_seen tương lai → 0, không âm
+    assert _silent_seconds(now + timedelta(seconds=5), now) == 0
+
+async def test_admin_workers_last_seen_rfc3339_string(admin_client, db_session):
+    """Pin: last_seen ra JSON là ISO-8601 string có offset (timezone-aware)."""
+    stale = datetime.now(timezone.utc) - timedelta(seconds=30)
+    db_session.add(
+        WorkerHeartbeat(
+            worker_id="iso-1", kind="loop", last_seen=stale, current_job_id=None
+        )
+    )
+    await db_session.commit()
+    row = next(
+        x
+        for x in (await admin_client.get("/api/admin/workers")).json()["items"]
+        if x["worker_id"] == "iso-1"
+    )
+    assert isinstance(row["last_seen"], str)
+    assert datetime.fromisoformat(row["last_seen"]).utcoffset() is not None
