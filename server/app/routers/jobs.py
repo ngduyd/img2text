@@ -33,6 +33,7 @@ from app.services.doc_versions import (
     snapshot_current_layout,
 )
 from app.services.job_results import _schedule_auto_output, store_worker_result
+from app.services.quota import ensure_quota, quota_me
 from app.services.layout_sync import (
     DOCX_HTML_KEY,
     DOCX_LAYOUT_KEY,
@@ -185,11 +186,20 @@ def _bad_page_count(ext: str, page_count: int) -> str | None:
         return "Số trang không hợp lệ."
     return None
 
+@router.get("/api/quota/me")
+async def my_quota(
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """WS-ADMIN: quota hiện tại của user (widget Jobs header)."""
+    return await quota_me(session, user)
+
 @router.post("/api/jobs/presign")
 async def presign_upload(
     body: PresignBody,
     user: User = Depends(_ocr_user),
     storage: StorageDriver = Depends(get_storage),
+    session: AsyncSession = Depends(get_session),
 ) -> dict:
     """Presigned PUT URL: sanity-check metadata (declared size, page bound,
     enums) → content-addressed key → signed URL. The backend never touches
@@ -210,6 +220,8 @@ async def presign_upload(
         bad = _bad_page_count(ext, body.page_count)
         if bad is not None:
             raise HTTPException(status_code=422, detail=bad)
+    # WS-ADMIN quota: pre-create gate (page_count None → coi như 1 trang)
+    await ensure_quota(session, user, body.page_count)
     sha = body.sha256.lower()
     if not SHA256_RE.fullmatch(sha):
         raise HTTPException(status_code=422, detail="sha256 không hợp lệ.")
@@ -266,6 +278,9 @@ async def create_job(
     bad = _bad_page_count(ext, body.page_count)
     if bad is not None:
         raise HTTPException(status_code=422, detail=bad)
+    # WS-ADMIN quota: pre-create gate SAU các 422 validation (giữ 422 pin),
+    # TRƯỚC khi insert row.
+    await ensure_quota(session, user, body.page_count)
     file_type = "pdf" if ext == "pdf" else "image"
     # Plan W: preprocess validated AFTER page_count known, BEFORE the row write
     preprocess_json: str | None = None

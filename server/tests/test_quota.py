@@ -1,13 +1,15 @@
 """WS-ADMIN quota (spec 2026-10-13): usage windows (ngày local Asia/Ho_Chi_Minh,
-tuần T2→CN) + check pre-create. failed/cancelled KHÔNG tính (refund)."""
+Tuần T2→CN) + check pre-create. failed/cancelled KHÔNG tính (refund)."""
 
 from datetime import timedelta
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import select
 
 from app.core.models import Job, User
 from app.services.quota import daily_window, ensure_quota, quota_me, usage, weekly_window
+from tests.conftest import TEST_PDF_3, upload_job
 
 
 @pytest.fixture
@@ -97,3 +99,58 @@ async def test_quota_me_shape_and_fallback_defaults(db_session, seeded_user):
         "daily_remaining": 0,
         "weekly_remaining": 120,
     }
+
+# --- T4: HTTP enforce pre-create + GET /api/quota/me ---
+
+def _presign_body(**extra) -> dict:
+    body = {
+        "filename": "a.pdf",
+        "content_type": "application/pdf",
+        "size_bytes": 100,
+        "sha256": "ab" * 32,
+    }
+    body.update(extra)
+    return body
+
+async def _latest_user(db_session) -> User:
+    return (
+        await db_session.scalars(select(User).order_by(User.id.desc()).limit(1))
+    ).one()
+
+async def test_http_quota_me(auth_client, db_session):
+    r = await auth_client.get("/api/quota/me")
+    assert r.status_code == 200
+    assert r.json() == {
+        "daily_limit": 25, "daily_used": 0,
+        "weekly_limit": 150, "weekly_used": 0,
+        "daily_remaining": 25, "weekly_remaining": 150,
+    }
+
+async def test_http_quota_me_401_anon(client):
+    assert (await client.get("/api/quota/me")).status_code == 401
+
+async def test_presign_ok_under_quota(auth_client, db_session):
+    r = await auth_client.post("/api/jobs/presign", json=_presign_body(page_count=3))
+    assert r.status_code == 200, r.text
+
+async def test_presign_429_over_daily_quota(auth_client, db_session):
+    user = await _latest_user(db_session)
+    user.daily_page_limit = 1
+    await db_session.commit()
+    lo, _hi = daily_window()
+    await _seed_job(db_session, user.id, pages=1, status="done", created_at=lo)
+    r = await auth_client.post("/api/jobs/presign", json=_presign_body(page_count=3))
+    assert r.status_code == 429
+    assert r.json()["detail"] == "Hôm nay bạn đã hết quota (1 trang). Quay lại sau."
+
+async def test_create_429_over_quota(auth_client, app, db_session):
+    """POST /api/jobs: quota gate sau 422 validations — presign thông qua
+    (chưa có page_count) nhưng create với page_count thật bị 429."""
+    user = await _latest_user(db_session)
+    user.daily_page_limit = 2
+    await db_session.commit()
+    lo, _hi = daily_window()
+    await _seed_job(db_session, user.id, pages=1, status="done", created_at=lo)
+    r = await upload_job(auth_client, app.state.storage, TEST_PDF_3, "a.pdf")
+    assert r.status_code == 429
+    assert r.json()["detail"] == "Hôm nay bạn đã hết quota (2 trang). Quay lại sau."
