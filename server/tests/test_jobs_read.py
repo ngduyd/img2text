@@ -244,6 +244,18 @@ async def test_list_items_include_filename(upload, auth_client):
     items = (await auth_client.get("/api/jobs")).json()["items"]
     assert items[0]["filename"] == "hop-dong.pdf"
 
+# --- review r1 P1-2: q escape %, _, \ (ILIKE literal, không wildcard) -------
+
+async def test_list_q_escapes_like_wildcards(auth_client, db_session):
+    uid = await _user_id(db_session, "u-")
+    pct = await _seed_named(db_session, uid, "a%b.pdf", "done", 2)
+    await _seed_named(db_session, uid, "acb.pdf", "done", 1)
+    items = (await auth_client.get("/api/jobs", params={"q": "a%b"})).json()
+    assert items["total"] == 1  # "%" literal → chỉ khớp "a%b.pdf"
+    assert items["items"][0]["id"] == pct
+    items = (await auth_client.get("/api/jobs", params={"q": "_"})).json()
+    assert items["total"] == 0  # "_" literal → không job nào có "_"
+
 # --- review r1 P1-6: filename trong create response + detail ----------------
 
 async def test_create_and_detail_return_filename(upload, auth_client):

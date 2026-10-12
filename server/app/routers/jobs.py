@@ -389,7 +389,9 @@ async def list_jobs(
     """
     base = select(Job).where(Job.user_id == user.id)
     if (q or "").strip():
-        base = base.where(Job.filename.ilike(f"%{q.strip()}%"))
+        # review r1 P1-2: escape %, _, \ → q là literal, không wildcard
+        needle = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        base = base.where(Job.filename.ilike(f"%{needle}%", escape="\\"))
     if status:
         base = base.where(Job.status == status)
     total = (
