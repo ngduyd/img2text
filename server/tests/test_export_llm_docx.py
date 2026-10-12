@@ -140,7 +140,8 @@ async def test_build_docx_renders_ir(
     assert not any("Xin chào" in m for m in info)
 
 def test_llm_api_key_default_empty():
-    assert Settings().llm_api_key == ""
+    # Lane C (spec Assumption #5): write-only key — default None (unset)
+    assert Settings().llm_api_key is None
 
 async def test_render_docx_bearer_header_key_set(
     monkeypatch, VALID_RESULT_JSONB, caplog
