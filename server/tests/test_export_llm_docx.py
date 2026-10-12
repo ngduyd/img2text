@@ -222,15 +222,16 @@ async def test_build_docx_llm_down_raises(
     assert any(r.levelname == "WARNING" for r in caplog.records)
 
 async def test_docx_render_envelope_output_unwrapped(monkeypatch, VALID_RESULT_JSONB):
-    """Render trả envelope {\"output\": html} → unwrap → docx build."""
-    fake_llm(monkeypatch, [
-        FakeResponse(json.dumps(FAKE_IR)),
-        FakeResponse(json.dumps({"output": FAKE_IR_HTML})),
-    ])
-    data = await build_docx(VALID_RESULT_JSONB)
-    assert data[:2] == b"PK"
-    doc = Document(io.BytesIO(data))
-    assert "Xin chào" in [p.text for p in doc.paragraphs]
+    """Render trả envelope {\"output\": html} → unwrap → HTML thô đúng FAKE_IR_HTML.
+
+    Guard thật: chỉ assert docx là guard-pass (heuristic fallback cũng cho
+    \"Xin chào\") — pin đúng return của llm_render_docx, không còn prefix {\"output\":.
+    """
+    ir_doc = render_docx.validate_ir(FAKE_IR, VALID_RESULT_JSONB)
+    fake_llm(monkeypatch, [FakeResponse(json.dumps({"output": FAKE_IR_HTML}))])
+    html = await render_docx.llm_render_docx(ir_doc, VALID_RESULT_JSONB)
+    assert html == FAKE_IR_HTML
+    assert not html.startswith("{")
 
 async def test_docx_render_json_missing_field_falls_back(monkeypatch, VALID_RESULT_JSONB, caplog):
     """JSON thiếu field output/html → LLMError → heuristic (không file trắng)."""
