@@ -192,6 +192,21 @@ async def test_create_oversize_upload_422_and_deletes(auth_client, app):
     assert r.status_code == 422
     assert r.json()["detail"] == "File vượt quá 50MB."
     assert not await app.state.storage.exists(key)
+    # cap fail → không tạo job
+    r = await auth_client.get("/api/jobs")
+    assert r.json()["items"] == []
+
+async def test_create_at_size_cap_ok(auth_client, app):
+    """Boundary: size == MAX_BYTES (50MB) PASS — cap là strict greater-than."""
+    r = await auth_client.post("/api/jobs/presign", json=_presign_body())
+    key = r.json()["storage_key"]
+    app.state.storage.client.put_object(
+        Bucket=app.state.storage.bucket, Key=key, Body=b"x" * MAX_BYTES
+    )
+    r = await auth_client.post(
+        "/api/jobs", json={"storage_key": key, "page_count": 1}
+    )
+    assert r.status_code == 201, r.text
 
 async def test_create_rejects_bad_storage_key(auth_client):
     for key in ("uploads/x.png", "../../etc/passwd", f"uploads/{'A' * 64}.png"):

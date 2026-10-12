@@ -122,13 +122,16 @@ describe("api client", () => {
       mode: "extract_only",
     });
     // PUT ArrayBuffer → storage (KHÔNG qua backend; KHÔNG Content-Type
-    // header — browser không tự thêm cho ArrayBuffer, tránh signature mismatch)
+    // header — browser không tự thêm cho ArrayBuffer, tránh signature mismatch).
+    // Red-green: fail ngay khi code set bất kỳ Content-Type nào (kể cả casing khác).
     expect(xhrs).toHaveLength(1);
     expect(xhrs[0].method).toBe("PUT");
     expect(xhrs[0].url).toBe(PRESIGN.url);
     expect(xhrs[0].body).toBeInstanceOf(ArrayBuffer);
     expect((xhrs[0].body as ArrayBuffer).byteLength).toBe(1);
-    expect(xhrs[0].headers["Content-Type"]).toBeUndefined();
+    for (const xhr of xhrs) {
+      expect(Object.keys(xhr.headers).filter((k) => k.toLowerCase() === "content-type")).toEqual([]);
+    }
     // create = metadata-only
     const createCall = spy.mock.calls.find(
       ([url, opts]) => String(url) === "/api/jobs" && opts?.method === "POST",
