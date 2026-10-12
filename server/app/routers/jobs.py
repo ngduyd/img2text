@@ -154,7 +154,7 @@ class PresignBody(BaseModel):
 
 class JobCreateBody(BaseModel):
     """Metadata-only create — bytes already went browser → storage via the
-    presigned POST (the multipart UploadFile path is removed)."""
+    presigned PUT (the multipart UploadFile path is removed)."""
 
     storage_key: str
     page_count: int
@@ -191,9 +191,9 @@ async def presign_upload(
     user: User = Depends(_ocr_user),
     storage: StorageDriver = Depends(get_storage),
 ) -> dict:
-    """Presigned POST policy: sanity-check metadata (size cap, page bound,
-    enums) → content-addressed key → policy. The backend never touches the
-    bytes; S3 enforces the 50MB cap via content-length-range."""
+    """Presigned PUT URL: sanity-check metadata (declared size, page bound,
+    enums) → content-addressed key → signed URL. The backend never touches
+    the bytes; the 50MB cap is verified AFTER upload (create head-check)."""
     ext = _file_ext(body.filename)
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -215,18 +215,15 @@ async def presign_upload(
         raise HTTPException(status_code=422, detail="sha256 không hợp lệ.")
     key = f"uploads/{sha}.{ext}"
     try:
-        signed = await storage.presign_post(
-            key, PRESIGN_EXPIRES_SECONDS, MAX_UPLOAD_BYTES, body.content_type
-        )
+        url = await storage.presign_put(key, PRESIGN_EXPIRES_SECONDS)
     except Exception as exc:
-        logger.exception("presign_post failed key=%s", key)
+        logger.exception("presign_put failed key=%s", key)
         raise HTTPException(
             status_code=500, detail="Không tạo được link tải lên."
         ) from exc
     return {
         "storage_key": key,
-        "url": signed["url"],
-        "fields": signed["fields"],
+        "url": url,
         "max_bytes": MAX_UPLOAD_BYTES,
     }
 
@@ -238,9 +235,11 @@ async def create_job(
     storage: StorageDriver = Depends(get_storage),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Metadata-only job create: verify the presigned upload EXISTS (head —
+    """Metadata-only job create: verify the presigned upload (head —
     no byte read; missing → 404 "File chưa tải lên.") then store metadata.
-    Page count is client-side (pdf.js) — bounded here."""
+    PUT presign has no policy cap → 50MB enforced HERE post-upload:
+    oversize → delete object + 422. Page count is client-side (pdf.js) —
+    bounded here."""
     # lazy per-app instance; same pattern as auth SlidingWindow
     limiter = getattr(request.app.state, "upload_limiter", None)
     if limiter is None:
@@ -255,8 +254,15 @@ async def create_job(
             status_code=422, detail="Đường dẫn file không hợp lệ."
         )
     ext = body.storage_key.rsplit(".", 1)[-1].lower()
-    if not await storage.exists(body.storage_key):
+    try:
+        size = await storage.size(body.storage_key)
+    except KeyError:
         raise HTTPException(status_code=404, detail="File chưa tải lên.")
+    if size > MAX_UPLOAD_BYTES:
+        # PUT presign không kí content-length-range → cap verify sau upload;
+        # oversize object = junk, xóa ngay (content-addressed key dedupe).
+        await storage.delete_prefix(body.storage_key)
+        raise HTTPException(status_code=422, detail="File vượt quá 50MB.")
     bad = _bad_page_count(ext, body.page_count)
     if bad is not None:
         raise HTTPException(status_code=422, detail=bad)

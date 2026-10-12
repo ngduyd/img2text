@@ -31,15 +31,17 @@ def _presign_body(data: bytes = PNG_1PX, filename: str = "t.png", **over):
 
 # --- presign: sanity checks + policy ---
 
-async def test_presign_ok_returns_content_addressed_policy(auth_client):
+async def test_presign_ok_returns_put_url(auth_client):
+    """R2 không implement PostObject (501) → presigned PUT: response chỉ có
+    URL (không còn POST fields/policy)."""
     r = await auth_client.post("/api/jobs/presign", json=_presign_body())
     assert r.status_code == 200, r.text
     out = r.json()
     assert out["storage_key"] == f"uploads/{_sha(PNG_1PX)}.png"
     assert out["max_bytes"] == MAX_BYTES
-    assert out["fields"]["key"] == out["storage_key"]
-    assert out["fields"]["Content-Type"] == "image/png"
+    assert "fields" not in out
     assert out["url"].startswith("http")
+    assert out["storage_key"] in out["url"]
 
 async def test_presign_rejects_oversize(auth_client):
     r = await auth_client.post(
@@ -144,10 +146,10 @@ async def test_presign_requires_ocr_enabled(client):
     assert r.status_code == 403
 
 async def test_presign_failure_is_500(app, auth_client, monkeypatch):
-    """presign_post fail (storage down) → 500, never a signed policy."""
+    """presign_put fail (storage down) → 500, never a signed URL."""
     monkeypatch.setattr(
         app.state.storage,
-        "presign_post",
+        "presign_put",
         AsyncMock(side_effect=RuntimeError("s3 down")),
     )
     r = await auth_client.post("/api/jobs/presign", json=_presign_body())
@@ -175,6 +177,21 @@ async def test_create_missing_upload_404(auth_client):
     )
     assert r.status_code == 404
     assert r.json()["detail"] == "File chưa tải lên."
+
+async def test_create_oversize_upload_422_and_deletes(auth_client, app):
+    """PUT presign không có policy content-length-range → cap 50MB verify
+    SAU upload (head ContentLength): vượt → xóa object + 422."""
+    r = await auth_client.post("/api/jobs/presign", json=_presign_body())
+    key = r.json()["storage_key"]
+    app.state.storage.client.put_object(
+        Bucket=app.state.storage.bucket, Key=key, Body=b"x" * (MAX_BYTES + 1)
+    )
+    r = await auth_client.post(
+        "/api/jobs", json={"storage_key": key, "page_count": 1}
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"] == "File vượt quá 50MB."
+    assert not await app.state.storage.exists(key)
 
 async def test_create_rejects_bad_storage_key(auth_client):
     for key in ("uploads/x.png", "../../etc/passwd", f"uploads/{'A' * 64}.png"):

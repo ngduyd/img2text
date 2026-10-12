@@ -19,9 +19,8 @@ from app.core.config import settings
 class StorageDriver(Protocol):
     async def put(self, key: str, data: bytes) -> None: ...
     async def presign_get(self, key: str, expires: int) -> str: ...
-    async def presign_post(
-        self, key: str, expires: int, max_bytes: int, content_type: str
-    ) -> dict: ...
+    async def presign_put(self, key: str, expires: int) -> str: ...
+    async def size(self, key: str) -> int: ...
     async def exists(self, key: str) -> bool: ...
     async def get(self, key: str) -> bytes: ...
     async def delete_prefix(self, prefix: str) -> None: ...
@@ -84,29 +83,35 @@ class S3Driver:
             ExpiresIn=expires,
         )
 
-    async def presign_post(
-        self, key: str, expires: int, max_bytes: int, content_type: str
-    ) -> dict:
-        """Browser direct-upload policy: POST form → storage (bytes never
-        touch the backend). content-length-range [0, max_bytes] caps the
-        upload server-side; Content-Type pinned via field+condition pair
-        (botocore adds neither automatically — doc contract)."""
+    async def presign_put(self, key: str, expires: int) -> str:
+        """Browser direct-upload: PUT bytes → storage (never touch backend).
+        R2 không implement PostObject (501) → PUT thay POST form. KHÔNG
+        ContentType trong Params: client gửi ArrayBuffer không set header
+        → signed header ≠ sent header = signature mismatch. Cap 50MB
+        chuyển sang verify sau upload (jobs.create qua size())."""
+        # PUBLIC client (same rationale as presign_get): the browser PUTs
+        # from the host, so the URL must be host-reachable.
+        return await asyncio.to_thread(
+            self.presign_client.generate_presigned_url,
+            "put_object",
+            Params={"Bucket": self.bucket, "Key": key},
+            ExpiresIn=expires,
+        )
 
-        def _sign() -> dict:
-            return self.presign_client.generate_presigned_post(
-                Bucket=self.bucket,
-                Key=key,
-                ExpiresIn=expires,
-                Conditions=[
-                    ["content-length-range", 0, max_bytes],
-                    ["eq", "$Content-Type", content_type],
-                ],
-                Fields={"Content-Type": content_type},
-            )
+    async def size(self, key: str) -> int:
+        """HEAD ContentLength; missing key raises KeyError so callers can
+        404 (R24, same mapping as get/exists)."""
 
-        # PUBLIC client (same rationale as presign_get): the browser posts
-        # the form from the host, so the URL must be host-reachable.
-        return await asyncio.to_thread(_sign)
+        def _head() -> int:
+            try:
+                resp = self.client.head_object(Bucket=self.bucket, Key=key)
+                return int(resp["ContentLength"])
+            except ClientError as e:
+                if e.response["Error"]["Code"] in ("404", "NoSuchKey", "NotFound"):
+                    raise KeyError(key) from e
+                raise
+
+        return await asyncio.to_thread(_head)
 
     async def exists(self, key: str) -> bool:
         def _head() -> bool:
