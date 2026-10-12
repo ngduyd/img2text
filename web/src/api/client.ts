@@ -60,6 +60,16 @@ export interface PresignResponse {
   max_bytes: number;
 }
 
+/** GET /api/quota/me (WS-ADMIN T6): quota hiện tại — null = 401/403 (ẩn widget). */
+export interface QuotaMe {
+  daily_limit: number;
+  daily_used: number;
+  weekly_limit: number;
+  weekly_used: number;
+  daily_remaining: number;
+  weekly_remaining: number;
+}
+
 const TYPE_BY_EXT: Record<string, string> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -180,6 +190,13 @@ export const api = {
       onPhase?: (phase: "uploading" | "counting") => void;
     },
   ) => uploadPresigned(file, opts),
+  getMyQuota: async (): Promise<QuotaMe | null> => {
+    // fetch trực tiếp (request() redirect 401 → /signin): 401/403 = ẩn widget
+    const res = await fetch("/api/quota/me", { credentials: "include" });
+    if (res.status === 401 || res.status === 403) return null;
+    if (!res.ok) throw new ApiError(`HTTP ${res.status}`);
+    return (await res.json()) as QuotaMe;
+  },
   retryJob: (id: number | string) =>
     request<void>(`/api/jobs/${id}/retry`, { method: "POST" }),
   // Hủy job: queued|extracting|rendering → cancelled (204; terminal 409).

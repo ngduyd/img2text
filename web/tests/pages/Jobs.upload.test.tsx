@@ -24,6 +24,15 @@ const PRESIGN = {
   max_bytes: 52428800,
 };
 
+const QUOTA = {
+  daily_limit: 25,
+  daily_used: 15,
+  weekly_limit: 150,
+  weekly_used: 45,
+  daily_remaining: 10,
+  weekly_remaining: 105,
+};
+
 let sentXhr: {
   method: string;
   url: string;
@@ -80,7 +89,10 @@ it("Gửi → presign → XHR progress → pdf.js count → metadata-only create
       createBodies.push(JSON.parse(opts.body ?? "{}"));
       return createPromise;
     }
-    const body = String(url).startsWith("/api/auth/me")
+    const url_ = String(url);
+    const body = url_ === "/api/quota/me"
+      ? QUOTA
+      : url_.startsWith("/api/auth/me")
       ? { id: 1, role: "user", ocr_enabled: true }
       : String(url).startsWith("/api/jobs?")
         ? { items: [], total: 0, page: 1, page_size: 10 }
@@ -124,4 +136,11 @@ it("Gửi → presign → XHR progress → pdf.js count → metadata-only create
   ]);
   // create xong → phase idle: chữ đếm trang biến mất
   await waitFor(() => expect(screen.queryByTestId("upload-counting")).not.toBeInTheDocument());
+  // T6: badge quota trong Jobs header + invalidate sau khi tạo job → refetch
+  expect(screen.getByTestId("quota-remaining")).toHaveTextContent(
+    "Còn 10 trang hôm nay · 105 tuần này",
+  );
+  await waitFor(() =>
+    expect(fetchSpy.mock.calls.filter((c) => String(c[0]) === "/api/quota/me").length).toBeGreaterThan(1),
+  );
 });

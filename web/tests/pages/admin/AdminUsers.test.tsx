@@ -76,5 +76,5 @@ it("inline edit 2 limits → PATCH quota + toast R59 + invalidate", async () => 
   // R59: success toast
   expect(toast.success).toHaveBeenCalledWith("Đã lưu.");
   // invalidate → list refetch (quota hiển thị lại từ server)
-  await waitFor(() => expect(api.adminListUsers.mock.calls.length).toBeGreaterThan(1));
+  await waitFor(() => expect(vi.mocked(api.adminListUsers).mock.calls.length).toBeGreaterThan(1));
 });

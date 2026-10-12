@@ -9,6 +9,7 @@ import CropDialog from "../components/CropDialog";
 import JobRow from "../components/JobRow";
 import MultiFileUpload from "../components/MultiFileUpload";
 import PageSelectDialog, { type PageSelectEntry } from "../components/PageSelectDialog";
+import QuotaBadge from "../components/QuotaBadge";
 import StatusFilterTabs from "../components/StatusFilterTabs";
 import SubmitModal, { type SubmitFormat } from "../components/SubmitModal";
 import { mapApiError } from "../lib/errors";
@@ -101,6 +102,8 @@ export default function Jobs() {
       // R59: toast + invalidate + navigate về list route.
       toast.success("Đã tải lên — đang chờ xử lý.");
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      // T6: quota giảm sau khi tạo job thành công → refetch badge
+      queryClient.invalidateQueries({ queryKey: ["quota"] });
       navigate("/jobs");
       return true;
     } catch (err) {
@@ -120,6 +123,7 @@ export default function Jobs() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Công việc</h1>
           <p className="mt-1 text-sm text-muted">Theo dõi tiến trình OCR trên worker Colab.</p>
+          <QuotaBadge />
         </div>
         <dl className="flex gap-4">
           <div className="text-right">

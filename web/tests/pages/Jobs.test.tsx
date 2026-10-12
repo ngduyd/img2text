@@ -19,6 +19,8 @@ vi.mock("../../src/api/client", async (importOriginal) => {
       listJobs: vi.fn(),
       uploadJob: vi.fn(),
       retryJobs: vi.fn(),
+      // T6: QuotaBadge query — mock null (ẩn) để test Jobs không fetch thật
+      getMyQuota: vi.fn(async () => null),
     },
   };
 });
