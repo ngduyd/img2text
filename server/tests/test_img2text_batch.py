@@ -46,31 +46,31 @@ def test_find_inputs_empty_root_returns_empty(tmp_path):
 def test_run_batch_continues_past_failing_job_and_exit_codes(monkeypatch):
     ok: list[int] = []
 
-    def _ok(job_id, path):
+    def _ok(job_id, path, preprocess=None):
         ok.append(job_id)
 
-    def _boom(job_id, path):
+    def _boom(job_id, path, preprocess=None):
         raise SystemExit("OCR phase exited 1 — xem log ở trên")
 
-    def _only_job2_boom(job_id, path):
+    def _only_job2_boom(job_id, path, preprocess=None):
         if job_id == 2:
             _boom(job_id, path)
         ok.append(job_id)
 
     monkeypatch.setattr(kb, "process_job", _ok)
     # every job processed → exit 0
-    assert kb.run_batch([(1, "a"), (2, "b"), (3, "c")]) == 0
+    assert kb.run_batch([(1, "a", None), (2, "b", None), (3, "c", None)]) == 0
     assert ok == [1, 2, 3]
 
     # job 2's error must NOT stop jobs 1/3 (continue-on-error) → still exit 0
     ok.clear()
     monkeypatch.setattr(kb, "process_job", _only_job2_boom)
-    assert kb.run_batch([(1, "a"), (2, "b"), (3, "c")]) == 0
+    assert kb.run_batch([(1, "a", None), (2, "b", None), (3, "c", None)]) == 0
     assert ok == [1, 3]
 
     # zero outputs written → exit 1
     monkeypatch.setattr(kb, "process_job", _boom)
-    assert kb.run_batch([(9, "x")]) == 1
+    assert kb.run_batch([(9, "x", None)]) == 1
 
 # --- F3 (spec 2026-10-10): manifest dual-mode — URL download + sha256
 # verify / mount fallback. Local http.server = offline unit, no network. ---
@@ -179,7 +179,7 @@ def test_manifest_dual_mode_downloads_and_falls_back_to_mount(served_file, tmp_p
     (mount / "manifest.json").write_text(json.dumps({"jobs": jobs}))
     assert kb.load_manifest(str(mount)) == jobs
     got = kb.fetch_manifest_jobs(jobs, str(tmp_path / "dl"), root=str(mount))
-    assert [job_id for job_id, _ in got] == [1, 9]
+    assert [job_id for job_id, _path, _pp in got] == [1, 9]
     assert Path(got[0][1]).read_bytes() == payload  # download + verify
     assert got[1][1].endswith("9__legacy.pdf")      # mount fallback
 
@@ -187,3 +187,45 @@ def test_no_manifest_is_mount_fallback_mode(tmp_path):
     (tmp_path / "5__a.pdf").write_bytes(b"x")
     assert kb.load_manifest(str(tmp_path)) is None
     assert kb.find_inputs(str(tmp_path)) == [(5, str(tmp_path / "5__a.pdf"))]
+
+# --- wave-2 #4 (spec 2026-10-14): manifest preprocess → pipeline ---
+
+def test_fetch_manifest_jobs_reads_preprocess(served_file, tmp_path):
+    base, payload = served_file
+    pp = {"pages": [1, 3], "rotate": {"1": 90}}
+    jobs = [
+        {"job_id": 1, "input_url": f"{base}/doc.pdf", "filename": "1__doc.pdf",
+         "sha256": _sha(payload), "preprocess": pp},
+        {"job_id": 2, "input_url": f"{base}/doc.pdf", "filename": "2__doc.pdf",
+         "sha256": _sha(payload)},  # thiếu key → None
+    ]
+    got = kb.fetch_manifest_jobs(jobs, str(tmp_path / "dl"))
+    assert got[0] == (1, str(tmp_path / "dl" / "1__doc.pdf"), pp)
+    assert got[1] == (2, str(tmp_path / "dl" / "2__doc.pdf"), None)
+
+def test_run_batch_passes_preprocess_to_process_job(monkeypatch):
+    seen = []
+    def _capture(job_id, path, preprocess=None):
+        seen.append((job_id, path, preprocess))
+    monkeypatch.setattr(kb, "process_job", _capture)
+    pp = {"pages": [1, 3], "rotate": {"1": 90}}
+    assert kb.run_batch([(1, "a", pp), (2, "b", None)]) == 0
+    assert seen == [(1, "a", pp), (2, "b", None)]
+
+def test_apply_preprocess_select_and_rotate(tmp_path):
+    """Chọn trang + xoay (worker loop pattern, file-based; R55 giữ tên trang)."""
+    from PIL import Image
+    paths = []
+    for n in (1, 2, 3):
+        p = tmp_path / f"page_{n:04d}.png"
+        Image.new("RGB", (4, 2)).save(p, "PNG")
+        paths.append(str(p))
+    out = kb._apply_preprocess(paths, {"pages": [1, 3], "rotate": {"3": 90}})
+    assert [Path(p).name for p in out] == ["page_0001.png", "page_0003.png"]
+    assert not Path(paths[1]).exists()        # trang 2 không được chọn → loại
+    assert Image.open(out[1]).size == (2, 4)  # 90° CW → swap w/h
+    # None → giữ nguyên (không lọc, không xoay)
+    lone = tmp_path / "page_0009.png"
+    Image.new("RGB", (4, 2)).save(lone, "PNG")
+    assert kb._apply_preprocess([str(lone)], None) == [str(lone)]
+    assert Image.open(lone).size == (4, 2)
