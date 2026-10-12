@@ -646,3 +646,29 @@ async def test_auto_output_pass2_reloads_result_saved_between_passes(
     await job_results._auto_output(job, None)
     assert len(seen) == 2  # cờ giữa chừng → render thêm 1 pass
     assert seen[1] == "van ban moi"  # stale job object → pass 2 render text cũ
+
+async def test_post_extraction_rendering_flag_only_skips_sync(
+    auth_client, app, db_session, VALID_RESULT_JSONB, monkeypatch
+):
+    """P2-4: save khi rendering → KHÔNG sync (artifact đang bị render task ghi)."""
+    jid = await _rendering_job(db_session, VALID_RESULT_JSONB)
+    await _seed_layouts(app, jid)
+    calls: list[int] = []
+
+    async def _sync(*args, **kwargs):
+        calls.append(1)
+        return {"md": True, "docx": True}
+
+    monkeypatch.setattr("app.routers.jobs.sync_job_layouts", _sync)
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/extraction",
+        json={
+            "text": "van ban moi",
+            "old_phrase": "Xin chao",
+            "new_phrase": "Xin chao moi",
+            "expected_text_version": 0,
+        },
+    )
+    assert r.status_code == 200, r.text
+    assert calls == []  # RED: read-modify-write trên artifact đang render
+    assert r.json()["requires_rerender"] is True  # flag-only — render pass sau vẽ lại

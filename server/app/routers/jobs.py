@@ -928,8 +928,11 @@ async def post_extraction(
     }
     needs_render: list[str] = []
     # P1-1: empty/None old OR new → skip sync entirely (old="" would
-    # "replace" between every character and corrupt the artifact)
-    if body.old_phrase and body.new_phrase:
+    # "replace" between every character and corrupt the artifact).
+    # P2-4: save khi rendering → BỎ sync (read-modify-write trên artifact
+    # đang bị render task ghi) — chỉ bump version + flag; pass render sau
+    # vẽ lại từ text mới.
+    if body.old_phrase and body.new_phrase and not was_rendering:
         # detached kinds 409'd above unless force → force overwrites them
         synced = await sync_job_layouts(
             storage, id, body.old_phrase, body.new_phrase
