@@ -430,6 +430,13 @@ async def test_export_docx_layout_other_user_403(
 
 # --- _html_to_docx nội dung giữ lại (task 3) ---
 
+def test_html_to_docx_bold_attr_tag():
+    """<b class="x"> (attr) → run.bold — startswith, không exact-match."""
+    data = render_docx._html_to_docx('<p>đậm <b class="x">nét</b></p>')
+    doc = Document(io.BytesIO(data))
+    bolds = {r.text for p in doc.paragraphs for r in p.runs if r.bold}
+    assert any("nét" in t for t in bolds)
+
 def test_html_to_docx_list_br_inline_bold_italic():
     """ul/li + <br> + <b>/<i> → list para, line break, run bold/italic."""
     html = (

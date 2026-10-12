@@ -469,9 +469,9 @@ def _add_rich_text(para, raw: str) -> None:
             elif low in ("</i>", "</em>"):
                 italic = False
         elif low.startswith("<"):
-            if low in ("<b>", "<strong>"):
+            if low.startswith(("<b", "<strong")):
                 bold = True
-            elif low in ("<i>", "<em>"):
+            elif low.startswith(("<i", "<em")):
                 italic = True
         else:
             txt = re.sub(r"<[^>]+>", "", part)
