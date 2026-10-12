@@ -242,7 +242,7 @@ Server tự điều phối Kaggle worker (Plan K2 + K5), chọn bằng `KAGGLE_M
   input `img2text-input` dùng chung, chống overlap) + gap
   `KAGGLE_MIN_GAP_SECONDS`; block `image` bị bỏ khỏi regions/markdown
   (batch không có regions ảnh — chỉ worker `loop` mới có placeholder);
-  `preprocess` bị bỏ qua (log warning — dùng `loop` khi cần chọn trang/xoay);
+  `preprocess` → kernel page-select/rotate trước OCR (batch = loop parity);
   map run giữ trong RAM (restart = kernel mồ côi). Output script ghi vào
   `/kaggle/working` (capture của `kernel_type: script`) + copy
   `/kaggle/outputs` (compat notebook — chỉ notebook kernel mới capture).
