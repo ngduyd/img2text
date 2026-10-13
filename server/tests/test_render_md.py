@@ -251,6 +251,27 @@ class TestBuildMDFromIR:
         assert "| 1 | 2 |" in out
         assert "<table" not in out
 
+    async def test_cells_shape_colspan_repeats_in_heuristic_md(self):
+        """P2-1 mirror: cells-shape region có colspan → heuristic pipe LẶP ô
+        (giống kernel _table_cells_to_md); parse html sẽ mất colspan."""
+        cells = [
+            [{"text": "x", "rowspan": 1, "colspan": 2, "header": True}],
+            [{"text": "y", "rowspan": 1, "colspan": 1, "header": False},
+             {"text": "z", "rowspan": 1, "colspan": 1, "header": False}],
+        ]
+        result = {"pages": [{"index": 0, "width": 800, "height": 600,
+            "regions": [
+                {"id": "r0", "bbox": [1, 2, 798, 40],
+                 "text": "x\ny | z",
+                 "html": "<table><tr><td colspan=\"2\">x</td></tr>"
+                         "<tr><td>y</td><td>z</td></tr></table>",
+                 "cells": cells, "verdict": "ok", "placeholder": False},
+            ]}]}
+        out = await build_md(result, use_llm=False)
+        assert "| x | x |" in out  # colspan=2 → lặp (mirror kernel)
+        assert "| y | z |" in out
+        assert "<table" not in out
+
 class TestVariableZonesHeuristic:
     """Trang có zone biến thiên (header/content/footer khác nhau) → heuristic
     không bịa zone thừa. Deterministic (use_llm=False)."""

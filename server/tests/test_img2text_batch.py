@@ -329,6 +329,39 @@ def test_parse_table_html_span_attrs_int_default_one():
     assert (row[0]["rowspan"], row[0]["colspan"]) == (2, 3)
     assert (row[1]["rowspan"], row[1]["colspan"]) == (1, 1)
 
+def test_safe_span_non_numeric_or_nonpositive_defaults_one():
+    """P1: rowspan="foo"/"2.0"/None/0 → 1, không ValueError (giết cả job)."""
+    assert kb._safe_span("abc") == 1
+    assert kb._safe_span("2.0") == 1
+    assert kb._safe_span(None) == 1
+    assert kb._safe_span(0) == 1
+    assert kb._safe_span(-3) == 1
+    assert kb._safe_span("3") == 3
+    assert kb._safe_span(2) == 2
+
+def test_parse_table_html_non_numeric_span_does_not_raise():
+    """P1: attribute span không phải số → parse sống sót, span=1 (cả bs4
+    lẫn regex path đều về 1 với giá trị không chứa digit)."""
+    html = '<table><tr><td rowspan="foo">x</td></tr></table>'
+    (row,) = kb._parse_table_html(html)
+    assert row[0]["rowspan"] == 1
+
+def test_parse_table_regex_single_quoted_span():
+    """P2-2: regex fallback khớp quote đơn lẫn kép."""
+    rows = kb._parse_table_regex("<table><tr><td colspan='2'>x</td></tr></table>")
+    assert rows[0][0]["colspan"] == 2
+
+def test_parse_table_nested_table_flattens_current_behavior():
+    """P2-3 ceiling: nested table KHÔNG có scope riêng — tr inner bị flatten
+    lẫn outer row (regex path). bs4 path find_all("tr") cũng flatten. Pin để
+    biết nâng cấp (scope outermost table) sẽ đổi output."""
+    html = (
+        "<table><tr><td>a</td><td>b<table><tr><td>n</td></tr></table></td></tr>"
+        "<tr><td>c</td><td>d</td></tr></table>"
+    )
+    rows = kb._parse_table_html(html)
+    assert [[c["text"] for c in r] for r in rows] == [["a", "b n"], ["c", "d"]]
+
 def test_table_cells_to_md_gfm_pipe_header_separator():
     cells = kb._parse_table_html(FIXTURE_TABLE_HTML)
     assert kb._table_cells_to_md(cells) == "| a | b |\n| --- | --- |\n| c | d |"

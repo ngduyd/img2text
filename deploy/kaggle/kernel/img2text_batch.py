@@ -711,6 +711,15 @@ def extract_blocks(raw: dict, page_no: int) -> list[dict]:
 # wave-3 (spec 2026-10-13): bảng cells → md GFM pipe + reading order 2 cột.
 # ===========================================================================
 
+def _safe_span(v) -> int:
+    """rowspan/colspan attr → int ≥1; không parse được hoặc ≤0 → 1
+    (P1: giá trị "foo"/"2.0" không được ValueError giết cả job)."""
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        return 1
+    return n if n >= 1 else 1
+
 def _parse_table_regex(html: str) -> list[list[dict]]:
     """regex fallback của _parse_table_html (env không có bs4)."""
     rows: list[list[dict]] = []
@@ -720,16 +729,16 @@ def _parse_table_regex(html: str) -> list[list[dict]]:
             r"<t([dh])([^>]*)>(.*?)</t\1>", tr, re.DOTALL | re.IGNORECASE
         ):
             spans = {
-                k.lower(): int(v)
+                k.lower(): _safe_span(v)
                 for k, v in re.findall(
-                    r'(rowspan|colspan)\s*=\s*"?(\d+)"?', m.group(2), re.I
+                    r'(rowspan|colspan)\s*=\s*["\']?(\d+)["\']?', m.group(2), re.I
                 )
             }
             text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", m.group(3))).strip()
             row.append({
                 "text": text,
-                "rowspan": max(1, spans.get("rowspan", 1)),
-                "colspan": max(1, spans.get("colspan", 1)),
+                "rowspan": spans.get("rowspan", 1),
+                "colspan": spans.get("colspan", 1),
                 "header": m.group(1).lower() == "h",
             })
         if row:
@@ -745,13 +754,16 @@ def _parse_table_html(html: str) -> list[list[dict]]:
         return _parse_table_regex(html)
     soup = BeautifulSoup(html, "html.parser")
     rows: list[list[dict]] = []
+    # ceiling (P2-3): find_all("tr") KHÔNG giới hạn table outermost — tr của
+    # bảng nested bị flatten lẫn hàng ngoài. Upgrade khi corpus có nested:
+    # find outermost table rồi scope find_all("tr") trong nó.
     for tr in soup.find_all("tr"):
         row: list[dict] = []
         for td in tr.find_all(["td", "th"], recursive=False):
             row.append({
                 "text": td.get_text(" ", strip=True),
-                "rowspan": max(1, int(td.get("rowspan") or 1)),
-                "colspan": max(1, int(td.get("colspan") or 1)),
+                "rowspan": _safe_span(td.get("rowspan")),
+                "colspan": _safe_span(td.get("colspan")),
                 "header": td.name == "th",
             })
         if row:
