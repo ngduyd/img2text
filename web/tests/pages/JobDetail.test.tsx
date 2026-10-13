@@ -460,10 +460,8 @@ it("done renders link to extraction page", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("panel-result");
-  expect(screen.getByTestId("link-extraction")).toHaveAttribute(
-    "href",
-    "/jobs/5/extraction",
-  );
+  // Lane I Task 3: bỏ nút "Mở trang trích xuất đầy đủ" (route vẫn giữ, không còn link từ đây).
+  expect(screen.queryByTestId("link-extraction")).not.toBeInTheDocument();
 });
 
 it("pending job hides extraction link", async () => {

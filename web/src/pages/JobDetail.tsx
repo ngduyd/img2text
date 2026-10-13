@@ -17,7 +17,7 @@ import LayoutPreview from "../components/LayoutPreview";
 import TextSection from "../components/TextSection";
 import UnifiedEditor from "../components/UnifiedEditor";
 import Badge from "../components/ui/Badge";
-import Button, { buttonClasses } from "../components/ui/Button";
+import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import Skeleton from "../components/ui/Skeleton";
 
@@ -392,14 +392,6 @@ export default function JobDetail() {
               </h2>
               <div data-testid="panel-result" className="flex min-w-0 flex-col gap-6">
                 <TextSection jobId={id!} regions={regions} fileType={job.file_type} />
-                {/* WS-UI: link đọc tiếp ở trang trích xuất đầy đủ. */}
-                <Link
-                  to={`/jobs/${id}/extraction`}
-                  data-testid="link-extraction"
-                  className={buttonClasses("secondary", "md")}
-                >
-                  Mở trang trích xuất đầy đủ
-                </Link>
               </div>
             </section>
           )}
