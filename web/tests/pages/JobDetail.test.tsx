@@ -328,44 +328,38 @@ it("btn-edit-doc toggles editor: preview → editor → preview, no navigation",
   expect(mockNavigate).not.toHaveBeenCalled();
 });
 
-/** WS-UI cấu trúc 2 section: Văn bản 7/5 (auto original, KHÔNG toggle) + Layout 7/5. */
-it("renders section-text 7/5 with auto original + no toggle button", async () => {
+/** Wave-3 #5: wrapper grid DUY NHẤT bao 2 section — col trái stack, col phải = sticky File gốc + Info. */
+it("renders single wrapper grid: 2 sections stacked left, sticky original+info right", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  const section = await screen.findByTestId("section-text");
-  const grid = within(section).getByTestId("detail-grid");
+  await screen.findByTestId("section-text");
+  await screen.findByTestId("section-layout");
+  // Wrapper grid ngoài (1 duy nhất); section KHÔNG còn grid con 7/5.
+  const grid = screen.getByTestId("detail-grid");
   expect(grid.className).toContain("lg:grid-cols-12");
-  expect(grid.querySelector(".lg\\:col-span-7")).not.toBeNull();
-  expect(grid.querySelector(".lg\\:col-span-5")).not.toBeNull();
-  // Mobile stack: mọi grid-cols đều gắn tiền tố lg: (không cột nào ở base).
   const colClasses = grid.className.split(/\s+/).filter((c) => c.includes("grid-cols"));
   expect(colClasses.length).toBeGreaterThan(0);
   expect(colClasses.every((c) => c.startsWith("lg:"))).toBe(true);
-  // Ảnh gốc auto-fetch, không còn toggle "Bản gốc"/"Hiện file".
-  expect(within(section).getByTestId("panel-original")).toBeInTheDocument();
-  expect(screen.queryByTestId("btn-toggle-original")).not.toBeInTheDocument();
-  expect(screen.queryByTestId("toggle-original")).not.toBeInTheDocument();
-  // DONE_JOB là pdf → sandboxed frame (không phải img).
-  expect(await within(section).findByTestId("original-pdf-frame")).toBeInTheDocument();
-});
-
-it("renders section-layout: preview + export below preview + original + info", async () => {
-  mockJob(DONE_JOB);
-  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  const section = await screen.findByTestId("section-layout");
-  const layoutGrid = section.querySelector(".lg\\:grid-cols-12");
-  expect(layoutGrid).not.toBeNull();
-  expect(layoutGrid?.querySelector(".lg\\:col-span-7")).not.toBeNull();
-  expect(layoutGrid?.querySelector(".lg\\:col-span-5")).not.toBeNull();
-  // Preview read-only mặc định; ExportBar DƯỚI preview cột trái; ảnh gốc + info cột phải.
+  expect(grid.querySelector(".lg\\:col-span-7")).not.toBeNull();
+  // Sticky trượt xuyên cả Văn bản lẫn Layout (task 2).
+  const aside = grid.querySelector("aside");
+  expect(aside).not.toBeNull();
+  expect(aside!.className).toContain("lg:col-span-5");
+  expect(aside!.className).toContain("lg:sticky");
+  expect(aside!.className).toContain("lg:top-16");
+  expect(aside!.className).toContain("lg:self-start");
+  expect(screen.getByTestId("section-text").querySelector(".lg\\:col-span-7")).toBeNull();
+  expect(screen.getByTestId("section-layout").querySelector(".lg\\:col-span-5")).toBeNull();
+  // 1 panel "File gốc" duy nhất (gộp 2 aside cũ) + InfoPanel + preview + ExportBar.
+  expect(screen.getAllByTestId("panel-original")).toHaveLength(1);
+  expect(screen.queryByTestId("panel-original-layout")).not.toBeInTheDocument();
+  // DONE_JOB là pdf → iframe (không phải img), KHÔNG sandbox (task 1).
+  const frame = await screen.findByTestId("original-pdf-frame");
+  expect(frame).not.toHaveAttribute("sandbox");
+  expect(screen.getByTestId("panel-info")).toBeInTheDocument();
   expect(screen.getByTestId("layout-preview")).toBeInTheDocument();
   expect(screen.getByTestId("export-bar")).toBeInTheDocument();
-  expect(screen.getByTestId("panel-original-layout")).toBeInTheDocument();
-  expect(screen.getByTestId("panel-info")).toBeInTheDocument();
-  // Blob cache dùng chung: 1 fetch cho cả 2 section (2 panel_original render frame).
-  await waitFor(() =>
-    expect(screen.getAllByTestId("original-pdf-frame").length).toBe(2),
-  );
+  // Blob cache: 1 panel → 1 fetch.
   expect(api.downloadJobFile).toHaveBeenCalledTimes(1);
 });
 
