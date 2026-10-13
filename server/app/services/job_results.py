@@ -149,6 +149,17 @@ async def drain_auto_output() -> None:
     while _pending_output:
         await asyncio.gather(*list(_pending_output))
 
+def _dump_result(body: ResultBody) -> dict:
+    """model_dump + bỏ key html/cells khi None (region không bảng giữ nguyên
+    shape cũ — wave-3 review P2: model_dump() rải None keys vào mọi region)."""
+    d = body.model_dump()
+    for pg in d.get("pages") or []:
+        for r in pg.get("regions") or []:
+            for k in ("html", "cells"):
+                if r.get(k) is None:
+                    r.pop(k, None)
+    return d
+
 async def _store(
     session: AsyncSession,
     job_id: int,
@@ -162,7 +173,9 @@ async def _store(
             update(Job)
             .where(Job.id == job_id, *conds)
             .values(
-                result=body.model_dump(),
+                # wave-3: non-table region KHÔNG mang key html/cells=None
+                # (shape cũ không đổi; bbox=None vẫn giữ key nullable).
+                result=_dump_result(body),
                 # spec 2026-10-09: ingest stores the result and enters the
                 # "rendering" phase; the auto-output task flips to done /
                 # failed+failed_step=rendering and stamps finished_at.
