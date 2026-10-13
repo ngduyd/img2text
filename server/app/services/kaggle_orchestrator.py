@@ -71,6 +71,51 @@ _MD_PREFIX = {"doc_title": "# ", "paragraph_title": "## "}
 # mirror deploy/kaggle/files/pipeline.py _MARKER — server cannot import deploy
 # scripts; marker chữ nằm ở app.core.schemas.IMAGE_MARKER (dùng chung exports/render)
 
+# --- wave-3 (spec 2026-10-13) — mirror helpers từ kernel img2text_batch.py
+# (server KHÔNG import deploy scripts — copy nhỏ, test contract pin parity).
+
+def _band_tol(h1: float, h2: float) -> float:
+    return max(10.0, 0.3 * max(h1, h2))
+
+def _linearize_blocks(blocks: list[dict]) -> list[dict]:
+    """Reading order: y-bands theo center y (tolerance max(10, h*0.3)) → mỗi
+    band sort x0 trái→phải → flatten (2 cột cùng hàng: trái trước)."""
+    keyed = []
+    for i, b in enumerate(blocks):
+        bbox = b.get("bbox")
+        if bbox and len(bbox) == 4:
+            cy, h, x0 = (bbox[1] + bbox[3]) / 2, abs(bbox[3] - bbox[1]), bbox[0]
+        else:
+            cy, h, x0 = float("inf"), 0.0, float("inf")
+        keyed.append((cy, h, x0, i, b))
+    keyed.sort(key=lambda t: (t[0], t[3]))
+    bands: list[list[tuple]] = []
+    for t in keyed:
+        if (bands and t[0] != float("inf")
+                and t[0] - bands[-1][-1][0] <= _band_tol(t[1], bands[-1][-1][1])):
+            bands[-1].append(t)
+        else:
+            bands.append([t])
+    return [b for band in bands for _, _, _, _, b in sorted(band, key=lambda t: (t[2], t[3]))]
+
+def _cells_md(cells: list[list[dict]]) -> str:
+    """cells (kernel parse) → GFM pipe — mirror kernel _table_cells_to_md:
+    header = hàng có th (hoặc hàng đầu); colspan → lặp; rowspan → bỏ."""
+    if not cells:
+        return ""
+    h = next((i for i, r in enumerate(cells) if any(c.get("header") for c in r)), 0)
+    def texts(row):
+        out = []
+        for c in row:
+            out.extend([str(c.get("text") or "")] * max(1, int(c.get("colspan") or 1)))
+        return out
+    def fmt(row):
+        return "| " + " | ".join(t.replace("|", "\\|") for t in texts(row)) + " |"
+    head = texts(cells[h])
+    lines = [fmt(cells[h]), "| " + " | ".join(["---"] * len(head)) + " |"]
+    lines += [fmt(r) for i, r in enumerate(cells) if i != h]
+    return "\n".join(lines)
+
 _last_spawn = 0.0
 # ceiling: persistent ingest failures for one ref → drop instead of looping
 _INGEST_MAX_FAILURES = 3
@@ -256,32 +301,54 @@ def adapt_batch_document(doc: dict) -> dict:
     wave-2 #4); no dual-branch verdicts → verdict "ok" /
     page_flag "ok"; image blocks KEPT as verdict image_unextractable + marker
     (crop flow downstream — pixels never leave the kernel, only bbox);
-    empty-text non-image blocks dropped; table block text is already HTML,
-    kept verbatim. gpu_seconds 0 — kernel log elapsed is wall time, not GPU."""
+    empty-text non-image blocks dropped. wave-3: blocks linearized theo
+    reading order (y-band, 2 cột cùng hàng trái trước); table block có cells
+    → md GFM pipe (html+cells passthrough vào region jsonb); image marker cùng
+    hàng → 1 dòng cách space."""
     md_pages: list[str] = []
     pages_out: list[dict] = []
     for i, pg in enumerate(doc.get("pages") or [], 1):
         regions: list[dict] = []
         md_parts: list[str] = []
-        for b in pg.get("blocks") or []:
+        last_marker: tuple | None = None  # (center_y, height) marker vừa emit
+        for b in _linearize_blocks(pg.get("blocks") or []):
             text = b.get("text") or ""
             is_image = b.get("type") == "image"
             if not is_image and not text.strip():
                 continue  # truly-empty non-image block is meaningless
             rid = str(b.get("id") or f"p{i}_b{len(regions)}")
-            regions.append({
+            region = {
                 "id": rid,
                 "bbox": b.get("bbox"),
                 "text": text,
                 "verdict": "image_unextractable" if is_image else "ok",
                 "placeholder": is_image,
-            })
+            }
+            if b.get("html"):
+                region["html"] = b["html"]
+            if b.get("cells"):
+                region["cells"] = b["cells"]
+            regions.append(region)
+            pos = None
             if is_image:
                 # same marker as deploy/kaggle pipeline.py → exports.py
                 # _materialize_crops rewrites it into the cached crop
-                md_parts.append(IMAGE_MARKER.format(region_id=rid))
+                piece = IMAGE_MARKER.format(region_id=rid)
+                bbox = b.get("bbox")
+                if bbox and len(bbox) == 4:
+                    pos = ((bbox[1] + bbox[3]) / 2, abs(bbox[3] - bbox[1]))
+            elif b.get("cells"):
+                piece = _cells_md(b["cells"])
             else:
-                md_parts.append(_MD_PREFIX.get(b.get("type"), "") + text)
+                piece = _MD_PREFIX.get(b.get("type"), "") + text
+            if not piece:
+                continue
+            if (md_parts and last_marker is not None and pos is not None
+                    and abs(pos[0] - last_marker[0]) <= _band_tol(pos[1], last_marker[1])):
+                md_parts[-1] += " " + piece  # 2 marker/image cùng hàng → CÙNG dòng
+            else:
+                md_parts.append(piece)
+            last_marker = pos
         page_md = "\n\n".join(md_parts)
         pages_out.append({
             "index": int(pg.get("page") or i),

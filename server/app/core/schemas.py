@@ -21,6 +21,11 @@ class RegionOut(BaseModel):
     text: str
     verdict: Literal["ok", "image_unextractable", "unreadable", "low_confidence"]
     placeholder: bool
+    # wave-3 bảng (spec 2026-10-13): kernel parse table MỘT LẦN — html = nguồn
+    # sự thật, cells = rows [{text,rowspan,colspan,header}]; text = phẳng.
+    # Shape cũ (HTTP worker / batch đã ingest) → None.
+    html: str | None = None
+    cells: list[list[dict]] | None = None
 
     @field_validator("bbox")
     @classmethod
