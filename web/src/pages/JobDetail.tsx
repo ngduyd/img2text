@@ -26,10 +26,10 @@ const jobRefetchInterval = (q: Query<Job>): number | false =>
   q.state.data && PENDING_STATUSES.includes(q.state.data.status) ? 3000 : false;
 
 /**
- * WS-UI (spec 2026-10-13): 2 section dọc —
- * SECTION "Văn bản" (7/5: TextSection + ảnh gốc auto) — hiện cả khi rendering;
- * SECTION "Layout" (7/5: LayoutPreview / editor khi "Chỉnh sửa" + ExportBar
- * dưới preview | ảnh gốc + InfoPanel). Ảnh gốc auto-fetch, blob cache chung.
+ * WS-UI (spec 2026-10-13, wave-3 #5-6): wrapper grid DUY NHẤT —
+ * col trái stack SECTION "Văn bản" (TextSection, hiện cả khi rendering) +
+ * SECTION "Layout" (LayoutPreview / editor khi "Chỉnh sửa" + ExportBar);
+ * col phải = sticky "File gốc" (1 panel, blob cache chung) + InfoPanel.
  */
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
@@ -49,6 +49,8 @@ export default function JobDetail() {
   const [retryError, setRetryError] = useState<string | null>(null);
   /** JD2: btn-edit-doc = inline edit ON THIS PAGE — section Layout: preview ↔ editor. */
   const [editing, setEditing] = useState(false);
+  /** Wave-3 #7: "Chỉnh sửa layout" — md pane = textarea, Lưu layout → PATCH layout-content. */
+  const [layoutEditing, setLayoutEditing] = useState(false);
   /** P0-C: panel "Lịch sử" — list lazy-fetch khi mở (queryKey "versions" để invalidate). */
   const [showHistory, setShowHistory] = useState(false);
   const {
@@ -369,24 +371,22 @@ export default function JobDetail() {
         </p>
       )}
 
-      {/* SECTION 1 "Văn bản" — 7/5; hiện cả khi status rendering (OCR xong). */}
-      {textReady && (
-        <section
-          data-testid="section-text"
-          aria-labelledby="section-text-title"
-          className="mb-6 flex flex-col gap-4 lg:mb-8"
-        >
-          <h2 id="section-text-title" className="text-lg font-semibold tracking-tight">
-            Văn bản
-          </h2>
-          <div
-            data-testid="detail-grid"
-            className="grid gap-4 lg:grid-cols-12 lg:gap-6"
-          >
-            <div
-              data-testid="detail-reading"
-              className="flex min-w-0 flex-col gap-4 py-2 leading-[1.6] lg:col-span-7 lg:py-6"
+      {/*
+        Wave-3 #5: wrapper grid DUY NHẤT — col trái = section "Văn bản" + section
+        "Layout" stack; col phải = sticky "File gốc" + InfoPanel trượt xuyên 2 section.
+      */}
+      <div data-testid="detail-grid" className="grid gap-4 lg:grid-cols-12 lg:gap-6">
+        <div className="flex min-w-0 flex-col gap-6 lg:col-span-7">
+          {/* SECTION "Văn bản" — hiện cả khi status rendering (OCR xong). */}
+          {textReady && (
+            <section
+              data-testid="section-text"
+              aria-labelledby="section-text-title"
+              className="flex flex-col gap-4"
             >
+              <h2 id="section-text-title" className="text-lg font-semibold tracking-tight">
+                Văn bản
+              </h2>
               <div data-testid="panel-result" className="flex min-w-0 flex-col gap-6">
                 <TextSection jobId={id!} regions={regions} fileType={job.file_type} />
                 {/* WS-UI: link đọc tiếp ở trang trích xuất đầy đủ. */}
@@ -398,26 +398,31 @@ export default function JobDetail() {
                   Mở trang trích xuất đầy đủ
                 </Link>
               </div>
-            </div>
-            <aside className="flex min-w-0 flex-col lg:col-span-5 lg:sticky lg:top-16 lg:self-start">
-              <OriginalFilePanel jobId={id!} fileType={job.file_type} />
-            </aside>
-          </div>
-        </section>
-      )}
+            </section>
+          )}
 
-      {/* SECTION 2 "Layout" — 7/5: preview (default) / editor khi "Chỉnh sửa". */}
-      {layoutReady && result && (
-        <section
-          data-testid="section-layout"
-          aria-labelledby="section-layout-title"
-          className="flex flex-col gap-4"
-        >
-          <h2 id="section-layout-title" className="text-lg font-semibold tracking-tight">
-            Layout
-          </h2>
-          <div className="grid gap-4 lg:grid-cols-12 lg:gap-6">
-            <div className="flex min-w-0 flex-col gap-4 py-2 lg:col-span-7 lg:py-6">
+          {/* SECTION "Layout" — preview (default) / editor khi "Chỉnh sửa". */}
+          {layoutReady && result && (
+            <section
+              data-testid="section-layout"
+              aria-labelledby="section-layout-title"
+              className="flex flex-col gap-4"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <h2 id="section-layout-title" className="text-lg font-semibold tracking-tight">
+                  Layout
+                </h2>
+                {/* Wave-3 #7: "Chỉnh sửa layout" — md pane = textarea + Lưu layout (khác btn-edit-doc). */}
+                <Button
+                  testid="btn-edit-layout"
+                  variant="secondary"
+                  aria-pressed={layoutEditing}
+                  onClick={() => setLayoutEditing((v) => !v)}
+                >
+                  <PenLine className="h-4 w-4" aria-hidden="true" />
+                  {layoutEditing ? "Đang sửa layout" : "Chỉnh sửa layout"}
+                </Button>
+              </div>
               {editing ? (
                 <UnifiedEditor
                   jobId={id!}
@@ -428,7 +433,7 @@ export default function JobDetail() {
                   hostRef={editorHostRef}
                 />
               ) : (
-                <LayoutPreview job={job} />
+                <LayoutPreview job={job} editing={layoutEditing} />
               )}
               {/* Stats line dưới preview (spec: SECTION Layout). */}
               <p data-testid="result-stats" className="text-sm text-muted">
@@ -438,36 +443,15 @@ export default function JobDetail() {
               <Card testid="panel-export">
                 <ExportBar jobId={id!} />
               </Card>
-            </div>
-            <aside className="flex min-w-0 flex-col gap-4 lg:col-span-5 lg:sticky lg:top-16 lg:self-start">
-              {/* ẢNH GỐC: dùng lại blob cache — không fetch đôi. */}
-              <OriginalFilePanel
-                jobId={id!}
-                fileType={job.file_type}
-                testid="panel-original-layout"
-              />
-              <InfoPanel job={job} />
-            </aside>
-          </div>
-        </section>
-      )}
-
-      {/* OCR chưa xong (queued/extracting/failed): status-only — original + info. */}
-      {!textReady && (
-        <div data-testid="detail-grid" className="grid gap-4 lg:grid-cols-12 lg:gap-6">
-          <div className="lg:col-span-7" />
-          <aside className="flex min-w-0 flex-col gap-4 lg:col-span-5">
-            <OriginalFilePanel jobId={id!} fileType={job.file_type} />
-            <InfoPanel job={job} />
-          </aside>
+            </section>
+          )}
         </div>
-      )}
-      {/* rendering (textReady, chưa layout): InfoPanel lẻ ra dưới. */}
-      {textReady && !layoutReady && (
-        <aside className="mt-4 flex min-w-0 flex-col gap-4">
+        {/* ẢNH GỐC (1 panel duy nhất, blob cache chung) + InfoPanel — sticky xuyên 2 section. */}
+        <aside className="flex min-w-0 flex-col gap-4 lg:col-span-5 lg:sticky lg:top-16 lg:self-start">
+          <OriginalFilePanel jobId={id!} fileType={job.file_type} />
           <InfoPanel job={job} />
         </aside>
-      )}
+      </div>
     </main>
   );
 }

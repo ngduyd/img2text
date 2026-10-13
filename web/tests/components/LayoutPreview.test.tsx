@@ -4,8 +4,11 @@ import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "../../src/api/client";
+import { toast } from "sonner";
 import type { Job } from "../../src/api/types";
 import LayoutPreview from "../../src/components/LayoutPreview";
+
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 vi.mock("../../src/api/client", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../src/api/client")>();
@@ -16,6 +19,7 @@ vi.mock("../../src/api/client", async (importOriginal) => {
       exportJob: vi.fn(),
       downloadExport: vi.fn(),
       getDocxHtml: vi.fn(),
+      patchLayoutContent: vi.fn(),
     },
   };
 });
@@ -35,11 +39,11 @@ const JOB: Job = {
   layout_style: { fontFamily: "Times New Roman", fontSize: 18 },
 };
 
-function renderPreview(job: Job = JOB): ReturnType<typeof render> {
+function renderPreview(job: Job = JOB, editing = false): ReturnType<typeof render> {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const ui: ReactElement = (
     <QueryClientProvider client={queryClient}>
-      <LayoutPreview job={job} />
+      <LayoutPreview job={job} editing={editing} />
     </QueryClientProvider>
   );
   return render(ui);
@@ -108,4 +112,33 @@ it("export failure → role=alert error + retry button", async () => {
   const alert = await screen.findByTestId("preview-error");
   expect(alert).toHaveAttribute("role", "alert");
   expect(screen.getByTestId("btn-retry-preview")).toBeInTheDocument();
+});
+
+/** Wave-3 #7: "Chỉnh sửa layout" → md pane = textarea; Lưu layout → PATCH + toast. */
+it("editing → md pane = textarea (nguồn md-layout); save calls PATCH + toast", async () => {
+  vi.mocked(api.exportJob).mockResolvedValue({ url: "" });
+  vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["# Ban dau"]));
+  vi.mocked(api.patchLayoutContent).mockResolvedValue({ ok: true });
+  renderPreview(JOB, true);
+  const ta = await screen.findByTestId("layout-editor-textarea");
+  expect(ta).toHaveValue("# Ban dau");
+  // Preview HTML bị thay bằng editor khi editing (mặc định = xem).
+  expect(screen.queryByTestId("preview-md")).not.toBeInTheDocument();
+  const user = userEvent.setup();
+  await user.clear(ta);
+  await user.type(ta, "# Da sua");
+  await user.click(screen.getByTestId("btn-save-layout-md"));
+  await waitFor(() =>
+    expect(api.patchLayoutContent).toHaveBeenCalledWith(5, "# Da sua"),
+  );
+  await waitFor(() =>
+    expect(toast.success).toHaveBeenCalledWith("Đã lưu layout."),
+  );
+});
+
+it("editing + word mode → word pane giữ nguyên preview (không textarea)", async () => {
+  vi.mocked(api.getDocxHtml).mockResolvedValue("<p>Noi dung</p>");
+  renderPreview({ ...JOB, output_format: "docx" }, true);
+  expect(await screen.findByTestId("preview-word")).toBeInTheDocument();
+  expect(screen.queryByTestId("layout-editor-textarea")).not.toBeInTheDocument();
 });

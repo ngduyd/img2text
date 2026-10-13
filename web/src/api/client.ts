@@ -240,6 +240,13 @@ export const api = {
       method: "PUT",
       body: { markdown },
     }),
+  // Wave-3 Lane G: layout editor "Lưu layout" → kind md-layout snapshot,
+  // KHÔNG đụng text_version (layout artifact = đời sống riêng).
+  patchLayoutContent: (id: number | string, markdown: string) =>
+    request<{ ok: boolean }>(`/api/jobs/${id}/layout-content`, {
+      method: "PATCH",
+      body: { markdown },
+    }),
   // Plan M (M1): word style overrides (null = xoá override).
   putLayoutStyle: (id: number | string, style: LayoutStyle | null) =>
     request<unknown>(`/api/jobs/${id}/layout-style`, { method: "PUT", body: { style } }),
