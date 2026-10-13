@@ -305,6 +305,45 @@ def test_rasterize_heif_input_decodes(tmp_path):
     with Image.open(out[0]) as im:
         assert im.size == (8, 8)
 
+# --- lane H task 1 (OCR perf): downscale jpg/webp quá lớn + scales.json ---
+
+def test_rasterize_downscales_jpg_over_3000_writes_scales(tmp_path):
+    """Lane H: jpg phone cao phân giải (max side > 3000) → page PNG max side
+    ≤3000 (LANCZOS, giữ tỉ lệ) + scales.json {page_stem: mới/cũ} = 0.75."""
+    from PIL import Image
+
+    src = tmp_path / "big.jpg"
+    Image.new("RGB", (4000, 3000), "white").save(src, "JPEG", quality=90)
+    out = kb.rasterize_to_pages(str(src), str(tmp_path / "raw"))
+    with Image.open(out[0]) as im:
+        assert im.size == (3000, 2250)  # giữ tỉ lệ, max side = 3000
+    scales = json.loads((tmp_path / "scales.json").read_text(encoding="utf-8"))
+    assert scales == {"page_0001": 0.75}
+
+def test_rasterize_small_jpg_keeps_size_no_scales(tmp_path):
+    """Ảnh nhỏ (max side ≤ 3000) không đổi → scales.json không sinh ra."""
+    from PIL import Image
+
+    src = tmp_path / "small.jpg"
+    Image.new("RGB", (800, 600), "white").save(src, "JPEG")
+    out = kb.rasterize_to_pages(str(src), str(tmp_path / "raw"))
+    with Image.open(out[0]) as im:
+        assert im.size == (800, 600)
+    assert not (tmp_path / "scales.json").exists()
+
+def test_rasterize_pdf_branch_no_downscale_no_scales(tmp_path):
+    """PDF branch giữ nguyên (pdftoppm 200dpi) — không downscale, không scales."""
+    import fitz
+
+    doc = fitz.open()
+    doc.new_page(width=200, height=300).draw_rect(
+        fitz.Rect(10, 10, 100, 100), color=(1, 0, 0), fill=(1, 0, 0))
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(doc.tobytes())
+    doc.close()
+    kb.rasterize_to_pages(str(pdf), str(tmp_path / "raw"))
+    assert not (tmp_path / "scales.json").exists()
+
 # --- wave-3 (spec 2026-10-13): bảng cells → md GFM pipe + reading order 2 cột ---
 
 FIXTURE_TABLE_HTML = (

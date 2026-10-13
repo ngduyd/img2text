@@ -379,6 +379,12 @@ def default_pdftoppm(pdf_bytes: bytes, file_type: str) -> list:
 
 DPI = 200
 MAX_SIDE = 2500
+# lane H (OCR perf): rasterize downscale jpg/webp có max side > 3000 → 3000
+# (LANCZOS, giữ tỉ lệ) TRƯỚC khi save page PNG — precheck/cv2.imread/PNG
+# encode không đụng full-res. scale bbox→tọa độ gốc trong extract_crops
+# tự lấy từ page.rect/w_px (đã BAO TRỘN hệ số rasterize + preprocess) —
+# scales.json chỉ là ghi chú audit, KHÔNG được chia thêm vào bbox (double).
+MAX_PAGE_SIDE = 3000
 DO_DESKEW = True
 DO_SHADOW_REMOVE = True
 
@@ -601,7 +607,10 @@ def rasterize_to_pages(input_path: str, raw_dir: str) -> list[str]:
     """Input → page_0001.png.. (raw_dir); returns sorted page paths.
 
     EXIF-rotate trước OCR: ảnh JPEG orientation tag (phone camera) được
-    exif_transpose → PNG đúng chiều thật (OCR đọc pixels, không đọc EXIF)."""
+    exif_transpose → PNG đúng chiều thật (OCR đọc pixels, không đọc EXIF).
+    Ảnh jpg/webp max side > MAX_PAGE_SIDE → downscale về 3000 + ghi tỉ lệ
+    mới/cũ vào raw_dir/../scales.json ({page_stem: scale}); PDF giữ nguyên
+    (pdftoppm 200dpi)."""
     from PIL import Image, ImageOps
 
     _register_heif_opener()
@@ -614,6 +623,7 @@ def rasterize_to_pages(input_path: str, raw_dir: str) -> list[str]:
         with Image.open(io.BytesIO(data)) as im:
             raster = [(data, im.size[0], im.size[1])]
     out = []
+    scales: dict[str, float] = {}
     for i, (png, _w, _h) in enumerate(raster, 1):
         p = os.path.join(raw_dir, f"page_{i:04d}.png")
         if input_path.lower().endswith(".pdf"):
@@ -621,8 +631,23 @@ def rasterize_to_pages(input_path: str, raw_dir: str) -> list[str]:
                 f.write(png)
         else:  # jpg/webp input → PNG (OCR phase globs page_*.png)
             with Image.open(io.BytesIO(png)) as im:
-                ImageOps.exif_transpose(im).save(p, "PNG")
+                im = ImageOps.exif_transpose(im)
+                w, h = im.size
+                if max(w, h) > MAX_PAGE_SIDE:  # lane H: downscale trước save
+                    s = MAX_PAGE_SIDE / max(w, h)
+                    im = im.resize((max(1, round(w * s)), max(1, round(h * s))),
+                                   Image.LANCZOS)
+                    scales[os.path.splitext(os.path.basename(p))[0]] = s
+                im.save(p, "PNG")
         out.append(p)
+    scales_p = os.path.join(
+        os.path.dirname(os.path.abspath(raw_dir)), "scales.json")
+    if scales:
+        with open(scales_p, "w", encoding="utf-8") as f:
+            json.dump(scales, f, ensure_ascii=False, indent=2)
+    elif os.path.exists(scales_p):
+        # dev/resume dir cũ có downscale, run này không → scales cũ sai lệch
+        os.remove(scales_p)
     return out
 
 

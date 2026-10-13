@@ -131,6 +131,45 @@ def test_extract_crops_pdf_bbox_in_preprocessed_coords(tmp_path):
     pix.close()
     assert r > 200 and g < 60 and b < 60, f"center ({cx},{cy}) = {(r, g, b)}"
 
+def test_extract_crops_downscaled_page_clips_original_coords(tmp_path):
+    """Lane H task 1: rasterize downscale 4000×3000 → 3000 (scales.json 0.75);
+    bbox trên ảnh downscaled đổi sang tọa độ trang gốc qua scale = page.rect/
+    w_px (đã bao trọn hệ số rasterize + preprocess — KHÔNG chia thêm
+    scales.json) → crop trúng vùng đỏ gốc, không lệch về góc trên-trái."""
+    import json
+    import fitz
+    from PIL import Image
+
+    src = tmp_path / "big.jpg"
+    base = Image.new("RGB", (4000, 3000), "white")
+    base.paste(Image.new("RGB", (2400, 1500), "red"), (800, 600))
+    base.save(src, "JPEG", quality=95)
+    pages = kb.rasterize_to_pages(str(src), str(tmp_path / "raw"))
+    scale = json.loads(
+        (tmp_path / "scales.json").read_text(encoding="utf-8"))["page_0001"]
+    assert scale == 0.75
+    with Image.open(pages[0]) as im:
+        w, h = im.size
+    assert (w, h) == (3000, 2250)
+    # bbox vùng đỏ (800,600)-(3200,2100) trên ảnh GỐC → tọa độ trang downscaled
+    bbox = [round(v * scale) for v in (800, 600, 3200, 2100)]
+    assert bbox == [600, 450, 2400, 1575]
+    got = kb.extract_crops(
+        str(src),
+        [{"page": 1, "width": w, "height": h,
+          "blocks": [{"id": "p1_b0", "type": "image", "bbox": bbox, "text": ""}]}],
+        remove=lambda png: png,
+    )
+    img = Image.open(io.BytesIO(got["p1_b0"]))
+    # pix = clip (đơn vị page rect) × Matrix(2,2); rect của fitz theo dpi
+    # metadata ảnh nguồn — pin toàn bộ chuỗi bbox × rect/w_px × 2
+    rect_w = fitz.open(str(src))[0].rect.width
+    assert img.width == pytest.approx((bbox[2] - bbox[0]) * (rect_w / w) * 2, abs=2)
+    # điểm chèm vào crop phải ĐỎ (scale lệch hệ số 0.75 → còn trắng)
+    px, py = max(2, img.width // 50), max(2, img.height // 50)
+    r, g, b = img.getpixel((px, py))[:3]
+    assert r > 200 and g < 60 and b < 60, f"({px},{py}) = {(r, g, b)}"
+
 def test_extract_crops_pixmap_144dpi(tmp_path):
     """get_pixmap mặc định 72dpi → crop mờ cho rembg. matrix=Matrix(2,2)
     → pix.width ≥ clip.width×1.5."""
