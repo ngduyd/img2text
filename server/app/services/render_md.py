@@ -136,8 +136,11 @@ def extract_pages(result: dict) -> list[Page]:
             while rid in seen:
                 rid = f"p{pi}-{rid}"
             seen.add(rid)
-            if "<table" in text.lower():
+            # wave-3: cells-shape (kernel parse table) → table; _table_md cần
+            # HTML nên text ưu tiên html (nguồn sự thật) khi có.
+            if region.get("cells") or "<table" in text.lower():
                 kind = "table"
+                text = region.get("html") or text
             elif is_image:
                 kind = "image"
             else:
