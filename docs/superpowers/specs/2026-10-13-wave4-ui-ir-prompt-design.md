@@ -66,6 +66,11 @@ MVP = mục 1-9.
      (đọc trái→phải mỗi hàng); blocks x-align thành grid (nhiều hàng × cột đều)
      = bảng; blocks tuần tự có indent treo/bullet = list; block đứng đầu band =
      heading.
+   - **Phân loại ĐẦY ĐỦ mọi loại block theo tọa độ** (không chỉ table/list/heading)
+     — IR enum: heading (mức1..N), paragraph, list, poem, table, **figure/image**
+     (→ crop + embed, mục 9), caption, formula, quote, footnote, page_number,
+     form_field, separator. Gộp/nested theo geometry (poem = các dòng verse liên
+     tiếp; list = các item; caption kề figure).
    - **type chỉ để ĐẶT LOẠI node SAU** khi đã group xong theo geometry.
    - Map type vocabulary OCR (header/seal/doc_title/text/figure) → IR enum tường
      minh (không đoán mò).
