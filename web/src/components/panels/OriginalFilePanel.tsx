@@ -92,7 +92,8 @@ export default function OriginalFilePanel({
               data-testid="original-pdf-frame"
               src={objectUrl}
               title="File gốc"
-              sandbox=""
+              // Wave-3: KHÔNG sandbox — blob URL same-origin, sandbox "" chặn
+              // browser PDF viewer built-in (trắng).
               className="h-[75vh] w-full rounded-md border border-border"
             />
           )}
