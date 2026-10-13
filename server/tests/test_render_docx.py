@@ -236,29 +236,73 @@ def test_prompt_guards_empty_zones():
     assert "render nothing" in low
     assert "do not wrap in json" in low
 
-    async def test_build_docx_table_block(self, monkeypatch):
-        """HTML table in OCR → docx table."""
-        ir = _ir_response()
-        ir["pages"][0]["content"] = [
-            {
-                "id": "node_001",
-                "type": "table",
-                "role": "body",
-                "text": "<table><tr><td>A</td><td>B</td></tr>"
-                        "<tr><td>1</td><td>2</td></tr></table>",
-                "align": "left",
-                "indent": 0,
-                "source_block_ids": ["r0"],
-                "bbox": [1, 2, 30, 40],
-                "children": [],
-            }
-        ]
-        fake_llm(monkeypatch, [
-            FakeResponse(json.dumps(ir)),
-            FakeResponse(_html_table_response()),
-        ])
-        data = await build_docx(_ocr_result())
-        doc = Document(io.BytesIO(data))
-        assert len(doc.tables) == 1
-        rows = [[c.text for c in row.cells] for row in doc.tables[0].rows]
-        assert rows == [["A", "B"], ["1", "2"]]
+async def test_build_docx_table_block(monkeypatch):
+    """HTML table in OCR (IR table node) → docx table."""
+    ir = _ir_response()
+    ir["pages"][0]["content"] = [
+        {
+            "id": "node_001",
+            "type": "table",
+            "role": "body",
+            "text": "<table><tr><td>A</td><td>B</td></tr>"
+                    "<tr><td>1</td><td>2</td></tr></table>",
+            "align": "left",
+            "indent": 0,
+            "source_block_ids": ["r0"],
+            "bbox": [1, 2, 30, 40],
+            "children": [],
+        }
+    ]
+    fake_llm(monkeypatch, [
+        FakeResponse(json.dumps(ir)),
+        FakeResponse(_html_table_response()),
+    ])
+    data = await build_docx(_ocr_result())
+    doc = Document(io.BytesIO(data))
+    assert len(doc.tables) == 1
+    rows = [[c.text for c in row.cells] for row in doc.tables[0].rows]
+    assert rows == [["A", "B"], ["1", "2"]]
+
+# --- wave-3 (spec 2026-10-13): region cells-shape → docx table merge span ---
+
+def _cells_result() -> dict:
+    cells = [
+        [{"text": "A", "rowspan": 2, "colspan": 1, "header": False},
+         {"text": "B", "rowspan": 1, "colspan": 2, "header": False}],
+        [{"text": "C", "rowspan": 1, "colspan": 1, "header": False}],
+    ]
+    return {"pages": [{"index": 0, "width": 800, "height": 600, "regions": [
+        {"id": "r0", "bbox": [1, 2, 798, 200],
+         "text": "A | B | B\nA | C",  # phẳng (kernel)
+         "html": "<table><tr><td rowspan=\"2\">A</td><td colspan=\"2\">B</td></tr>"
+                 "<tr><td>C</td></tr></table>",
+         "cells": cells, "verdict": "ok", "placeholder": False}]}]}
+
+async def test_cells_table_renders_gridspan_vmerge():
+    """wave-3: cells-shape → docx table python-docx merge() thật —
+    document.xml chứa gridSpan (colspan) + vMerge (rowspan)."""
+    import zipfile
+
+    data = await build_docx(_cells_result(), use_llm=False)
+    xml = zipfile.ZipFile(io.BytesIO(data)).read("word/document.xml").decode()
+    assert "<w:tbl>" in xml
+    assert "gridSpan" in xml and "vMerge" in xml  # B colspan=2, A rowspan=2
+    doc = Document(io.BytesIO(data))
+    assert len(doc.tables) == 1
+    t = doc.tables[0]
+    assert t.cell(0, 0).text.strip() == "A"
+    assert t.cell(0, 1).text.strip() == "B"
+    assert t.cell(1, 0).text.strip() == "A"  # vMerge tiếp tục
+    assert t.cell(1, 1).text.strip() == "C"
+
+async def test_html_only_region_keeps_old_path():
+    """Region chỉ có html (cũ, không cells) → path regex cũ giữ nguyên."""
+    result = {"pages": [{"index": 0, "width": 800, "height": 600, "regions": [
+        {"id": "r0", "bbox": [1, 2, 798, 40],
+         "text": "<table><tr><td>A</td><td>B</td></tr><tr><td>1</td><td>2</td></tr></table>",
+         "verdict": "ok", "placeholder": False}]}]}
+    data = await build_docx(result, use_llm=False)
+    doc = Document(io.BytesIO(data))
+    assert len(doc.tables) == 1
+    rows = [[c.text for c in row.cells] for row in doc.tables[0].rows]
+    assert rows == [["A", "B"], ["1", "2"]]
