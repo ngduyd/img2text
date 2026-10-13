@@ -305,6 +305,122 @@ def test_rasterize_heif_input_decodes(tmp_path):
     with Image.open(out[0]) as im:
         assert im.size == (8, 8)
 
+# --- wave-3 (spec 2026-10-13): bảng cells → md GFM pipe + reading order 2 cột ---
+
+FIXTURE_TABLE_HTML = (
+    "<table><tr><th>a</th><th>b</th></tr><tr><td>c</td><td>d</td></tr></table>"
+)
+
+def test_parse_table_html_two_cols_two_rows_th():
+    rows = kb._parse_table_html(FIXTURE_TABLE_HTML)
+    assert [[c["text"] for c in r] for r in rows] == [["a", "b"], ["c", "d"]]
+    assert [c["header"] for c in rows[0]] == [True, True]
+    assert [c["header"] for c in rows[1]] == [False, False]
+    assert all(c["rowspan"] == 1 and c["colspan"] == 1 for r in rows for c in r)
+
+def test_parse_table_html_regex_fallback_matches_shape():
+    rows = kb._parse_table_regex(FIXTURE_TABLE_HTML)
+    assert [[c["text"] for c in r] for r in rows] == [["a", "b"], ["c", "d"]]
+    assert [c["header"] for c in rows[0]] == [True, True]
+
+def test_parse_table_html_span_attrs_int_default_one():
+    html = '<table><tr><td rowspan="2" colspan="3">x</td><td>y</td></tr></table>'
+    (row,) = kb._parse_table_html(html)
+    assert (row[0]["rowspan"], row[0]["colspan"]) == (2, 3)
+    assert (row[1]["rowspan"], row[1]["colspan"]) == (1, 1)
+
+def test_table_cells_to_md_gfm_pipe_header_separator():
+    cells = kb._parse_table_html(FIXTURE_TABLE_HTML)
+    assert kb._table_cells_to_md(cells) == "| a | b |\n| --- | --- |\n| c | d |"
+
+def test_table_cells_to_md_colspan_repeats_rowspan_dropped():
+    """colspan → lặp text ô; rowspan → bỏ (GFM pipe không có span — docx giữ)."""
+    cells = [
+        [{"text": "x", "rowspan": 2, "colspan": 2, "header": False}],
+        [{"text": "y", "rowspan": 1, "colspan": 1, "header": False}],
+    ]
+    assert kb._table_cells_to_md(cells) == "| x | x |\n| --- | --- |\n| y |"
+
+def test_table_cells_to_md_escapes_pipe():
+    cells = [[{"text": "a|b", "rowspan": 1, "colspan": 1, "header": True}]]
+    assert kb._table_cells_to_md(cells) == "| a\\|b |\n| --- |"
+
+def test_extract_blocks_table_gains_cells_html_flat_text():
+    """wave-3: block table → html (nguồn sự thật) + cells (parse 1 lần) +
+    text phẳng (result.jsonb regions dùng)."""
+    raw = {"res": {"parsing_res_list": [
+        {"block_bbox": [0, 0, 10, 10], "block_content": FIXTURE_TABLE_HTML,
+         "block_label": "table"},
+        {"block_bbox": [0, 20, 10, 30], "block_content": "text thường",
+         "block_label": "text"},
+    ]}}
+    blocks = kb.extract_blocks(raw, 1)
+    t = blocks[0]
+    assert t["html"] == FIXTURE_TABLE_HTML
+    assert [[c["text"] for c in r] for r in t["cells"]] == [["a", "b"], ["c", "d"]]
+    assert t["text"] == "a | b\nc | d"
+    # text thường không table → giữ nguyên
+    assert "cells" not in blocks[1] and blocks[1]["text"] == "text thường"
+
+def test_extract_blocks_table_parse_fail_keeps_html_text():
+    raw = {"res": {"parsing_res_list": [
+        {"block_bbox": [0, 0, 10, 10], "block_content": "<table><div>hỏng",
+         "block_label": "table"}]}}
+    (b,) = kb.extract_blocks(raw, 1)
+    assert "cells" not in b and b["text"] == "<table><div>hỏng"
+
+def test_page_md_table_renders_pipe_not_html():
+    blocks = kb.extract_blocks({"res": {"parsing_res_list": [
+        {"block_bbox": [0, 0, 10, 10], "block_content": FIXTURE_TABLE_HTML,
+         "block_label": "table"}]}}, 1)
+    assert kb._page_md(blocks) == "| a | b |\n| --- | --- |\n| c | d |"
+
+def test_page_md_two_columns_left_before_right():
+    """b15/b17 shape (job1 đề Hóa): 2 vùng cùng hàng → trái trước."""
+    blocks = [
+        {"id": "p1_b17", "type": "text", "bbox": [345, 518, 583, 713],
+         "text": "phải", "empty": False},
+        {"id": "p1_b15", "type": "text", "bbox": [60, 602, 322, 713],
+         "text": "trái", "empty": False},
+    ]
+    assert kb._page_md(blocks) == "trái\n\nphải"
+
+def test_page_md_two_image_markers_same_row_one_line():
+    blocks = [
+        {"id": "b15", "type": "image", "bbox": [60, 602, 322, 713],
+         "text": "", "empty": True},
+        {"id": "b17", "type": "image", "bbox": [345, 518, 583, 713],
+         "text": "", "empty": True},
+    ]
+    m15 = kb.IMAGE_MARKER.format(region_id="b15")
+    m17 = kb.IMAGE_MARKER.format(region_id="b17")
+    assert kb._page_md(blocks) == f"{m15} {m17}"  # cùng hàng → 1 dòng, trái trước
+
+def test_page_md_image_marker_lone_own_line():
+    blocks = [
+        {"id": "b0", "type": "image", "bbox": [60, 100, 322, 200],
+         "text": "", "empty": True},
+        {"id": "b1", "type": "image", "bbox": [60, 600, 322, 700],
+         "text": "", "empty": True},
+    ]
+    md = kb._page_md(blocks)
+    assert md == (kb.IMAGE_MARKER.format(region_id="b0") + "\n\n"
+                  + kb.IMAGE_MARKER.format(region_id="b1"))
+
+def test_page_md_plain_text_join_unchanged():
+    blocks = [
+        {"id": "b0", "type": "text", "bbox": [0, 0, 10, 10],
+         "text": "a", "empty": False},
+        {"id": "b1", "type": "text", "bbox": [0, 20, 10, 30],
+         "text": "b", "empty": False},
+    ]
+    assert kb._page_md(blocks) == "a\n\nb"
+
+def test_image_marker_parity_with_server_schemas():
+    """kernel standalone không import được server — hằng phải khớp 1-1."""
+    from app.core.schemas import IMAGE_MARKER
+    assert kb.IMAGE_MARKER == IMAGE_MARKER
+
 def test_rasterize_image_input_closes_handles(tmp_path, monkeypatch):
     """review r1 P2: Image.open đầu tiên trong rasterize (đọc size) phải
     được close — spy mọi handle mở ra."""
