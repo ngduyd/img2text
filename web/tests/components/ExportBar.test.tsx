@@ -20,31 +20,10 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-/** JD2 rail: nút phụ nằm sau disclosure "Định dạng khác" — mở trước khi click. */
-async function expandFormats() {
-  await userEvent.click(screen.getByTestId("export-more"));
+/** Lane I Task 5: text downloads dời lên header — ExportBar chỉ còn nhóm Layout. */
+async function expandLayoutFormats() {
+  await userEvent.click(screen.getByTestId("export-layout-more"));
 }
-
-it("primary .md button + export-more disclosure; all fmt testids in DOM", async () => {
-  render(<ExportBar jobId="5" />);
-  for (const fmt of ["md", "html", "docx", "pdf"]) {
-    expect(screen.getByTestId(`export-${fmt}`)).toBeInTheDocument();
-  }
-  expect(screen.getByTestId("export-more")).toHaveAttribute("aria-expanded", "false");
-  expect(screen.getByTestId("export-formats")).not.toBeVisible();
-});
-
-it("four export buttons exist and call api with fmt", async () => {
-  vi.mocked(api.exportJob).mockResolvedValue({ url: "https://r2/exports/5/docx" });
-  const w = { location: "about:blank" };
-  const open = vi.fn().mockReturnValue(w);
-  vi.stubGlobal("open", open);
-  render(<ExportBar jobId="5" />);
-  await expandFormats();
-  await userEvent.click(screen.getByTestId("export-docx"));
-  expect(api.exportJob).toHaveBeenCalledWith("5", "docx");
-  await waitFor(() => expect(w.location).toBe("https://r2/exports/5/docx"));
-});
 
 it("docx-layout button renders and calls exportJob with docx-layout (D4 review)", async () => {
   vi.mocked(api.exportJob).mockResolvedValue({ url: "https://r2/exports/5/docx-layout" });
@@ -52,7 +31,7 @@ it("docx-layout button renders and calls exportJob with docx-layout (D4 review)"
   const open = vi.fn().mockReturnValue(w);
   vi.stubGlobal("open", open);
   render(<ExportBar jobId="5" />);
-  await expandFormats();
+  await expandLayoutFormats();
   await userEvent.click(screen.getByTestId("btn-export-docx-layout"));
   expect(api.exportJob).toHaveBeenCalledWith("5", "docx-layout");
   await waitFor(() => expect(w.location).toBe("https://r2/exports/5/docx-layout"));
@@ -64,7 +43,7 @@ it("md-layout button renders and calls exportJob with md-layout (D5)", async () 
   const open = vi.fn().mockReturnValue(w);
   vi.stubGlobal("open", open);
   render(<ExportBar jobId="5" />);
-  await expandFormats();
+  await expandLayoutFormats();
   await userEvent.click(screen.getByTestId("btn-export-md-layout"));
   expect(api.exportJob).toHaveBeenCalledWith("5", "md-layout");
   await waitFor(() => expect(w.location).toBe("https://r2/exports/5/md-layout"));
@@ -73,24 +52,22 @@ it("md-layout button renders and calls exportJob with md-layout (D5)", async () 
 it("shows ApiError detail when export fails", async () => {
   vi.mocked(api.exportJob).mockRejectedValue(new ApiError("Xuất file thất bại."));
   render(<ExportBar jobId="5" />);
-  await expandFormats();
-  await userEvent.click(screen.getByTestId("export-pdf"));
+  await expandLayoutFormats();
+  await userEvent.click(screen.getByTestId("btn-export-docx-layout"));
   expect(await screen.findByTestId("export-error")).toHaveTextContent(
     "Xuất file thất bại.",
   );
 });
 
-/** Lane B Task 3: 2 nhóm label — "Văn bản" + "Layout" tách bạch. */
-it("renders 2 nhóm 'Văn bản' + 'Layout' với label rõ", async () => {
+
+/** Lane I Task 5: chỉ còn nhóm "Layout"; text formats KHÔNG còn trong ExportBar. */
+it("renders nhóm 'Layout' + không còn text download buttons", async () => {
   render(<ExportBar jobId="5" />);
-  const textGroup = screen.getByRole("button", { name: "Văn bản" });
   const layoutGroup = screen.getByRole("button", { name: "Layout" });
-  expect(textGroup).toHaveAttribute("aria-expanded", "false");
   expect(layoutGroup).toHaveAttribute("aria-expanded", "false");
-  // List ẩn mặc định; mở từng nhóm thấy đúng format của nhóm đó.
-  await userEvent.click(textGroup);
-  expect(screen.getByTestId("export-md")).toBeVisible();
-  expect(screen.queryByTestId("btn-export-md-layout")).not.toBeVisible();
+  for (const fmt of ["md", "html", "docx", "pdf"]) {
+    expect(screen.queryByTestId(`export-${fmt}`)).not.toBeInTheDocument();
+  }
   await userEvent.click(layoutGroup);
   expect(screen.getByTestId("btn-export-md-layout")).toBeVisible();
   expect(screen.getByTestId("btn-export-docx-layout")).toBeVisible();
@@ -102,16 +79,16 @@ it("disables only in-flight formats under concurrent clicks", async () => {
     () => new Promise((res) => resolvers.push(res)),
   );
   render(<ExportBar jobId="5" />);
-  const md = screen.getByTestId("export-md");
-  await expandFormats();
-  const html = screen.getByTestId("export-html");
-  await userEvent.click(md);
-  await userEvent.click(html);
-  expect(md).toBeDisabled();
-  expect(html).toBeDisabled();
-  resolvers[0]({ url: "https://r2/exports/5/md" });
-  await waitFor(() => expect(md).not.toBeDisabled());
-  expect(html).toBeDisabled();
-  resolvers[1]({ url: "https://r2/exports/5/html" });
-  await waitFor(() => expect(html).not.toBeDisabled());
+  await expandLayoutFormats();
+  const mdLayout = screen.getByTestId("btn-export-md-layout");
+  const docxLayout = screen.getByTestId("btn-export-docx-layout");
+  await userEvent.click(mdLayout);
+  await userEvent.click(docxLayout);
+  expect(mdLayout).toBeDisabled();
+  expect(docxLayout).toBeDisabled();
+  resolvers[0]({ url: "https://r2/exports/5/md-layout" });
+  await waitFor(() => expect(mdLayout).not.toBeDisabled());
+  expect(docxLayout).toBeDisabled();
+  resolvers[1]({ url: "https://r2/exports/5/docx-layout" });
+  await waitFor(() => expect(docxLayout).not.toBeDisabled());
 });

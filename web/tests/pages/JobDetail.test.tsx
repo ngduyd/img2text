@@ -279,8 +279,9 @@ it("done: no job-meta/output badge, stats line + ExportBar render", async () => 
   expect(screen.queryByTestId("job-output-format")).not.toBeInTheDocument();
   expect(screen.getByTestId("result-stats")).toBeInTheDocument();
   expect(screen.getByTestId("export-bar")).toBeInTheDocument();
-  expect(screen.getByTestId("export-more")).toBeInTheDocument();
   expect(screen.getByTestId("export-layout-more")).toBeInTheDocument();
+  expect(screen.queryByTestId("export-more")).not.toBeInTheDocument();
+  expect(screen.getByTestId("btn-download")).toBeInTheDocument();
 });
 
 it("not done shows status-only panels, ResultPanel hidden until done", async () => {
@@ -339,7 +340,28 @@ it("btn-edit-doc toggles editor: preview → editor → preview, no navigation",
   expect(mockNavigate).not.toHaveBeenCalled();
 });
 
-/** Wave-3 #7 → Lane I Task 4: bỏ btn-edit-layout + textarea; btn-edit-doc mở UnifiedEditor (Tiptap + MDEditor) cho cả md và word. */
+/** Lane I Task 5: header "Tải xuống" dropdown — 4 định dạng text (không còn download rải dưới). */
+it("header download dropdown: 4 text formats call exportJob + open url", async () => {
+  mockJob(DONE_JOB);
+  vi.mocked(api.exportJob).mockResolvedValue({ url: "https://r2/exports/5/docx" });
+  const w = { location: "about:blank" };
+  const openSpy = vi.fn().mockReturnValue(w);
+  vi.stubGlobal("open", openSpy);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  const btn = await screen.findByTestId("btn-download");
+  expect(btn).toHaveAttribute("aria-expanded", "false");
+  await user.click(btn);
+  expect(btn).toHaveAttribute("aria-expanded", "true");
+  const list = screen.getByTestId("download-formats");
+  for (const fmt of ["md", "html", "docx", "pdf"]) {
+    expect(within(list).getByTestId(`export-${fmt}`)).toBeInTheDocument();
+  }
+  await user.click(within(list).getByTestId("export-docx"));
+  expect(api.exportJob).toHaveBeenCalledWith("5", "docx");
+  await waitFor(() => expect(w.location).toBe("https://r2/exports/5/docx"));
+});
+/** Wave-3 #7 → Lane I Task 4: bỏ btn-edit-layout + textarea; btn-edit-doc mở UnifiedEditor. */
 it("no btn-edit-layout / layout-editor-textarea; btn-edit-doc opens UnifiedEditor", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });

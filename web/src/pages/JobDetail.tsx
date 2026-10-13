@@ -11,6 +11,7 @@ import { STATUS_TEXT, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
 import { useJobDoneToasts } from "../hooks/useJobDoneToasts";
 import ExportBar from "../components/ExportBar";
 import ConfirmDialog from "../components/ConfirmDialog";
+import DownloadDropdown from "../components/DownloadDropdown";
 import InfoPanel from "../components/panels/InfoPanel";
 import OriginalFilePanel from "../components/panels/OriginalFilePanel";
 import LayoutPreview from "../components/LayoutPreview";
@@ -49,6 +50,8 @@ export default function JobDetail() {
   const [retryError, setRetryError] = useState<string | null>(null);
   /** JD2: btn-edit-doc = inline edit ON THIS PAGE — section Layout: preview ↔ editor. */
   const [editing, setEditing] = useState(false);
+  /** Lane I Task 5: dropdown "Tải xuống" ở header (gộp 4 định dạng text). */
+  const [downloadOpen, setDownloadOpen] = useState(false);
   /** P0-C: panel "Lịch sử" — list lazy-fetch khi mở (queryKey "versions" để invalidate). */
   const [showHistory, setShowHistory] = useState(false);
   const {
@@ -249,6 +252,12 @@ export default function JobDetail() {
             <PenLine className="h-4 w-4" aria-hidden="true" />
             {editing ? "Đang sửa" : "Chỉnh sửa"}
           </Button>
+          {/* Lane I Task 5: download gộp 1 dropdown, dời lên cạnh "Chỉnh sửa". */}
+          <DownloadDropdown
+            jobId={id!}
+            open={downloadOpen}
+            onToggle={() => setDownloadOpen((v) => !v)}
+          />
           {/* P0-C: lịch sử version + khôi phục (API listVersions/restoreVersion sẵn). */}
           <Button
             testid="btn-version-history"
