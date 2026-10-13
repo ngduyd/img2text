@@ -52,6 +52,10 @@ export default function JobDetail() {
   const [editing, setEditing] = useState(false);
   /** Lane I Task 5: dropdown "Tải xuống" ở header (gộp 4 định dạng text). */
   const [downloadOpen, setDownloadOpen] = useState(false);
+  /** Lane I Task 6: định dạng layout đang xem (header switch → export → crossfade preview). */
+  const [layoutFmt, setLayoutFmt] = useState<"md-layout" | "docx-layout">("md-layout");
+  const [retryingLayout, setRetryingLayout] = useState(false);
+  const [confirmRetry, setConfirmRetry] = useState(false);
   /** P0-C: panel "Lịch sử" — list lazy-fetch khi mở (queryKey "versions" để invalidate). */
   const [showHistory, setShowHistory] = useState(false);
   const {
@@ -86,6 +90,38 @@ export default function JobDetail() {
       return;
     }
     setEditing(true);
+  };
+
+  /** Lane I Task 6: confirm "Vẽ lại layout" → POST retry-layout + loading + toast (R59). */
+  const confirmRetryLayout = async () => {
+    setConfirmRetry(false);
+    setRetryingLayout(true);
+    setRetryError(null);
+    try {
+      await api.retryLayout(id!);
+      toast.success("Đã tạo lại layout.");
+      await queryClient.invalidateQueries({ queryKey: ["job", id] });
+    } catch (err) {
+      setRetryError(err instanceof ApiError ? err.detail : "Tạo lại layout thất bại.");
+      toast.error(mapApiError(err));
+    } finally {
+      setRetryingLayout(false);
+    }
+  };
+
+  /**
+   * Lane I Task 6: switch md-layout ↔ docx-layout — export fmt (cache-hit server
+   * trả URL presigned ngay) → toast + crossfade preview (CSS 200ms, key remount).
+   */
+  const switchLayoutFmt = async (fmt: "md-layout" | "docx-layout") => {
+    if (fmt === layoutFmt) return;
+    try {
+      await api.exportJob(id!, fmt);
+      setLayoutFmt(fmt);
+      toast.success("Đã đổi định dạng layout.");
+    } catch (err) {
+      toast.error(mapApiError(err));
+    }
   };
 
   if (!job) {
@@ -221,25 +257,45 @@ export default function JobDetail() {
               Hủy job
             </Button>
           )}
-          {/* Layout gen failed (done but layout_cache miss): re-run LLM md+docx. */}
-          {job.status === "done" && result && (!job.layout_cache?.md || !job.layout_cache?.docx) && (
+          {/* Lane I Task 6: "Vẽ lại layout" — POST retry-layout, confirm + loading + toast. */}
+          {job.status === "done" && result && (
             <Button
               testid="btn-retry-layout"
               variant="secondary"
-              onClick={async () => {
-                setRetryError(null);
-                try {
-                  await api.retryLayout(id!);
-                  toast.success("Đã tạo lại layout.");
-                  await queryClient.invalidateQueries({ queryKey: ["job", id] });
-                } catch (err) {
-                  setRetryError(err instanceof ApiError ? err.detail : "Tạo lại layout thất bại.");
-                  toast.error(mapApiError(err));
-                }
-              }}
+              loading={retryingLayout}
+              onClick={() => setConfirmRetry(true)}
             >
-              Chạy lại layout
+              Vẽ lại layout
             </Button>
+          )}
+          {/* Lane I Task 6: switch định dạng layout md-layout ↔ docx-layout. */}
+          {job.status === "done" && result && job.mode !== "extract_only" && (
+            <div
+              role="group"
+              aria-label="Định dạng layout"
+              className="inline-flex items-center gap-1 rounded-md border border-border p-1"
+            >
+              <Button
+                testid="fmt-md-layout"
+                variant="ghost"
+                size="sm"
+                aria-pressed={layoutFmt === "md-layout"}
+                className={layoutFmt === "md-layout" ? "bg-surface-2 font-semibold" : ""}
+                onClick={() => void switchLayoutFmt("md-layout")}
+              >
+                Markdown
+              </Button>
+              <Button
+                testid="fmt-docx-layout"
+                variant="ghost"
+                size="sm"
+                aria-pressed={layoutFmt === "docx-layout"}
+                className={layoutFmt === "docx-layout" ? "bg-surface-2 font-semibold" : ""}
+                onClick={() => void switchLayoutFmt("docx-layout")}
+              >
+                DOCX
+              </Button>
+            </div>
           )}
           {/* JD2 amendment: Edit = inline edit trong section Layout (preview ↔ editor). */}
           <Button
@@ -296,6 +352,15 @@ export default function JobDetail() {
             }
           })();
         }}
+      />
+      {/* Lane I Task 6: confirm "Vẽ lại layout" (LLM re-run md+docx). */}
+      <ConfirmDialog
+        open={confirmRetry}
+        title="Vẽ lại layout?"
+        message="Toàn bộ layout (Markdown + DOCX) sẽ được vẽ lại bằng LLM. Tiếp tục?"
+        confirmLabel="Vẽ lại"
+        onCancel={() => setConfirmRetry(false)}
+        onConfirm={() => void confirmRetryLayout()}
       />
       {showHistory && (
         <section
@@ -425,7 +490,10 @@ export default function JobDetail() {
                   hostRef={editorHostRef}
                 />
               ) : (
-                <LayoutPreview job={job} />
+                /* Lane I Task 6: key remount + CSS crossfade 200ms khi đổi định dạng. */
+                <div key={layoutFmt} className="layout-crossfade">
+                  <LayoutPreview job={job} />
+                </div>
               )}
               {/* Stats line dưới preview (spec: SECTION Layout). */}
               <p data-testid="result-stats" className="text-sm text-muted">

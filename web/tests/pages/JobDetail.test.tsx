@@ -226,14 +226,16 @@ it("done without layout_cache shows retry-layout button and calls api", async ()
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   const user = userEvent.setup();
   await user.click(await screen.findByTestId("btn-retry-layout"));
+  await user.click(screen.getByTestId("confirm-accept"));
   expect(api.retryLayout).toHaveBeenCalledWith("5");
 });
 
-it("done with layout_cache hides retry-layout button", async () => {
+// Lane I Task 6: "Vẽ lại layout" luôn hiện khi done (không chỉ khi cache miss).
+it("done with layout_cache still shows retry-layout button", async () => {
   mockJob({ ...DONE_JOB, layout_cache: { md: true, docx: true } });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("layout-preview");
-  expect(screen.queryByTestId("btn-retry-layout")).not.toBeInTheDocument();
+  expect(screen.getByTestId("btn-retry-layout")).toBeInTheDocument();
 });
 
 it("done stops polling", async () => {
@@ -361,6 +363,52 @@ it("header download dropdown: 4 text formats call exportJob + open url", async (
   expect(api.exportJob).toHaveBeenCalledWith("5", "docx");
   await waitFor(() => expect(w.location).toBe("https://r2/exports/5/docx"));
 });
+/** Lane I Task 6: switch md-layout ↔ docx-layout ở header → export fmt + crossfade preview. */
+it("layout fmt switch: click docx-layout → exportJob docx-layout + toast + crossfade", async () => {
+  mockJob(DONE_JOB); // output_format undefined → default md-layout
+  vi.mocked(api.exportJob).mockResolvedValue({ url: "" });
+  vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["# A"]));
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  const btnMd = await screen.findByTestId("fmt-md-layout");
+  expect(btnMd).toHaveAttribute("aria-pressed", "true");
+  const btnDocx = screen.getByTestId("fmt-docx-layout");
+  expect(btnDocx).toHaveAttribute("aria-pressed", "false");
+  const preview = screen.getByTestId("layout-preview");
+  expect(preview.parentElement?.className).toContain("layout-crossfade");
+  await user.click(btnDocx);
+  await waitFor(() =>
+    expect(api.exportJob).toHaveBeenCalledWith("5", "docx-layout"),
+  );
+  await waitFor(() =>
+    expect(toast.success).toHaveBeenCalledWith("Đã đổi định dạng layout."),
+  );
+  expect(screen.getByTestId("fmt-docx-layout")).toHaveAttribute("aria-pressed", "true");
+});
+
+/** Lane I Task 6: "Vẽ lại layout" → confirm → POST retry-layout + loading + toast. */
+it("btn-retry-layout: confirm → retryLayout + toast; cancel → no call", async () => {
+  mockJob({ ...DONE_JOB, layout_cache: { md: true, docx: true } });
+  vi.mocked(api.retryLayout).mockResolvedValue({ md: true, docx: true });
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  const btn = await screen.findByTestId("btn-retry-layout");
+  expect(btn).toHaveTextContent("Vẽ lại layout");
+  // Hủy → không gọi.
+  await user.click(btn);
+  expect(screen.getByTestId("confirm-dialog")).toBeInTheDocument();
+  await user.click(screen.getByTestId("confirm-cancel"));
+  expect(api.retryLayout).not.toHaveBeenCalled();
+  // Confirm → gọi + toast + loading xong.
+  await user.click(btn);
+  await user.click(screen.getByTestId("confirm-accept"));
+  expect(api.retryLayout).toHaveBeenCalledWith("5");
+  await waitFor(() =>
+    expect(toast.success).toHaveBeenCalledWith("Đã tạo lại layout."),
+  );
+  expect(await screen.findByTestId("btn-retry-layout")).not.toHaveAttribute("aria-busy");
+});
+
 /** Wave-3 #7 → Lane I Task 4: bỏ btn-edit-layout + textarea; btn-edit-doc mở UnifiedEditor. */
 it("no btn-edit-layout / layout-editor-textarea; btn-edit-doc opens UnifiedEditor", async () => {
   mockJob(DONE_JOB);
