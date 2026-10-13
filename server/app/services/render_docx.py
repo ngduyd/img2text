@@ -58,6 +58,8 @@ class Block:
     indent: int = 0
     align: str = "left"
     band_cols: int = 1
+    # wave-3: cells-shape table (kernel parse) → docx add_table + merge span
+    cells: list | None = None
 
     @property
     def x0(self): return self.bbox[0]
@@ -131,13 +133,14 @@ def extract_pages(result: dict) -> list[Page]:
             while rid in seen:
                 rid = f"p{pi}-{rid}"
             seen.add(rid)
-            if "<table" in text.lower():
+            if "<table" in text.lower() or region.get("cells"):
                 kind = "table"
             elif is_image:
                 kind = "image"
             else:
                 kind = "text"
-            blocks.append(Block(rid, pi, kind, tuple(bbox), text))
+            blocks.append(Block(rid, pi, kind, tuple(bbox), text,
+                                cells=region.get("cells")))
         w = pg.get("width") or max((b.x1 for b in blocks), default=1000)
         h = pg.get("height") or max((b.y1 for b in blocks), default=1000)
         pages.append(Page(pi, w, h, blocks))
@@ -371,6 +374,48 @@ def _add_html_table(container, text: str) -> bool:
     for ri, row in enumerate(rows):
         for ci, val in enumerate(row):
             table.rows[ri].cells[ci].paragraphs[0].add_run(val)
+    return True
+
+def _add_cells_table(container, cells: list[list[dict]]) -> bool:
+    """wave-3: cells (kernel parse, có rowspan/colspan/header) → docx table
+    python-docx với merge() thật (gridSpan/vMerge) — fidelity 100%, html
+    regex path không có span.
+
+    Ceiling: grid ncols = hàng sum colspan lớn nhất (rowspan-tiếp-chéo không
+    nới rộng grid) — đủ cho bảng VLM; upgrade path = occupancy scan đầy đủ."""
+    rows = len(cells)
+    ncols = max(
+        (sum(max(1, int(c.get("colspan") or 1)) for c in row) for row in cells),
+        default=0,
+    )
+    if not rows or not ncols:
+        return False
+    if isinstance(container, _Cell):
+        p0 = container.paragraphs[0]
+        if not p0.text and len(container.paragraphs) == 1:
+            p0._element.getparent().remove(p0._element)
+    table = container.add_table(rows=rows, cols=ncols)
+    grid: list[list[tuple[int, int] | None]] = [[None] * ncols for _ in range(rows)]
+    for ri, row in enumerate(cells):
+        ci = 0
+        for cell in row:
+            while ci < ncols and grid[ri][ci] is not None:
+                ci += 1
+            if ci >= ncols:
+                break
+            rs = max(1, int(cell.get("rowspan") or 1))
+            cs = max(1, int(cell.get("colspan") or 1))
+            for dr in range(rs):
+                for dc in range(cs):
+                    if ri + dr < rows and ci + dc < ncols:
+                        grid[ri + dr][ci + dc] = (ri, ci)
+            anchor = table.cell(ri, ci)
+            anchor.paragraphs[0].add_run(str(cell.get("text") or ""))
+            if rs > 1 or cs > 1:
+                end = table.cell(min(ri + rs - 1, rows - 1),
+                                 min(ci + cs - 1, ncols - 1))
+                anchor.merge(end)
+            ci += cs
     return True
 
 
@@ -614,7 +659,10 @@ def render_from_heuristic(
                 run = para.add_run(IMAGE_PLACEHOLDER)
                 run.italic = True
             elif b.kind == "table":
-                _add_html_table(doc, b.text)
+                if b.cells:
+                    _add_cells_table(doc, b.cells)  # wave-3: merge span thật
+                else:
+                    _add_html_table(doc, b.text)
             else:
                 para = doc.add_paragraph()
                 run = para.add_run(b.text)

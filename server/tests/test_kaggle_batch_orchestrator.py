@@ -49,7 +49,12 @@ RESULT_DOC = {
                  "bbox": [10, 70, 400, 100], "text": "Mục 1", "empty": False},
                 {"id": "p1_b2", "order": 2, "type": "table",
                  "bbox": [10, 110, 400, 300],
-                 "text": "<table><tr><td>1</td></tr></table>", "empty": False},
+                 # wave-3 kernel shape: text phẳng + html (nguồn sự thật) + cells
+                 "text": "1",
+                 "html": "<table><tr><td>1</td></tr></table>",
+                 "cells": [[{"text": "1", "rowspan": 1, "colspan": 1,
+                             "header": False}]],
+                 "empty": False},
                 {"id": "p1_b3", "order": 3, "type": "image",
                  "bbox": [10, 310, 400, 500], "text": "hình minh họa", "empty": False},
                 {"id": "p1_b4", "order": 4, "type": "text",
@@ -301,13 +306,18 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
     assert [r["text"] for r in p1["regions"]] == [
         "Báo cáo",
         "Mục 1",
-        "<table><tr><td>1</td></tr></table>",
+        "1",  # wave-3: table text = phẳng, html/cells passthrough
         "hình minh họa",
     ]
+    table_region = p1["regions"][2]
+    assert table_region["html"] == "<table><tr><td>1</td></tr></table>"
+    assert table_region["cells"] == [[{"text": "1", "rowspan": 1,
+                                       "colspan": 1, "header": False}]]
     assert all(
-        set(r) == {"id", "bbox", "text", "verdict", "placeholder"}
+        set(r) >= {"id", "bbox", "text", "verdict", "placeholder"}
         for r in p1["regions"]
     )
+    assert set(p1["regions"][0]) == {"id", "bbox", "text", "verdict", "placeholder"}  # non-table: no extra keys
     assert p1["regions"][-1]["verdict"] == "image_unextractable"
     assert p1["regions"][-1]["placeholder"] is True
     assert all(
@@ -316,7 +326,9 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
     )
     assert p1["markdown"].startswith("# Báo cáo")
     assert "\n\n## Mục 1" in p1["markdown"]
-    assert "<table><tr><td>1</td></tr></table>" in p1["markdown"]
+    # wave-3: md bảng = GFM pipe (strengthen — không còn HTML thô)
+    assert "<table" not in p1["markdown"]
+    assert "| 1 |\n| --- |" in p1["markdown"]
     assert "**[Hình ảnh chưa trích xuất: vùng p1_b3]**" in p1["markdown"]
     p2 = res["pages"][1]
     assert p2["index"] == 2 and p2["width"] == 0 and p2["height"] == 0
@@ -1024,9 +1036,54 @@ def test_adapter_drops_empty_keeps_table_html():
     p1 = body.pages[0]
     texts = [r.text for r in p1.regions]
     assert not any(t.strip() == "" for t in texts)  # empty text dropped
-    assert "<table><tr><td>1</td></tr></table>" in texts  # HTML kept verbatim
+    # wave-3: text phẳng + html/cells passthrough RegionOut
+    assert "1" in texts
+    r2 = p1.regions[2]
+    assert r2.html == "<table><tr><td>1</td></tr></table>"
+    assert r2.cells == [[{"text": "1", "rowspan": 1, "colspan": 1,
+                          "header": False}]]
     assert p1.markdown.startswith("# Báo cáo")
     assert p1.markdown.splitlines()[2].startswith("## Mục 1")
+    # strengthen: md bảng = GFM pipe (kernel đã parse cells)
+    assert "<table" not in p1.markdown
+    assert "| 1 |\n| --- |" in p1.markdown
+
+def test_adapter_two_columns_linearized_left_first():
+    """wave-3: 2 text regions cùng hàng (y overlap) → trái trước."""
+    doc = {"pages": [{"page": 1, "blocks": [
+        {"id": "b_right", "type": "text", "bbox": [345, 518, 583, 713],
+         "text": "phải", "empty": False},
+        {"id": "b_left", "type": "text", "bbox": [60, 602, 322, 713],
+         "text": "trái", "empty": False},
+    ]}]}
+    page = orch.adapt_batch_document(doc)["pages"][0]
+    assert page["markdown"] == "trái\n\nphải"
+    assert [r["id"] for r in page["regions"]] == ["b_left", "b_right"]
+
+def test_adapter_two_image_markers_same_row_one_line():
+    """wave-3: 2 image regions cùng hàng → 2 marker CÙNG dòng (space)."""
+    doc = {"pages": [{"page": 1, "blocks": [
+        {"id": "b15", "type": "image", "bbox": [60, 602, 322, 713],
+         "text": "", "empty": True},
+        {"id": "b17", "type": "image", "bbox": [345, 518, 583, 713],
+         "text": "", "empty": True},
+    ]}]}
+    page = orch.adapt_batch_document(doc)["pages"][0]
+    m15 = orch.IMAGE_MARKER.format(region_id="b15")
+    m17 = orch.IMAGE_MARKER.format(region_id="b17")
+    assert page["markdown"] == f"{m15} {m17}"
+
+def test_adapter_image_marker_lone_own_line():
+    doc = {"pages": [{"page": 1, "blocks": [
+        {"id": "b0", "type": "image", "bbox": [60, 100, 322, 200],
+         "text": "", "empty": True},
+        {"id": "b1", "type": "image", "bbox": [60, 600, 322, 700],
+         "text": "", "empty": True},
+    ]}]}
+    page = orch.adapt_batch_document(doc)["pages"][0]
+    assert page["markdown"] == (orch.IMAGE_MARKER.format(region_id="b0")
+                                + "\n\n"
+                                + orch.IMAGE_MARKER.format(region_id="b1"))
 
 def test_adapter_keeps_image_block_as_unextractable():
     """P1: image block KHÔNG bị drop — region verdict image_unextractable

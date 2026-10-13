@@ -52,6 +52,10 @@ from dataclasses import dataclass
 PIPELINE_VERSION = "v1.5"
 VL_MODEL = "PaddleOCR-VL-1.5-0.9B"
 LAYOUT_MODEL = "PP-DocLayoutV3"
+# Parity với server app.core.schemas.IMAGE_MARKER (kernel standalone không
+# import server được — hằng copy, test pin parity); exports._materialize_crops
+# rewrite marker này thành ảnh crop khi render/export.
+IMAGE_MARKER = "**[Hình ảnh chưa trích xuất: vùng {region_id}]**"
 
 
 def _ocr_phase(argv: list[str]) -> int:
@@ -682,15 +686,174 @@ def extract_blocks(raw: dict, page_no: int) -> list[dict]:
     for i, it in enumerate(items):
         bbox = it.get("block_bbox")
         text = it.get("block_content") or ""
-        blocks.append({
+        block = {
             "id": f"p{page_no}_b{i}",
             "order": i,
             "type": it.get("block_label") or "unknown",
             "bbox": [int(round(v)) for v in bbox] if bbox else None,
             "text": text,
             "empty": not text.strip(),
-        })
+        }
+        if "<table" in text.lower():
+            # wave-3: parse MỘT LẦN ở kernel — html = nguồn sự thật,
+            # cells = rows [{text,rowspan,colspan,header}], text = phẳng
+            cells = _parse_table_html(text)
+            if cells:
+                block["html"], block["cells"] = text, cells
+                block["text"] = _cells_to_flat(cells)
+            else:
+                print(f"[batch] table {block['id']} không parse được — giữ HTML gốc",
+                      flush=True)
+        blocks.append(block)
     return blocks
+
+# ===========================================================================
+# wave-3 (spec 2026-10-13): bảng cells → md GFM pipe + reading order 2 cột.
+# ===========================================================================
+
+def _safe_span(v) -> int:
+    """rowspan/colspan attr → int ≥1; không parse được hoặc ≤0 → 1
+    (P1: giá trị "foo"/"2.0" không được ValueError giết cả job)."""
+    try:
+        n = int(v)
+    except (TypeError, ValueError):
+        return 1
+    return n if n >= 1 else 1
+
+def _parse_table_regex(html: str) -> list[list[dict]]:
+    """regex fallback của _parse_table_html (env không có bs4)."""
+    rows: list[list[dict]] = []
+    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.DOTALL | re.IGNORECASE):
+        row: list[dict] = []
+        for m in re.finditer(
+            r"<t([dh])([^>]*)>(.*?)</t\1>", tr, re.DOTALL | re.IGNORECASE
+        ):
+            spans = {
+                k.lower(): _safe_span(v)
+                for k, v in re.findall(
+                    r'(rowspan|colspan)\s*=\s*["\']?(\d+)["\']?', m.group(2), re.I
+                )
+            }
+            text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", m.group(3))).strip()
+            row.append({
+                "text": text,
+                "rowspan": spans.get("rowspan", 1),
+                "colspan": spans.get("colspan", 1),
+                "header": m.group(1).lower() == "h",
+            })
+        if row:
+            rows.append(row)
+    return rows
+
+def _parse_table_html(html: str) -> list[list[dict]]:
+    """<table> HTML → rows [{text,rowspan,colspan,header}] — bs4 (kernel venv
+    có paddlex deps) hoặc regex fallback (unit-test env không bs4)."""
+    try:
+        from bs4 import BeautifulSoup  # noqa: PLC0415 (lazy — import test cheap)
+    except ImportError:
+        return _parse_table_regex(html)
+    soup = BeautifulSoup(html, "html.parser")
+    rows: list[list[dict]] = []
+    # ceiling (P2-3): find_all("tr") KHÔNG giới hạn table outermost — tr của
+    # bảng nested bị flatten lẫn hàng ngoài. Upgrade khi corpus có nested:
+    # find outermost table rồi scope find_all("tr") trong nó.
+    for tr in soup.find_all("tr"):
+        row: list[dict] = []
+        for td in tr.find_all(["td", "th"], recursive=False):
+            row.append({
+                "text": td.get_text(" ", strip=True),
+                "rowspan": _safe_span(td.get("rowspan")),
+                "colspan": _safe_span(td.get("colspan")),
+                "header": td.name == "th",
+            })
+        if row:
+            rows.append(row)
+    return rows
+
+def _cell_texts(row: list[dict]) -> list[str]:
+    """colspan → lặp text ô; rowspan → bỏ (GFM pipe không có span — docx giữ)."""
+    out: list[str] = []
+    for c in row:
+        out.extend([str(c.get("text") or "")] * max(1, int(c.get("colspan") or 1)))
+    return out
+
+def _cells_to_flat(cells: list[list[dict]]) -> str:
+    """cells → text phẳng (hàng join ' | ', dòng xuống hàng) — result.jsonb
+    regions dùng cái này."""
+    return "\n".join(" | ".join(_cell_texts(r)) for r in cells)
+
+def _table_cells_to_md(cells: list[list[dict]]) -> str:
+    """cells → GFM pipe table: hàng có th (hoặc hàng đầu) = header + separator."""
+    if not cells:
+        return ""
+    h = next(
+        (i for i, r in enumerate(cells) if any(c.get("header") for c in r)), 0
+    )
+    def fmt(row: list[dict]) -> str:
+        cells_txt = [t.replace("|", "\\|") for t in _cell_texts(row)]
+        return "| " + " | ".join(cells_txt) + " |"
+    lines = [fmt(cells[h]), "| " + " | ".join(["---"] * len(_cell_texts(cells[h]))) + " |"]
+    lines += [fmt(r) for i, r in enumerate(cells) if i != h]
+    return "\n".join(lines)
+
+def _band_tol(h1: float, h2: float) -> float:
+    """Y-band tolerance (spec wave-3: max(10, height*0.3))."""
+    return max(10.0, 0.3 * max(h1, h2))
+
+def _linearize_reading_order(blocks: list[dict]) -> list[dict]:
+    """Reading order: y-bands theo center y (tolerance _band_tol) → mỗi band
+    sort x0 trái→phải → flatten (2 cột cùng hàng: trái trước)."""
+    keyed = []
+    for i, b in enumerate(blocks):
+        bbox = b.get("bbox")
+        if bbox:
+            cy, h, x0 = (bbox[1] + bbox[3]) / 2, abs(bbox[3] - bbox[1]), bbox[0]
+        else:  # không bbox — giữ cuối, theo thứ tự gốc
+            cy, h, x0 = float("inf"), 0.0, float("inf")
+        keyed.append((cy, h, x0, i, b))
+    keyed.sort(key=lambda t: (t[0], t[3]))
+    bands: list[list[tuple]] = []
+    for t in keyed:
+        if (bands and t[0] != float("inf")
+                and t[0] - bands[-1][-1][0] <= _band_tol(t[1], bands[-1][-1][1])):
+            bands[-1].append(t)
+        else:
+            bands.append([t])
+    return [
+        b
+        for band in bands
+        for _, _, _, _, b in sorted(band, key=lambda t: (t[2], t[3]))
+    ]
+
+def _page_md(blocks: list[dict]) -> str:
+    """blocks → md 1 trang: reading order; image → IMAGE_MARKER (2 marker cùng
+    hàng = 1 dòng cách space, marker lẻ = dòng riêng); table có cells → GFM
+    pipe; còn lại text thường."""
+    parts: list[str] = []
+    last_marker: tuple | None = None  # (center_y, height) của marker vừa emit
+    for b in _linearize_reading_order(blocks):
+        is_image = b.get("type") == "image"
+        if b.get("empty") and not is_image:
+            continue
+        pos = None
+        if is_image:
+            piece = IMAGE_MARKER.format(region_id=b.get("id"))
+            bbox = b.get("bbox")
+            if bbox:
+                pos = ((bbox[1] + bbox[3]) / 2, abs(bbox[3] - bbox[1]))
+        elif b.get("cells"):
+            piece = _table_cells_to_md(b["cells"])
+        else:
+            piece = b.get("text") or ""
+        if not piece or not piece.strip():
+            continue
+        if (parts and last_marker is not None and pos is not None
+                and abs(pos[0] - last_marker[0]) <= _band_tol(pos[1], last_marker[1])):
+            parts[-1] += " " + piece  # 2 marker cùng hàng → CÙNG dòng
+        else:
+            parts.append(piece)
+        last_marker = pos
+    return "\n\n".join(parts)
 
 
 def _to_original_bbox(bbox, scale):
@@ -841,10 +1004,7 @@ def process_job(job_id: int, input_path: str,
         _write_crop_outputs(job_id, crops)
     document = {"source_pdf": input_path, "dpi": DPI, "pages": pages_out,
                 "problems": problems}  # → server batch adapter maps to result warnings
-    md_pages = []
-    for pg in pages_out:
-        texts = [b["text"] for b in pg["blocks"] if not b["empty"]]
-        md_pages.append("\n".join(texts))
+    md_pages = [_page_md(pg["blocks"]) for pg in pages_out]
     _write_outputs(
         job_id,
         json.dumps(document, ensure_ascii=False, indent=2),

@@ -63,6 +63,9 @@ class Block:
     align: str = "left"
     band_cols: int = 1
     label: dict = field(default_factory=dict)
+    # cells-shape (kernel parse table 1 lần) — heuristic render pipe MD từ
+    # cells (colspan lặp, mirror kernel) thay vì parse lại html.
+    cells: list | None = None
 
     @property
     def x0(self): return self.bbox[0]
@@ -136,13 +139,19 @@ def extract_pages(result: dict) -> list[Page]:
             while rid in seen:
                 rid = f"p{pi}-{rid}"
             seen.add(rid)
-            if "<table" in text.lower():
+            # wave-3: cells-shape (kernel parse table) → table; _table_md cần
+            # HTML nên text ưu tiên html (nguồn sự thật) khi có. cells giữ trên
+            # Block — heuristic render pipe từ cells (colspan lặp, mirror kernel)
+            # thay html → server md giống kernel md.
+            cells = region.get("cells")
+            if cells or "<table" in text.lower():
                 kind = "table"
+                text = region.get("html") or text
             elif is_image:
                 kind = "image"
             else:
                 kind = "text"
-            blocks.append(Block(rid, pi, kind, tuple(bbox), text))
+            blocks.append(Block(rid, pi, kind, tuple(bbox), text, cells=cells))
         w = pg.get("width") or max((b.x1 for b in blocks), default=1000)
         h = pg.get("height") or max((b.y1 for b in blocks), default=1000)
         pages.append(Page(pi, w, h, blocks))
@@ -512,10 +521,29 @@ def _render_columns(band: Band) -> list[str]:
     return lines
 
 
+def _cells_md(cells: list) -> list[str]:
+    """cells-shape → GFM pipe table (mirror kernel _table_cells_to_md): hàng
+    có th (hoặc hàng đầu) = header + separator; colspan → lặp text ô."""
+    if not cells:
+        return []
+    h = next((i for i, r in enumerate(cells) if any(c.get("header") for c in r)), 0)
+
+    def texts(row: list) -> list[str]:
+        out: list[str] = []
+        for c in row:
+            t = str(c.get("text") or "").replace("|", "\\|")
+            out.extend([t] * max(1, int(c.get("colspan") or 1)))
+        return out
+
+    ht = texts(cells[h])
+    lines = ["| " + " | ".join(ht) + " |", "| " + " | ".join(["---"] * len(ht)) + " |"]
+    lines += ["| " + " | ".join(texts(r)) + " |" for i, r in enumerate(cells) if i != h]
+    return lines
+
 def _render_band(band: Band) -> list[str]:
     blk = band.single
     if blk is not None and blk.kind == "table":
-        return _table_md(blk.text)
+        return _cells_md(blk.cells) if blk.cells else _table_md(blk.text)
     body = _fmt_lines(blk) if blk is not None else _render_columns(band)
     prefix = "\t" * band.indent
     return [prefix + ln for ln in body]

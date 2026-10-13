@@ -165,7 +165,9 @@ class TestBuildMDFromIR:
                  "placeholder": True},  # thiếu bbox
             ]}]}
         out = await build_md(result, use_llm=False)
-        assert "vùng r1" in out
+        # strengthen: đúng IMAGE_MARKER format (exports._materialize_crops pin)
+        from app.core.schemas import IMAGE_MARKER
+        assert IMAGE_MARKER.format(region_id="r1") in out
 
     async def test_prompt_requests_bbox(self, monkeypatch):
         """Cả structurize lẫn render prompt đều chỉ định bbox."""
@@ -225,6 +227,50 @@ class TestBuildMDFromIR:
         out = await build_md(_ocr_result())
         assert "| A | B |" in out
         assert "| 1 | 2 |" in out
+
+    async def test_cells_shape_region_renders_pipe_table_heuristic(self):
+        """wave-3: region cells-shape (text phẳng + html + cells, kernel
+        batch) → heuristic render pipe table GFM (không html thô)."""
+        cells = [
+            [{"text": "A", "rowspan": 1, "colspan": 1, "header": True},
+             {"text": "B", "rowspan": 1, "colspan": 1, "header": True}],
+            [{"text": "1", "rowspan": 1, "colspan": 1, "header": False},
+             {"text": "2", "rowspan": 1, "colspan": 1, "header": False}],
+        ]
+        result = {"pages": [{"index": 0, "width": 800, "height": 600,
+            "regions": [
+                {"id": "r0", "bbox": [1, 2, 798, 40],
+                 "text": "A | B\n1 | 2",  # phẳng
+                 "html": "<table><tr><td>A</td><td>B</td></tr>"
+                         "<tr><td>1</td><td>2</td></tr></table>",
+                 "cells": cells, "verdict": "ok", "placeholder": False},
+            ]}]}
+        out = await build_md(result, use_llm=False)
+        assert "| A | B |" in out
+        assert "| --- | --- |" in out  # strengthen: separator GFM
+        assert "| 1 | 2 |" in out
+        assert "<table" not in out
+
+    async def test_cells_shape_colspan_repeats_in_heuristic_md(self):
+        """P2-1 mirror: cells-shape region có colspan → heuristic pipe LẶP ô
+        (giống kernel _table_cells_to_md); parse html sẽ mất colspan."""
+        cells = [
+            [{"text": "x", "rowspan": 1, "colspan": 2, "header": True}],
+            [{"text": "y", "rowspan": 1, "colspan": 1, "header": False},
+             {"text": "z", "rowspan": 1, "colspan": 1, "header": False}],
+        ]
+        result = {"pages": [{"index": 0, "width": 800, "height": 600,
+            "regions": [
+                {"id": "r0", "bbox": [1, 2, 798, 40],
+                 "text": "x\ny | z",
+                 "html": "<table><tr><td colspan=\"2\">x</td></tr>"
+                         "<tr><td>y</td><td>z</td></tr></table>",
+                 "cells": cells, "verdict": "ok", "placeholder": False},
+            ]}]}
+        out = await build_md(result, use_llm=False)
+        assert "| x | x |" in out  # colspan=2 → lặp (mirror kernel)
+        assert "| y | z |" in out
+        assert "<table" not in out
 
 class TestVariableZonesHeuristic:
     """Trang có zone biến thiên (header/content/footer khác nhau) → heuristic
