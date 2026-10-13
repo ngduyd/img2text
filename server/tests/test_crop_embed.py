@@ -64,6 +64,26 @@ async def test_embed_crop_keys_ondemand_jpeg_data_uri():
     b64 = base64.b64encode(jpg).decode("ascii")
     assert out == f"![vùng {RID}](data:image/jpeg;base64,{b64})"
 
+async def test_embed_crop_keys_budget_cap_keeps_marker(monkeypatch):
+    """P1: data-URI budget per artifact — marker2 vượt budget → GIỮ marker (không embed) + warning;
+    marker1 (trong budget) vẫn embed."""
+    import app.services.render_md as rm
+
+    rid1, rid2 = "p1_b1", "p1_b2"
+    m1 = IMAGE_MARKER.format(region_id=rid1)
+    m2 = IMAGE_MARKER.format(region_id=rid2)
+    png = b"\x89PNG\r\n\x1a\nfake"
+    per = len(base64.b64encode(png))  # b64 bytes/ảnh
+    monkeypatch.setattr(rm, "MAX_DATA_URI_BYTES", per)  # budget vừa đúng 1 ảnh
+
+    async def _loader(rid: str) -> bytes:
+        return png
+
+    out = await embed_crop_keys(f"{m1}\n\n{m2}", 7, _FakeStorage(set()), crop_loader=_loader)
+    b64 = base64.b64encode(png).decode("ascii")
+    # marker1 embed, marker2 vượt budget → giữ nguyên marker
+    assert out == f"![vùng {rid1}](data:image/png;base64,{b64})\n\n{m2}"
+
 async def test_embed_crop_keys_ondemand_fail_keeps_marker():
     """On-demand crop lỗi (region/bbox/original thiếu) → giữ marker (không crash)."""
     async def _loader(rid: str) -> bytes:

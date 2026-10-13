@@ -592,6 +592,9 @@ async def generate_ir(result: dict) -> dict | None:
 
 # ---------------------------------------------------------------- crop embed (WS-PIPE)
 CROP_PRESIGN_EXPIRES = 86400
+# P1-R6: budget data-URI embed mỗi md artifact (base64 bytes) — doc nhiều ảnh
+# không được phình artifact vô hạn; vượt → giữ marker.
+MAX_DATA_URI_BYTES = 2 * 1024 * 1024
 
 async def embed_crop_keys(
     markdown: str, job_id: int, storage, crop_loader=None
@@ -603,7 +606,9 @@ async def embed_crop_keys(
     serve-time re-embed qua embed_crop_urls.
 
     crop_loader: async (rid) → bytes | None — caller wire logic crop on-demand
-    (route /regions/{rid}/crop: get_or_make_crop + storage.get)."""
+    (route /regions/{rid}/crop: get_or_make_crop + storage.get). Marker vượt
+    budget data-URI → giữ nguyên (không embed)."""
+    budget = MAX_DATA_URI_BYTES
     for m in re.finditer(re.escape(IMAGE_MARKER_PREFIX) + r"([^\]]+)\]\*\*", markdown):
         rid = m.group(1)
         if not await storage.exists(f"exports/{job_id}/crops/{rid}.png"):
@@ -618,6 +623,15 @@ async def embed_crop_keys(
                 continue
             mime = "image/png" if data[:8] == b"\x89PNG\r\n\x1a\n" else "image/jpeg"
             b64 = base64.b64encode(data).decode("ascii")
+            # P1-R6: budget data-URI — doc nhiều ảnh → md artifact phình MB.
+            # Vượt budget → GIỮ marker (không embed) + warning.
+            if len(b64) > budget:
+                logger.warning(
+                    "data-URI over budget job=%s rid=%s b64=%dB budget=%dB — giữ marker",
+                    job_id, rid, len(b64), budget,
+                )
+                continue
+            budget -= len(b64)
             markdown = markdown.replace(
                 m.group(0), f"![vùng {rid}](data:{mime};base64,{b64})"
             )

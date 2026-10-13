@@ -347,6 +347,10 @@ class TestGeometryFirstPrompt:
                   "poem", "table", "figure", "caption", "formula", "quote",
                   "footnote", "page_number", "form_field", "separator"):
             assert t in prompt, t
+        # full type set liệt kê đủ unknown (đồng nhất với MUST-line) —
+        # pin riêng câu Full type set (MUST-line cũng liệt kê unknown → không pin chung)
+        full_set = prompt.split("Full type set: ", 1)[1].split("\n", 1)[0]
+        assert "unknown" in full_set, full_set
         # geometry rule cho từng loại
         assert "regular grid" in prompt          # table
         assert "hanging indent" in prompt        # list

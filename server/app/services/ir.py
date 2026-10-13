@@ -31,7 +31,7 @@ IR_PROMPT = (
     "- type is only used to LABEL the node AFTER geometry grouping. "
     "Full type set: heading (level1..N by position/size), paragraph, list, poem, "
     "table, figure, caption, formula, quote, footnote, page_number, form_field, "
-    "separator.\n"
+    "separator, unknown.\n"
     "- header: page heading blocks at top of page (y0 < 15% page height): logo, institution, "
     "exam title.\n"
     "- footer: only page furniture at the bottom: page numbers, form fields (name/id boxes), "
