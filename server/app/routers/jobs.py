@@ -1162,6 +1162,50 @@ async def restore_version(
     )
     return Response(status_code=204)
 
+# --- wave-3 Lane G: PATCH /api/jobs/{id}/layout-content (layout editor) -----
+
+class LayoutContentBody(BaseModel):
+    markdown: str
+
+MAX_LAYOUT_CONTENT_CHARS = 500_000
+
+@router.patch("/api/jobs/{id}/layout-content")
+async def patch_layout_content(
+    id: int,
+    body: LayoutContentBody,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> dict:
+    """Wave-3 #7: "Chỉnh sửa layout" (md pane) → upsert exports/{id}/md-layout
+
+    + snapshot kind md-layout (pattern region-edit: snapshot trước/sau).
+    KHÔNG đụng text_version — layout artifact có đời sống riêng (dual-truth
+    deferred, spec wave-3). Snapshot trước = lazy-seed version 1 từ artifact
+    hiện tại khi chưa có version nào; snapshot sau = save_version detached
+    (chỉnh tay → text sync không ghi đè).
+    """
+    job = await _job_or_403(session, id, user)
+    if job.status != "done":
+        raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
+    if not body.markdown.strip():
+        raise HTTPException(status_code=422, detail="Nội dung trống.")
+    if len(body.markdown) > MAX_LAYOUT_CONTENT_CHARS:
+        raise HTTPException(status_code=422, detail="Nội dung quá dài.")
+    # Snapshot TRƯỚC: seed version 1 = artifact hiện tại (no-op nếu đã có version).
+    await _seed_versions(session, job, storage)
+    key = MD_LAYOUT_KEY.format(job_id=id)
+    data = body.markdown.encode("utf-8")
+    # S3Driver.put dedupes existing keys → delete first for upsert.
+    await storage.delete_prefix(key)
+    await storage.put(key, data)
+    # Snapshot SAU: version mới kind md-layout (based_on = text_version hiện tại).
+    await save_version(
+        storage, id, "md-layout", data, job.text_version,
+        detached=True, session=session,
+    )
+    return {"ok": True}
+
 # --- wave-2 #7: POST /api/worker/heartbeat (liveness upsert, runner key) -----
 
 class WorkerHeartbeatBody(BaseModel):
