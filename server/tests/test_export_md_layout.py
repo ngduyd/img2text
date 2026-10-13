@@ -430,3 +430,39 @@ async def test_md_layout_artifact_relative_key_download_fresh_url(
     # fresh, không cache)
     n = storage_spy.presign_get.await_count
     assert n >= 2  # ≥1 call/serve
+
+# --- Wave-4 #8: coverage fail → giữ heuristic render + ir_json cũ (không stub) ---
+
+async def test_auto_gen_coverage_fail_keeps_heuristic_and_old_ir(
+    app, done_job_with_result, db_session, monkeypatch
+):
+    """COVERAGE fail cả2 build → md-layout = heuristic content (KHÔNG stub
+    0 blocks 'xóa đầu ra'); job.ir_json GIỮ giá trị cũ (không overwrite)."""
+    from app.routers import exports
+
+    jid = done_job_with_result
+    st = app.state.storage
+    job = await db_session.get(Job, jid)
+    job.ir_json = '{"document_id": "old", "schema_version": "1.0", "pages": []}'
+    await db_session.commit()
+
+    # IR thiếu r1 (image exempt) + r0? cover r0 only → thiếu... VALID có r0 text
+    # + r1 image. LLM cover r0 → coverage OK; để FAIL phải bỏ r0:
+    bad_ir = {
+        "document_id": "doc_001", "schema_version": "1.0",
+        "pages": [{
+            "page_id": "p1", "page_number": 1, "header": [], "content": [],
+            "footer": [],
+        }],
+    }
+    fake_llm(monkeypatch, [
+        FakeResponse(json.dumps(bad_ir)), FakeResponse("# nope"),
+        FakeResponse(json.dumps(bad_ir)), FakeResponse("<p>nope</p>"),
+    ])
+    assert await exports.auto_generate_output(job, st) is True
+    # md-layout có nội dung heuristic từ OCR (r0 "Xin chào"), không rỗng/stub
+    md = (await st.get(f"exports/{jid}/md-layout")).decode()
+    assert "Xin chào" in md
+    # ir_json giữ nguyên cũ — stub 0-block không ghi đè
+    await db_session.refresh(job)
+    assert json.loads(job.ir_json)["document_id"] == "old"
