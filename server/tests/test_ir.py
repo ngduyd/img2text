@@ -304,3 +304,51 @@ class TestCoverageImageRegion:
         ir = _valid_ir()
         ir["pages"][0]["content"][0]["source_block_ids"] = ["r1", "r2"]
         validate_ir(ir, _ocr_with_image())
+
+class TestGeometryFirstPrompt:
+    """Wave-4 #8: IR prompt geometry-primary — group theo bbox TRƯỚC, type SAU."""
+
+    def _two_column_prompt(self) -> str:
+        """Fixture header 2 cột: b0/b2 trái + b3/b4 phải → build prompt."""
+        result = {
+            "pages": [{
+                "index": 0, "width": 800, "height": 600,
+                "regions": [
+                    {"id": "b0", "bbox": [10, 10, 380, 40],
+                     "text": "TRƯỜNG THPT"},
+                    {"id": "b2", "bbox": [10, 50, 380, 80],
+                     "text": "ĐỀ THI HỌC KỲ"},
+                    {"id": "b3", "bbox": [420, 10, 790, 40],
+                     "text": "Môn: Toán"},
+                    {"id": "b4", "bbox": [420, 50, 790, 80],
+                     "text": "Thời gian: 90 phút"},
+                ],
+            }]
+        }
+        import json
+        from app.services.ir import IR_PROMPT
+        return IR_PROMPT.replace("{ocr_json}", json.dumps(result, ensure_ascii=False))
+
+    def test_prompt_instructs_parallel_columns_by_geometry(self):
+        prompt = self._two_column_prompt()
+        # pin key phrases của rule geometry-first
+        assert "GEOMETRY FIRST" in prompt
+        assert "overlapping y-range and disjoint x-range" in prompt
+        assert "parallel columns" in prompt
+        assert "left" in prompt and "right" in prompt  # đọc trái→phải mỗi hàng
+        # fixture đi qua prompt build — đủ 4 block, 2 cột
+        for rid in ("b0", "b2", "b3", "b4"):
+            assert rid in prompt
+
+    def test_prompt_type_set_and_label_after_geometry(self):
+        prompt = self._two_column_prompt()
+        assert "type is only used to LABEL the node AFTER geometry grouping" in prompt
+        for t in ("heading (level1..N by position/size)", "paragraph", "list",
+                  "poem", "table", "figure", "caption", "formula", "quote",
+                  "footnote", "page_number", "form_field", "separator"):
+            assert t in prompt, t
+        # geometry rule cho từng loại
+        assert "regular grid" in prompt          # table
+        assert "hanging indent" in prompt        # list
+        assert "first block of a band = heading" in prompt
+        assert "image blocks = figure nodes" in prompt
