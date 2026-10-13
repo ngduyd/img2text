@@ -6,7 +6,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import * as mammoth from "mammoth";
 import { toast } from "sonner";
 import { ApiError, api } from "../../src/api/client";
-import type { Job, Suggestion } from "../../src/api/types";
+import type { Job } from "../../src/api/types";
 import UnifiedEditor from "../../src/components/UnifiedEditor";
 
 vi.mock("mammoth", () => ({
@@ -31,13 +31,10 @@ vi.mock("../../src/api/client", async (importOriginal) => {
       exportJob: vi.fn(),
       downloadExport: vi.fn(),
       putMdLayoutContent: vi.fn(),
+      patchLayoutContent: vi.fn(),
       putLayoutStyle: vi.fn(),
       getDocxHtml: vi.fn(),
       putDocxHtml: vi.fn(),
-      getSuggestions: vi.fn(),
-      acceptSuggestion: vi.fn(),
-      rejectSuggestion: vi.fn(),
-      runProofread: vi.fn(),
     },
   };
 });
@@ -96,8 +93,6 @@ beforeEach(() => {
   } as never);
   // Plan M3: mặc định chưa có docx.html cache → word flow đi fallback mammoth.
   vi.mocked(api.getDocxHtml).mockResolvedValue(null);
-  // Plan proofread: mặc định không có gợi ý.
-  vi.mocked(api.getSuggestions).mockResolvedValue([]);
 });
 
 it("md cache miss: exportJob md-layout + layout-loading spinner → content renders + badge chưa lưu", async () => {
@@ -191,8 +186,9 @@ it("default mode = word khi output_format docx (binding)", async () => {
   expect(api.exportJob).toHaveBeenCalledWith("5", "docx-layout");
 });
 
-it("M5: md mode = MDEditor (value/onChange wiring); Lưu → putMdLayoutContent + toast", async () => {
+it("M5: md mode = MDEditor (value/onChange wiring); Lưu → PATCH layout-content + toast", async () => {
   const user = userEvent.setup();
+  vi.mocked(api.patchLayoutContent).mockResolvedValue({ ok: true });
   render(<Harness job={JOB} />);
   const editor = await screen.findByTestId("md-editor");
   const ta = editor.querySelector("textarea") as HTMLTextAreaElement;
@@ -200,8 +196,23 @@ it("M5: md mode = MDEditor (value/onChange wiring); Lưu → putMdLayoutContent 
   fireEvent.change(ta, { target: { value: "# Đã sửa" } });
   expect(ta.value).toBe("# Đã sửa");
   await user.click(screen.getByTestId("btn-save-layout"));
-  expect(api.putMdLayoutContent).toHaveBeenCalledWith("5", "# Đã sửa");
+  expect(api.patchLayoutContent).toHaveBeenCalledWith("5", "# Đã sửa");
   expect(toast.success).toHaveBeenCalledWith("Đã lưu.");
+});
+
+/** Lane I Task 4: XÓA nút proofread/refresh + panel suggestions (server route giữ nguyên). */
+it("lane I task 4: không còn btn-proofread/btn-refresh-proofread/suggestions-panel trong DOM", async () => {
+  render(<Harness job={JOB} />);
+  await screen.findByTestId("md-editor");
+  expect(screen.queryByTestId("btn-proofread")).toBeNull();
+  expect(screen.queryByTestId("btn-refresh-proofread")).toBeNull();
+  expect(screen.queryByTestId("suggestions-panel")).toBeNull();
+  expect(screen.queryByTestId("proofread-badge")).toBeNull();
+  // word mode cũng không
+  await userEvent.click(screen.getByTestId("switch-mode-word"));
+  await screen.findByTestId("preview-docx-frame");
+  expect(screen.queryByTestId("btn-proofread")).toBeNull();
+  expect(screen.queryByTestId("suggestions-panel")).toBeNull();
 });
 
 it("word style: đổi line spacing → btn-save-style → putLayoutStyle (objectContaining) + toast", async () => {
@@ -257,13 +268,13 @@ it("DocStyleTools word: giữ controls trang-level; gỡ control trùng toolbar 
     expect(screen.queryByTestId(id)).toBeNull();
 });
 
-it("flow lỗi → layout-error + btn-retry-layout + toast.error; retry chạy lại flow", async () => {
+it("flow lỗi → layout-error + btn-retry-layout-error (review r1 P1: không trùng header) + toast.error; retry chạy lại flow", async () => {
   const user = userEvent.setup();
   vi.mocked(api.exportJob).mockRejectedValueOnce(new ApiError("LLM lỗi."));
   render(<Harness job={JOB} />);
   expect(await screen.findByTestId("layout-error")).toHaveTextContent("LLM lỗi.");
   expect(toast.error).toHaveBeenCalledWith("LLM lỗi.");
-  await user.click(screen.getByTestId("btn-retry-layout"));
+  await user.click(screen.getByTestId("btn-retry-layout-error"));
   expect(await screen.findByTestId("md-editor")).toBeInTheDocument();
   expect(screen.queryByTestId("layout-error")).toBeNull();
 });
@@ -346,178 +357,10 @@ it("Plan M3: docx_html cache nhưng GET 404 (null) → fallback mammoth docx-lay
   expect(mammoth.convertToHtml).toHaveBeenCalled();
 });
 
-const PENDING: Suggestion = {
-  id: 7,
-  page_index: 0,
-  start: 0,
-  end: 8,
-  original: "Artifact",
-  suggestion: "Bản thuật",
-  reason: "OCR sai",
-  status: "pending",
-};
-
-it("Plan proofread: panel BELOW editor (DOM order, không aside) ở cả md và word mode", async () => {
-  const user = userEvent.setup();
-  vi.mocked(api.getSuggestions).mockResolvedValue([PENDING]);
-  render(<Harness job={JOB} />);
-  const md = await screen.findByTestId("md-editor");
-  await user.click(screen.getByTestId("btn-proofread"));
-  let panel = await screen.findByTestId("suggestions-panel");
-  // DOM order: panel nằm SAU khu vực editor
-  expect(md.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  // full width: gỡ side-panel layout (không còn <aside>)
-  expect(panel.closest("aside")).toBeNull();
-  // word mode vẫn render dưới editor
-  await user.click(screen.getByTestId("switch-mode-word"));
-  const pane = await screen.findByTestId("preview-docx-frame");
-  panel = screen.getByTestId("suggestions-panel");
-  expect(pane.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  expect(screen.getByTestId("proofread-badge")).toHaveTextContent("1");
-});
-
-it("Plan proofread: md accept → thay phrase đầu tiên trong value → putMdLayoutContent + acceptSuggestion + toast", async () => {
-  const user = userEvent.setup();
-  vi.mocked(api.getSuggestions).mockResolvedValue([PENDING]);
-  render(<Harness job={JOB} />); // mdText = "# Artifact"
-  const editor = await screen.findByTestId("md-editor");
-  await user.click(screen.getByTestId("btn-proofread"));
-  await user.click(await screen.findByTestId("suggestion-accept-7"));
-  await waitFor(() =>
-    expect(api.putMdLayoutContent).toHaveBeenCalledWith("5", "# Bản thuật"),
-  );
-  expect(api.acceptSuggestion).toHaveBeenCalledWith("5", 7);
-  expect(toast.success).toHaveBeenCalledWith("Đã áp dụng gợi ý.");
-  await waitFor(() =>
-    expect(editor.querySelector("textarea")?.value).toBe("# Bản thuật"),
-  );
-});
-
-it("Plan proofread: word accept → edit Tiptap doc (editorRef) → putDocxHtml + acceptSuggestion", async () => {
-  const user = userEvent.setup();
-  vi.mocked(api.getSuggestions).mockResolvedValue([
-    { ...PENDING, original: "Chào", suggestion: "Chao" },
-  ]);
-  render(<Harness job={{ ...JOB, output_format: "docx" }} />);
-  const pane = await screen.findByTestId("preview-docx-frame");
-  await waitFor(() =>
-    expect(pane.querySelector(".ProseMirror")).toHaveTextContent("Chào"),
-  );
-  await user.click(screen.getByTestId("btn-proofread"));
-  await user.click(await screen.findByTestId("suggestion-accept-7"));
-  await waitFor(() => expect(api.putDocxHtml).toHaveBeenCalledWith("5", "<p>Chao</p>"));
-  expect(api.acceptSuggestion).toHaveBeenCalledWith("5", 7);
-  expect(toast.success).toHaveBeenCalledWith("Đã áp dụng gợi ý.");
-});
-
-it("Plan proofread: md preview highlight pending phrase trong <mark> (best effort)", async () => {
-  vi.mocked(api.getSuggestions).mockResolvedValue([PENDING]);
-  render(<Harness job={JOB} />);
-  await screen.findByTestId("md-editor");
-  await waitFor(() =>
-    expect(document.querySelector(".w-md-editor-preview mark")).toHaveTextContent("Artifact"),
-  );
-});
-
-it("Plan proofread: md jump → click suggestion-jump-7 → setSelectionRange tại phrase + focus + scroll", async () => {
-  // P1: jsdom thiếu scrollIntoView — mock để assert, KHÔNG phụ thuộc implementation khác.
-  const scrollIntoViewMock = vi.fn();
-  Element.prototype.scrollIntoView = scrollIntoViewMock;
-  const user = userEvent.setup();
-  vi.mocked(api.getSuggestions).mockResolvedValue([PENDING]);
-  // handleJump đọc textarea qua hostRef (JobDetail truyền ref) → Harness phải nối ref.
-  const hostRef: { current: HTMLElement | null } = { current: null };
-  render(<Harness job={JOB} hostRef={hostRef} />); // mdText = "# Artifact" → "Artifact" = [2, 10)
-  await screen.findByTestId("md-editor");
-  await user.click(screen.getByTestId("btn-proofread"));
-  await user.click(await screen.findByTestId("suggestion-jump-7"));
-  const ta = hostRef.current?.querySelector<HTMLTextAreaElement>(
-    ".w-md-editor-text-input, textarea",
-  ) as HTMLTextAreaElement;
-  expect(ta.selectionStart).toBe(2);
-  expect(ta.selectionEnd).toBe(10);
-  expect(ta).toHaveFocus();
-  expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: "smooth", block: "center" });
-});
-
-it("Plan proofread: reject → rejectSuggestion(suggestion id) + toast.success + row biến mất", async () => {
-  const user = userEvent.setup();
-  vi.mocked(api.getSuggestions).mockResolvedValue([PENDING]);
-  render(<Harness job={JOB} />);
-  await screen.findByTestId("md-editor");
-  await user.click(screen.getByTestId("btn-proofread"));
-  await user.click(await screen.findByTestId("suggestion-reject-7"));
-  await waitFor(() => expect(api.rejectSuggestion).toHaveBeenCalledWith("5", 7));
-  expect(toast.success).toHaveBeenCalledWith("Đã bỏ qua gợi ý.");
-  await waitFor(() => expect(screen.queryByTestId("suggestion-7")).toBeNull());
-});
-
 it("Plan M3 → M5: md mode không còn MdToolbar/textarea hand-rolled (R51 exception theo lệnh dùng thư viện)", async () => {
   render(<Harness job={JOB} />);
   await screen.findByTestId("md-editor");
   expect(screen.queryByRole("toolbar", { name: "Công cụ Markdown" })).toBeNull();
   expect(screen.queryByTestId("textarea-markdown")).toBeNull();
   expect(screen.queryByTestId("btn-edit-source")).toBeNull();
-});
-
-it("BUG NFD/NFC: md jump phrase NFD vs mdText NFC → find được, offset gốc, không toast lỗi", async () => {
-  const scrollIntoViewMock = vi.fn();
-  Element.prototype.scrollIntoView = scrollIntoViewMock;
-  const user = userEvent.setup();
-  vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["# thính máy"])); // NFC
-  vi.mocked(api.getSuggestions).mockResolvedValue([
-    { ...PENDING, original: "thi\u0301nh", suggestion: "thính" }, // NFD
-  ]);
-  const hostRef: { current: HTMLElement | null } = { current: null };
-  render(<Harness job={JOB} hostRef={hostRef} />);
-  const editor = await screen.findByTestId("md-editor");
-  await waitFor(() => expect(editor.querySelector("textarea")?.value).toBe("# thính máy"));
-  await user.click(screen.getByTestId("btn-proofread"));
-  await user.click(await screen.findByTestId("suggestion-jump-7"));
-  const ta = hostRef.current?.querySelector<HTMLTextAreaElement>(
-    ".w-md-editor-text-input, textarea",
-  ) as HTMLTextAreaElement;
-  expect(ta.selectionStart).toBe(2);
-  expect(ta.selectionEnd).toBe(7);
-  expect(toast.error).not.toHaveBeenCalled();
-});
-
-it("BUG NFD/NFC: md accept phrase NFD vs mdText NFC → replace hoạt động", async () => {
-  const user = userEvent.setup();
-  vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["# thính máy"])); // NFC
-  vi.mocked(api.getSuggestions).mockResolvedValue([
-    { ...PENDING, original: "thi\u0301nh", suggestion: "thông minh" }, // NFD
-  ]);
-  render(<Harness job={JOB} />);
-  const editor = await screen.findByTestId("md-editor");
-  await waitFor(() => expect(editor.querySelector("textarea")?.value).toBe("# thính máy"));
-  await user.click(screen.getByTestId("btn-proofread"));
-  await user.click(await screen.findByTestId("suggestion-accept-7"));
-  await waitFor(() =>
-    expect(api.putMdLayoutContent).toHaveBeenCalledWith("5", "# thông minh máy"),
-  );
-  expect(api.acceptSuggestion).toHaveBeenCalledWith("5", 7);
-  expect(toast.error).not.toHaveBeenCalled();
-  await waitFor(() => expect(editor.querySelector("textarea")?.value).toBe("# thông minh máy"));
-});
-
-it("BUG word: phrase trải 2 text node trong 1 paragraph → find được, thay OK", async () => {
-  const user = userEvent.setup();
-  vi.mocked(mammoth.convertToHtml).mockResolvedValue({
-    value: "<p>Chào <em>thế</em> giới</p>",
-    messages: [],
-  } as never);
-  vi.mocked(api.getSuggestions).mockResolvedValue([
-    { ...PENDING, original: "thế giới", suggestion: "bạn mới" },
-  ]);
-  render(<Harness job={{ ...JOB, output_format: "docx" }} />);
-  const pane = await screen.findByTestId("preview-docx-frame");
-  await waitFor(() => expect(pane.querySelector(".ProseMirror")).toHaveTextContent("thế giới"));
-  await user.click(screen.getByTestId("btn-proofread"));
-  await user.click(await screen.findByTestId("suggestion-accept-7"));
-  await waitFor(() =>
-    expect(api.putDocxHtml).toHaveBeenCalledWith("5", expect.stringContaining("bạn mới")),
-  );
-  expect(api.acceptSuggestion).toHaveBeenCalledWith("5", 7);
-  expect(toast.error).not.toHaveBeenCalled();
 });

@@ -2,17 +2,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import MDEditor from "@uiw/react-md-editor";
 import DOMPurify from "dompurify";
 import * as mammoth from "mammoth";
-import { RefreshCw, Sparkles } from "lucide-react";
-import type { Editor } from "@tiptap/core";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RefObject } from "react";
 import { toast } from "sonner";
 import { api } from "../api/client";
-import type { Job, LayoutStyle, Suggestion } from "../api/types";
+import type { Job, LayoutStyle } from "../api/types";
 import { buildLayoutStyleCss } from "../lib/docStyle";
 import { mapApiError } from "../lib/errors";
 import DocStyleTools from "./DocStyleTools";
-import SuggestionsPanel from "./SuggestionsPanel";
 import WordEditor from "./editor/WordEditor";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
@@ -22,186 +19,6 @@ import Skeleton from "./ui/Skeleton";
 type Mode = "md" | "word";
 
 const FMT: Record<Mode, "md-layout" | "docx-layout"> = { md: "md-layout", word: "docx-layout" };
-
-/** Fold dấu tiếng Việt: NFD → strip combining marks → lower-case (tầng 3). */
-function foldDiacritics(s: string): string {
-  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-}
-
-/**
- * Transform chuỗi theo cụm base + dấu, kèm map offset text-đã-transform →
- * offset CHUỖI GỐC (map[text.length] = s.length; map[k] = offset gốc ký tự k).
- */
-function mapTransform(s: string, f: (cluster: string) => string): { text: string; map: number[] } {
-  let text = "";
-  const map: number[] = [];
-  let i = 0;
-  while (i < s.length) {
-    let j = i + 1;
-    while (j < s.length && /\p{M}/u.test(s[j])) j++;
-    const out = f(s.slice(i, j));
-    for (let k = 0; k < out.length; k++) map.push(i);
-    text += out;
-    i = j;
-  }
-  map.push(s.length);
-  return { text, map };
-}
-
-/** Tìm needle trong text đã transform; trả [start,end) offset chuỗi GỐC. */
-function matchTier(
-  hay: { text: string; map: number[] | null },
-  needle: string,
-): [number, number] | null {
-  for (let i = 0; i < hay.text.length; i++) {
-    let hi = i;
-    let ni = 0;
-    let ok = true;
-    while (ni < needle.length) {
-      if (/\s/.test(needle[ni])) {
-        // Space trong needle khớp mọi run whitespace trong haystack (bỏ qua
-        // space đơn thuần là lỗi cũ: skip-trước-compare nuốt mất space cả 2 bên).
-        if (hi >= hay.text.length || !/\s/.test(hay.text[hi])) {
-          ok = false;
-          break;
-        }
-        while (hi < hay.text.length && /\s/.test(hay.text[hi])) hi++;
-        ni++;
-        continue;
-      }
-      while (hi < hay.text.length && /\s/.test(hay.text[hi])) hi++;
-      if (hi >= hay.text.length || hay.text[hi] !== needle[ni]) {
-        ok = false;
-        break;
-      }
-      hi++;
-      ni++;
-    }
-    if (ok) {
-      let start = i;
-      let end = hi;
-      while (start < end && /\s/.test(hay.text[start])) start++; // bỏ space leading
-      while (end > start && /\s/.test(hay.text[end - 1])) end--;
-      return [hay.map ? hay.map[start] : start, hay.map ? hay.map[end] : end];
-    }
-  }
-  return null;
-}
-
-/**
- * Fuzzy find 3 bậc, LUÔN trả offset trong ORIGINAL haystack:
- * exact (code unit) → NFC → fold-diacritics. Bug: OCR text là NFD, LLM markdown
- * là NFC — TRÔNG giống hệt, code-unit khác nhau → match fail, toast sai.
- */
-function findFuzzy(haystack: string, needle: string): [number, number] | null {
-  const n = needle.replace(/\s+/g, " ").trim();
-  if (!n) return null;
-  const exact = matchTier({ text: haystack, map: null }, n);
-  if (exact) return exact;
-  const nfc = mapTransform(haystack, (c) => c.normalize("NFC"));
-  const nfcHit = matchTier(nfc, n.normalize("NFC"));
-  if (nfcHit) return nfcHit;
-  const folded = mapTransform(haystack, foldDiacritics);
-  return matchTier(folded, foldDiacritics(n));
-}
-
-/**
- * Word mode: search TOÀN doc (gộp text node, block tách "\n" — phrase trải
- * nhiều text node vẫn find được) → map plain offset → PM position.
- */
-function findPhraseInEditor(
-  editor: Editor,
-  phrase: string,
-): { from: number; to: number } | null {
-  const doc = editor.state.doc;
-  // Gộp text + map offset → PM pos của text node chứa offset đó.
-  let text = "";
-  const spans: Array<{ offset: number; pos: number }> = [];
-  let needSep = false;
-  doc.descendants((node, pos) => {
-    if (node.isText && node.text) {
-      if (needSep) {
-        text += "\n";
-        needSep = false;
-      }
-      spans.push({ offset: text.length, pos });
-      text += node.text;
-    } else if (node.isBlock) {
-      // "\n" chỉ chèn giữa 2 block CÓ nội dung.
-      needSep = text.length > 0;
-    }
-    return true;
-  });
-  const found = findFuzzy(text, phrase);
-  if (!found || spans.length === 0) return null;
-  // to có thể vượt hết text node đầu (phrase span ≥2 node) → pos vẫn chính xác
-  // vì 2 node liền nhau cùng paragraph (hoặc đã qua "\n").
-  const posAt = (offset: number) => {
-    let pos = spans[0].pos;
-    for (const s of spans) {
-      if (s.offset > offset) break;
-      pos = s.pos + (offset - s.offset);
-    }
-    return pos;
-  };
-  return { from: posAt(found[0]), to: posAt(found[1]) };
-}
-
-const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-/**
- * Best-effort MD preview highlight: rehype plugin bọc phrase cần sửa trong
- * <mark> (hast text nodes, chạy sau rehypeRaw/rewrite của preview).
- */
-function rehypeMarkPhrases(phrases: string[]) {
-  const list = phrases.filter(Boolean);
-  if (list.length === 0) return () => () => undefined;
-  const re = new RegExp(`(${list.map(escapeRegExp).join("|")})`, "g");
-  type Hast = { type?: string; tagName?: string; value?: string; children?: Hast[] };
-  const splitText = (node: Hast): Hast[] | null => {
-    const value = node.value ?? "";
-    const out: Hast[] = [];
-    let last = 0;
-    let m: RegExpExecArray | null;
-    re.lastIndex = 0;
-    while ((m = re.exec(value)) !== null) {
-      if (m.index > last) out.push({ type: "text", value: value.slice(last, m.index) });
-      out.push({
-        type: "element",
-        tagName: "mark",
-        properties: {},
-        children: [{ type: "text", value: m[0] }],
-      } as Hast);
-      last = m.index + m[0].length;
-    }
-    if (out.length === 0) return null;
-    if (last < value.length) out.push({ type: "text", value: value.slice(last) });
-    return out;
-  };
-  const rewrite = (parent: Hast) => {
-    if (!parent.children) return;
-    const next: Hast[] = [];
-    for (const child of parent.children) {
-      if (child.type === "element" && child.tagName === "mark") {
-        next.push(child);
-        continue;
-      }
-      if (child.type === "text") {
-        const wrapped = splitText(child);
-        if (wrapped) {
-          next.push(...wrapped);
-          continue;
-        }
-      }
-      next.push(child);
-    }
-    parent.children = next;
-    for (const child of next)
-      if (child.children && !(child.type === "element" && child.tagName === "mark"))
-        rewrite(child);
-  };
-  return () => (tree: Hast) => rewrite(tree);
-}
 
 /**
  * Plan M region "Soạn thảo" (gộp card "Tài liệu" + MarkdownEditor cũ; R51:
@@ -244,26 +61,6 @@ export default function UnifiedEditor({
   const [baseCss, setBaseCss] = useState("");
   const [wordCss, setWordCss] = useState("");
   const [styleMap, setStyleMap] = useState<LayoutStyle | null>(null);
-
-  // Plan proofread: suggestions + panel toggle + Tiptap editor ref (word mode).
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [proofreadLoading, setProofreadLoading] = useState(false);
-  const wordEditorRef = useRef<Editor | null>(null);
-  const pendingCount = suggestions.filter((s) => s.status === "pending").length;
-  // MD preview highlight: phrase đang pending → <mark> trong preview MDEditor.
-  const pendingPhrases = useMemo(
-    () => suggestions.filter((s) => s.status === "pending").map((s) => s.original),
-    [suggestions],
-  );
-  const previewHighlight = useMemo(
-    () => ({ rehypePlugins: [rehypeMarkPhrases(pendingPhrases)] }),
-    [pendingPhrases],
-  );
-
-  useEffect(() => {
-    api.getSuggestions(jobId).then(setSuggestions).catch(() => {});
-  }, [jobId]);
 
   // layout_style đã lưu → client CSS cho md preview (word iframe tái tạo từ tools hydrate).
   const savedCss = useMemo(() => buildLayoutStyleCss(job.layout_style), [job.layout_style]);
@@ -343,7 +140,8 @@ export default function UnifiedEditor({
 
   const saveLayout = async () => {
     try {
-      await api.putMdLayoutContent(jobId, mdText);
+      // Lane I Task 4: Lưu layout → PATCH /layout-content (kind md-layout snapshot).
+      await api.patchLayoutContent(jobId, mdText);
       toast.success("Đã lưu.");
       // Flag layout_cache đổi phía server → refresh job để badge cập nhật.
       await queryClient.invalidateQueries({ queryKey: ["job", jobId] });
@@ -370,94 +168,6 @@ export default function UnifiedEditor({
       await queryClient.invalidateQueries({ queryKey: ["job", jobId] });
     } catch (err) {
       toast.error(mapApiError(err));
-    }
-  };
-
-  /** Plan proofread: jump tới vị trí original trong editor (MD textarea / Tiptap). */
-  const handleJump = (s: Suggestion) => {
-    if (activeMode === "md") {
-      const ta = hostRef?.current?.querySelector<HTMLTextAreaElement>(
-        ".w-md-editor-text-input, textarea",
-      );
-      if (!ta) return;
-      const found = findFuzzy(ta.value, s.original);
-      if (!found) {
-        toast.error("Không tìm thấy trong nội dung");
-        return;
-      }
-      ta.focus();
-      ta.setSelectionRange(found[0], found[1]);
-      ta.scrollIntoView({ behavior: "smooth", block: "center" });
-    } else {
-      const editor = wordEditorRef.current;
-      if (!editor) return;
-      const found = findPhraseInEditor(editor, s.original);
-      if (!found) {
-        toast.error("Không tìm thấy trong nội dung");
-        return;
-      }
-      editor.chain().focus().setTextSelection({ from: found.from, to: found.to }).scrollIntoView().run();
-    }
-  };
-
-  /** Plan proofread: replace original → suggestion trong editor → save → accept. */
-  const handleAccept = async (sid: number) => {
-    const s = suggestions.find((x) => x.id === sid);
-    if (!s) return;
-    try {
-      if (activeMode === "md") {
-        // MD: thay occurrence đầu trong editor value (mdText) → PUT md-layout.
-        const found = findFuzzy(mdText, s.original);
-        if (!found) {
-          toast.error("Không tìm thấy trong nội dung");
-          return;
-        }
-        const newText = mdText.slice(0, found[0]) + s.suggestion + mdText.slice(found[1]);
-        setMdText(newText);
-        await api.putMdLayoutContent(jobId, newText);
-      } else {
-        const editor = wordEditorRef.current;
-        if (!editor) throw new Error("no editor");
-        const found = findPhraseInEditor(editor, s.original);
-        if (!found) {
-          toast.error("Không tìm thấy trong nội dung");
-          return;
-        }
-        editor.chain().focus().insertContentAt({ from: found.from, to: found.to }, s.suggestion).run();
-        await api.putDocxHtml(jobId, editor.getHTML());
-      }
-      await api.acceptSuggestion(jobId, sid);
-      setSuggestions((prev) => prev.filter((x) => x.id !== sid));
-      toast.success("Đã áp dụng gợi ý.");
-    } catch (err) {
-      toast.error(mapApiError(err));
-    }
-  };
-
-  /** Plan proofread: reject → remove khỏi list (toast R59). */
-  const handleReject = async (sid: number) => {
-    try {
-      await api.rejectSuggestion(jobId, sid);
-      setSuggestions((prev) => prev.filter((x) => x.id !== sid));
-      toast.success("Đã bỏ qua gợi ý.");
-    } catch (err) {
-      toast.error(mapApiError(err));
-    }
-  };
-
-  /** Plan proofread: chạy lại proofread thủ công (nút refresh). */
-  const handleRefresh = async () => {
-    setProofreadLoading(true);
-    try {
-      const { count } = await api.runProofread(jobId);
-      toast.success(`Đã tìm thấy ${count} gợi ý.`);
-      const items = await api.getSuggestions(jobId);
-      setSuggestions(items);
-      setPanelOpen(true);
-    } catch (err) {
-      toast.error(mapApiError(err));
-    } finally {
-      setProofreadLoading(false);
     }
   };
 
@@ -500,34 +210,6 @@ export default function UnifiedEditor({
             <Badge testid="layout-badge" tone={cached ? "success" : "neutral"}>
               {cached ? "Layout đã lưu" : "Layout chưa lưu"}
             </Badge>
-            <Button
-              testid="btn-refresh-proofread"
-              variant="ghost"
-              size="sm"
-              title="Chạy lại kiểm tra"
-              aria-label="Chạy lại kiểm tra"
-              disabled={proofreadLoading}
-              onClick={() => void handleRefresh()}
-            >
-              <RefreshCw className="h-4 w-4" aria-hidden="true" />
-            </Button>
-            <Button
-              testid="btn-proofread"
-              variant="secondary"
-              aria-pressed={panelOpen}
-              onClick={() => setPanelOpen((o) => !o)}
-            >
-              <Sparkles className="h-4 w-4" aria-hidden="true" />
-              Kiểm tra lỗi
-              {pendingCount > 0 && (
-                <span
-                  data-testid="proofread-badge"
-                  className="ml-1 rounded-full bg-error/15 px-1.5 text-xs font-semibold text-error"
-                >
-                  {pendingCount}
-                </span>
-              )}
-            </Button>
           </div>
         </div>
         {displayError !== null && (
@@ -538,7 +220,7 @@ export default function UnifiedEditor({
           >
             <span className="min-w-0 flex-1 break-words">{displayError}</span>
             <Button
-              testid="btn-retry-layout"
+              testid="btn-retry-layout-error"
               variant="secondary"
               size="sm"
               onClick={() => {
@@ -576,7 +258,6 @@ export default function UnifiedEditor({
               value={mdText}
               onChange={(v) => setMdText(v ?? "")}
               height="24rem"
-              previewOptions={previewHighlight}
             />
             <div className="mt-3 flex justify-end border-t border-border pt-3">
               <Button testid="btn-save-layout" onClick={() => void saveLayout()}>
@@ -593,7 +274,6 @@ export default function UnifiedEditor({
                 html={docxHtml}
                 css={baseCss + wordCss}
                 onSave={(html) => void saveWord(html)}
-                editorRef={wordEditorRef}
               />
             )}
             <DocStyleTools
@@ -611,17 +291,6 @@ export default function UnifiedEditor({
           </>
         )}
           </div>
-        {panelOpen && (
-          /* Plan proofread: panel DƯỚI editor, full width (bỏ side-panel) — cả 2 mode. */
-          <div className="mt-4 border-t border-border pt-4">
-            <SuggestionsPanel
-              suggestions={suggestions}
-              onAccept={(sid) => void handleAccept(sid)}
-              onReject={(sid) => void handleReject(sid)}
-              onJump={handleJump}
-            />
-          </div>
-        )}
       </Card>
     </section>
   );

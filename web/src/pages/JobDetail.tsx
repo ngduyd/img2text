@@ -1,6 +1,6 @@
 import type { Query } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FileQuestion, PenLine, TriangleAlert } from "lucide-react";
+import { ArrowLeft, ChevronDown, FileQuestion, PenLine, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -11,13 +11,14 @@ import { STATUS_TEXT, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
 import { useJobDoneToasts } from "../hooks/useJobDoneToasts";
 import ExportBar from "../components/ExportBar";
 import ConfirmDialog from "../components/ConfirmDialog";
+import DownloadDropdown from "../components/DownloadDropdown";
 import InfoPanel from "../components/panels/InfoPanel";
 import OriginalFilePanel from "../components/panels/OriginalFilePanel";
 import LayoutPreview from "../components/LayoutPreview";
 import TextSection from "../components/TextSection";
 import UnifiedEditor from "../components/UnifiedEditor";
 import Badge from "../components/ui/Badge";
-import Button, { buttonClasses } from "../components/ui/Button";
+import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import Skeleton from "../components/ui/Skeleton";
 
@@ -29,7 +30,7 @@ const jobRefetchInterval = (q: Query<Job>): number | false =>
  * WS-UI (spec 2026-10-13, wave-3 #5-6): wrapper grid DUY NHẤT —
  * col trái stack SECTION "Văn bản" (TextSection, hiện cả khi rendering) +
  * SECTION "Layout" (LayoutPreview / editor khi "Chỉnh sửa" + ExportBar);
- * col phải = sticky "File gốc" (1 panel, blob cache chung) + InfoPanel.
+ * col phải = collapsible "File gốc" + "Thông tin" (Lane I Task 2, bỏ sticky).
  */
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
@@ -49,8 +50,15 @@ export default function JobDetail() {
   const [retryError, setRetryError] = useState<string | null>(null);
   /** JD2: btn-edit-doc = inline edit ON THIS PAGE — section Layout: preview ↔ editor. */
   const [editing, setEditing] = useState(false);
-  /** Wave-3 #7: "Chỉnh sửa layout" — md pane = textarea, Lưu layout → PATCH layout-content. */
-  const [layoutEditing, setLayoutEditing] = useState(false);
+  /** Lane I Task 5: dropdown "Tải xuống" ở header (gộp 4 định dạng text). */
+  const [downloadOpen, setDownloadOpen] = useState(false);
+  /** Lane I Task 6: định dạng layout đang xem (header switch → export → crossfade preview).
+   *  Review r1 P0: override của switch; null → init theo job.output_format (đồng bộ preview). */
+  const [layoutFmtOverride, setLayoutFmtOverride] = useState<"md-layout" | "docx-layout" | null>(null);
+  const layoutFmt =
+    layoutFmtOverride ?? (job?.output_format === "docx" ? "docx-layout" : "md-layout");
+  const [retryingLayout, setRetryingLayout] = useState(false);
+  const [confirmRetry, setConfirmRetry] = useState(false);
   /** P0-C: panel "Lịch sử" — list lazy-fetch khi mở (queryKey "versions" để invalidate). */
   const [showHistory, setShowHistory] = useState(false);
   const {
@@ -72,6 +80,9 @@ export default function JobDetail() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [showHistory]);
   const editorHostRef = useRef<HTMLElement>(null);
+  /** Lane I Task 2: File gốc + Thông tin = collapsible (default closed, bỏ sticky). */
+  const [originalOpen, setOriginalOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const toggleEdit = () => {
     if (editing) {
@@ -82,6 +93,38 @@ export default function JobDetail() {
       return;
     }
     setEditing(true);
+  };
+
+  /** Lane I Task 6: confirm "Vẽ lại layout" → POST retry-layout + loading + toast (R59). */
+  const confirmRetryLayout = async () => {
+    setConfirmRetry(false);
+    setRetryingLayout(true);
+    setRetryError(null);
+    try {
+      await api.retryLayout(id!);
+      toast.success("Đã tạo lại layout.");
+      await queryClient.invalidateQueries({ queryKey: ["job", id] });
+    } catch (err) {
+      setRetryError(err instanceof ApiError ? err.detail : "Tạo lại layout thất bại.");
+      toast.error(mapApiError(err));
+    } finally {
+      setRetryingLayout(false);
+    }
+  };
+
+  /**
+   * Lane I Task 6: switch md-layout ↔ docx-layout — export fmt (cache-hit server
+   * trả URL presigned ngay) → toast + crossfade preview (CSS 200ms, key remount).
+   */
+  const switchLayoutFmt = async (fmt: "md-layout" | "docx-layout") => {
+    if (fmt === layoutFmt) return;
+    try {
+      await api.exportJob(id!, fmt);
+      setLayoutFmtOverride(fmt);
+      toast.success("Đã đổi định dạng layout.");
+    } catch (err) {
+      toast.error(mapApiError(err));
+    }
   };
 
   if (!job) {
@@ -217,25 +260,45 @@ export default function JobDetail() {
               Hủy job
             </Button>
           )}
-          {/* Layout gen failed (done but layout_cache miss): re-run LLM md+docx. */}
-          {job.status === "done" && result && (!job.layout_cache?.md || !job.layout_cache?.docx) && (
+          {/* Lane I Task 6: "Vẽ lại layout" — POST retry-layout, confirm + loading + toast. */}
+          {job.status === "done" && result && (
             <Button
               testid="btn-retry-layout"
               variant="secondary"
-              onClick={async () => {
-                setRetryError(null);
-                try {
-                  await api.retryLayout(id!);
-                  toast.success("Đã tạo lại layout.");
-                  await queryClient.invalidateQueries({ queryKey: ["job", id] });
-                } catch (err) {
-                  setRetryError(err instanceof ApiError ? err.detail : "Tạo lại layout thất bại.");
-                  toast.error(mapApiError(err));
-                }
-              }}
+              loading={retryingLayout}
+              onClick={() => setConfirmRetry(true)}
             >
-              Chạy lại layout
+              Vẽ lại layout
             </Button>
+          )}
+          {/* Lane I Task 6: switch định dạng layout md-layout ↔ docx-layout. */}
+          {job.status === "done" && result && job.mode !== "extract_only" && (
+            <div
+              role="group"
+              aria-label="Định dạng layout"
+              className="inline-flex items-center gap-1 rounded-md border border-border p-1"
+            >
+              <Button
+                testid="fmt-md-layout"
+                variant="ghost"
+                size="sm"
+                aria-pressed={layoutFmt === "md-layout"}
+                className={layoutFmt === "md-layout" ? "bg-surface-2 font-semibold" : ""}
+                onClick={() => void switchLayoutFmt("md-layout")}
+              >
+                Markdown
+              </Button>
+              <Button
+                testid="fmt-docx-layout"
+                variant="ghost"
+                size="sm"
+                aria-pressed={layoutFmt === "docx-layout"}
+                className={layoutFmt === "docx-layout" ? "bg-surface-2 font-semibold" : ""}
+                onClick={() => void switchLayoutFmt("docx-layout")}
+              >
+                DOCX
+              </Button>
+            </div>
           )}
           {/* JD2 amendment: Edit = inline edit trong section Layout (preview ↔ editor). */}
           <Button
@@ -248,6 +311,12 @@ export default function JobDetail() {
             <PenLine className="h-4 w-4" aria-hidden="true" />
             {editing ? "Đang sửa" : "Chỉnh sửa"}
           </Button>
+          {/* Lane I Task 5: download gộp 1 dropdown, dời lên cạnh "Chỉnh sửa". */}
+          <DownloadDropdown
+            jobId={id!}
+            open={downloadOpen}
+            onToggle={() => setDownloadOpen((v) => !v)}
+          />
           {/* P0-C: lịch sử version + khôi phục (API listVersions/restoreVersion sẵn). */}
           <Button
             testid="btn-version-history"
@@ -286,6 +355,15 @@ export default function JobDetail() {
             }
           })();
         }}
+      />
+      {/* Lane I Task 6: confirm "Vẽ lại layout" (LLM re-run md+docx). */}
+      <ConfirmDialog
+        open={confirmRetry}
+        title="Vẽ lại layout?"
+        message="Toàn bộ layout (Markdown + DOCX) sẽ được vẽ lại bằng LLM. Tiếp tục?"
+        confirmLabel="Vẽ lại"
+        onCancel={() => setConfirmRetry(false)}
+        onConfirm={() => void confirmRetryLayout()}
       />
       {showHistory && (
         <section
@@ -372,8 +450,8 @@ export default function JobDetail() {
       )}
 
       {/*
-        Wave-3 #5: wrapper grid DUY NHẤT — col trái = section "Văn bản" + section
-        "Layout" stack; col phải = sticky "File gốc" + InfoPanel trượt xuyên 2 section.
+        Wave-3 #5 → Lane I Task 2: col trái stack 2 section; col phải = collapsible
+        "File gốc" + "Thông tin" (Button aria-expanded, default closed — mở mới mount).
       */}
       <div data-testid="detail-grid" className="grid gap-4 lg:grid-cols-12 lg:gap-6">
         <div className="flex min-w-0 flex-col gap-6 lg:col-span-7">
@@ -389,14 +467,6 @@ export default function JobDetail() {
               </h2>
               <div data-testid="panel-result" className="flex min-w-0 flex-col gap-6">
                 <TextSection jobId={id!} regions={regions} fileType={job.file_type} />
-                {/* WS-UI: link đọc tiếp ở trang trích xuất đầy đủ. */}
-                <Link
-                  to={`/jobs/${id}/extraction`}
-                  data-testid="link-extraction"
-                  className={buttonClasses("secondary", "md")}
-                >
-                  Mở trang trích xuất đầy đủ
-                </Link>
               </div>
             </section>
           )}
@@ -412,16 +482,6 @@ export default function JobDetail() {
                 <h2 id="section-layout-title" className="text-lg font-semibold tracking-tight">
                   Layout
                 </h2>
-                {/* Wave-3 #7: "Chỉnh sửa layout" — md pane = textarea + Lưu layout (khác btn-edit-doc). */}
-                <Button
-                  testid="btn-edit-layout"
-                  variant="secondary"
-                  aria-pressed={layoutEditing}
-                  onClick={() => setLayoutEditing((v) => !v)}
-                >
-                  <PenLine className="h-4 w-4" aria-hidden="true" />
-                  {layoutEditing ? "Đang sửa layout" : "Chỉnh sửa layout"}
-                </Button>
               </div>
               {editing ? (
                 <UnifiedEditor
@@ -433,7 +493,10 @@ export default function JobDetail() {
                   hostRef={editorHostRef}
                 />
               ) : (
-                <LayoutPreview job={job} editing={layoutEditing} />
+                /* Lane I Task 6: key remount + CSS crossfade 200ms khi đổi định dạng. */
+                <div key={layoutFmt} className="layout-crossfade">
+                  <LayoutPreview job={job} fmt={layoutFmt} onFmtChange={setLayoutFmtOverride} />
+                </div>
               )}
               {/* Stats line dưới preview (spec: SECTION Layout). */}
               <p data-testid="result-stats" className="text-sm text-muted">
@@ -446,10 +509,50 @@ export default function JobDetail() {
             </section>
           )}
         </div>
-        {/* ẢNH GỐC (1 panel duy nhất, blob cache chung) + InfoPanel — sticky xuyên 2 section. */}
-        <aside className="flex min-w-0 flex-col gap-4 lg:col-span-5 lg:sticky lg:top-16 lg:self-start">
-          <OriginalFilePanel jobId={id!} fileType={job.file_type} />
-          <InfoPanel job={job} />
+        {/* ẢNH GỐC + Thông tin — collapsible (Lane I Task 2, không còn sticky). */}
+        <aside className="flex min-w-0 flex-col gap-4 lg:col-span-5">
+          <section className="rounded-card border border-border bg-surface shadow-card">
+            <h2>
+              <Button
+                testid="btn-toggle-original"
+                variant="ghost"
+                aria-expanded={originalOpen}
+                aria-controls="original-panel-wrap"
+                className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-base font-semibold"
+                onClick={() => setOriginalOpen((v) => !v)}
+              >
+                File gốc
+                <ChevronDown
+                  className={`h-4 w-4 text-muted transition duration-150 ease-out ${originalOpen ? "rotate-180" : ""}`}
+                  aria-hidden="true"
+                />
+              </Button>
+            </h2>
+            <div id="original-panel-wrap" className={originalOpen ? "border-t border-border p-4" : "hidden"}>
+              {originalOpen && <OriginalFilePanel jobId={id!} fileType={job.file_type} />}
+            </div>
+          </section>
+          <section className="rounded-card border border-border bg-surface shadow-card">
+            <h2>
+              <Button
+                testid="btn-toggle-info"
+                variant="ghost"
+                aria-expanded={infoOpen}
+                aria-controls="info-panel-wrap"
+                className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-base font-semibold"
+                onClick={() => setInfoOpen((v) => !v)}
+              >
+                Thông tin
+                <ChevronDown
+                  className={`h-4 w-4 text-muted transition duration-150 ease-out ${infoOpen ? "rotate-180" : ""}`}
+                  aria-hidden="true"
+                />
+              </Button>
+            </h2>
+            <div id="info-panel-wrap" className={infoOpen ? "border-t border-border p-4" : "hidden"}>
+              {infoOpen && <InfoPanel job={job} />}
+            </div>
+          </section>
         </aside>
       </div>
     </main>

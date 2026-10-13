@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -54,6 +54,129 @@ beforeEach(() => {
   });
   vi.mocked(api.getSuggestions).mockResolvedValue([SUGGESTION]);
   vi.mocked(api.getCropUrl).mockResolvedValue({ url: "https://r2/c.jpg" });
+});
+
+// --- Lane I Task 1: toggle "Soạn thảo" (Tiptap thuần text) + paste strip ---
+
+it("toggle Soạn thảo → text editor; toggle off → article again", async () => {
+  const user = userEvent.setup();
+  renderSection(<TextSection jobId="5" />);
+  expect(await screen.findByTestId("extraction-text")).toBeInTheDocument();
+  const btn = screen.getByTestId("btn-edit-text");
+  expect(btn).toHaveAttribute("aria-pressed", "false");
+  await user.click(btn);
+  expect(btn).toHaveAttribute("aria-pressed", "true");
+  const editor = await screen.findByTestId("text-editor");
+  await waitFor(() =>
+    expect(editor.querySelector(".ProseMirror")).toHaveAttribute("contenteditable", "true"),
+  );
+  expect(screen.queryByTestId("extraction-text")).not.toBeInTheDocument();
+  await user.click(btn);
+  expect(screen.queryByTestId("text-editor")).not.toBeInTheDocument();
+  expect(screen.getByTestId("extraction-text")).toBeInTheDocument();
+});
+
+it("paste strip: dán Word (html + plain) → chỉ giữ plain text + xuống dòng", async () => {
+  const user = userEvent.setup();
+  renderSection(<TextSection jobId="5" />);
+  await screen.findByTestId("extraction-text");
+  await user.click(screen.getByTestId("btn-edit-text"));
+  const editor = await screen.findByTestId("text-editor");
+  const pm = editor.querySelector(".ProseMirror") as HTMLElement;
+  await waitFor(() => expect(pm).toHaveAttribute("contenteditable", "true"));
+  pm.focus();
+  fireEvent.paste(pm, {
+    clipboardData: {
+      getData: (type: string) =>
+        type === "text/plain" ? "Dong mot\nDong hai" : "<b><i>Word rác</i></b>",
+    },
+  });
+  await waitFor(() => expect(pm).toHaveTextContent("Dong mot"));
+  expect(pm).toHaveTextContent("Dong hai");
+  expect(pm.querySelector("strong")).toBeNull();
+  expect(pm.querySelector("em")).toBeNull();
+});
+
+// --- Review r1 P2a/P2b/P2f: blank lines round-trip + aria-label + empty-plain paste ---
+
+it("review r1 P2a: editor giữ empty lines — save round-trip text giữ \\n\\n", async () => {
+  vi.mocked(api.getExtraction).mockResolvedValue({
+    text: "Dòng 1\n\nDòng 3",
+    text_version: 3,
+  });
+  vi.mocked(api.saveExtraction).mockResolvedValue({
+    synced: { md: false, docx: false },
+    needs_render: [],
+    text_version: 4,
+    requires_rerender: false,
+  });
+  const user = userEvent.setup();
+  renderSection(<TextSection jobId="5" />);
+  await screen.findByTestId("extraction-text");
+  await user.click(screen.getByTestId("btn-edit-text"));
+  await screen.findByTestId("text-editor");
+  await user.click(screen.getByTestId("btn-save-text"));
+  await waitFor(() => expect(api.saveExtraction).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(api.saveExtraction).mock.calls[0][1].text).toBe("Dòng 1\n\nDòng 3");
+});
+
+it("review r1 P2b: text editor Tiptap có aria-label trên contenteditable", async () => {
+  renderSection(<TextSection jobId="5" />);
+  await screen.findByTestId("extraction-text");
+  await userEvent.click(screen.getByTestId("btn-edit-text"));
+  const editor = await screen.findByTestId("text-editor");
+  const pm = editor.querySelector(".ProseMirror") as HTMLElement;
+  await waitFor(() =>
+    expect(pm).toHaveAttribute("aria-label", "Soạn thảo văn bản"),
+  );
+});
+
+it("review r1 P2f: paste text/plain rỗng → preventDefault, không rơi về HTML", async () => {
+  renderSection(<TextSection jobId="5" />);
+  await screen.findByTestId("extraction-text");
+  await userEvent.click(screen.getByTestId("btn-edit-text"));
+  const editor = await screen.findByTestId("text-editor");
+  const pm = editor.querySelector(".ProseMirror") as HTMLElement;
+  await waitFor(() => expect(pm).toHaveAttribute("contenteditable", "true"));
+  pm.focus();
+  const notPrevented = fireEvent.paste(pm, {
+    clipboardData: {
+      getData: (type: string) => (type === "text/plain" ? "" : "<b>Word rác</b>"),
+    },
+  });
+  // preventDefault luôn chạy (không rơi về default HTML paste) + chèn "".
+  expect(notPrevented).toBe(false);
+  expect(pm.querySelector("b")).toBeNull();
+  expect(pm.textContent).not.toContain("Word rác");
+});
+
+it("btn-save-text → saveExtraction full text (không old/new phrase) + toast", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.saveExtraction).mockResolvedValue({
+    synced: { md: false, docx: false },
+    needs_render: [],
+    text_version: 4,
+    requires_rerender: false,
+  });
+  const { toast } = await import("sonner");
+  renderSection(<TextSection jobId="5" />); // text "Xin chao ban", version 3
+  await screen.findByTestId("extraction-text");
+  await user.click(screen.getByTestId("btn-edit-text"));
+  const editor = await screen.findByTestId("text-editor");
+  const pm = editor.querySelector(".ProseMirror") as HTMLElement;
+  await waitFor(() => expect(pm).toHaveAttribute("contenteditable", "true"));
+  pm.focus();
+  fireEvent.paste(pm, {
+    clipboardData: { getData: () => "Dòng mới" },
+  });
+  await waitFor(() => expect(pm).toHaveTextContent("Dòng mới"));
+  await user.click(screen.getByTestId("btn-save-text"));
+  await waitFor(() => expect(api.saveExtraction).toHaveBeenCalledTimes(1));
+  const [, body] = vi.mocked(api.saveExtraction).mock.calls[0];
+  expect(body.text).toContain("Dòng mới");
+  expect(body.expected_text_version).toBe(3);
+  expect(body).not.toHaveProperty("old_phrase");
+  await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Đã lưu."));
 });
 
 it("renders issues panel below text when regions provided", async () => {

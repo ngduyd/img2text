@@ -5,28 +5,21 @@ import { mapApiError } from "../lib/errors";
 import Button from "./ui/Button";
 
 /**
- * WS-UI item 13 (B): 2 nhóm dropdown — "Văn bản" (md | html | docx | pdf,
- * export thuần text) và "Layout" (md-layout | docx-layout, bản dựng layout).
- * R51 testids cũ giữ nguyên (export-md/export-more/export-formats/...).
+ * WS-UI item 13 (B) → Lane I Task 5: download text (md|html|docx|pdf) dời lên
+ * header dropdown "Tải xuống" (btn-download); ExportBar dưới chỉ giữ nhóm
+ * export "Layout" (md-layout | docx-layout, bản dựng layout).
+ * R51 testids cũ giữ nguyên (btn-export-md-layout/btn-export-docx-layout/...).
  */
-const TEXT_FORMATS = [
-  { fmt: "md", testid: "export-md", label: "Tải .md" },
-  { fmt: "html", testid: "export-html", label: "Tải .html" },
-  { fmt: "docx", testid: "export-docx", label: "Tải .docx" },
-  { fmt: "pdf", testid: "export-pdf", label: "Tải .pdf" },
-] as const;
-
 const LAYOUT_FORMATS = [
   { fmt: "md-layout", testid: "btn-export-md-layout", label: "Markdown (layout)" },
   { fmt: "docx-layout", testid: "btn-export-docx-layout", label: "DOCX (giữ layout)" },
 ] as const;
 
-type Fmt = (typeof TEXT_FORMATS)[number]["fmt"] | (typeof LAYOUT_FORMATS)[number]["fmt"];
+type Fmt = (typeof LAYOUT_FORMATS)[number]["fmt"];
 
 export default function ExportBar({ jobId }: { jobId: string }) {
   const [busy, setBusy] = useState<Set<Fmt>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
-  const [textMore, setTextMore] = useState(false);
   const [layoutMore, setLayoutMore] = useState(false);
 
   const exportFmt = async (fmt: Fmt) => {
@@ -51,7 +44,6 @@ export default function ExportBar({ jobId }: { jobId: string }) {
 
   const renderGroup = (
     label: string,
-    group: "text" | "layout",
     open: boolean,
     setOpen: (v: boolean) => void,
     formats: ReadonlyArray<{ fmt: Fmt; testid: string; label: string }>,
@@ -61,7 +53,7 @@ export default function ExportBar({ jobId }: { jobId: string }) {
     <div className="flex flex-wrap items-center gap-2">
       <Button
         testid={moreTestid}
-        variant={group === "text" ? "primary" : "secondary"}
+        variant="secondary"
         aria-expanded={open}
         aria-controls={listTestid}
         onClick={() => setOpen(!open)}
@@ -101,17 +93,7 @@ export default function ExportBar({ jobId }: { jobId: string }) {
       )}
       <div className="flex flex-wrap items-center gap-2">
         {renderGroup(
-          "Văn bản",
-          "text",
-          textMore,
-          setTextMore,
-          TEXT_FORMATS,
-          "export-more",
-          "export-formats",
-        )}
-        {renderGroup(
           "Layout",
-          "layout",
           layoutMore,
           setLayoutMore,
           LAYOUT_FORMATS,

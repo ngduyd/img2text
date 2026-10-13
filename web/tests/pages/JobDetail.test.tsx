@@ -147,6 +147,8 @@ it("queued shows waiting message and polls", async () => {
   mockJob({ id: 5, status: "queued", page_count: 1, result: null } as Job);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   // Task 2: header badge duplicates status text — scope to InfoPanel's status badge.
+  // Lane I Task 2: InfoPanel = collapsible default closed → mở trước.
+  await userEvent.click(await screen.findByTestId("btn-toggle-info"));
   expect(await screen.findByTestId("status-5")).toHaveTextContent("Đang lập lịch");
   // Back link points at the /jobs list route (root is public landing now).
   expect(screen.getByTestId("link-back-jobs")).toHaveAttribute("href", "/jobs");
@@ -157,7 +159,7 @@ it("queued shows waiting message and polls", async () => {
 it.each(["extracting", "rendering"] as const)("%s keeps polling", async (status) => {
   mockJob({ id: 5, status, page_count: 1, result: null } as Job);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  await screen.findByTestId("panel-info");
+  await screen.findByTestId("job-header");
   expect(pollSpyCalled()).toBe(true);
 });
 
@@ -165,6 +167,7 @@ it("failed shows retry button and calls api", async () => {
   mockJob({ id: 5, status: "failed", error: "boom", result: null } as Job);
   vi.mocked(api.retryJob).mockResolvedValue(undefined);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await userEvent.click(await screen.findByTestId("btn-toggle-info"));
   expect(await screen.findByTestId("status-5")).toHaveTextContent("Xử lý thất bại");
   const invalidate = vi.spyOn(lastQueryClient!, "invalidateQueries");
   const user = userEvent.setup();
@@ -182,6 +185,7 @@ it("retry failure shows retry-error with server detail", async () => {
   mockJob({ id: 5, status: "failed", error: "boom", result: null } as Job);
   vi.mocked(api.retryJob).mockRejectedValue(new ApiError("Forbidden."));
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await userEvent.click(await screen.findByTestId("btn-toggle-info"));
   expect(await screen.findByTestId("status-5")).toHaveTextContent("Xử lý thất bại");
   const user = userEvent.setup();
   await user.click(screen.getByTestId("btn-retry-job"));
@@ -195,7 +199,7 @@ it.each(["queued", "extracting", "rendering"] as const)(
     mockJob({ id: 5, status, error: null, result: null } as Job);
     vi.mocked(api.cancelJob).mockResolvedValue(undefined);
     renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-    expect(await screen.findByTestId("status-5")).toBeDefined();
+    await screen.findByTestId("job-header");
     const invalidate = vi.spyOn(lastQueryClient!, "invalidateQueries");
     const user = userEvent.setup();
     await user.click(screen.getByTestId("btn-cancel-job"));
@@ -211,7 +215,7 @@ it.each(["done", "failed", "cancelled"] as const)(
   async (status) => {
     mockJob({ id: 5, status, error: null, result: null } as Job);
     renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-    expect(await screen.findByTestId("status-5")).toBeDefined();
+    await screen.findByTestId("job-header");
     expect(screen.queryByTestId("btn-cancel-job")).not.toBeInTheDocument();
   },
 );
@@ -222,14 +226,16 @@ it("done without layout_cache shows retry-layout button and calls api", async ()
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   const user = userEvent.setup();
   await user.click(await screen.findByTestId("btn-retry-layout"));
+  await user.click(screen.getByTestId("confirm-accept"));
   expect(api.retryLayout).toHaveBeenCalledWith("5");
 });
 
-it("done with layout_cache hides retry-layout button", async () => {
+// Lane I Task 6: "Vẽ lại layout" luôn hiện khi done (không chỉ khi cache miss).
+it("done with layout_cache still shows retry-layout button", async () => {
   mockJob({ ...DONE_JOB, layout_cache: { md: true, docx: true } });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("layout-preview");
-  expect(screen.queryByTestId("btn-retry-layout")).not.toBeInTheDocument();
+  expect(screen.getByTestId("btn-retry-layout")).toBeInTheDocument();
 });
 
 it("done stops polling", async () => {
@@ -256,6 +262,10 @@ const DONE_JOB: Job = {
 it("done renders 3 panels: original + result + info with status badge", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  // Lane I Task 2: File gốc + Thông tin = collapsible (default closed) → mở trước.
+  await user.click(await screen.findByTestId("btn-toggle-original"));
+  await user.click(screen.getByTestId("btn-toggle-info"));
   expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
   expect(screen.getByTestId("panel-result")).toBeInTheDocument();
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
@@ -271,13 +281,17 @@ it("done: no job-meta/output badge, stats line + ExportBar render", async () => 
   expect(screen.queryByTestId("job-output-format")).not.toBeInTheDocument();
   expect(screen.getByTestId("result-stats")).toBeInTheDocument();
   expect(screen.getByTestId("export-bar")).toBeInTheDocument();
-  expect(screen.getByTestId("export-more")).toBeInTheDocument();
   expect(screen.getByTestId("export-layout-more")).toBeInTheDocument();
+  expect(screen.queryByTestId("export-more")).not.toBeInTheDocument();
+  expect(screen.getByTestId("btn-download")).toBeInTheDocument();
 });
 
 it("not done shows status-only panels, ResultPanel hidden until done", async () => {
   mockJob({ ...DONE_JOB, status: "queued", result: null });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByTestId("btn-toggle-original"));
+  await user.click(screen.getByTestId("btn-toggle-info"));
   expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
   expect(screen.queryByTestId("panel-result")).toBeNull();
@@ -328,58 +342,171 @@ it("btn-edit-doc toggles editor: preview → editor → preview, no navigation",
   expect(mockNavigate).not.toHaveBeenCalled();
 });
 
-/** Wave-3 #7: btn-edit-layout = preview ↔ md textarea "Chỉnh sửa layout" (KHÔNG đụng btn-edit-doc). */
-it("btn-edit-layout toggles layout editor textarea, no navigation", async () => {
+/** Lane I Task 5: header "Tải xuống" dropdown — 4 định dạng text (không còn download rải dưới). */
+it("header download dropdown: 4 text formats call exportJob + open url", async () => {
+  mockJob(DONE_JOB);
+  vi.mocked(api.exportJob).mockResolvedValue({ url: "https://r2/exports/5/docx" });
+  const w = { location: "about:blank" };
+  const openSpy = vi.fn().mockReturnValue(w);
+  vi.stubGlobal("open", openSpy);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  const btn = await screen.findByTestId("btn-download");
+  expect(btn).toHaveAttribute("aria-expanded", "false");
+  await user.click(btn);
+  expect(btn).toHaveAttribute("aria-expanded", "true");
+  const list = screen.getByTestId("download-formats");
+  for (const fmt of ["md", "html", "docx", "pdf"]) {
+    expect(within(list).getByTestId(`export-${fmt}`)).toBeInTheDocument();
+  }
+  await user.click(within(list).getByTestId("export-docx"));
+  expect(api.exportJob).toHaveBeenCalledWith("5", "docx");
+  await waitFor(() => expect(w.location).toBe("https://r2/exports/5/docx"));
+});
+/** Lane I Task 6: switch md-layout ↔ docx-layout ở header → export fmt + crossfade preview. */
+it("layout fmt switch: click docx-layout → exportJob docx-layout + toast + crossfade", async () => {
+  mockJob(DONE_JOB); // output_format undefined → default md-layout
+  vi.mocked(api.exportJob).mockResolvedValue({ url: "" });
+  vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["# A"]));
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  const btnMd = await screen.findByTestId("fmt-md-layout");
+  expect(btnMd).toHaveAttribute("aria-pressed", "true");
+  const btnDocx = screen.getByTestId("fmt-docx-layout");
+  expect(btnDocx).toHaveAttribute("aria-pressed", "false");
+  const preview = screen.getByTestId("layout-preview");
+  expect(preview.parentElement?.className).toContain("layout-crossfade");
+  await user.click(btnDocx);
+  await waitFor(() =>
+    expect(api.exportJob).toHaveBeenCalledWith("5", "docx-layout"),
+  );
+  await waitFor(() =>
+    expect(toast.success).toHaveBeenCalledWith("Đã đổi định dạng layout."),
+  );
+  expect(screen.getByTestId("fmt-docx-layout")).toHaveAttribute("aria-pressed", "true");
+});
+
+/** Review r1 P0: header fmt switch PHẢI nối preview — click docx-layout → preview chuyển word mode. */
+it("review r1 P0: header fmt-docx-layout → LayoutPreview switches to word mode (fmt prop)", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   const user = userEvent.setup();
-  const btn = await screen.findByTestId("btn-edit-layout");
-  expect(btn).toHaveAttribute("aria-pressed", "false");
-  expect(screen.queryByTestId("layout-editor-textarea")).not.toBeInTheDocument();
-  await user.click(btn);
-  expect(mockNavigate).not.toHaveBeenCalled();
-  expect(btn).toHaveAttribute("aria-pressed", "true");
-  const ta = await screen.findByTestId("layout-editor-textarea");
-  expect(ta.tagName).toBe("TEXTAREA");
-  await user.click(btn);
-  expect(btn).toHaveAttribute("aria-pressed", "false");
-  expect(screen.queryByTestId("layout-editor-textarea")).not.toBeInTheDocument();
+  await screen.findByTestId("layout-preview");
   expect(screen.getByTestId("preview-md")).toBeInTheDocument();
+  await user.click(await screen.findByTestId("fmt-docx-layout"));
+  await waitFor(() => expect(api.exportJob).toHaveBeenCalledWith("5", "docx-layout"));
+  expect(await screen.findByTestId("preview-word")).toBeInTheDocument();
+  expect(screen.queryByTestId("preview-md")).not.toBeInTheDocument();
 });
 
-/** Wave-3 #5: wrapper grid DUY NHẤT bao 2 section — col trái stack, col phải = sticky File gốc + Info. */
-it("renders single wrapper grid: 2 sections stacked left, sticky original+info right", async () => {
+/** Review r1 P0 init: output_format docx → header switch + preview CÙNG word mode từ đầu. */
+it("review r1 P0: output_format docx → fmt-docx-layout pressed + preview-word on init", async () => {
+  mockJob({ ...DONE_JOB, output_format: "docx" });
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  expect(await screen.findByTestId("preview-word")).toBeInTheDocument();
+  expect(screen.getByTestId("fmt-docx-layout")).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByTestId("fmt-md-layout")).toHaveAttribute("aria-pressed", "false");
+});
+
+/** Review r1 P1: btn-retry-layout DUY NHẤT — editor retry đổi tên btn-retry-layout-error. */
+it("review r1 P1: no duplicate btn-retry-layout (editor retry = btn-retry-layout-error)", async () => {
+  mockJob(DONE_JOB);
+  vi.mocked(api.exportJob).mockRejectedValue(new ApiError("boom"));
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByTestId("btn-edit-doc"));
+  await screen.findByTestId("layout-error");
+  expect(screen.getByTestId("btn-retry-layout-error")).toBeInTheDocument();
+  expect(screen.getAllByTestId("btn-retry-layout")).toHaveLength(1);
+});
+
+/** Review r1 P2c: dropdown a11y — aria-haspopup, Escape closes, close-on-select. */
+it("review r1 P2c: download dropdown aria-haspopup + Escape closes + closes after select", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  const btn = await screen.findByTestId("btn-download");
+  expect(btn).toHaveAttribute("aria-haspopup", "true");
+  await user.click(btn);
+  expect(btn).toHaveAttribute("aria-expanded", "true");
+  fireEvent.keyDown(document, { key: "Escape" });
+  await waitFor(() => expect(btn).toHaveAttribute("aria-expanded", "false"));
+  await user.click(btn);
+  await user.click(screen.getByTestId("export-md"));
+  await waitFor(() => expect(btn).toHaveAttribute("aria-expanded", "false"));
+});
+
+/** Lane I Task 6: "Vẽ lại layout" → confirm → POST retry-layout + loading + toast. */
+it("btn-retry-layout: confirm → retryLayout + toast; cancel → no call", async () => {
+  mockJob({ ...DONE_JOB, layout_cache: { md: true, docx: true } });
+  vi.mocked(api.retryLayout).mockResolvedValue({ md: true, docx: true });
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  const btn = await screen.findByTestId("btn-retry-layout");
+  expect(btn).toHaveTextContent("Vẽ lại layout");
+  // Hủy → không gọi.
+  await user.click(btn);
+  expect(screen.getByTestId("confirm-dialog")).toBeInTheDocument();
+  await user.click(screen.getByTestId("confirm-cancel"));
+  expect(api.retryLayout).not.toHaveBeenCalled();
+  // Confirm → gọi + toast + loading xong.
+  await user.click(btn);
+  await user.click(screen.getByTestId("confirm-accept"));
+  expect(api.retryLayout).toHaveBeenCalledWith("5");
+  await waitFor(() =>
+    expect(toast.success).toHaveBeenCalledWith("Đã tạo lại layout."),
+  );
+  expect(await screen.findByTestId("btn-retry-layout")).not.toHaveAttribute("aria-busy");
+});
+
+/** Wave-3 #7 → Lane I Task 4: bỏ btn-edit-layout + textarea; btn-edit-doc mở UnifiedEditor. */
+it("no btn-edit-layout / layout-editor-textarea; btn-edit-doc opens UnifiedEditor", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  expect(screen.queryByTestId("btn-edit-layout")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("layout-editor-textarea")).not.toBeInTheDocument();
+  await user.click(await screen.findByTestId("btn-edit-doc"));
+  expect(await screen.findByTestId("md-editor")).toBeInTheDocument();
+});
+
+/** Wave-3 #5 → Lane I Task 2: col phải KHÔNG còn sticky; File gốc + Info = collapsible default closed. */
+it("renders single wrapper grid: collapsible original+info right (default closed, no sticky)", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("section-text");
   await screen.findByTestId("section-layout");
-  // Wrapper grid ngoài (1 duy nhất); section KHÔNG còn grid con 7/5.
   const grid = screen.getByTestId("detail-grid");
   expect(grid.className).toContain("lg:grid-cols-12");
   const colClasses = grid.className.split(/\s+/).filter((c) => c.includes("grid-cols"));
   expect(colClasses.length).toBeGreaterThan(0);
   expect(colClasses.every((c) => c.startsWith("lg:"))).toBe(true);
   expect(grid.querySelector(".lg\\:col-span-7")).not.toBeNull();
-  // Sticky trượt xuyên cả Văn bản lẫn Layout (task 2).
+  // BỎ sticky (wave-3 G) — cột phải bình thường.
   const aside = grid.querySelector("aside");
   expect(aside).not.toBeNull();
   expect(aside!.className).toContain("lg:col-span-5");
-  expect(aside!.className).toContain("lg:sticky");
-  expect(aside!.className).toContain("lg:top-16");
-  expect(aside!.className).toContain("lg:self-start");
-  expect(screen.getByTestId("section-text").querySelector(".lg\\:col-span-7")).toBeNull();
-  expect(screen.getByTestId("section-layout").querySelector(".lg\\:col-span-5")).toBeNull();
-  // 1 panel "File gốc" duy nhất (gộp 2 aside cũ) + InfoPanel + preview + ExportBar.
-  expect(screen.getAllByTestId("panel-original")).toHaveLength(1);
+  expect(aside!.className).not.toContain("sticky");
+  // Default closed: panel chưa mount, aria-expanded=false, không fetch blob.
+  expect(screen.queryByTestId("panel-original")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("panel-info")).not.toBeInTheDocument();
+  expect(screen.getByTestId("btn-toggle-original")).toHaveAttribute("aria-expanded", "false");
+  expect(screen.getByTestId("btn-toggle-info")).toHaveAttribute("aria-expanded", "false");
+  expect(api.downloadJobFile).not.toHaveBeenCalled();
+  // Mở → mount 1 panel duy nhất + blob fetch 1 lần; Đóng → unmount.
+  const user = userEvent.setup();
+  await user.click(screen.getByTestId("btn-toggle-original"));
+  expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
   expect(screen.queryByTestId("panel-original-layout")).not.toBeInTheDocument();
-  // DONE_JOB là pdf → iframe (không phải img), KHÔNG sandbox (task 1).
-  const frame = await screen.findByTestId("original-pdf-frame");
-  expect(frame).not.toHaveAttribute("sandbox");
-  expect(screen.getByTestId("panel-info")).toBeInTheDocument();
+  await screen.findByTestId("original-pdf-frame");
+  await waitFor(() => expect(api.downloadJobFile).toHaveBeenCalledTimes(1));
+  await user.click(screen.getByTestId("btn-toggle-info"));
+  expect(await screen.findByTestId("panel-info")).toBeInTheDocument();
   expect(screen.getByTestId("layout-preview")).toBeInTheDocument();
   expect(screen.getByTestId("export-bar")).toBeInTheDocument();
-  // Blob cache: 1 panel → 1 fetch.
-  expect(api.downloadJobFile).toHaveBeenCalledTimes(1);
+  await user.click(screen.getByTestId("btn-toggle-original"));
+  expect(screen.queryByTestId("panel-original")).not.toBeInTheDocument();
+  expect(screen.getByTestId("btn-toggle-original")).toHaveAttribute("aria-expanded", "false");
 });
 
 /**
@@ -445,10 +572,8 @@ it("done renders link to extraction page", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("panel-result");
-  expect(screen.getByTestId("link-extraction")).toHaveAttribute(
-    "href",
-    "/jobs/5/extraction",
-  );
+  // Lane I Task 3: bỏ nút "Mở trang trích xuất đầy đủ" (route vẫn giữ, không còn link từ đây).
+  expect(screen.queryByTestId("link-extraction")).not.toBeInTheDocument();
 });
 
 it("pending job hides extraction link", async () => {
