@@ -45,9 +45,10 @@ MVP = mục 1-9.
 
 ## User-facing behavior
 
-1. **Section Văn bản**: textarea thuần text (UnifiedEditor hiện tại = đủ, bỏ
-   click-fix/suggestion flow — "nếu hệ thống không nhận ra từ sai thì click-fix
-   vô dụng"); paste → strip formatting, chỉ giữ text + xuống dòng.
+1. **Section Văn bản**: GIỮ click-fix + suggestion (cho phép sửa các từ khác —
+   hệ thống chỉ ra từ sai, user sửa hoặc sửa từ khác); SONG SONG thêm soạn thảo
+   thuần text (UnifiedEditor word mode / Tiptap) cho sửa tay; paste → strip mọi
+   formatting, chỉ giữ text + xuống dòng.
 2. **File gốc + Thông tin** = collapsible sections (click mở/đóng), bỏ sticky panel.
 3. Bỏ nút "Mở trang trích xuất đầy đủ".
 4. **Layout**: tái dùng UnifiedEditor (Tiptap + @uiw MDEditor) cho md VÀ word pane
@@ -58,10 +59,20 @@ MVP = mục 1-9.
 6. Gộp2 nút "Chỉnh sửa" chồng chéo còn1.
 7. **Đổi định dạng layout**: switch md-layout ↔ docx-layout ở header (transition
    crossfade 200ms) + nút "Vẽ lại layout" (retry-layout) + toast. Lịch sử giữ 4 kind.
-8. **IR**: geometry-first (bbox overlapping-y + disjoint-x = cột song song, đọc
-   trái→phải; type chỉ đặt LOẠI node SAU) + map type OCR (header/seal/doc_title) →
-   IR enum + coverage-fallback GIỮ heuristic render (`_cluster_columns` đang đúng)
-   thay vì stub 0 blocks.
+8. **IR — cấu trúc theo TỌA ĐO (geometry-primary), không theo type**:
+   Mục tiêu: IR quyết được KHI NÀO là bảng / list / heading mức N / cột song song
+   — để layout render ĐỒNG BỘ (cùng input → cùng output).
+   - **Group theo bbox TRƯỚC**: blocks overlapping-y + disjoint-x = cột song song
+     (đọc trái→phải mỗi hàng); blocks x-align thành grid (nhiều hàng × cột đều)
+     = bảng; blocks tuần tự có indent treo/bullet = list; block đứng đầu band =
+     heading.
+   - **type chỉ để ĐẶT LOẠI node SAU** khi đã group xong theo geometry.
+   - Map type vocabulary OCR (header/seal/doc_title/text/figure) → IR enum tường
+     minh (không đoán mò).
+   - Coverage fail → fallback GIỮ heuristic render (`_cluster_columns` đang group
+     đúng theo geometry) thay vì stub 0 blocks ("xóa đầu ra").
+   - Test fixture b0/b2 trái + b3/b4 phải (header 2 cột) →2 cột song song, không
+     gộp theo type; bảng grid → node table.
 9. **Crop embed**: `embed_crop_keys` gọi on-demand `/regions/{rid}/crop` (200 OK)
    → nhét ảnh vào layout; batch `extract_crops` = cache (có dùng, không on-demand).
 
