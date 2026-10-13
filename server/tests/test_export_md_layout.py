@@ -430,3 +430,75 @@ async def test_md_layout_artifact_relative_key_download_fresh_url(
     # fresh, không cache)
     n = storage_spy.presign_get.await_count
     assert n >= 2  # ≥1 call/serve
+
+# --- Wave-4 #8: coverage fail → giữ heuristic render + ir_json cũ (không stub) ---
+
+async def test_auto_gen_coverage_fail_keeps_heuristic_and_old_ir(
+    app, done_job_with_result, db_session, monkeypatch
+):
+    """COVERAGE fail cả2 build → md-layout = heuristic content (KHÔNG stub
+    0 blocks 'xóa đầu ra'); job.ir_json GIỮ giá trị cũ (không overwrite)."""
+    from app.routers import exports
+
+    jid = done_job_with_result
+    st = app.state.storage
+    job = await db_session.get(Job, jid)
+    job.ir_json = '{"document_id": "old", "schema_version": "1.0", "pages": []}'
+    await db_session.commit()
+
+    # IR thiếu r1 (image exempt) + r0? cover r0 only → thiếu... VALID có r0 text
+    # + r1 image. LLM cover r0 → coverage OK; để FAIL phải bỏ r0:
+    bad_ir = {
+        "document_id": "doc_001", "schema_version": "1.0",
+        "pages": [{
+            "page_id": "p1", "page_number": 1, "header": [], "content": [],
+            "footer": [],
+        }],
+    }
+    fake_llm(monkeypatch, [
+        FakeResponse(json.dumps(bad_ir)), FakeResponse("# nope"),
+        FakeResponse(json.dumps(bad_ir)), FakeResponse("<p>nope</p>"),
+    ])
+    assert await exports.auto_generate_output(job, st) is True
+    # md-layout có nội dung heuristic từ OCR (r0 "Xin chào"), không rỗng/stub
+    md = (await st.get(f"exports/{jid}/md-layout")).decode()
+    assert "Xin chào" in md
+    # ir_json giữ nguyên cũ — stub 0-block không ghi đè
+    await db_session.refresh(job)
+    assert json.loads(job.ir_json)["document_id"] == "old"
+
+# --- Wave-4 #9: crop embed on-demand qua export route (marker → data-URI) ---
+
+async def test_export_md_layout_ondemand_crop_embeds_data_uri(
+    auth_client, app, done_job_with_result, db_session, monkeypatch
+):
+    """Crop artifact CHƯA ingest + original có trong S3 → on-demand crop
+    (get_or_make_crop) → md-layout chứa data-URI (marker biến mất)."""
+    import io
+
+    from PIL import Image
+
+    jid = done_job_with_result
+    st = app.state.storage
+    img = Image.new("RGB", (200, 400), "red")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    await st.put("uploads/test.jpg", buf.getvalue())
+
+    rid = "r1"  # VALID_RESULT_JSONB: verdict image_unextractable, bbox [5,6,70,80]
+    from app.core.schemas import IMAGE_MARKER
+    marker = IMAGE_MARKER.format(region_id=rid)
+    fake_llm(
+        monkeypatch,
+        [httpx.ConnectError("refused"), httpx.ConnectError("refused")],
+    )
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/export", json={"fmt": "md-layout"}
+    )
+    assert r.status_code == 200, r.text
+    body = (await st.get(f"exports/{jid}/md-layout")).decode()
+    assert marker not in body
+    assert f"![vùng {rid}](data:image/jpeg;base64," in body
+    assert "http" not in body  # không URL baked
+    # crop on-demand được cache: crops/{jid}/{rid}.jpg (lần sau cache-hit)
+    assert await st.exists(f"crops/{jid}/{rid}.jpg")

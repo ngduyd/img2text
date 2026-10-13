@@ -95,6 +95,46 @@ def fake_llm(monkeypatch, responses: list) -> list:
     monkeypatch.setattr(httpx, "AsyncClient", Client)
     return calls
 
+class TestCoverageFailKeepsHeuristic:
+    """Wave-4 #8: COVERAGE fail → GIỮ heuristic render (không stub 0 blocks
+    "xóa đầu ra"); ir_sink (→ job.ir_json) KHÔNG bị overwrite; warning logged."""
+
+    @staticmethod
+    def _coverage_fail_ir() -> dict:
+        # cover r0, bỏ r1 → coverage sai
+        return {
+            "document_id": "doc_001", "schema_version": "1.0",
+            "pages": [{
+                "page_id": "page_001", "page_number": 1, "header": [],
+                "content": [{
+                    "id": "node_001", "type": "table", "role": "unknown",
+                    "source_block_ids": ["r0"], "bbox": [1, 2, 798, 40],
+                    "children": [],
+                }],
+                "footer": [],
+            }],
+        }
+
+    async def test_coverage_fail_renders_heuristic_not_stub(
+        self, monkeypatch, caplog
+    ):
+        caplog.set_level("WARNING", logger="render_md")
+        fake_llm(monkeypatch, [FakeResponse(json.dumps(self._coverage_fail_ir()))])
+        out = await build_md(_ocr_result())
+        assert "chú thích" in out  # heuristic có nội dung, KHÔNG phải stub rỗng
+        assert any(
+            "HEURISTIC FALLBACK" in r.getMessage() for r in caplog.records
+        )
+
+    async def test_coverage_fail_keeps_old_ir_sink(self, monkeypatch):
+        """ir_sink cũ (lần render trước) không bị stub 0-block ghi đè."""
+        old_ir = {"document_id": "old_doc", "schema_version": "1.0", "pages": []}
+        sink = dict(old_ir)
+        fake_llm(monkeypatch, [FakeResponse(json.dumps(self._coverage_fail_ir()))])
+        out = await build_md(_ocr_result(), ir_sink=sink)
+        assert "chú thích" in out
+        assert sink == old_ir  # giữ nguyên cũ
+
 class TestBuildMDFromIR:
     async def test_build_md_ir_happy(self, monkeypatch):
         fake_llm(monkeypatch, [
