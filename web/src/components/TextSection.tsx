@@ -1,10 +1,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { EditorContent, useEditor } from "@tiptap/react";
+import { Fragment, Slice } from "@tiptap/pm/model";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "../api/client";
 import type { ExtractionSaveResult, RegionOut, Suggestion } from "../api/types";
 import { mapApiError } from "../lib/errors";
 import { buildHighlights } from "../lib/highlight";
+import { wordExtensions } from "../lib/wordEditor";
 import IssuesPanel from "./IssuesPanel";
 import Button from "./ui/Button";
 import Skeleton from "./ui/Skeleton";
@@ -22,6 +25,74 @@ import { useDialogA11y } from "./ui/useDialogA11y";
 function popoverPos(anchor: HTMLElement | undefined): string {
   const rect = anchor?.getBoundingClientRect();
   return rect && rect.right + 256 > window.innerWidth ? "right-0 left-auto" : "left-0";
+}
+
+/** Escape text thường trước khi nhét làm HTML content của Tiptap. */
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/**
+ * Lane I Task 1: soạn thảo thuần text — Tiptap (wordExtensions đã có), mỗi dòng
+ * = 1 paragraph; PASTE STRIP: dán từ Word → preventDefault + chỉ chèn
+ * text/plain (mỗi dòng 1 paragraph, bỏ mọi formatting HTML).
+ */
+function TextEditor({
+  text,
+  saving,
+  onSave,
+}: {
+  text: string;
+  saving: boolean;
+  onSave: (text: string) => void;
+}) {
+  const editor = useEditor({
+    extensions: wordExtensions,
+    content: text
+      .split(/\n+/)
+      .map((p) => `<p>${escapeHtml(p)}</p>`)
+      .join(""),
+    editorProps: {
+      handlePaste(view, event) {
+        const plain = event.clipboardData?.getData("text/plain");
+        if (plain == null || plain === "") return false;
+        event.preventDefault();
+        const frag = Fragment.fromArray(
+          plain
+            .replace(/\r\n?/g, "\n")
+            .split("\n")
+            .map((line) =>
+              view.state.schema.nodes.paragraph.create(
+                null,
+                line ? view.state.schema.text(line) : null,
+              ),
+            ),
+        );
+        // Không .scrollIntoView(): jsdom thiếu getClientRects (crash PM scrollToSelection).
+        view.dispatch(view.state.tr.replaceSelection(new Slice(frag, 0, 0)));
+        return true;
+      },
+    },
+  });
+  return (
+    <div className="flex flex-col gap-3">
+      <div
+        data-testid="text-editor"
+        className="rounded-card border border-border bg-surface p-4 shadow-card"
+      >
+        <EditorContent editor={editor} />
+      </div>
+      <div className="flex justify-end">
+        <Button
+          testid="btn-save-text"
+          loading={saving}
+          disabled={!editor}
+          onClick={() => editor && onSave(editor.getText({ blockSeparator: "\n" }))}
+        >
+          Lưu
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 export default function TextSection({
@@ -51,6 +122,9 @@ export default function TextSection({
   const [customText, setCustomText] = useState("");
   /** P2-5: Lưu khi rỗng → lỗi inline (role="alert" + aria-describedby). */
   const [customError, setCustomError] = useState(false);
+  /** Lane I Task 1: toggle "Soạn thảo" — sửa tay thuần text (Tiptap) song song click-fix. */
+  const [editingText, setEditingText] = useState(false);
+  const [savingText, setSavingText] = useState(false);
   /** Task 6: save set cờ rerender (rendering | sync targeted-fail) → confirm xếp hàng. */
   const [rerenderModal, setRerenderModal] = useState(false);
   const rerenderPanelRef = useDialogA11y<HTMLDivElement>(rerenderModal, () =>
@@ -180,6 +254,25 @@ export default function TextSection({
     void saveReplace(s.original, customText);
   };
 
+  /** Lane I Task 1: lưu toàn bộ text soạn tay (không old/new phrase — full save). */
+  const saveFullText = async (text: string) => {
+    if (!data) return;
+    setSavingText(true);
+    try {
+      await api.saveExtraction(jobId, {
+        text,
+        expected_text_version: data.text_version,
+      });
+      setEditingText(false);
+      toast.success("Đã lưu.");
+      await invalidate();
+    } catch (err) {
+      toast.error(mapApiError(err));
+    } finally {
+      setSavingText(false);
+    }
+  };
+
   return (
     <div className="flex min-w-0 flex-col gap-6">
       {isPending && (
@@ -198,6 +291,24 @@ export default function TextSection({
         </p>
       )}
       {data && (
+        <>
+          <div className="flex justify-end">
+            <Button
+              testid="btn-edit-text"
+              variant="secondary"
+              aria-pressed={editingText}
+              onClick={() => setEditingText((v) => !v)}
+            >
+              {editingText ? "Đang soạn" : "Soạn thảo"}
+            </Button>
+          </div>
+          {editingText ? (
+            <TextEditor
+              text={data.text}
+              saving={savingText}
+              onSave={(text) => void saveFullText(text)}
+            />
+          ) : (
         <article
           data-testid="extraction-text"
           data-text-version={data.text_version}
@@ -339,6 +450,8 @@ export default function TextSection({
             );
           })}
         </article>
+          )}
+        </>
       )}
       {/* WS-UI Task 6: confirm modal queue (useDialogA11y — Escape/ref focus). */}
       {rerenderModal && (
