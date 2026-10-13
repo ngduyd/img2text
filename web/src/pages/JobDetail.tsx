@@ -1,6 +1,6 @@
 import type { Query } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FileQuestion, PenLine, TriangleAlert } from "lucide-react";
+import { ArrowLeft, ChevronDown, FileQuestion, PenLine, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -29,7 +29,7 @@ const jobRefetchInterval = (q: Query<Job>): number | false =>
  * WS-UI (spec 2026-10-13, wave-3 #5-6): wrapper grid DUY NHẤT —
  * col trái stack SECTION "Văn bản" (TextSection, hiện cả khi rendering) +
  * SECTION "Layout" (LayoutPreview / editor khi "Chỉnh sửa" + ExportBar);
- * col phải = sticky "File gốc" (1 panel, blob cache chung) + InfoPanel.
+ * col phải = collapsible "File gốc" + "Thông tin" (Lane I Task 2, bỏ sticky).
  */
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
@@ -72,6 +72,9 @@ export default function JobDetail() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [showHistory]);
   const editorHostRef = useRef<HTMLElement>(null);
+  /** Lane I Task 2: File gốc + Thông tin = collapsible (default closed, bỏ sticky). */
+  const [originalOpen, setOriginalOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const toggleEdit = () => {
     if (editing) {
@@ -372,8 +375,8 @@ export default function JobDetail() {
       )}
 
       {/*
-        Wave-3 #5: wrapper grid DUY NHẤT — col trái = section "Văn bản" + section
-        "Layout" stack; col phải = sticky "File gốc" + InfoPanel trượt xuyên 2 section.
+        Wave-3 #5 → Lane I Task 2: col trái stack 2 section; col phải = collapsible
+        "File gốc" + "Thông tin" (Button aria-expanded, default closed — mở mới mount).
       */}
       <div data-testid="detail-grid" className="grid gap-4 lg:grid-cols-12 lg:gap-6">
         <div className="flex min-w-0 flex-col gap-6 lg:col-span-7">
@@ -446,10 +449,50 @@ export default function JobDetail() {
             </section>
           )}
         </div>
-        {/* ẢNH GỐC (1 panel duy nhất, blob cache chung) + InfoPanel — sticky xuyên 2 section. */}
-        <aside className="flex min-w-0 flex-col gap-4 lg:col-span-5 lg:sticky lg:top-16 lg:self-start">
-          <OriginalFilePanel jobId={id!} fileType={job.file_type} />
-          <InfoPanel job={job} />
+        {/* ẢNH GỐC + Thông tin — collapsible (Lane I Task 2, không còn sticky). */}
+        <aside className="flex min-w-0 flex-col gap-4 lg:col-span-5">
+          <section className="rounded-card border border-border bg-surface shadow-card">
+            <h2>
+              <Button
+                testid="btn-toggle-original"
+                variant="ghost"
+                aria-expanded={originalOpen}
+                aria-controls="original-panel-wrap"
+                className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-base font-semibold"
+                onClick={() => setOriginalOpen((v) => !v)}
+              >
+                File gốc
+                <ChevronDown
+                  className={`h-4 w-4 text-muted transition duration-150 ease-out ${originalOpen ? "rotate-180" : ""}`}
+                  aria-hidden="true"
+                />
+              </Button>
+            </h2>
+            <div id="original-panel-wrap" className={originalOpen ? "border-t border-border p-4" : "hidden"}>
+              {originalOpen && <OriginalFilePanel jobId={id!} fileType={job.file_type} />}
+            </div>
+          </section>
+          <section className="rounded-card border border-border bg-surface shadow-card">
+            <h2>
+              <Button
+                testid="btn-toggle-info"
+                variant="ghost"
+                aria-expanded={infoOpen}
+                aria-controls="info-panel-wrap"
+                className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-base font-semibold"
+                onClick={() => setInfoOpen((v) => !v)}
+              >
+                Thông tin
+                <ChevronDown
+                  className={`h-4 w-4 text-muted transition duration-150 ease-out ${infoOpen ? "rotate-180" : ""}`}
+                  aria-hidden="true"
+                />
+              </Button>
+            </h2>
+            <div id="info-panel-wrap" className={infoOpen ? "border-t border-border p-4" : "hidden"}>
+              {infoOpen && <InfoPanel job={job} />}
+            </div>
+          </section>
         </aside>
       </div>
     </main>

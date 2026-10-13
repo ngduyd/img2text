@@ -147,6 +147,8 @@ it("queued shows waiting message and polls", async () => {
   mockJob({ id: 5, status: "queued", page_count: 1, result: null } as Job);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   // Task 2: header badge duplicates status text — scope to InfoPanel's status badge.
+  // Lane I Task 2: InfoPanel = collapsible default closed → mở trước.
+  await userEvent.click(await screen.findByTestId("btn-toggle-info"));
   expect(await screen.findByTestId("status-5")).toHaveTextContent("Đang lập lịch");
   // Back link points at the /jobs list route (root is public landing now).
   expect(screen.getByTestId("link-back-jobs")).toHaveAttribute("href", "/jobs");
@@ -157,7 +159,7 @@ it("queued shows waiting message and polls", async () => {
 it.each(["extracting", "rendering"] as const)("%s keeps polling", async (status) => {
   mockJob({ id: 5, status, page_count: 1, result: null } as Job);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  await screen.findByTestId("panel-info");
+  await screen.findByTestId("job-header");
   expect(pollSpyCalled()).toBe(true);
 });
 
@@ -165,6 +167,7 @@ it("failed shows retry button and calls api", async () => {
   mockJob({ id: 5, status: "failed", error: "boom", result: null } as Job);
   vi.mocked(api.retryJob).mockResolvedValue(undefined);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await userEvent.click(await screen.findByTestId("btn-toggle-info"));
   expect(await screen.findByTestId("status-5")).toHaveTextContent("Xử lý thất bại");
   const invalidate = vi.spyOn(lastQueryClient!, "invalidateQueries");
   const user = userEvent.setup();
@@ -182,6 +185,7 @@ it("retry failure shows retry-error with server detail", async () => {
   mockJob({ id: 5, status: "failed", error: "boom", result: null } as Job);
   vi.mocked(api.retryJob).mockRejectedValue(new ApiError("Forbidden."));
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await userEvent.click(await screen.findByTestId("btn-toggle-info"));
   expect(await screen.findByTestId("status-5")).toHaveTextContent("Xử lý thất bại");
   const user = userEvent.setup();
   await user.click(screen.getByTestId("btn-retry-job"));
@@ -195,7 +199,7 @@ it.each(["queued", "extracting", "rendering"] as const)(
     mockJob({ id: 5, status, error: null, result: null } as Job);
     vi.mocked(api.cancelJob).mockResolvedValue(undefined);
     renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-    expect(await screen.findByTestId("status-5")).toBeDefined();
+    await screen.findByTestId("job-header");
     const invalidate = vi.spyOn(lastQueryClient!, "invalidateQueries");
     const user = userEvent.setup();
     await user.click(screen.getByTestId("btn-cancel-job"));
@@ -211,7 +215,7 @@ it.each(["done", "failed", "cancelled"] as const)(
   async (status) => {
     mockJob({ id: 5, status, error: null, result: null } as Job);
     renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-    expect(await screen.findByTestId("status-5")).toBeDefined();
+    await screen.findByTestId("job-header");
     expect(screen.queryByTestId("btn-cancel-job")).not.toBeInTheDocument();
   },
 );
@@ -256,6 +260,10 @@ const DONE_JOB: Job = {
 it("done renders 3 panels: original + result + info with status badge", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  // Lane I Task 2: File gốc + Thông tin = collapsible (default closed) → mở trước.
+  await user.click(await screen.findByTestId("btn-toggle-original"));
+  await user.click(screen.getByTestId("btn-toggle-info"));
   expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
   expect(screen.getByTestId("panel-result")).toBeInTheDocument();
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
@@ -278,6 +286,9 @@ it("done: no job-meta/output badge, stats line + ExportBar render", async () => 
 it("not done shows status-only panels, ResultPanel hidden until done", async () => {
   mockJob({ ...DONE_JOB, status: "queued", result: null });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByTestId("btn-toggle-original"));
+  await user.click(screen.getByTestId("btn-toggle-info"));
   expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
   expect(screen.queryByTestId("panel-result")).toBeNull();
@@ -347,39 +358,43 @@ it("btn-edit-layout toggles layout editor textarea, no navigation", async () => 
   expect(screen.getByTestId("preview-md")).toBeInTheDocument();
 });
 
-/** Wave-3 #5: wrapper grid DUY NHẤT bao 2 section — col trái stack, col phải = sticky File gốc + Info. */
-it("renders single wrapper grid: 2 sections stacked left, sticky original+info right", async () => {
+/** Wave-3 #5 → Lane I Task 2: col phải KHÔNG còn sticky; File gốc + Info = collapsible default closed. */
+it("renders single wrapper grid: collapsible original+info right (default closed, no sticky)", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("section-text");
   await screen.findByTestId("section-layout");
-  // Wrapper grid ngoài (1 duy nhất); section KHÔNG còn grid con 7/5.
   const grid = screen.getByTestId("detail-grid");
   expect(grid.className).toContain("lg:grid-cols-12");
   const colClasses = grid.className.split(/\s+/).filter((c) => c.includes("grid-cols"));
   expect(colClasses.length).toBeGreaterThan(0);
   expect(colClasses.every((c) => c.startsWith("lg:"))).toBe(true);
   expect(grid.querySelector(".lg\\:col-span-7")).not.toBeNull();
-  // Sticky trượt xuyên cả Văn bản lẫn Layout (task 2).
+  // BỎ sticky (wave-3 G) — cột phải bình thường.
   const aside = grid.querySelector("aside");
   expect(aside).not.toBeNull();
   expect(aside!.className).toContain("lg:col-span-5");
-  expect(aside!.className).toContain("lg:sticky");
-  expect(aside!.className).toContain("lg:top-16");
-  expect(aside!.className).toContain("lg:self-start");
-  expect(screen.getByTestId("section-text").querySelector(".lg\\:col-span-7")).toBeNull();
-  expect(screen.getByTestId("section-layout").querySelector(".lg\\:col-span-5")).toBeNull();
-  // 1 panel "File gốc" duy nhất (gộp 2 aside cũ) + InfoPanel + preview + ExportBar.
-  expect(screen.getAllByTestId("panel-original")).toHaveLength(1);
+  expect(aside!.className).not.toContain("sticky");
+  // Default closed: panel chưa mount, aria-expanded=false, không fetch blob.
+  expect(screen.queryByTestId("panel-original")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("panel-info")).not.toBeInTheDocument();
+  expect(screen.getByTestId("btn-toggle-original")).toHaveAttribute("aria-expanded", "false");
+  expect(screen.getByTestId("btn-toggle-info")).toHaveAttribute("aria-expanded", "false");
+  expect(api.downloadJobFile).not.toHaveBeenCalled();
+  // Mở → mount 1 panel duy nhất + blob fetch 1 lần; Đóng → unmount.
+  const user = userEvent.setup();
+  await user.click(screen.getByTestId("btn-toggle-original"));
+  expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
   expect(screen.queryByTestId("panel-original-layout")).not.toBeInTheDocument();
-  // DONE_JOB là pdf → iframe (không phải img), KHÔNG sandbox (task 1).
-  const frame = await screen.findByTestId("original-pdf-frame");
-  expect(frame).not.toHaveAttribute("sandbox");
-  expect(screen.getByTestId("panel-info")).toBeInTheDocument();
+  await screen.findByTestId("original-pdf-frame");
+  await waitFor(() => expect(api.downloadJobFile).toHaveBeenCalledTimes(1));
+  await user.click(screen.getByTestId("btn-toggle-info"));
+  expect(await screen.findByTestId("panel-info")).toBeInTheDocument();
   expect(screen.getByTestId("layout-preview")).toBeInTheDocument();
   expect(screen.getByTestId("export-bar")).toBeInTheDocument();
-  // Blob cache: 1 panel → 1 fetch.
-  expect(api.downloadJobFile).toHaveBeenCalledTimes(1);
+  await user.click(screen.getByTestId("btn-toggle-original"));
+  expect(screen.queryByTestId("panel-original")).not.toBeInTheDocument();
+  expect(screen.getByTestId("btn-toggle-original")).toHaveAttribute("aria-expanded", "false");
 });
 
 /**
