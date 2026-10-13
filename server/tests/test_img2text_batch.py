@@ -12,6 +12,7 @@ import http.server
 import json
 import sys
 import threading
+import time
 import types
 from pathlib import Path
 
@@ -343,6 +344,80 @@ def test_rasterize_pdf_branch_no_downscale_no_scales(tmp_path):
     doc.close()
     kb.rasterize_to_pages(str(pdf), str(tmp_path / "raw"))
     assert not (tmp_path / "scales.json").exists()
+
+# --- lane H task 2 (OCR perf): per-page primary + SIGALRM watchdog + GPU log ---
+
+def _pipe_res(arg):
+    """stub pipeline.predict(str) → generator 1 kết quả có .json."""
+    return iter([types.SimpleNamespace(json={"res": {"input_path": str(arg)}})])
+
+def test_per_page_predict_calls_one_page_at_a_time(tmp_path):
+    """PRIMARY = predict từng trang: 1 pipeline instance, mỗi lần đúng 1 trang
+    (str) — batch-list mode không chạy khi BATCH_PREDICT tắt."""
+    calls: list = []
+
+    class _Pipe:
+        def predict(self, arg):
+            calls.append(arg)
+            return _pipe_res(arg)
+
+    pages = [tmp_path / "page_0001.png", tmp_path / "page_0002.png"]
+    for p in pages:
+        p.write_bytes(b"x")
+    saved: list[str] = []
+    kb._predict_pages_one_by_one(
+        _Pipe(), pages, save=lambda p, d, t: saved.append(p.name),
+        raw_dir=tmp_path, timeout=5)
+    assert calls == [str(pages[0]), str(pages[1])]  # 1 trang/lần, không list
+    assert saved == [page.name for page in pages]
+    assert not list(tmp_path.glob("*.error.txt"))
+
+def test_per_page_predict_timeout_writes_error_and_continues(tmp_path):
+    """SIGALRM watchdog thật: trang treo (sleep) quá timeout → error.txt,
+    trang sau vẫn predict được."""
+    class _Pipe:
+        def predict(self, arg):
+            if str(arg).endswith("page_0001.png"):
+                time.sleep(2)  # treo — watchdog phải ném PagePredictTimeout
+            return _pipe_res(arg)
+
+    pages = [tmp_path / "page_0001.png", tmp_path / "page_0002.png"]
+    for p in pages:
+        p.write_bytes(b"x")
+    saved: list[str] = []
+    kb._predict_pages_one_by_one(
+        _Pipe(), pages, save=lambda p, d, t: saved.append(p.name),
+        raw_dir=tmp_path, timeout=0.2)
+    err = tmp_path / "page_0001.error.txt"
+    assert err.exists() and "0.2" in err.read_text(encoding="utf-8")
+    assert saved == ["page_0002.png"]  # trang sau vẫn chạy
+
+def test_page_timeout_env_override_and_bad_default(tmp_path, monkeypatch):
+    """BATCH_PAGE_TIMEOUT||600 — env rỗng/sai giá trị → 600."""
+    assert kb._page_timeout() == 600.0
+    monkeypatch.setenv("BATCH_PAGE_TIMEOUT", "42")
+    assert kb._page_timeout() == 42.0
+    monkeypatch.setenv("BATCH_PAGE_TIMEOUT", "abc")
+    assert kb._page_timeout() == 600.0
+
+def test_log_gpu_line_and_empty_cache_flag(monkeypatch, capsys):
+    """[gpu] sau mỗi trang: alloc/reserved MB; GPU_EMPTY_CACHE=1 mới
+    empty_cache (default OFF — run đầu quan sát GPU giữ/tràn tự nhiên)."""
+    emptied: list[bool] = []
+    cuda = types.SimpleNamespace(
+        memory_allocated=lambda: 100 * 1024 * 1024,
+        max_memory_allocated=lambda: 200 * 1024 * 1024,
+        memory_reserved=None,  # bản paddle thiếu reserved → fallback peak
+        empty_cache=lambda: emptied.append(True),
+    )
+    monkeypatch.setitem(sys.modules, "paddle", types.SimpleNamespace(
+        device=types.SimpleNamespace(cuda=cuda)))
+    kb._log_gpu("page_0001")
+    assert "[gpu] page_0001: alloc=100MB reserved=200MB" in capsys.readouterr().out
+    assert emptied == []  # default OFF
+    monkeypatch.setenv("GPU_EMPTY_CACHE", "1")
+    kb._log_gpu("page_0001")
+    assert emptied == [True]
 
 # --- wave-3 (spec 2026-10-13): bảng cells → md GFM pipe + reading order 2 cột ---
 
