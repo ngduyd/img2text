@@ -97,6 +97,59 @@ it("paste strip: dán Word (html + plain) → chỉ giữ plain text + xuống d
   expect(pm.querySelector("em")).toBeNull();
 });
 
+// --- Review r1 P2a/P2b/P2f: blank lines round-trip + aria-label + empty-plain paste ---
+
+it("review r1 P2a: editor giữ empty lines — save round-trip text giữ \\n\\n", async () => {
+  vi.mocked(api.getExtraction).mockResolvedValue({
+    text: "Dòng 1\n\nDòng 3",
+    text_version: 3,
+  });
+  vi.mocked(api.saveExtraction).mockResolvedValue({
+    synced: { md: false, docx: false },
+    needs_render: [],
+    text_version: 4,
+    requires_rerender: false,
+  });
+  const user = userEvent.setup();
+  renderSection(<TextSection jobId="5" />);
+  await screen.findByTestId("extraction-text");
+  await user.click(screen.getByTestId("btn-edit-text"));
+  await screen.findByTestId("text-editor");
+  await user.click(screen.getByTestId("btn-save-text"));
+  await waitFor(() => expect(api.saveExtraction).toHaveBeenCalledTimes(1));
+  expect(vi.mocked(api.saveExtraction).mock.calls[0][1].text).toBe("Dòng 1\n\nDòng 3");
+});
+
+it("review r1 P2b: text editor Tiptap có aria-label trên contenteditable", async () => {
+  renderSection(<TextSection jobId="5" />);
+  await screen.findByTestId("extraction-text");
+  await userEvent.click(screen.getByTestId("btn-edit-text"));
+  const editor = await screen.findByTestId("text-editor");
+  const pm = editor.querySelector(".ProseMirror") as HTMLElement;
+  await waitFor(() =>
+    expect(pm).toHaveAttribute("aria-label", "Soạn thảo văn bản"),
+  );
+});
+
+it("review r1 P2f: paste text/plain rỗng → preventDefault, không rơi về HTML", async () => {
+  renderSection(<TextSection jobId="5" />);
+  await screen.findByTestId("extraction-text");
+  await userEvent.click(screen.getByTestId("btn-edit-text"));
+  const editor = await screen.findByTestId("text-editor");
+  const pm = editor.querySelector(".ProseMirror") as HTMLElement;
+  await waitFor(() => expect(pm).toHaveAttribute("contenteditable", "true"));
+  pm.focus();
+  const notPrevented = fireEvent.paste(pm, {
+    clipboardData: {
+      getData: (type: string) => (type === "text/plain" ? "" : "<b>Word rác</b>"),
+    },
+  });
+  // preventDefault luôn chạy (không rơi về default HTML paste) + chèn "".
+  expect(notPrevented).toBe(false);
+  expect(pm.querySelector("b")).toBeNull();
+  expect(pm.textContent).not.toContain("Word rác");
+});
+
 it("btn-save-text → saveExtraction full text (không old/new phrase) + toast", async () => {
   const user = userEvent.setup();
   vi.mocked(api.saveExtraction).mockResolvedValue({

@@ -27,9 +27,19 @@ function renderMdHtml(mdText: string): string {
  * - word: iframe sandbox srcDoc = docx.html + <style>{docStyle}</style>
  * - md: md → HTML (markdown-it) + docStyle scope .layout-preview → DOMPurify
  * Lane I Task 4: bỏ editing/textarea wave-3 G — sửa tay qua UnifiedEditor (btn-edit-doc).
+ * Review r1 P0/P2e: mode CONTROLLED bởi fmt prop của JobDetail (header switch +
+ * preview toggle chung 1 state; init = job.output_format ở parent).
  */
-export default function LayoutPreview({ job }: { job: Job }) {
-  const [mode, setMode] = useState<Mode>(job.output_format === "docx" ? "word" : "md");
+export default function LayoutPreview({
+  job,
+  fmt,
+  onFmtChange,
+}: {
+  job: Job;
+  fmt: "md-layout" | "docx-layout";
+  onFmtChange: (fmt: "md-layout" | "docx-layout") => void;
+}) {
+  const mode: Mode = fmt === "docx-layout" ? "word" : "md";
   const [mdHtml, setMdHtml] = useState<string | null>(null);
   const [wordHtml, setWordHtml] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,7 +111,7 @@ export default function LayoutPreview({ job }: { job: Job }) {
           size="sm"
           aria-pressed={mode === "md"}
           className={mode === "md" ? "bg-surface-2 font-semibold" : ""}
-          onClick={() => setMode("md")}
+          onClick={() => onFmtChange("md-layout")}
         >
           Markdown
         </Button>
@@ -111,7 +121,7 @@ export default function LayoutPreview({ job }: { job: Job }) {
           size="sm"
           aria-pressed={mode === "word"}
           className={mode === "word" ? "bg-surface-2 font-semibold" : ""}
-          onClick={() => setMode("word")}
+          onClick={() => onFmtChange("docx-layout")}
         >
           Word
         </Button>

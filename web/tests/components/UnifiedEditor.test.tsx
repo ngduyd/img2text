@@ -268,13 +268,13 @@ it("DocStyleTools word: giữ controls trang-level; gỡ control trùng toolbar 
     expect(screen.queryByTestId(id)).toBeNull();
 });
 
-it("flow lỗi → layout-error + btn-retry-layout + toast.error; retry chạy lại flow", async () => {
+it("flow lỗi → layout-error + btn-retry-layout-error (review r1 P1: không trùng header) + toast.error; retry chạy lại flow", async () => {
   const user = userEvent.setup();
   vi.mocked(api.exportJob).mockRejectedValueOnce(new ApiError("LLM lỗi."));
   render(<Harness job={JOB} />);
   expect(await screen.findByTestId("layout-error")).toHaveTextContent("LLM lỗi.");
   expect(toast.error).toHaveBeenCalledWith("LLM lỗi.");
-  await user.click(screen.getByTestId("btn-retry-layout"));
+  await user.click(screen.getByTestId("btn-retry-layout-error"));
   expect(await screen.findByTestId("md-editor")).toBeInTheDocument();
   expect(screen.queryByTestId("layout-error")).toBeNull();
 });

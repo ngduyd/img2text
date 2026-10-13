@@ -386,6 +386,56 @@ it("layout fmt switch: click docx-layout → exportJob docx-layout + toast + cro
   expect(screen.getByTestId("fmt-docx-layout")).toHaveAttribute("aria-pressed", "true");
 });
 
+/** Review r1 P0: header fmt switch PHẢI nối preview — click docx-layout → preview chuyển word mode. */
+it("review r1 P0: header fmt-docx-layout → LayoutPreview switches to word mode (fmt prop)", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  await screen.findByTestId("layout-preview");
+  expect(screen.getByTestId("preview-md")).toBeInTheDocument();
+  await user.click(await screen.findByTestId("fmt-docx-layout"));
+  await waitFor(() => expect(api.exportJob).toHaveBeenCalledWith("5", "docx-layout"));
+  expect(await screen.findByTestId("preview-word")).toBeInTheDocument();
+  expect(screen.queryByTestId("preview-md")).not.toBeInTheDocument();
+});
+
+/** Review r1 P0 init: output_format docx → header switch + preview CÙNG word mode từ đầu. */
+it("review r1 P0: output_format docx → fmt-docx-layout pressed + preview-word on init", async () => {
+  mockJob({ ...DONE_JOB, output_format: "docx" });
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  expect(await screen.findByTestId("preview-word")).toBeInTheDocument();
+  expect(screen.getByTestId("fmt-docx-layout")).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByTestId("fmt-md-layout")).toHaveAttribute("aria-pressed", "false");
+});
+
+/** Review r1 P1: btn-retry-layout DUY NHẤT — editor retry đổi tên btn-retry-layout-error. */
+it("review r1 P1: no duplicate btn-retry-layout (editor retry = btn-retry-layout-error)", async () => {
+  mockJob(DONE_JOB);
+  vi.mocked(api.exportJob).mockRejectedValue(new ApiError("boom"));
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  await user.click(await screen.findByTestId("btn-edit-doc"));
+  await screen.findByTestId("layout-error");
+  expect(screen.getByTestId("btn-retry-layout-error")).toBeInTheDocument();
+  expect(screen.getAllByTestId("btn-retry-layout")).toHaveLength(1);
+});
+
+/** Review r1 P2c: dropdown a11y — aria-haspopup, Escape closes, close-on-select. */
+it("review r1 P2c: download dropdown aria-haspopup + Escape closes + closes after select", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  const btn = await screen.findByTestId("btn-download");
+  expect(btn).toHaveAttribute("aria-haspopup", "true");
+  await user.click(btn);
+  expect(btn).toHaveAttribute("aria-expanded", "true");
+  fireEvent.keyDown(document, { key: "Escape" });
+  await waitFor(() => expect(btn).toHaveAttribute("aria-expanded", "false"));
+  await user.click(btn);
+  await user.click(screen.getByTestId("export-md"));
+  await waitFor(() => expect(btn).toHaveAttribute("aria-expanded", "false"));
+});
+
 /** Lane I Task 6: "Vẽ lại layout" → confirm → POST retry-layout + loading + toast. */
 it("btn-retry-layout: confirm → retryLayout + toast; cancel → no call", async () => {
   mockJob({ ...DONE_JOB, layout_cache: { md: true, docx: true } });

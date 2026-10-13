@@ -52,8 +52,11 @@ export default function JobDetail() {
   const [editing, setEditing] = useState(false);
   /** Lane I Task 5: dropdown "Tải xuống" ở header (gộp 4 định dạng text). */
   const [downloadOpen, setDownloadOpen] = useState(false);
-  /** Lane I Task 6: định dạng layout đang xem (header switch → export → crossfade preview). */
-  const [layoutFmt, setLayoutFmt] = useState<"md-layout" | "docx-layout">("md-layout");
+  /** Lane I Task 6: định dạng layout đang xem (header switch → export → crossfade preview).
+   *  Review r1 P0: override của switch; null → init theo job.output_format (đồng bộ preview). */
+  const [layoutFmtOverride, setLayoutFmtOverride] = useState<"md-layout" | "docx-layout" | null>(null);
+  const layoutFmt =
+    layoutFmtOverride ?? (job?.output_format === "docx" ? "docx-layout" : "md-layout");
   const [retryingLayout, setRetryingLayout] = useState(false);
   const [confirmRetry, setConfirmRetry] = useState(false);
   /** P0-C: panel "Lịch sử" — list lazy-fetch khi mở (queryKey "versions" để invalidate). */
@@ -117,7 +120,7 @@ export default function JobDetail() {
     if (fmt === layoutFmt) return;
     try {
       await api.exportJob(id!, fmt);
-      setLayoutFmt(fmt);
+      setLayoutFmtOverride(fmt);
       toast.success("Đã đổi định dạng layout.");
     } catch (err) {
       toast.error(mapApiError(err));
@@ -492,7 +495,7 @@ export default function JobDetail() {
               ) : (
                 /* Lane I Task 6: key remount + CSS crossfade 200ms khi đổi định dạng. */
                 <div key={layoutFmt} className="layout-crossfade">
-                  <LayoutPreview job={job} />
+                  <LayoutPreview job={job} fmt={layoutFmt} onFmtChange={setLayoutFmtOverride} />
                 </div>
               )}
               {/* Stats line dưới preview (spec: SECTION Layout). */}

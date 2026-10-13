@@ -48,13 +48,17 @@ function TextEditor({
   const editor = useEditor({
     extensions: wordExtensions,
     content: text
-      .split(/\n+/)
+      // Review r1 P2a: split("\n") GIỮ empty lines (round-trip save/ load nguyên vẹn).
+      .split("\n")
       .map((p) => `<p>${escapeHtml(p)}</p>`)
       .join(""),
     editorProps: {
+      // Review r1 P2b: contenteditable cần accessible name.
+      attributes: { "aria-label": "Soạn thảo văn bản" },
       handlePaste(view, event) {
         const plain = event.clipboardData?.getData("text/plain");
-        if (plain == null || plain === "") return false;
+        if (plain == null) return false;
+        // Review r1 P2f: plain rỗng cũng preventDefault + chèn "" — không rơi về HTML default.
         event.preventDefault();
         const frag = Fragment.fromArray(
           plain

@@ -1,4 +1,5 @@
 import { Download } from "lucide-react";
+import { useEffect } from "react";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import { mapApiError } from "../lib/errors";
@@ -37,11 +38,22 @@ export default function DownloadDropdown({
     }
   };
 
+  // Review r1 P2c: Escape đóng dropdown (a11y menu pattern).
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onToggle();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open, onToggle]);
+
   return (
     <div className="relative">
       <Button
         testid="btn-download"
         aria-expanded={open}
+        aria-haspopup="true"
         aria-controls="download-formats"
         onClick={onToggle}
       >
@@ -60,7 +72,11 @@ export default function DownloadDropdown({
             testid={testid}
             variant="secondary"
             size="sm"
-            onClick={() => void download(fmt)}
+            // Review r1 P2c: close-on-select (chọn item → đóng dropdown).
+            onClick={() => {
+              void download(fmt);
+              if (open) onToggle();
+            }}
           >
             {label}
           </Button>

@@ -220,7 +220,7 @@ export default function UnifiedEditor({
           >
             <span className="min-w-0 flex-1 break-words">{displayError}</span>
             <Button
-              testid="btn-retry-layout"
+              testid="btn-retry-layout-error"
               variant="secondary"
               size="sm"
               onClick={() => {

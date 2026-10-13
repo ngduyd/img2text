@@ -37,14 +37,24 @@ const JOB: Job = {
   layout_style: { fontFamily: "Times New Roman", fontSize: 18 },
 };
 
-function renderPreview(job: Job = JOB): ReturnType<typeof render> {
+function previewUi(
+  job: Job,
+  fmt: "md-layout" | "docx-layout",
+  onFmtChange: (f: "md-layout" | "docx-layout") => void = () => {},
+): ReactElement {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const ui: ReactElement = (
+  return (
     <QueryClientProvider client={queryClient}>
-      <LayoutPreview job={job} />
+      <LayoutPreview job={job} fmt={fmt} onFmtChange={onFmtChange} />
     </QueryClientProvider>
   );
-  return render(ui);
+}
+
+function renderPreview(
+  job: Job = JOB,
+  fmt: "md-layout" | "docx-layout" = "md-layout",
+): ReturnType<typeof render> {
+  return render(previewUi(job, fmt));
 }
 
 beforeEach(() => {
@@ -79,8 +89,8 @@ it("word mode renders sandboxed iframe with docStyle in srcDoc", async () => {
   vi.mocked(api.getDocxHtml).mockResolvedValue("<p>Noi dung</p>");
   vi.mocked(api.exportJob).mockResolvedValue({ url: "" });
   vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["<p>x</p>"]));
-  renderPreview({ ...JOB, output_format: "docx", layout_cache: { md: true, docx: true, docx_html: true } });
-  // default mode theo output_format = word.
+  renderPreview({ ...JOB, output_format: "docx", layout_cache: { md: true, docx: true, docx_html: true } }, "docx-layout");
+  // fmt="docx-layout" (review r1 P0: controlled prop, không còn internal state) → word mode.
   const frame = await screen.findByTestId("preview-word");
   expect(frame).toHaveAttribute("sandbox", "");
   const src = frame.getAttribute("srcdoc") ?? "";
@@ -92,14 +102,19 @@ it("word mode renders sandboxed iframe with docStyle in srcDoc", async () => {
   expect(api.getDocxHtml).toHaveBeenCalledWith(5);
 });
 
-it("switch mode md → word renders preview-word", async () => {
+it("switch mode md → word (onFmtChange → rerender) renders preview-word", async () => {
   vi.mocked(api.exportJob).mockResolvedValue({ url: "" });
   vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["# A"]));
   vi.mocked(api.getDocxHtml).mockResolvedValue("<p>B</p>");
-  renderPreview();
+  let currentFmt: "md-layout" | "docx-layout" = "md-layout";
+  const onFmtChange = (f: "md-layout" | "docx-layout") => {
+    currentFmt = f;
+  };
+  const { rerender } = render(previewUi(JOB, currentFmt, onFmtChange));
   await screen.findByTestId("preview-md");
   const user = userEvent.setup();
   await user.click(screen.getByTestId("preview-mode-word"));
+  rerender(previewUi(JOB, currentFmt, onFmtChange));
   await waitFor(() => expect(screen.getByTestId("preview-word")).toBeInTheDocument());
   expect(screen.getByTestId("preview-mode-word")).toHaveAttribute("aria-pressed", "true");
 });
