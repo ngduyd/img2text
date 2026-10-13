@@ -1,8 +1,5 @@
 import DOMPurify from "dompurify";
 import { EditorContent, useEditor } from "@tiptap/react";
-import type { Editor } from "@tiptap/core";
-import { useEffect } from "react";
-import type { RefObject } from "react";
 import { scopeWordPaneCss } from "../../lib/docStyle";
 import { wordExtensions } from "../../lib/wordEditor";
 import Button from "../ui/Button";
@@ -20,27 +17,16 @@ export default function WordEditor({
   html,
   css,
   onSave,
-  editorRef,
 }: {
   html: string;
   css: string;
   onSave: (html: string) => void;
-  /** Plan proofread: expose Tiptap editor để UnifiedEditor jump/accept trong word mode. */
-  editorRef?: RefObject<Editor | null>;
 }) {
   const editor = useEditor({
     extensions: wordExtensions,
     // Ranh giới nạp: sanitize lần nữa trước khi vào nội dung soạn (runFlow đã sanitize lúc load).
     content: DOMPurify.sanitize(html),
   });
-
-  useEffect(() => {
-    if (!editorRef) return;
-    editorRef.current = editor;
-    return () => {
-      editorRef.current = null;
-    };
-  }, [editor, editorRef]);
 
   return (
     <>

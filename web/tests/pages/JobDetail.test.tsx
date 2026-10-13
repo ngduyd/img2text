@@ -339,23 +339,15 @@ it("btn-edit-doc toggles editor: preview → editor → preview, no navigation",
   expect(mockNavigate).not.toHaveBeenCalled();
 });
 
-/** Wave-3 #7: btn-edit-layout = preview ↔ md textarea "Chỉnh sửa layout" (KHÔNG đụng btn-edit-doc). */
-it("btn-edit-layout toggles layout editor textarea, no navigation", async () => {
+/** Wave-3 #7 → Lane I Task 4: bỏ btn-edit-layout + textarea; btn-edit-doc mở UnifiedEditor (Tiptap + MDEditor) cho cả md và word. */
+it("no btn-edit-layout / layout-editor-textarea; btn-edit-doc opens UnifiedEditor", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   const user = userEvent.setup();
-  const btn = await screen.findByTestId("btn-edit-layout");
-  expect(btn).toHaveAttribute("aria-pressed", "false");
+  expect(screen.queryByTestId("btn-edit-layout")).not.toBeInTheDocument();
   expect(screen.queryByTestId("layout-editor-textarea")).not.toBeInTheDocument();
-  await user.click(btn);
-  expect(mockNavigate).not.toHaveBeenCalled();
-  expect(btn).toHaveAttribute("aria-pressed", "true");
-  const ta = await screen.findByTestId("layout-editor-textarea");
-  expect(ta.tagName).toBe("TEXTAREA");
-  await user.click(btn);
-  expect(btn).toHaveAttribute("aria-pressed", "false");
-  expect(screen.queryByTestId("layout-editor-textarea")).not.toBeInTheDocument();
-  expect(screen.getByTestId("preview-md")).toBeInTheDocument();
+  await user.click(await screen.findByTestId("btn-edit-doc"));
+  expect(await screen.findByTestId("md-editor")).toBeInTheDocument();
 });
 
 /** Wave-3 #5 → Lane I Task 2: col phải KHÔNG còn sticky; File gốc + Info = collapsible default closed. */

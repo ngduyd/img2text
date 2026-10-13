@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import DOMPurify from "dompurify";
 import MarkdownIt from "markdown-it";
 import * as mammoth from "mammoth";
-import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { api } from "../api/client";
 import type { Job } from "../api/types";
 import { buildLayoutStyleCss, buildPreviewDocCss } from "../lib/docStyle";
@@ -25,27 +23,15 @@ function renderMdHtml(mdText: string): string {
 }
 
 /**
- * WS-UI Section "Layout": XEM TRƯỚC read-only mặc định (spec 2026-10-13).
+ * WS-UI Section "Layout": XEM TRƯỚC read-only (spec 2026-10-13).
  * - word: iframe sandbox srcDoc = docx.html + <style>{docStyle}</style>
  * - md: md → HTML (markdown-it) + docStyle scope .layout-preview → DOMPurify
- * Toggle "Chỉnh sửa" do JobDetail nắm (state editing). Wave-3 #7: editing=true
- * → md pane = textarea (nguồn md-layout) + "Lưu layout" → PATCH layout-content
- * (kind md-layout snapshot, không đụng text_version); word pane giữ preview.
+ * Lane I Task 4: bỏ editing/textarea wave-3 G — sửa tay qua UnifiedEditor (btn-edit-doc).
  */
-export default function LayoutPreview({
-  job,
-  editing = false,
-}: {
-  job: Job;
-  editing?: boolean;
-}) {
-  const queryClient = useQueryClient();
+export default function LayoutPreview({ job }: { job: Job }) {
   const [mode, setMode] = useState<Mode>(job.output_format === "docx" ? "word" : "md");
   const [mdHtml, setMdHtml] = useState<string | null>(null);
   const [wordHtml, setWordHtml] = useState<string | null>(null);
-  /** Wave-3 #7: nguồn md-layout THÔ (từ artifact) — editor textarea bind vào đây. */
-  const [mdText, setMdText] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,7 +54,6 @@ export default function LayoutPreview({
           await api.exportJob(job.id, FMT.md);
           const blob = await api.downloadExport(job.id, FMT.md);
           const text = await blob.text();
-          setMdText(text);
           // markdown-it (html:false escape HTML thô) + DOMPurify — 2 tầng.
           setMdHtml(renderMdHtml(text));
         }
@@ -101,23 +86,7 @@ export default function LayoutPreview({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load theo mode, state check trong load
   }, [mode]);
 
-  /** Wave-3 #7: Lưu layout → PATCH layout-content (kind md-layout snapshot server). */
-  const saveLayout = async () => {
-    if (mdText === null) return;
-    setSaving(true);
-    try {
-      await api.patchLayoutContent(job.id, mdText);
-      toast.success("Đã lưu layout.");
-      // Preview pane phản ánh bản vừa lưu (không cần refetch artifact).
-      setMdHtml(renderMdHtml(mdText));
-      await queryClient.invalidateQueries({ queryKey: ["job", job.id] });
-      await queryClient.invalidateQueries({ queryKey: ["versions", job.id] });
-    } catch (err) {
-      toast.error(mapApiError(err));
-    } finally {
-      setSaving(false);
-    }
-  };
+  /** Wave-3 #7 → Lane I Task 4: "Lưu layout" dời sang UnifiedEditor (PATCH layout-content). */
 
   return (
     <section data-testid="layout-preview" className="flex min-w-0 flex-col gap-3">
@@ -170,36 +139,13 @@ export default function LayoutPreview({
           <Skeleton className="h-96 w-full" />
         </div>
       ) : mode === "md" ? (
-        editing && mdText !== null ? (
-          /* Wave-3 #7: md pane = textarea editor (nguồn md-layout thô). */
-          <div data-testid="layout-editor" className="flex flex-col gap-3">
-            <textarea
-              data-testid="layout-editor-textarea"
-              aria-label="Nguồn Markdown layout"
-              rows={20}
-              value={mdText}
-              onChange={(e) => setMdText(e.target.value)}
-              className="w-full rounded-md border border-border bg-surface p-4 font-mono text-sm leading-[1.7] text-text focus-visible:outline-2 focus-visible:outline-accent"
-            />
-            <div className="flex justify-end">
-              <Button
-                testid="btn-save-layout-md"
-                loading={saving}
-                onClick={() => void saveLayout()}
-              >
-                Lưu layout
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div
-            data-testid="preview-md"
-            className="layout-preview max-h-[75vh] overflow-auto rounded-md border border-border p-4 leading-[1.7] text-text"
-          >
-            <style>{mdBase + mdStyle}</style>
-            {mdHtml !== null && <div dangerouslySetInnerHTML={{ __html: mdHtml }} />}
-          </div>
-        )
+        <div
+          data-testid="preview-md"
+          className="layout-preview max-h-[75vh] overflow-auto rounded-md border border-border p-4 leading-[1.7] text-text"
+        >
+          <style>{mdBase + mdStyle}</style>
+          {mdHtml !== null && <div dangerouslySetInnerHTML={{ __html: mdHtml }} />}
+        </div>
       ) : (
         <iframe
           data-testid="preview-word"
