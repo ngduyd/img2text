@@ -5,6 +5,7 @@ exports/{id}/crops/{rid}.png (không có → giữ marker).
 docx: html_to_docx img node → embed bytes crop trực tiếp (không phụ thuộc
 URL); crop thiếu → img bị drop như cũ (không crash)."""
 
+import base64
 import io
 
 from docx import Document
@@ -37,6 +38,51 @@ async def test_embed_crop_keys_marker_to_relative_key():
     out = await embed_crop_keys(md, 7, _FakeStorage({KEY}))
     assert out == f"chào\n\n![vùng {RID}](crops/{RID}.png)\n\nhết"
     assert "http" not in out  # không hostname trong artifact
+
+async def test_embed_crop_keys_ondemand_png_data_uri():
+    """Wave-4 #9: crop artifact THIẾU → on-demand crop (route /regions/{rid}/crop
+    logic) trả bytes → embed data-URI, marker biến mất."""
+    md = f"chào\n\n{MARKER}\n\nhết"
+    png = b"\x89PNG\r\n\x1a\nfake"
+
+    async def _loader(rid: str) -> bytes:
+        assert rid == RID
+        return png
+
+    out = await embed_crop_keys(md, 7, _FakeStorage(set()), crop_loader=_loader)
+    b64 = base64.b64encode(png).decode("ascii")
+    assert out == f"chào\n\n![vùng {RID}](data:image/png;base64,{b64})\n\nhết"
+
+async def test_embed_crop_keys_ondemand_jpeg_data_uri():
+    """JPEG bytes (get_or_make_crop cache) → data:image/jpeg."""
+    jpg = b"\xff\xd8\xfffakejpg"
+
+    async def _loader(rid: str) -> bytes:
+        return jpg
+
+    out = await embed_crop_keys(MARKER, 7, _FakeStorage(set()), crop_loader=_loader)
+    b64 = base64.b64encode(jpg).decode("ascii")
+    assert out == f"![vùng {RID}](data:image/jpeg;base64,{b64})"
+
+async def test_embed_crop_keys_ondemand_fail_keeps_marker():
+    """On-demand crop lỗi (region/bbox/original thiếu) → giữ marker (không crash)."""
+    async def _loader(rid: str) -> bytes:
+        raise KeyError(rid)
+
+    out = await embed_crop_keys(MARKER, 7, _FakeStorage(set()), crop_loader=_loader)
+    assert out == MARKER
+
+async def test_embed_crop_keys_exists_wins_over_loader():
+    """Crop artifact đã ingest → relative key (như cũ), loader KHÔNG được gọi."""
+    called = []
+
+    async def _loader(rid: str) -> bytes:
+        called.append(rid)
+        return b"\x89PNG\r\n\x1a\nx"
+
+    out = await embed_crop_keys(MARKER, 7, _FakeStorage({KEY}), crop_loader=_loader)
+    assert out == f"![vùng {RID}](crops/{RID}.png)"
+    assert called == []
 
 async def test_embed_crop_urls_relative_key_to_presigned():
     """serve/download: relative key → presigned 24h FRESH tại serve-time."""

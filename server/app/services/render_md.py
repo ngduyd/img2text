@@ -11,6 +11,7 @@ _render_band, _indent_of, _same_cluster.
 from __future__ import annotations
 
 import asyncio
+import base64
 import html
 import json
 import logging
@@ -592,14 +593,34 @@ async def generate_ir(result: dict) -> dict | None:
 # ---------------------------------------------------------------- crop embed (WS-PIPE)
 CROP_PRESIGN_EXPIRES = 86400
 
-async def embed_crop_keys(markdown: str, job_id: int, storage) -> str:
+async def embed_crop_keys(
+    markdown: str, job_id: int, storage, crop_loader=None
+) -> str:
     """RENDER-time: IMAGE_MARKER → `![vùng {rid}](crops/{rid}.png)` RELATIVE
-    key khi crop artifact tồn tại; thiếu → giữ marker. Artifact KHÔNG chứa
-    URL presigned (24h hết hạn → link chết); serve-time re-embed qua
-    embed_crop_urls."""
+    key khi crop artifact tồn tại; THIẾU → crop_loader on-demand (bytes) →
+    data-URI (self-contained, không phụ thuộc URL hết hạn); loader None/lỗi
+    → giữ marker. Artifact KHÔNG chứa URL presigned (24h hết hạn → link chết);
+    serve-time re-embed qua embed_crop_urls.
+
+    crop_loader: async (rid) → bytes | None — caller wire logic crop on-demand
+    (route /regions/{rid}/crop: get_or_make_crop + storage.get)."""
     for m in re.finditer(re.escape(IMAGE_MARKER_PREFIX) + r"([^\]]+)\]\*\*", markdown):
         rid = m.group(1)
         if not await storage.exists(f"exports/{job_id}/crops/{rid}.png"):
+            if crop_loader is None:
+                continue
+            try:
+                data = await crop_loader(rid)
+            except Exception as exc:  # partial-fail: crop thiếu → giữ marker
+                logger.info("on-demand crop job=%s rid=%s failed: %r", job_id, rid, exc)
+                continue
+            if not data:
+                continue
+            mime = "image/png" if data[:8] == b"\x89PNG\r\n\x1a\n" else "image/jpeg"
+            b64 = base64.b64encode(data).decode("ascii")
+            markdown = markdown.replace(
+                m.group(0), f"![vùng {rid}](data:{mime};base64,{b64})"
+            )
             continue
         markdown = markdown.replace(m.group(0), f"![vùng {rid}](crops/{rid}.png)")
     return markdown

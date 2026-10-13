@@ -460,8 +460,16 @@ async def _llm_md_export(
     try:
         md = await build_md(result, ir_sink=ir_sink)
         if storage is not None:
-            # render: relative crops/{f} key (presigned 24h hết hạn → chết)
-            md = await embed_crop_keys(md, job_id, storage)
+            # render: relative crops/{f} key (presigned 24h hết hạn → chết);
+            # crop artifact thiếu → on-demand crop (route /regions/{rid}/crop
+            # logic) → data-URI self-contained (wave-4 #9)
+            async def _on_demand_crop(rid: str) -> bytes:
+                key = await get_or_make_crop(job_id, rid, job, result, storage)
+                return await storage.get(key)
+
+            md = await embed_crop_keys(
+                md, job_id, storage, crop_loader=_on_demand_crop
+            )
         return md.encode("utf-8")
     except LLMError as exc:
         logger.warning("md-layout LLM failure job=%s: %s", job_id, exc)
