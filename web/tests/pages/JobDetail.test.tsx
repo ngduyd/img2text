@@ -328,6 +328,25 @@ it("btn-edit-doc toggles editor: preview → editor → preview, no navigation",
   expect(mockNavigate).not.toHaveBeenCalled();
 });
 
+/** Wave-3 #7: btn-edit-layout = preview ↔ md textarea "Chỉnh sửa layout" (KHÔNG đụng btn-edit-doc). */
+it("btn-edit-layout toggles layout editor textarea, no navigation", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const user = userEvent.setup();
+  const btn = await screen.findByTestId("btn-edit-layout");
+  expect(btn).toHaveAttribute("aria-pressed", "false");
+  expect(screen.queryByTestId("layout-editor-textarea")).not.toBeInTheDocument();
+  await user.click(btn);
+  expect(mockNavigate).not.toHaveBeenCalled();
+  expect(btn).toHaveAttribute("aria-pressed", "true");
+  const ta = await screen.findByTestId("layout-editor-textarea");
+  expect(ta.tagName).toBe("TEXTAREA");
+  await user.click(btn);
+  expect(btn).toHaveAttribute("aria-pressed", "false");
+  expect(screen.queryByTestId("layout-editor-textarea")).not.toBeInTheDocument();
+  expect(screen.getByTestId("preview-md")).toBeInTheDocument();
+});
+
 /** Wave-3 #5: wrapper grid DUY NHẤT bao 2 section — col trái stack, col phải = sticky File gốc + Info. */
 it("renders single wrapper grid: 2 sections stacked left, sticky original+info right", async () => {
   mockJob(DONE_JOB);

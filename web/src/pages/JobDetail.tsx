@@ -49,6 +49,8 @@ export default function JobDetail() {
   const [retryError, setRetryError] = useState<string | null>(null);
   /** JD2: btn-edit-doc = inline edit ON THIS PAGE — section Layout: preview ↔ editor. */
   const [editing, setEditing] = useState(false);
+  /** Wave-3 #7: "Chỉnh sửa layout" — md pane = textarea, Lưu layout → PATCH layout-content. */
+  const [layoutEditing, setLayoutEditing] = useState(false);
   /** P0-C: panel "Lịch sử" — list lazy-fetch khi mở (queryKey "versions" để invalidate). */
   const [showHistory, setShowHistory] = useState(false);
   const {
@@ -406,9 +408,21 @@ export default function JobDetail() {
               aria-labelledby="section-layout-title"
               className="flex flex-col gap-4"
             >
-              <h2 id="section-layout-title" className="text-lg font-semibold tracking-tight">
-                Layout
-              </h2>
+              <div className="flex items-center justify-between gap-2">
+                <h2 id="section-layout-title" className="text-lg font-semibold tracking-tight">
+                  Layout
+                </h2>
+                {/* Wave-3 #7: "Chỉnh sửa layout" — md pane = textarea + Lưu layout (khác btn-edit-doc). */}
+                <Button
+                  testid="btn-edit-layout"
+                  variant="secondary"
+                  aria-pressed={layoutEditing}
+                  onClick={() => setLayoutEditing((v) => !v)}
+                >
+                  <PenLine className="h-4 w-4" aria-hidden="true" />
+                  {layoutEditing ? "Đang sửa layout" : "Chỉnh sửa layout"}
+                </Button>
+              </div>
               {editing ? (
                 <UnifiedEditor
                   jobId={id!}
@@ -419,7 +433,7 @@ export default function JobDetail() {
                   hostRef={editorHostRef}
                 />
               ) : (
-                <LayoutPreview job={job} />
+                <LayoutPreview job={job} editing={layoutEditing} />
               )}
               {/* Stats line dưới preview (spec: SECTION Layout). */}
               <p data-testid="result-stats" className="text-sm text-muted">
