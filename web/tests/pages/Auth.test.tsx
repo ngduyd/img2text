@@ -1,5 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -37,11 +38,16 @@ vi.mock("../../src/api/client", async (importOriginal) => {
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-/** App.tsx BrowserRouter is for prod; page tests use MemoryRouter per page. */
+/** App.tsx BrowserRouter is for prod; page tests use MemoryRouter per page.
+ *  QueryClientProvider fresh per render: Signup dùng useQueryClient (auto-login
+ *  setQueryData(["me"])). */
 function renderWithRouter(ui: ReactElement, { route = "/" } = {}) {
+  const client = new QueryClient();
   return render(ui, {
     wrapper: ({ children }) => (
-      <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>
+      </QueryClientProvider>
     ),
   });
 }
@@ -71,23 +77,77 @@ it("login shows server detail error", async () => {
   expect(toast.error).toHaveBeenCalledWith("Sai mật khẩu.");
 });
 
-it("register button exists and submits", async () => {
-  vi.mocked(api.register).mockResolvedValue({} as User);
+it("register → tự login (register không set cookie) → route theo is_verified", async () => {
+  vi.mocked(api.register).mockResolvedValue({ status: "ok" });
+  vi.mocked(api.login).mockResolvedValue({
+    id: 1,
+    email: "u@x.io",
+    role: "user",
+    ocr_enabled: false,
+    is_verified: false,
+  } as User);
+  renderWithRouter(<Signup />);
+  await userEvent.type(screen.getByTestId("input-email"), "u@x.io");
+  await userEvent.type(screen.getByTestId("input-password"), "secret123");
+  await userEvent.click(screen.getByTestId("btn-register"));
+  await waitFor(() => expect(api.login).toHaveBeenCalledWith("u@x.io", "secret123"));
+  // Chưa verify → trang chủ "/" (route guard VerifyGating sẽ mở modal verify).
+  expect(mockNavigate).toHaveBeenCalledWith("/");
+});
+
+it("register → login: đã verify → /jobs (như login thường)", async () => {
+  vi.mocked(api.register).mockResolvedValue({ status: "ok" });
+  vi.mocked(api.login).mockResolvedValue({
+    id: 1,
+    email: "u@x.io",
+    role: "user",
+    ocr_enabled: false,
+    is_verified: true,
+  } as User);
   renderWithRouter(<Signup />);
   await userEvent.click(screen.getByTestId("btn-register"));
-  expect(api.register).toHaveBeenCalled();
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs"));
 });
 
-it("forgot shows constant success message", async () => {
+it("forgot shows constant success message + link sang form reset", async () => {
   vi.mocked(api.forgotEmail).mockResolvedValue({});
   renderWithRouter(<Forgot />);
+  await userEvent.type(screen.getByTestId("input-email"), "u@x.io");
   await userEvent.click(screen.getByTestId("btn-forgot"));
   expect(await screen.findByText("Check your email.")).toBeInTheDocument();
+  // S5: code 6 số → form reset {email, code, password} (không còn token link).
+  expect(screen.getByTestId("link-reset")).toHaveAttribute(
+    "href",
+    "/reset?email=u%40x.io",
+  );
 });
 
-it("reset submits token from query", async () => {
+it("reset submits {email, code, password} (S5 contract, email prefill query)", async () => {
   vi.mocked(api.resetPassword).mockResolvedValue({});
-  renderWithRouter(<Reset />, { route: "/reset?token=abc123" });
+  renderWithRouter(<Reset />, { route: "/reset?email=u%40x.io" });
+  expect(screen.getByTestId("input-email")).toHaveValue("u@x.io");
+  await userEvent.type(screen.getByTestId("input-code"), "123456");
+  await userEvent.type(screen.getByTestId("input-password"), "secret123");
+  await userEvent.type(screen.getByTestId("input-password2"), "secret123");
   await userEvent.click(screen.getByTestId("btn-reset"));
-  expect(api.resetPassword).toHaveBeenCalledWith("abc123", expect.any(String));
+  expect(api.resetPassword).toHaveBeenCalledWith({
+    email: "u@x.io",
+    code: "123456",
+    password: "secret123",
+  });
+  expect(mockNavigate).toHaveBeenCalledWith("/signin");
+});
+
+it("reset sai mã 422 → hiện lỗi i18n auth.verify.invalid", async () => {
+  vi.mocked(api.resetPassword).mockRejectedValue(
+    new ApiError("invalid or expired code"),
+  );
+  renderWithRouter(<Reset />);
+  await userEvent.type(screen.getByTestId("input-code"), "000000");
+  await userEvent.type(screen.getByTestId("input-password"), "secret123");
+  await userEvent.type(screen.getByTestId("input-password2"), "secret123");
+  await userEvent.click(screen.getByTestId("btn-reset"));
+  expect(await screen.findByTestId("error-detail")).toHaveTextContent(
+    "Invalid or expired code.",
+  );
 });

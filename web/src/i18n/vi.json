@@ -50,7 +50,8 @@
   "errors": {
     "network": "Không kết nối được máy chủ. Kiểm tra server đang chạy.",
     "uploadFailed": "Tải file thất bại.",
-    "generic": "Đã xảy ra lỗi."
+    "generic": "Đã xảy ra lỗi.",
+    "email_limit": "Đã gửi quá nhiều email. Vui lòng thử lại sau."
   },
   "ocr": {
     "enabled": "OCR đã cấp",
@@ -107,15 +108,32 @@
       "title": "Đăng ký",
       "subtitle": "Tạo tài khoản để bắt đầu.",
       "haveAccount": "Đã có tài khoản?",
-      "created": "Đã tạo tài khoản. Hãy đăng nhập."
+      "created": "Tài khoản đã được tạo. Nhập mã xác minh."
     },
     "forgot": {
       "title": "Quên mật khẩu",
       "sent": "Kiểm tra email của bạn.",
-      "submit": "Gửi email đặt lại"
+      "submit": "Gửi email đặt lại",
+      "enterCode": "Nhập mã và mật khẩu mới"
+    },
+    "verify": {
+      "title": "Xác thực email",
+      "subtitle": "Nhập mã 6 số chúng tôi đã gửi tới email của bạn.",
+      "subtitleWithEmail": "Nhập mã 6 số chúng tôi đã gửi tới {email}.",
+      "codeLabel": "Mã xác thực",
+      "expiresIn": "Mã hết hạn sau {time}",
+      "expired": "Mã đã hết hạn. Hãy gửi lại mã.",
+      "invalid": "Mã không đúng hoặc đã hết hạn.",
+      "submit": "Xác thực",
+      "resend": "Gửi lại mã",
+      "resendIn": "Gửi lại mã sau {s}s",
+      "logout": "Đăng xuất",
+      "success": "Đã xác thực email."
     },
     "reset": {
       "title": "Đặt lại mật khẩu",
+      "email": "Email",
+      "code": "Mã xác thực",
       "newPassword": "Mật khẩu mới",
       "repeatPassword": "Nhập lại mật khẩu mới",
       "mismatch": "Mật khẩu nhập lại không khớp.",

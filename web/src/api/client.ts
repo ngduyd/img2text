@@ -24,6 +24,18 @@ interface RequestOptions {
   body?: unknown;
 }
 
+/** Lane C2 (S5): 403 {code:"email_unverified"} từ BẤT KỲ API call nào →
+ *  listener (VerifyGate) mở modal verify. Trả về hàm unsubscribe. */
+type UnverifiedListener = () => void;
+const unverifiedListeners = new Set<UnverifiedListener>();
+
+export function onEmailUnverified(listener: UnverifiedListener): () => void {
+  unverifiedListeners.add(listener);
+  return () => {
+    unverifiedListeners.delete(listener);
+  };
+}
+
 export async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {};
   let body: BodyInit | undefined;
@@ -64,6 +76,10 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     // (login/signup/forgot/reset/refresh/logout) handle their own failures.
     if (res.status === 401 && !path.startsWith("/api/auth/")) {
       window.location.assign("/signin");
+    }
+    // Lane C2 (S5): gating 403 email_unverified → mở verify modal.
+    if (res.status === 403 && code === "email_unverified") {
+      for (const listener of unverifiedListeners) listener();
     }
     throw new ApiError(detail, code, params);
   }
@@ -188,8 +204,10 @@ async function uploadPresigned(
 }
 
 export const api = {
+  // S5: register KHÔNG set cookie (duplicate cũng {status:"ok"} — anti-enumeration)
+  // → client tự login lấy session (Lane C2 Task 1).
   register: (email: string, password: string) =>
-    request<User>("/api/auth/register", { method: "POST", body: { email, password } }),
+    request<{ status: string }>("/api/auth/register", { method: "POST", body: { email, password } }),
   login: (email: string, password: string) =>
     request<User>("/api/auth/login", { method: "POST", body: { email, password } }),
   logout: () => request<unknown>("/api/auth/logout", { method: "POST" }),
@@ -197,10 +215,15 @@ export const api = {
   updateProfile: (body: { current_password: string; email?: string; new_password?: string }) =>
     request<User>("/api/auth/profile", { method: "PATCH", body }),
   refresh: () => request<unknown>("/api/auth/refresh", { method: "POST" }),
+  // S5: verify mã 6 số / resend — exempt khỏi gating 403 email_unverified.
+  verifyCode: (code: string) =>
+    request<unknown>("/api/auth/verify", { method: "POST", body: { code } }),
+  verifyResend: () => request<unknown>("/api/auth/verify/resend", { method: "POST" }),
   forgotEmail: (email: string) =>
     request<unknown>("/api/auth/password/forgot", { method: "POST", body: { email } }),
-  resetPassword: (token: string, password: string) =>
-    request<unknown>("/api/auth/password/reset", { method: "POST", body: { token, password } }),
+  // S5: reset contract {email, code, password} (mã 6 số TTL 5p — không còn token).
+  resetPassword: (body: { email: string; code: string; password: string }) =>
+    request<unknown>("/api/auth/password/reset", { method: "POST", body }),
   // Phase 4: server-side pagination (page default 1, page_size default 10 max 100).
   // Spec #3: filters q (filename ILIKE) / sort (newest|oldest) / status — server-side.
   listJobs: (page = 1, page_size = 10, filters?: { q?: string; sort?: string; status?: string }) => {
