@@ -16,6 +16,8 @@ from app.core.models import Setting
 # batch/loop state, so changing it needs a restart).
 RUNTIME_SETTING_KEYS = (
     "scheduler_interval_seconds",
+    "purge_interval_seconds",
+    "purge_retention_days",
     "kaggle_min_queue",
     "kaggle_min_gap_seconds",
     "kaggle_mode",

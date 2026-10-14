@@ -16,6 +16,9 @@ async def test_scheduler_job_registered(app):
     scheduler = init_scheduler(app)  # lifespan skipped under ASGITransport
     jobs = [j for j in scheduler.get_jobs() if j.id == "reap-leases"]
     assert len(jobs) == 1
+    # wave-5 S1: purge-storage hourly
+    purge = [j for j in scheduler.get_jobs() if j.id == "purge-storage"]
+    assert len(purge) == 1
 
 async def test_reap_leases_requeues_expired_and_reclaimable(
     worker_client, db_session, seed_job

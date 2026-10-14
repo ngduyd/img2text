@@ -369,6 +369,13 @@ _SETTING_FLOORS: dict[str, tuple[int, str]] = {
     "scheduler_interval_seconds": (
         5, "scheduler_interval_seconds phải từ 5 giây trở lên.",
     ),
+    # wave-5 S1: purge tick floor 60s (busy-loop guard), retention ≥ 1 ngày
+    "purge_interval_seconds": (
+        60, "purge_interval_seconds phải từ 60 giây trở lên.",
+    ),
+    "purge_retention_days": (
+        1, "purge_retention_days phải từ 1 ngày trở lên.",
+    ),
     "kaggle_min_queue": (1, "kaggle_min_queue phải từ 1 trở lên."),
     "kaggle_min_gap_seconds": (
         60, "kaggle_min_gap_seconds phải từ 60 giây trở lên.",
@@ -380,6 +387,8 @@ class RuntimeSettingsPut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     scheduler_interval_seconds: int | None = None
+    purge_interval_seconds: int | None = None
+    purge_retention_days: int | None = None
     kaggle_min_queue: int | None = None
     kaggle_min_gap_seconds: int | None = None
     # read-only in the API — mode flip needs a restart (half-applied state)
