@@ -64,21 +64,21 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-it("renders name line, status badge and vi-VN date", () => {
+it("renders name line, status badge and en-US date", () => {
   renderRow(job({ file_type: "pdf" }));
-  expect(screen.getByTestId("job-row-7")).toHaveTextContent("#7 · PDF · 2 trang");
+  expect(screen.getByTestId("job-row-7")).toHaveTextContent("#7 · PDF · 2 pages");
   // R51: badge-{id} testid assertion preserved from old Jobs.test.tsx;
-  // P2: literal pins the shared STATUS_TEXT spelling ("Đang lập lịch").
-  expect(screen.getByTestId("badge-7")).toHaveTextContent("Đang lập lịch");
-  const expected = new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" }).format(
+  // P2: literal pins the shared STATUS_KEY spelling ("Queued", default en).
+  expect(screen.getByTestId("badge-7")).toHaveTextContent("Queued");
+  const expected = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(
     new Date("2026-10-04T00:00:00Z"),
   );
   expect(screen.getByTestId("job-row-7")).toHaveTextContent(expected);
 });
 
-it("shows Ảnh for non-pdf file_type", () => {
+it("shows Image for non-pdf file_type", () => {
   renderRow(job({ file_type: "jpg" }));
-  expect(screen.getByTestId("job-row-7")).toHaveTextContent("#7 · Ảnh · 2 trang");
+  expect(screen.getByTestId("job-row-7")).toHaveTextContent("#7 · Image · 2 pages");
 });
 
 it("renders duration when done with both timestamps", () => {
@@ -89,12 +89,12 @@ it("renders duration when done with both timestamps", () => {
       finished_at: "2026-10-04T00:00:10Z",
     }),
   );
-  expect(screen.getByTestId("job-row-7")).toHaveTextContent("10 giây");
+  expect(screen.getByTestId("job-row-7")).toHaveTextContent("10s");
 });
 
 it("omits duration when timestamps missing (server list omits them)", () => {
   renderRow(job({ status: "done" }));
-  expect(screen.getByTestId("job-row-7")).not.toHaveTextContent("giây");
+  expect(screen.getByTestId("job-row-7")).not.toHaveTextContent("10s");
 });
 
 it("view button navigates to detail", async () => {
@@ -136,7 +136,7 @@ it("retry button calls retryJob and invalidates jobs", async () => {
   expect(api.retryJob).toHaveBeenCalledWith(7);
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
   // R59a: retry success toasts the plan copy.
-  expect(toast.success).toHaveBeenCalledWith("Đã lên lịch chạy lại");
+  expect(toast.success).toHaveBeenCalledWith("Retry scheduled");
 });
 
 it("retry failure toasts mapped error", async () => {
@@ -169,7 +169,7 @@ it.each(["queued", "extracting", "rendering"] as const)(
     await userEvent.click(screen.getByTestId("btn-cancel-job-7"));
     expect(api.cancelJob).toHaveBeenCalledWith(7);
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
-    expect(toast.success).toHaveBeenCalledWith("Đã hủy job");
+    expect(toast.success).toHaveBeenCalledWith("Job cancelled");
   },
 );
 
@@ -207,7 +207,7 @@ it("renders row-select checkbox and fires onToggle with the job id", async () =>
 it("cụm actions flex-wrap + nút Tải bản gốc icon-only <sm (aria-label)", () => {
   renderRow(job({ status: "done" }));
   const dl = screen.getByTestId("btn-dl-original-7");
-  expect(dl).toHaveAttribute("aria-label", "Tải bản gốc");
+  expect(dl).toHaveAttribute("aria-label", "Download original");
   expect(dl.querySelector("svg")).not.toBeNull();
   expect(dl.parentElement).toHaveClass("flex-wrap", "justify-end");
 });
@@ -223,7 +223,7 @@ it("delete: confirm → api.deleteJob + invalidate jobs + toast", async () => {
   await userEvent.click(screen.getByTestId("confirm-accept"));
   expect(api.deleteJob).toHaveBeenCalledWith(7);
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
-  expect(toast.success).toHaveBeenCalledWith("Đã xóa job");
+  expect(toast.success).toHaveBeenCalledWith("Job deleted");
 });
 
 it("delete: hủy confirm → không gọi deleteJob", async () => {
