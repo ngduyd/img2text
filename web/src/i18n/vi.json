@@ -1,0 +1,26 @@
+{
+  "common": {
+    "language": "Ngôn ngữ"
+  },
+  "i18n": {
+    "test": {
+      "count": "{n} trang"
+    }
+  },
+  "lang": {
+    "vi": "VI",
+    "en": "EN"
+  },
+  "nav": {
+    "signIn": "Đăng nhập",
+    "signUp": "Đăng ký",
+    "profile": "Hồ sơ",
+    "logout": "Đăng xuất",
+    "signedOut": "Đã đăng xuất.",
+    "jobs": "Công việc",
+    "admin": "Quản trị",
+    "menu": "Menu",
+    "skip": "Bỏ qua điều hướng",
+    "ariaMain": "Điều hướng chính"
+  }
+}

@@ -155,8 +155,8 @@ it("logged-in user sees badge-ocr success + avatar + profile + logout in auth-zo
   const menu = screen.getByTestId("nav-user-menu");
   expect(menu).toHaveTextContent("user@x.io");
   expect(menu).toHaveTextContent("user");
-  expect(within(menu).getByTestId("btn-profile")).toHaveTextContent("Hồ sơ");
-  expect(within(menu).getByTestId("btn-logout")).toHaveTextContent("Đăng xuất");
+  expect(within(menu).getByTestId("btn-profile")).toHaveTextContent("Profile");
+  expect(within(menu).getByTestId("btn-logout")).toHaveTextContent("Sign out");
   expect(zone.queryByTestId("btn-login")).not.toBeInTheDocument();
 });
 

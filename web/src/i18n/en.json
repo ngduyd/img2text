@@ -1,0 +1,26 @@
+{
+  "common": {
+    "language": "Language"
+  },
+  "i18n": {
+    "test": {
+      "count": "{n} pages"
+    }
+  },
+  "lang": {
+    "vi": "VI",
+    "en": "EN"
+  },
+  "nav": {
+    "signIn": "Sign in",
+    "signUp": "Sign up",
+    "profile": "Profile",
+    "logout": "Sign out",
+    "signedOut": "Signed out.",
+    "jobs": "Jobs",
+    "admin": "Admin",
+    "menu": "Menu",
+    "skip": "Skip to content",
+    "ariaMain": "Main navigation"
+  }
+}
