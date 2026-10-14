@@ -168,6 +168,25 @@
     "fmtDocx": "Download .docx",
     "fmtPdf": "Download .pdf"
   },
+  "editor": {
+    "textAreaAria": "Edit text",
+    "edit": "Edit text",
+    "editing": "Editing",
+    "loadError": "Could not load the extracted text.",
+    "apply": "Apply",
+    "reject": "Dismiss",
+    "suggestionAria": "Suggestion actions",
+    "customOther": "Fix something else…",
+    "save": "Save",
+    "emptyContent": "Empty content.",
+    "saved": "Saved.",
+    "savedSynced": "Saved and layout synced.",
+    "savedNeedsRender": "Saved. Some layouts need a rebuild.",
+    "detachedConfirm": "The layout was edited by hand. Syncing will overwrite it. Continue?",
+    "rerenderQuestion": "Saving the text requires a layout rebuild. Add to the rebuild queue?",
+    "rerenderQueued": "Layout rebuild queued.",
+    "saveAndQueue": "Save & queue"
+  },
   "extraction": {
     "title": "Text extraction",
     "backToDetail": "Back to job detail",

@@ -127,7 +127,7 @@ it("review r1 P2b: text editor Tiptap có aria-label trên contenteditable", asy
   const editor = await screen.findByTestId("text-editor");
   const pm = editor.querySelector(".ProseMirror") as HTMLElement;
   await waitFor(() =>
-    expect(pm).toHaveAttribute("aria-label", "Soạn thảo văn bản"),
+    expect(pm).toHaveAttribute("aria-label", "Edit text"),
   );
 });
 
@@ -176,7 +176,7 @@ it("btn-save-text → saveExtraction full text (không old/new phrase) + toast",
   expect(body.text).toContain("Dòng mới");
   expect(body.expected_text_version).toBe(3);
   expect(body).not.toHaveProperty("old_phrase");
-  await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Đã lưu."));
+  await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Saved."));
 });
 
 it("renders issues panel below text when regions provided", async () => {
@@ -263,10 +263,10 @@ it("save with requires_rerender → confirm modal; Lưu & xếp hàng → toast 
   await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
   await user.click(screen.getByTestId("btn-apply-11"));
   const modal = await screen.findByTestId("rerender-modal");
-  expect(modal).toHaveTextContent("Lưu văn bản sẽ cần vẽ lại layout. Thêm vào hàng đợi vẽ layout?");
+  expect(modal).toHaveTextContent("Saving the text requires a layout rebuild. Add to the rebuild queue?");
   await user.click(screen.getByTestId("btn-rerender-confirm"));
   await waitFor(() =>
-    expect(toast.success).toHaveBeenCalledWith("Đã xếp hàng vẽ lại layout."),
+    expect(toast.success).toHaveBeenCalledWith("Layout rebuild queued."),
   );
   await waitFor(() =>
     expect(spy).toHaveBeenCalledWith({ queryKey: ["job", "5"] }),
@@ -288,5 +288,5 @@ it("requires_rerender modal: Hủy closes without queue toast", async () => {
   await user.click(screen.getByTestId("btn-apply-11"));
   await user.click(await screen.findByTestId("btn-rerender-cancel"));
   expect(screen.queryByTestId("rerender-modal")).not.toBeInTheDocument();
-  expect(toast.success).not.toHaveBeenCalledWith("Đã xếp hàng vẽ lại layout.");
+  expect(toast.success).not.toHaveBeenCalledWith("Layout rebuild queued.");
 });

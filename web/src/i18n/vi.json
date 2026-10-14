@@ -168,6 +168,25 @@
     "fmtDocx": "Tải .docx",
     "fmtPdf": "Tải .pdf"
   },
+  "editor": {
+    "textAreaAria": "Soạn thảo văn bản",
+    "edit": "Soạn thảo",
+    "editing": "Đang soạn",
+    "loadError": "Không tải được văn bản trích xuất.",
+    "apply": "Áp dụng",
+    "reject": "Bỏ qua",
+    "suggestionAria": "Gợi ý sửa",
+    "customOther": "Sửa khác…",
+    "save": "Lưu",
+    "emptyContent": "Nội dung trống.",
+    "saved": "Đã lưu.",
+    "savedSynced": "Đã lưu và đồng bộ layout.",
+    "savedNeedsRender": "Đã lưu. Có layout cần vẽ lại.",
+    "detachedConfirm": "Layout có chỉnh tay. Đồng bộ sẽ ghi đè. Tiếp tục?",
+    "rerenderQuestion": "Lưu văn bản sẽ cần vẽ lại layout. Thêm vào hàng đợi vẽ layout?",
+    "rerenderQueued": "Đã xếp hàng vẽ lại layout.",
+    "saveAndQueue": "Lưu & xếp hàng"
+  },
   "extraction": {
     "title": "Trích xuất văn bản",
     "backToDetail": "Về chi tiết công việc",

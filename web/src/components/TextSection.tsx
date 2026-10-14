@@ -7,6 +7,7 @@ import { api, ApiError } from "../api/client";
 import type { ExtractionSaveResult, RegionOut, Suggestion } from "../api/types";
 import { mapApiError } from "../lib/errors";
 import { buildHighlights } from "../lib/highlight";
+import { translate, useT } from "../i18n";
 import { wordExtensions } from "../lib/wordEditor";
 import IssuesPanel from "./IssuesPanel";
 import Button from "./ui/Button";
@@ -54,7 +55,7 @@ function TextEditor({
       .join(""),
     editorProps: {
       // Review r1 P2b: contenteditable cần accessible name.
-      attributes: { "aria-label": "Soạn thảo văn bản" },
+      attributes: { "aria-label": translate("editor.textAreaAria") },
       handlePaste(view, event) {
         const plain = event.clipboardData?.getData("text/plain");
         if (plain == null) return false;
@@ -110,6 +111,7 @@ export default function TextSection({
   fileType?: string;
   onSaved?: (result: ExtractionSaveResult) => void;
 }) {
+  const { t } = useT();
   const queryClient = useQueryClient();
   const { data, isPending, isError } = useQuery({
     queryKey: ["extraction", jobId],
@@ -201,10 +203,7 @@ export default function TextSection({
         const detached =
           err instanceof ApiError &&
           err.detail === "Layout có chỉnh tay. Đồng bộ sẽ ghi đè.";
-        if (
-          !detached ||
-          !window.confirm("Layout có chỉnh tay. Đồng bộ sẽ ghi đè. Tiếp tục?")
-        )
+        if (!detached || !window.confirm(t("editor.detachedConfirm")))
           throw err;
         result = await save(true);
       }
@@ -217,8 +216,8 @@ export default function TextSection({
       } else {
         toast.success(
           result.needs_render.length > 0
-            ? "Đã lưu. Có layout cần vẽ lại."
-            : "Đã lưu và đồng bộ layout.",
+            ? t("editor.savedNeedsRender")
+            : t("editor.savedSynced"),
         );
       }
       await invalidate();
@@ -268,7 +267,7 @@ export default function TextSection({
         expected_text_version: data.text_version,
       });
       setEditingText(false);
-      toast.success("Đã lưu.");
+      toast.success(t("editor.saved"));
       await invalidate();
     } catch (err) {
       toast.error(mapApiError(err));
@@ -291,7 +290,7 @@ export default function TextSection({
           role="alert"
           className="text-sm text-error"
         >
-          Không tải được văn bản trích xuất.
+          {t("editor.loadError")}
         </p>
       )}
       {data && (
@@ -303,7 +302,7 @@ export default function TextSection({
               aria-pressed={editingText}
               onClick={() => setEditingText((v) => !v)}
             >
-              {editingText ? "Đang soạn" : "Soạn thảo"}
+              {editingText ? t("editor.editing") : t("editor.edit")}
             </Button>
           </div>
           {editingText ? (
@@ -362,7 +361,7 @@ export default function TextSection({
                     <span
                       data-testid={`suggestion-popover-${seg.sid}`}
                       role="group"
-                      aria-label="Gợi ý sửa"
+                      aria-label={t("editor.suggestionAria")}
                       className={`absolute top-full z-20 mt-1 flex w-64 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-md border border-border bg-surface p-3 shadow-card ${popoverPos(
                         anchorEls.current.get(anchorKey),
                       )}`}
@@ -387,7 +386,7 @@ export default function TextSection({
                           disabled={savingSid !== null}
                           onClick={() => handleApply(openSuggestion)}
                         >
-                          Áp dụng
+                          {t("editor.apply")}
                         </Button>
                         <Button
                           testid={`btn-reject-${seg.sid}`}
@@ -396,7 +395,7 @@ export default function TextSection({
                           disabled={savingSid !== null}
                           onClick={() => void handleReject(openSuggestion)}
                         >
-                          Bỏ qua
+                          {t("editor.reject")}
                         </Button>
                       </span>
                       {/* WS-UI: ô nhập "Sửa khác…" — custom phrase → POST /extraction. */}
@@ -404,7 +403,7 @@ export default function TextSection({
                         htmlFor={`custom-${seg.sid}`}
                         className="text-xs font-medium text-muted"
                       >
-                        Sửa khác…
+                        {t("editor.customOther")}
                       </label>
                       <span className="flex gap-2">
                         <input
@@ -434,7 +433,7 @@ export default function TextSection({
                           disabled={savingSid !== null}
                           onClick={() => handleCustom(openSuggestion)}
                         >
-                          Lưu
+                          {t("common.save")}
                         </Button>
                       </span>
                       {/* P2-5: lỗi validate rỗng — alert + describedby cho input. */}
@@ -445,7 +444,7 @@ export default function TextSection({
                           role="alert"
                           className="text-xs text-error"
                         >
-                          Nội dung trống.
+                          {t("editor.emptyContent")}
                         </p>
                       )}
                     </span>
@@ -470,7 +469,7 @@ export default function TextSection({
             className="w-full max-w-md rounded-card border border-border bg-surface p-4 shadow-card focus-visible:outline-2 focus-visible:outline-accent"
           >
             <p id="rerender-modal-title" className="text-sm font-medium">
-              Lưu văn bản sẽ cần vẽ lại layout. Thêm vào hàng đợi vẽ layout?
+              {t("editor.rerenderQuestion")}
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <Button
@@ -478,16 +477,16 @@ export default function TextSection({
                 variant="ghost"
                 onClick={() => setRerenderModal(false)}
               >
-                Hủy
+                {t("common.cancel")}
               </Button>
               <Button
                 testid="btn-rerender-confirm"
                 onClick={() => {
                   setRerenderModal(false);
-                  toast.success("Đã xếp hàng vẽ lại layout.");
+                  toast.success(t("editor.rerenderQueued"));
                 }}
               >
-                Lưu & xếp hàng
+                {t("editor.saveAndQueue")}
               </Button>
             </div>
           </div>
