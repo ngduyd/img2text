@@ -166,7 +166,7 @@ export default function Profile() {
         <Card title={t("profile.changeEmail")} testid="card-email">
           <form onSubmit={saveEmail} className="flex flex-col gap-3">
             <Input
-              label="Mật khẩu hiện tại"
+              label={t("profile.currentPassword")}
               type="password"
               autoComplete="current-password"
               testid="input-current-password-2"
