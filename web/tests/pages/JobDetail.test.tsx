@@ -374,6 +374,18 @@ it("U7: no fmt-md-layout/fmt-docx-layout/preview-mode-md/preview-mode-word in DO
   expect(await screen.findByTestId("preview-word")).toBeInTheDocument();
 });
 
+/** U6: sidebar Original+Info sticky lg:top-32 (AppNav 4rem + job-header 4rem), <lg không sticky. */
+it("U6: aside sidebar lg:sticky lg:top-32", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await screen.findByTestId("detail-grid");
+  const aside = document.querySelector("aside")!;
+  expect(aside.className).toContain("lg:sticky");
+  expect(aside.className).toContain("lg:top-32");
+  // <lg không sticky (không class sticky trần).
+  expect(aside.className).not.toMatch(/(^|\s)sticky/);
+});
+
 /** U4+U5: Original + Info mặc định mở, label trái / chevron phải (justify-between). */
 it("U4+U5: original+info default open with label left / chevron right", async () => {
   mockJob(DONE_JOB);
@@ -581,7 +593,9 @@ it("renders single wrapper grid: collapsible original+info right (U4+U5 default 
   const aside = grid.querySelector("aside");
   expect(aside).not.toBeNull();
   expect(aside!.className).toContain("lg:col-span-5");
-  expect(aside!.className).not.toContain("sticky");
+  // U6: sticky ≥lg (lg:sticky lg:top-32), <lg không sticky.
+  expect(aside!.className).toContain("lg:sticky");
+  expect(aside!.className).not.toMatch(/(^|\s)sticky/);
   // U4+U5: default MỞ — panel mount ngay, aria-expanded=true.
   expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();

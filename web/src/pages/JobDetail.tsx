@@ -516,8 +516,8 @@ export default function JobDetail() {
             </section>
           )}
         </div>
-        {/* ẢNH GỐC + Thông tin — collapsible (Lane I Task 2, không còn sticky). */}
-        <aside className="flex min-w-0 flex-col gap-4 lg:col-span-5">
+        {/* ẢNH GỐC + Thông tin — collapsible (U6: sticky lg:top-32 = AppNav 4rem + job-header 4rem). */}
+        <aside className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-32 lg:col-span-5 lg:self-start">
           <section className="rounded-card border border-border bg-surface shadow-card">
             <h2>
               <Button
