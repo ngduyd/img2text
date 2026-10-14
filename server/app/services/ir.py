@@ -7,6 +7,7 @@ source_block_ids map back to OCR block IDs for traceability.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -379,3 +380,113 @@ def extract_heading_anchors(
                     "type": "doc_title" if (pi == 0 and ri == 0) else "header",
                 })
     return out, state
+
+
+# --- S2: IR per-page sequential — shared 2 path, DI chat_fn (Lane S Task 5) ---
+
+MAX_IR_PAGE_CALLS = 20
+
+class IRPageError(Exception):
+    """Per-page IR prompt/parse/merge failure → LLMError → heuristic fallback."""
+
+IR_PROMPT_PAGE = (
+    "You are a document structure analyzer. Analyze ONE page of OCR output "
+    "into a Document IR page object (same node schema as document IR): "
+    '{"page_id": "...", "page_number": N, "header": [], "content": [], "footer": []}\n'
+    "Rules (same as full document IR): geometry first (columns/tables/lists by "
+    "bbox), type labels the grouping AFTER, source_block_ids map to THIS page's "
+    "OCR block ids, bbox [x1,y1,x2,y2] from OCR, children group related blocks. "
+    "Never rewrite OCR text.\n"
+    "Running §context — headings already seen in EARLIER pages (keep continuity, "
+    "do NOT restart numbering):\n{running_ctx}\n\n"
+    "OCR output of this page:\n{ocr_json}"
+)
+
+_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
+
+def _parse_ir_json(text: str, what: str) -> dict:
+    """LLM raw → first JSON object (fence strip + raw_decode)."""
+    text = text.strip()
+    m = _FENCE_RE.match(text)
+    if m:
+        text = m.group(1)
+    start = text.find("{")
+    if start == -1:
+        raise IRPageError(f"{what}: không chứa JSON object")
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(text[start:])
+    except (ValueError, TypeError) as exc:
+        raise IRPageError(f"{what}: không phải JSON: {exc}") from exc
+    if not isinstance(obj, dict):
+        raise IRPageError(f"{what}: không phải JSON object")
+    return obj
+
+async def _ir_page(page_ocr: dict, running_ctx: str, chat_fn) -> dict:
+    """1 trang OCR → PageIR dict. KHÔNG import httpx — chat_fn là DI seam."""
+    content = (
+        IR_PROMPT_PAGE
+        .replace("{running_ctx}", running_ctx or "(trống)")
+        .replace("{ocr_json}", json.dumps(page_ocr, ensure_ascii=False))
+    )
+    return _parse_ir_json(await chat_fn(content), "IR trang")
+
+async def _ir_full(result: dict, chat_fn) -> dict:
+    """Legacy IR_PROMPT full-result 1-call (degrade/cost-cap path, giữ nguyên)."""
+    content = IR_PROMPT.replace("{ocr_json}", json.dumps(result, ensure_ascii=False))
+    return _parse_ir_json(await chat_fn(content), "IR đầy đủ")
+
+def _ctx_from_page(page_ocr: dict, state: AnchorState) -> tuple[str, AnchorState]:
+    """§labels + text heading trang này → running context (state carry)."""
+    anns, state = extract_heading_anchors([page_ocr], state)
+    texts = {
+        r["id"]: (r.get("text") or "").strip() for r in page_ocr.get("regions", [])
+    }
+    lines = [
+        f"{a['label']} {texts.get(a['block_id'], '')}".rstrip()
+        for a in anns if a["type"] == "heading"
+    ]
+    return "\n".join(lines), state
+
+async def llm_ir_pages(result: dict, chat_fn) -> dict:
+    """S2: sequential per-page IR — render_md.llm_ir + render_docx.llm_ir delegate.
+
+    > MAX_IR_PAGE_CALLS trang → degrade 1-call full-result (cost cap, tránh
+    N×180s). Page fail → retry 1 → still fail → degrade full-result. Merge:
+    sort page_number, trùng → IRPageError (→ LLMError → heuristic fallback).
+    """
+    pages = list(result.get("pages") or [])
+    if len(pages) > MAX_IR_PAGE_CALLS:
+        logger.warning(
+            "IR per-page: %d trang > %d — degrade 1-call full-result",
+            len(pages), MAX_IR_PAGE_CALLS,
+        )
+        return await _ir_full(result, chat_fn)
+    page_irs: list[dict] = []
+    state = AnchorState()
+    running_ctx = ""
+    for pi, page in enumerate(pages):
+        for attempt in range(2):
+            try:
+                page_ir = await _ir_page(page, running_ctx, chat_fn)
+                break
+            except Exception as exc:  # retry 1 → fail → degrade full-result
+                if attempt:
+                    logger.warning(
+                        "IR per-page: trang %d fail sau retry — fallback full-result: %r",
+                        pi + 1, exc,
+                    )
+                    return await _ir_full(result, chat_fn)
+                logger.warning("IR per-page: trang %d fail — retry 1: %r", pi + 1, exc)
+        if "pages" in page_ir:  # model trả full document IR — dùng nguyên
+            return page_ir
+        if "page_number" not in page_ir:
+            page_ir["page_number"] = pi + 1
+        page_irs.append(page_ir)
+        ctx, state = _ctx_from_page(page, state)
+        if ctx:
+            running_ctx = (running_ctx + "\n" + ctx).strip()
+    numbers = [p["page_number"] for p in page_irs]
+    if len(set(numbers)) != len(numbers):
+        raise IRPageError(f"page_number trùng khi merge: {numbers}")
+    page_irs.sort(key=lambda p: p["page_number"])
+    return {"document_id": "doc_001", "schema_version": "1.0", "pages": page_irs}

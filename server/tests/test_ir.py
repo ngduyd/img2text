@@ -1,5 +1,7 @@
 """IR validator tests: ID unique, type valid, source_block_ids exist, no cycles."""
 
+import json
+
 import pytest
 
 from app.services.ir import (
@@ -420,3 +422,114 @@ def test_heading_anchor_header_yband_15pct_excluded():
     low = [_blk("r9", "2. Dưới", 200)]
     anns2, _ = extract_heading_anchors([_page(low)])
     assert [a["type"] for a in anns2] == ["heading"]
+
+
+# --- Lane S Task 5: _ir_page sequential shared (S2) ---
+
+from app.services import ir as ir_mod
+from app.services.ir import IRPageError, MAX_IR_PAGE_CALLS, _ir_page, llm_ir_pages
+
+def _one_page_result(n: int = 1) -> dict:
+    return {
+        "pages": [
+            {"index": i, "width": 800, "height": 600,
+             "regions": [{"id": f"p{i}_b0", "bbox": [10, 100, 300, 130],
+                          "text": f"1. Trang {i} nội dung", "verdict": "ok",
+                          "placeholder": False}]}
+            for i in range(n)
+        ]
+    }
+
+def _page_ir(page_number: int, bid: str) -> dict:
+    return {
+        "page_id": f"page_{page_number:03d}",
+        "page_number": page_number,
+        "header": [],
+        "content": [{"id": f"node_{page_number}", "type": "paragraph",
+                     "role": "body", "text": f"Trang {page_number}",
+                     "align": "left", "indent": 0, "source_block_ids": [bid],
+                     "bbox": [10, 100, 300, 130], "children": []}],
+        "footer": [],
+    }
+
+async def test_ir_pages_sequential_order_and_context():
+    """2 page → đúng 2 call đúng thứ tự; page2 prompt chứa §context page1;
+    merge sort page_number, map page_id đúng trang."""
+    result = _one_page_result(2)
+    calls: list = []
+    async def chat(content: str) -> str:
+        calls.append(content)
+        n = len(calls)
+        return json.dumps(_page_ir(n, f"p{n-1}_b0"))
+    doc = await llm_ir_pages(result, chat)
+    assert len(calls) == 2, calls
+    # page1 prompt không có §context; page2 prompt chứa heading §context page1
+    assert "§1" not in calls[0]
+    assert "§1" in calls[1]
+    pages = sorted(doc["pages"], key=lambda p: p["page_number"])
+    assert [p["page_number"] for p in pages] == [1, 2]
+    assert [p["page_id"] for p in pages] == ["page_001", "page_002"]
+    assert pages[0]["content"][0]["source_block_ids"] == ["p0_b0"]
+    assert pages[1]["content"][0]["source_block_ids"] == ["p1_b0"]
+
+async def test_ir_pages_degrade_full_when_over_cap():
+    """> MAX_IR_PAGE_CALLS → degrade 1-call full-result (legacy IR_PROMPT)."""
+    result = _one_page_result(MAX_IR_PAGE_CALLS + 1)
+    calls: list = []
+    async def chat(content: str) -> str:
+        calls.append(content)
+        return json.dumps({"document_id": "d", "schema_version": "1.0",
+                           "pages": [_page_ir(1, "p0_b0")]})
+    doc = await llm_ir_pages(result, chat)
+    assert len(calls) == 1
+    assert f'"index": {MAX_IR_PAGE_CALLS}' in calls[0]  # full-result, không per-page
+    assert doc["pages"]
+
+async def test_ir_pages_page_fail_retry_then_fallback_full():
+    """Page fail → retry 1 → still fail → fallback legacy IR_PROMPT 1-call."""
+    result = _one_page_result(2)
+    calls: list = []
+    async def chat(content: str) -> str:
+        calls.append(content)
+        if len(calls) <= 2:  # page1 attempt 1 + retry đều fail
+            raise RuntimeError("LLM 5xx")
+        return json.dumps({"document_id": "d", "schema_version": "1.0",
+                           "pages": [_page_ir(i + 1, f"p{i}_b0") for i in range(2)]})
+    doc = await llm_ir_pages(result, chat)
+    assert len(calls) == 3  # 2 fail + 1 full fallback
+    assert [p["page_number"] for p in doc["pages"]] == [1, 2]
+
+async def test_ir_pages_duplicate_pagenumber_raises():
+    """Merge check: page_number trùng → IRPageError (→ LLMError → heuristic)."""
+    result = _one_page_result(2)
+    calls: list = []
+    async def chat(content: str) -> str:
+        calls.append(content)
+        return json.dumps(_page_ir(1, f"p{len(calls)-1}_b0"))  # cả 2 page_number=1
+    with pytest.raises(IRPageError):
+        await llm_ir_pages(result, chat)
+
+async def test_ir_page_prompt_shape():
+    """_ir_page: prompt = IR_PROMPT_PAGE chứa running_ctx + OCR json trang."""
+    seen: list = []
+    async def chat(content: str) -> str:
+        seen.append(content)
+        return json.dumps(_page_ir(1, "p0_b0"))
+    page_ir = await _ir_page(_one_page_result()["pages"][0], "§1 Tiêu đề", chat)
+    assert page_ir["page_number"] == 1
+    assert "§1 Tiêu đề" in seen[0]
+    assert "p0_b0" in seen[0]
+
+async def test_render_modules_delegate_shared_ir(monkeypatch):
+    """render_md.llm_ir + render_docx.llm_ir dùng chung llm_ir_pages (1 logic)."""
+    import app.services.render_docx as rd
+    import app.services.render_md as rm
+    fake_doc = {"document_id": "d", "schema_version": "1.0", "pages": []}
+    seen = {}
+    async def fake_pages(result, chat_fn):
+        seen["chat"] = chat_fn
+        return fake_doc
+    monkeypatch.setattr(rm, "llm_ir_pages", fake_pages)
+    monkeypatch.setattr(rd, "llm_ir_pages", fake_pages)
+    assert await rm.llm_ir({"pages": []}) is fake_doc
+    assert await rd.llm_ir({"pages": []}) is fake_doc

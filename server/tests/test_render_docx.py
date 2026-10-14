@@ -162,10 +162,8 @@ class TestBuildDocxFromIR:
 
     async def test_build_docx_llm_down_fallback(self, monkeypatch):
         """LLM down → heuristic fallback (no raise)."""
-        fake_llm(
-            monkeypatch,
-            [httpx.ConnectError("refused"), httpx.ConnectError("refused")],
-        )
+        # S2: page attempt + retry + full-fallback = 3×_chat, mỗi retry 1 → 6
+        fake_llm(monkeypatch, [httpx.ConnectError("refused")] * 6)
         data = await build_docx(_ocr_result())  # no raise
         assert data[:2] == b"PK"
 

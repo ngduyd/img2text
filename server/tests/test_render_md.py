@@ -183,10 +183,8 @@ class TestBuildMDFromIR:
 
     async def test_build_md_llm_down_fallback(self, monkeypatch):
         """LLM down → heuristic fallback (no raise)."""
-        fake_llm(
-            monkeypatch,
-            [httpx.ConnectError("refused"), httpx.ConnectError("refused")],
-        )
+        # S2: page attempt + retry + full-fallback = 3×_chat, mỗi retry 1 → 6
+        fake_llm(monkeypatch, [httpx.ConnectError("refused")] * 6)
         out = await build_md(_ocr_result())  # no raise
         assert out  # fallback output
 
@@ -369,8 +367,8 @@ class TestLLMLogLoudness:
 
     async def test_chat_failure_logs_repr_and_attempt(self, monkeypatch, caplog):
         caplog.set_level("WARNING", logger="render_md")
-        fake_llm(monkeypatch, [httpx.ConnectError("conn refused"),
-                               httpx.ConnectError("conn refused")])
+        # S2: page attempt + retry + full-fallback = 3×_chat, mỗi _chat retry 1 → 6
+        fake_llm(monkeypatch, [httpx.ConnectError("conn refused")] * 6)
         out = await build_md(_ocr_result())  # LLMError nuốt → heuristic fallback
         assert out
         msgs = [r.getMessage() for r in caplog.records]
@@ -379,8 +377,8 @@ class TestLLMLogLoudness:
 
     async def test_fallback_warning_is_loud(self, monkeypatch, caplog):
         caplog.set_level("WARNING", logger="render_md")
-        fake_llm(monkeypatch, [httpx.ConnectError("conn refused"),
-                               httpx.ConnectError("conn refused")])
+        # S2: page attempt + retry + full-fallback = 3×_chat, mỗi _chat retry 1 → 6
+        fake_llm(monkeypatch, [httpx.ConnectError("conn refused")] * 6)
         out = await build_md(_ocr_result())  # heuristic fallback, no raise
         assert out
         msgs = [r.getMessage() for r in caplog.records]
@@ -398,7 +396,8 @@ async def test_fallback_stats_counter(monkeypatch, caplog):
         render_md, "_FALLBACK_STATS", {"fallback": 0, "total": 0}
     )
     caplog.set_level("WARNING", logger="app.services.render_md")
-    fake_llm(monkeypatch, [httpx.ConnectError("refused"), httpx.ConnectError("refused")])
+    # S2: 3×_chat (page + retry + full-fallback), mỗi _chat retry 1 → 6
+    fake_llm(monkeypatch, [httpx.ConnectError("refused")] * 6)
     await build_md(_ocr_result())  # LLMError → heuristic
     stats = render_md._FALLBACK_STATS
     assert stats == {"fallback": 1, "total": 1}

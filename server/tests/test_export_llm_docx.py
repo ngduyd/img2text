@@ -211,7 +211,8 @@ async def test_build_docx_llm_down_raises(
     caplog.set_level("INFO", logger="app.services.render_docx")
     fake_llm(
         monkeypatch,
-        [httpx.ConnectError("refused"), httpx.ConnectError("refused")],
+        # S2: 3×_chat (page + retry + full-fallback), mỗi _chat retry 1 → 6
+        [httpx.ConnectError("refused")] * 6,
     )
     # LLM down → heuristic fallback (no raise)
     data = await build_docx(VALID_RESULT_JSONB)
@@ -383,7 +384,8 @@ async def test_export_docx_layout_llm_down_502_no_cache(
 ):
     fake_llm(
         monkeypatch,
-        [httpx.ConnectError("refused"), httpx.ConnectError("refused")],
+        # S2: 3×_chat (page + retry + full-fallback), mỗi _chat retry 1 → 6
+        [httpx.ConnectError("refused")] * 6,
     )
     r = await auth_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "docx-layout"}
@@ -481,7 +483,8 @@ async def test_docx_fallback_stats_counter(monkeypatch, VALID_RESULT_JSONB, capl
     from app.services import render_docx
     monkeypatch.setattr(render_docx, "_FALLBACK_STATS", {"fallback": 0, "total": 0})
     caplog.set_level("WARNING", logger="app.services.render_docx")
-    fake_llm(monkeypatch, [httpx.ConnectError("refused"), httpx.ConnectError("refused")])
+    # S2: 3×_chat (page + retry + full-fallback), mỗi _chat retry 1 → 6
+    fake_llm(monkeypatch, [httpx.ConnectError("refused")] * 6)
     await build_docx(VALID_RESULT_JSONB)
     assert render_docx._FALLBACK_STATS == {"fallback": 1, "total": 1}
     msg = [r.getMessage() for r in caplog.records if "tỉ lệ 1/1" in r.getMessage()]
