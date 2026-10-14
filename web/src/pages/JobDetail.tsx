@@ -52,13 +52,10 @@ export default function JobDetail() {
   const [retryError, setRetryError] = useState<string | null>(null);
   /** JD2: btn-edit-doc = inline edit ON THIS PAGE — section Layout: preview ↔ editor. */
   const [editing, setEditing] = useState(false);
-  /** Lane I Task 5: dropdown "Tải xuống" ở header (gộp 4 định dạng text). */
+  /** Lane I Task 6: dropdown "Tải xuống" ở header (gộp 4 định dạng text). */
   const [downloadOpen, setDownloadOpen] = useState(false);
-  /** Lane I Task 6: định dạng layout đang xem (header switch → export → crossfade preview).
-   *  Review r1 P0: override của switch; null → init theo job.output_format (đồng bộ preview). */
-  const [layoutFmtOverride, setLayoutFmtOverride] = useState<"md-layout" | "docx-layout" | null>(null);
-  const layoutFmt =
-    layoutFmtOverride ?? (job?.output_format === "docx" ? "docx-layout" : "md-layout");
+  /** U7: bỏ switch MD/Word — fmt fixed init theo job.output_format. */
+  const layoutFmt = job?.output_format === "docx" ? "docx-layout" : "md-layout";
   const [retryingLayout, setRetryingLayout] = useState(false);
   const [confirmRetry, setConfirmRetry] = useState(false);
   /** P0-C: panel "Lịch sử" — list lazy-fetch khi mở (queryKey "versions" để invalidate). */
@@ -111,21 +108,6 @@ export default function JobDetail() {
       toast.error(mapApiError(err));
     } finally {
       setRetryingLayout(false);
-    }
-  };
-
-  /**
-   * Lane I Task 6: switch md-layout ↔ docx-layout — export fmt (cache-hit server
-   * trả URL presigned ngay) → toast + crossfade preview (CSS 200ms, key remount).
-   */
-  const switchLayoutFmt = async (fmt: "md-layout" | "docx-layout") => {
-    if (fmt === layoutFmt) return;
-    try {
-      await api.exportJob(id!, fmt);
-      setLayoutFmtOverride(fmt);
-      toast.success(t("jd.layoutFmtChanged"));
-    } catch (err) {
-      toast.error(mapApiError(err));
     }
   };
 
@@ -270,35 +252,6 @@ export default function JobDetail() {
             >
               {t("jd.retryLayout")}
             </Button>
-          )}
-          {/* Lane I Task 6: switch định dạng layout md-layout ↔ docx-layout. */}
-          {job.status === "done" && result && job.mode !== "extract_only" && (
-            <div
-              role="group"
-              aria-label={t("jd.layoutFmtAria")}
-              className="inline-flex items-center gap-1 rounded-md border border-border p-1"
-            >
-              <Button
-                testid="fmt-md-layout"
-                variant="ghost"
-                size="sm"
-                aria-pressed={layoutFmt === "md-layout"}
-                className={layoutFmt === "md-layout" ? "bg-surface-2 font-semibold" : ""}
-                onClick={() => void switchLayoutFmt("md-layout")}
-              >
-                Markdown
-              </Button>
-              <Button
-                testid="fmt-docx-layout"
-                variant="ghost"
-                size="sm"
-                aria-pressed={layoutFmt === "docx-layout"}
-                className={layoutFmt === "docx-layout" ? "bg-surface-2 font-semibold" : ""}
-                onClick={() => void switchLayoutFmt("docx-layout")}
-              >
-                DOCX
-              </Button>
-            </div>
           )}
           {/* JD2 amendment: Edit = inline edit trong section Layout (preview ↔ editor). */}
           <Button
@@ -493,10 +446,7 @@ export default function JobDetail() {
                   hostRef={editorHostRef}
                 />
               ) : (
-                /* Lane I Task 6: key remount + CSS crossfade 200ms khi đổi định dạng. */
-                <div key={layoutFmt} className="layout-crossfade">
-                  <LayoutPreview job={job} fmt={layoutFmt} onFmtChange={setLayoutFmtOverride} />
-                </div>
+                <LayoutPreview job={job} fmt={layoutFmt} />
               )}
               {/* Stats line dưới preview (spec: SECTION Layout). */}
               <p data-testid="result-stats" className="text-sm text-muted">

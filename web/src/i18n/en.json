@@ -161,8 +161,6 @@
     "retryLayoutFailed": "Could not rebuild the layout.",
     "retryLayoutConfirmTitle": "Rebuild layout?",
     "retryLayoutConfirmMessage": "The whole layout (Markdown + DOCX) will be rebuilt by the LLM. Continue?",
-    "layoutFmtAria": "Layout format",
-    "layoutFmtChanged": "Layout format changed.",
     "edit": "Edit",
     "editing": "Editing",
     "history": "History",
@@ -269,7 +267,6 @@
     "copied": "IR copied"
   },
   "preview": {
-    "modeAria": "Preview mode",
     "wordTitle": "Word layout preview"
   },
   "region": {

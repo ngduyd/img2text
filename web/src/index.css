@@ -93,20 +93,6 @@ iframe {
   }
 }
 
-/* Lane I Task 6: crossfade preview 200ms khi đổi định dạng layout (CSS-only). */
-@keyframes layout-fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.layout-crossfade {
-  animation: layout-fade 200ms ease-out;
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

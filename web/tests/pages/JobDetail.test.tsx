@@ -363,49 +363,17 @@ it("header download dropdown: 4 text formats call exportJob + open url", async (
   expect(api.exportJob).toHaveBeenCalledWith("5", "docx");
   await waitFor(() => expect(w.location).toBe("https://r2/exports/5/docx"));
 });
-/** Lane I Task 6: switch md-layout ↔ docx-layout ở header → export fmt + crossfade preview. */
-it("layout fmt switch: click docx-layout → exportJob docx-layout + toast + crossfade", async () => {
-  mockJob(DONE_JOB); // output_format undefined → default md-layout
-  vi.mocked(api.exportJob).mockResolvedValue({ url: "" });
-  vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["# A"]));
-  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  const user = userEvent.setup();
-  const btnMd = await screen.findByTestId("fmt-md-layout");
-  expect(btnMd).toHaveAttribute("aria-pressed", "true");
-  const btnDocx = screen.getByTestId("fmt-docx-layout");
-  expect(btnDocx).toHaveAttribute("aria-pressed", "false");
-  const preview = screen.getByTestId("layout-preview");
-  expect(preview.parentElement?.className).toContain("layout-crossfade");
-  await user.click(btnDocx);
-  await waitFor(() =>
-    expect(api.exportJob).toHaveBeenCalledWith("5", "docx-layout"),
-  );
-  await waitFor(() =>
-    expect(toast.success).toHaveBeenCalledWith("Layout format changed."),
-  );
-  expect(screen.getByTestId("fmt-docx-layout")).toHaveAttribute("aria-pressed", "true");
-});
-
-/** Review r1 P0: header fmt switch PHẢI nối preview — click docx-layout → preview chuyển word mode. */
-it("review r1 P0: header fmt-docx-layout → LayoutPreview switches to word mode (fmt prop)", async () => {
-  mockJob(DONE_JOB);
-  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  const user = userEvent.setup();
-  await screen.findByTestId("layout-preview");
-  expect(screen.getByTestId("preview-md")).toBeInTheDocument();
-  await user.click(await screen.findByTestId("fmt-docx-layout"));
-  await waitFor(() => expect(api.exportJob).toHaveBeenCalledWith("5", "docx-layout"));
-  expect(await screen.findByTestId("preview-word")).toBeInTheDocument();
-  expect(screen.queryByTestId("preview-md")).not.toBeInTheDocument();
-});
-
-/** Review r1 P0 init: output_format docx → header switch + preview CÙNG word mode từ đầu. */
-it("review r1 P0: output_format docx → fmt-docx-layout pressed + preview-word on init", async () => {
+/** U7: xóa TOÀN BỘ switch MD/Word — header fmt switch + preview toggle vắng trong DOM. */
+it("U7: no fmt-md-layout/fmt-docx-layout/preview-mode-md/preview-mode-word in DOM; fmt fixed = output_format", async () => {
   mockJob({ ...DONE_JOB, output_format: "docx" });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await screen.findByTestId("layout-preview");
+  expect(screen.queryByTestId("fmt-md-layout")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("fmt-docx-layout")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("preview-mode-md")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("preview-mode-word")).not.toBeInTheDocument();
+  // fmt fixed init job.output_format=docx → word mode ngay từ đầu (không switch).
   expect(await screen.findByTestId("preview-word")).toBeInTheDocument();
-  expect(screen.getByTestId("fmt-docx-layout")).toHaveAttribute("aria-pressed", "true");
-  expect(screen.getByTestId("fmt-md-layout")).toHaveAttribute("aria-pressed", "false");
 });
 
 /** Review r1 P1: btn-retry-layout DUY NHẤT — editor retry đổi tên btn-retry-layout-error. */
