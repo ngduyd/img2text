@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -11,6 +12,7 @@ import Input from "../components/ui/Input";
 export default function Register() {
   const { t } = useT();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -22,8 +24,13 @@ export default function Register() {
     setLoading(true);
     try {
       await api.register(email, password);
+      // S5: register KHÔNG set cookie → tự login lấy session.
+      const user = await api.login(email, password);
+      queryClient.setQueryData(["me"], user);
       toast.success(t("auth.signup.created"));
-      navigate("/signin");
+      // Route theo is_verified: chưa verify → trang chủ "/" (route guard VerifyGating
+      // mở modal verify); đã verify → /jobs như login.
+      navigate(user.is_verified === false ? "/" : "/jobs");
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : t("errors.generic"));
       toast.error(mapApiError(err));

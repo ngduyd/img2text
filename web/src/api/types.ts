@@ -7,6 +7,9 @@ export interface User {
   email: string;
   role: string;
   ocr_enabled: boolean;
+  /** S5: UserOut (login/me) trả; false → gating 403 + verify modal. Optional vì
+   *  một số response/mock cũ không set. */
+  is_verified?: boolean;
   /** Present on /api/admin/users items; /api/auth/me (UserOut) omits it. */
   created_at?: string;
   /** Admin list only (GET /api/admin/users) — cột quota T5. */

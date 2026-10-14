@@ -188,8 +188,10 @@ async function uploadPresigned(
 }
 
 export const api = {
+  // S5: register KHÔNG set cookie (duplicate cũng {status:"ok"} — anti-enumeration)
+  // → client tự login lấy session (Lane C2 Task 1).
   register: (email: string, password: string) =>
-    request<User>("/api/auth/register", { method: "POST", body: { email, password } }),
+    request<{ status: string }>("/api/auth/register", { method: "POST", body: { email, password } }),
   login: (email: string, password: string) =>
     request<User>("/api/auth/login", { method: "POST", body: { email, password } }),
   logout: () => request<unknown>("/api/auth/logout", { method: "POST" }),
