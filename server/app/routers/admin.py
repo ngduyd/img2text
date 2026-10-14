@@ -18,10 +18,12 @@ from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import get_current_user, require_admin
 from app.core.models import Job, PageView, RequestLog, Setting, User, WorkerHeartbeat
+from app.services.purge import purge_due_jobs
 from app.services.runtime_settings import (
     RUNTIME_SETTING_KEYS,
     get_runtime_setting_entry,
 )
+from app.services.storage import StorageDriver, get_storage
 from app.services.quota import (
     DAILY_DEFAULT,
     WEEKLY_DEFAULT,
@@ -361,6 +363,117 @@ def kaggle_quota(_: User = Depends(_admin_user)) -> dict:
     """Lane K: quota GPU/TPU hiện tại từ Kaggle. sync def → threadpool
     (quota_view() network call chặn event loop nếu chạy async)."""
     return _kaggle_quota_payload()
+
+# --- Lane B3 (S4): admin storage-cleanup page ---
+
+async def _purge_retention_days(session: AsyncSession) -> int:
+    """purge_retention_days: Setting override (mirror scheduler tick) else env."""
+    row = await session.get(Setting, "purge_retention_days")
+    if row is None:
+        return settings.purge_retention_days
+    try:
+        return max(1, int(row.value))
+    except (TypeError, ValueError):
+        return settings.purge_retention_days
+
+@router.get("/storage")
+async def admin_storage(
+    session: AsyncSession = Depends(get_session),
+    _: User = Depends(_admin_user),
+    page: int = 1,
+    size: int = 20,
+) -> dict:
+    """Lane B3: stats dung lượng + list jobs cũ (created_at < cutoff) paged.
+
+    due_jobs = đúng predicate purge batch (done + auto_purge + chưa purge) —
+    số việc POST purge-due sẽ thật sự làm. Page clamp mirror list_users.
+    """
+    page = max(1, page)
+    size = min(100, max(1, size))
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        days=await _purge_retention_days(session)
+    )
+    total_jobs = (await session.scalar(select(func.count()).select_from(Job))) or 0
+    purged_jobs = (
+        await session.scalar(
+            select(func.count()).where(Job.storage_purged_at.is_not(None))
+        )
+    ) or 0
+    total_upload_bytes = int(
+        await session.scalar(select(func.coalesce(func.sum(Job.upload_bytes), 0)))
+        or 0
+    )
+    purged_bytes = int(
+        await session.scalar(
+            select(func.coalesce(func.sum(Job.upload_bytes), 0)).where(
+                Job.storage_purged_at.is_not(None)
+            )
+        )
+        or 0
+    )
+    due_jobs = (
+        await session.scalar(
+            select(func.count())
+            .select_from(Job)
+            .join(User, User.id == Job.user_id)
+            .where(
+                Job.status == "done",
+                Job.created_at < cutoff,
+                Job.storage_purged_at.is_(None),
+                User.auto_purge.is_(True),
+            )
+        )
+    ) or 0
+    old = (
+        await session.execute(
+            select(Job, User.email, User.auto_purge)
+            .join(User, User.id == Job.user_id)
+            .where(Job.created_at < cutoff)
+            .order_by(Job.created_at, Job.id)
+            .offset((page - 1) * size)
+            .limit(size)
+        )
+    ).all()
+    total_old = (
+        await session.scalar(
+            select(func.count()).select_from(Job).where(Job.created_at < cutoff)
+        )
+    ) or 0
+    return {
+        "stats": {
+            "total_jobs": total_jobs,
+            "purged_jobs": purged_jobs,
+            "due_jobs": due_jobs,
+            "total_upload_bytes": total_upload_bytes,
+            "purged_bytes": purged_bytes,
+        },
+        "items": [
+            {
+                "id": j.id,
+                "email": email,
+                "filename": j.filename,
+                "upload_bytes": j.upload_bytes,
+                "created_at": j.created_at.isoformat() if j.created_at else None,
+                "storage_purged_at": (
+                    j.storage_purged_at.isoformat() if j.storage_purged_at else None
+                ),
+                "auto_purge": auto_purge,
+            }
+            for j, email, auto_purge in old
+        ],
+        "total": total_old,
+    }
+
+@router.post("/storage/purge-due")
+async def admin_storage_purge_due(
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+    _: User = Depends(_admin_user),
+) -> dict:
+    """Lane B3: chạy purge_due_jobs NGAY (cùng retention + batch limit với
+    scheduler tick) — {purged: n}. purge_due_jobs tự commit."""
+    n = await purge_due_jobs(session, storage, await _purge_retention_days(session))
+    return {"purged": n}
 
 # --- Plan S: runtime settings (admin live tuning, scheduler/kaggle) ---
 

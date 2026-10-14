@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { BarChart3, LayoutDashboard, MessageSquare, ScrollText, Settings, Terminal, Users } from "lucide-react";
+import { BarChart3, HardDrive, LayoutDashboard, MessageSquare, ScrollText, Settings, Terminal, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useT } from "../i18n";
@@ -12,6 +12,7 @@ import AdminOverview from "./admin/AdminOverview";
 import type { AdminTabId } from "./admin/AdminOverview";
 import AdminSettings from "./admin/AdminSettings";
 import AdminStats from "./admin/AdminStats";
+import AdminStorage from "./admin/AdminStorage";
 import AdminWorkers from "./admin/AdminWorkers";
 import AdminUsers from "./admin/AdminUsers";
 
@@ -22,6 +23,7 @@ const TABS = [
   { id: "api", labelKey: "admin.tab.api", icon: Terminal },
   { id: "logs", labelKey: "admin.tab.logs", icon: ScrollText },
   { id: "stats", labelKey: "admin.tab.stats", icon: BarChart3 },
+  { id: "storage", labelKey: "admin.tab.storage", icon: HardDrive },
   { id: "settings", labelKey: "admin.tab.settings", icon: Settings },
   // Lane B2 (wave-5 S6): feedback list.
   { id: "feedbacks", labelKey: "admin.tab.feedbacks", icon: MessageSquare },
@@ -96,6 +98,7 @@ export default function Admin() {
               {tab === "api" && <AdminApi />}
               {tab === "logs" && <AdminLogs />}
               {tab === "stats" && <AdminStats />}
+              {tab === "storage" && <AdminStorage />}
               {tab === "settings" && <AdminSettings />}
               {tab === "feedbacks" && <AdminFeedbacks />}
             </>
