@@ -20,7 +20,7 @@ it("pending → done fires success toast once", () => {
   const { rerender } = hook([{ id: 1, status: "queued" }]);
   rerender({ jobs: [{ id: 1, status: "done" }] });
   expect(toast.success).toHaveBeenCalledTimes(1);
-  expect(toast.success).toHaveBeenCalledWith("Job đã xong: #1");
+  expect(toast.success).toHaveBeenCalledWith("Job done: #1");
   // Poll tiếp (done → done) KHÔNG toast lại.
   rerender({ jobs: [{ id: 1, status: "done" }] });
   expect(toast.success).toHaveBeenCalledTimes(1);
@@ -29,13 +29,13 @@ it("pending → done fires success toast once", () => {
 it("pending → done with filename → toast dùng tên file thật", () => {
   const { rerender } = hook([{ id: 9, status: "queued", filename: "sach-viet.pdf" }]);
   rerender({ jobs: [{ id: 9, status: "done", filename: "sach-viet.pdf" }] });
-  expect(toast.success).toHaveBeenCalledWith("Job đã xong: sach-viet.pdf");
+  expect(toast.success).toHaveBeenCalledWith("Job done: sach-viet.pdf");
 });
 
 it("pending → failed fires error toast", () => {
   const { rerender } = hook([{ id: 2, status: "extracting" }]);
   rerender({ jobs: [{ id: 2, status: "failed", error: "boom" }] });
-  expect(toast.error).toHaveBeenCalledWith("Job #2 thất bại: boom");
+  expect(toast.error).toHaveBeenCalledWith("Job #2 failed: boom");
   expect(toast.success).not.toHaveBeenCalled();
 });
 

@@ -48,7 +48,7 @@ test("invalid quota input → field error, patch không gọi", async () => {
   fireEvent.change(daily, { target: { value: "100001" } });
   fireEvent.click(screen.getByTestId("save-quota-2"));
   await waitFor(() =>
-    expect(screen.getAllByRole("alert")[0]).toHaveTextContent("0–10000"),
+    expect(screen.getAllByRole("alert")[0]).toHaveTextContent("between 0 and 10000"),
   );
   expect(daily).toHaveValue(100001); // controlled: giá trị gõ giữ nguyên
   expect(patchQuota).not.toHaveBeenCalled();

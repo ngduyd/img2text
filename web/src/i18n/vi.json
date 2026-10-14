@@ -53,6 +53,9 @@
     "enabled": "OCR đã cấp",
     "pending": "Chờ admin cấp quyền"
   },
+  "issues": {
+    "cropAria": "Cắt vùng {rid}"
+  },
   "toast": {
     "jobDone": "Job đã xong: {name}",
     "jobFailed": "Job #{id} thất bại",

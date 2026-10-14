@@ -43,10 +43,10 @@ test("render quota + format giây→giờ", async () => {
   renderCard();
   expect(
     (await screen.findByTestId("kaggle-quota-gpu")).textContent,
-  ).toBe("GPU: dùng 1h 38m/6h · còn 4h 21m");
+  ).toBe("GPU: used 1h 38m/6h · left 4h 21m");
   expect(
     (await screen.findByTestId("kaggle-quota-tpu")).textContent,
-  ).toBe("TPU: dùng 2h/20h");
+  ).toBe("TPU: used 2h/20h");
   expect(screen.getByTestId("kaggle-quota-refresh-time").textContent).toMatch(/2026/);
 });
 

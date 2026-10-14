@@ -4,7 +4,7 @@ import { ChevronDown } from "lucide-react";
 import { api } from "../api/client";
 import type { RegionOut } from "../api/types";
 import { VERDICT_KEY } from "../lib/verdicts";
-import { useT } from "../i18n";
+import { translate, useT } from "../i18n";
 import RegionEditor from "./RegionEditor";
 import Button from "./ui/Button";
 
@@ -26,7 +26,7 @@ function Crop({ jobId, rid, fileType }: { jobId: string; rid: string; fileType: 
     <img
       data-testid={`crop-${rid}`}
       src={data.url}
-      alt={`Cắt vùng ${rid}`}
+      alt={translate("issues.cropAria", { rid })}
       className="mt-1 max-w-40 rounded-md"
     />
   );

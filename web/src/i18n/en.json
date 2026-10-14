@@ -53,6 +53,9 @@
     "enabled": "OCR enabled",
     "pending": "Waiting for admin to grant OCR access"
   },
+  "issues": {
+    "cropAria": "Crop of region {rid}"
+  },
   "toast": {
     "jobDone": "Job done: {name}",
     "jobFailed": "Job #{id} failed",
