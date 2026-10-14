@@ -664,6 +664,9 @@ async def get_job_file(
     storage: StorageDriver = Depends(get_storage),
 ) -> dict:
     job = await _job_or_403(session, id, user)
+    if job.storage_purged_at is not None:
+        # review P2a: presigned URL tới object đã xóa = UX chết → 410
+        raise HTTPException(status_code=410, detail={"code": "purged"})
     url = await storage.presign_get(job.storage_key, PRESIGN_EXPIRES_SECONDS)
     return {"url": url}
 
@@ -686,6 +689,8 @@ async def download_job_file(
     non-ascii never occurs, so no RFC 5987 filename* needed.
     """
     job = await _job_or_403(session, id, user)
+    if job.storage_purged_at is not None:  # review P2a: object đã xóa
+        raise HTTPException(status_code=410, detail={"code": "purged"})
     if not job.storage_key:  # pre-upload job row
         raise HTTPException(status_code=404, detail="Chưa có file.")
     try:

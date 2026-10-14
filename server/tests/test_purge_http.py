@@ -76,3 +76,21 @@ async def test_detail_serializer_shows_purged(auth_client, app, db_session):
     assert body["storage_purged_at"] is not None
     lst = (await auth_client.get("/api/jobs")).json()["items"][0]
     assert lst["storage_purged_at"] is not None
+
+# --- review P2a: /file + /file/download trả URL/stream tới object đã xóa ----
+
+async def test_file_presign_after_purge_410(auth_client, app, db_session):
+    """GET /file khi storage_purged_at set → 410 {code: purged} (không presign URL chết)."""
+    jid = await _done_job_with_upload(auth_client, app, db_session)
+    assert (await auth_client.post(f"/api/jobs/{jid}/purge-storage")).status_code == 204
+    r = await auth_client.get(f"/api/jobs/{jid}/file")
+    assert r.status_code == 410
+    assert r.json()["detail"] == {"code": "purged"}
+
+async def test_file_download_after_purge_410(auth_client, app, db_session):
+    """GET /file/download khi storage_purged_at set → 410 {code: purged}."""
+    jid = await _done_job_with_upload(auth_client, app, db_session)
+    assert (await auth_client.post(f"/api/jobs/{jid}/purge-storage")).status_code == 204
+    r = await auth_client.get(f"/api/jobs/{jid}/file/download")
+    assert r.status_code == 410
+    assert r.json()["detail"] == {"code": "purged"}
