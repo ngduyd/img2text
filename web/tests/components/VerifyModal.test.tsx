@@ -76,31 +76,31 @@ it("chưa đủ 6 số → btn-verify disabled", () => {
   expect(screen.getByTestId("btn-verify")).toBeDisabled();
 });
 
-it("TTL countdown 5:00 local + resend cooldown 30s", async () => {
+it("TTL countdown 5:00 local + resend cooldown chạy sau resend thật", async () => {
   vi.useFakeTimers();
   renderModal();
   expect(screen.getByTestId("verify-ttl")).toHaveTextContent("5:00");
 
+  // P2 review fix: cooldown khởi động 0 — gating-triggered open không
+  // bị chặn 30s oan (code cũ có thể đã hết hạn, cần resend ngay).
   const resend = screen.getByTestId("btn-resend");
-  expect(resend).toBeDisabled();
-  expect(resend).toHaveTextContent("Resend code in 30s");
+  expect(resend).toBeEnabled();
+  expect(resend).toHaveTextContent("Resend code");
 
-  // 1s tick → 4:59; 30s → cooldown hết.
   await act(async () => vi.advanceTimersByTime(1000));
   expect(screen.getByTestId("verify-ttl")).toHaveTextContent("4:59");
-  await act(async () => vi.advanceTimersByTime(29000));
-  expect(screen.getByTestId("btn-resend")).toBeEnabled();
-  expect(screen.getByTestId("btn-resend")).toHaveTextContent("Resend code");
 
   vi.mocked(api.verifyResend).mockResolvedValue({});
   await act(async () => {
     fireEvent.click(screen.getByTestId("btn-resend"));
   });
   expect(api.verifyResend).toHaveBeenCalledTimes(1);
-  // Code mới → TTL reset 5:00 + cooldown 30s lại chạy.
+  // Code mới → TTL reset 5:00 + cooldown 30s chạy SAU resend.
   expect(screen.getByTestId("verify-ttl")).toHaveTextContent("5:00");
   expect(screen.getByTestId("btn-resend")).toBeDisabled();
   expect(screen.getByTestId("btn-resend")).toHaveTextContent("Resend code in 30s");
+  await act(async () => vi.advanceTimersByTime(30000));
+  expect(screen.getByTestId("btn-resend")).toBeEnabled();
 });
 
 it("resend 429 {code:email_limit} → lỗi i18n, không reset cooldown", async () => {
