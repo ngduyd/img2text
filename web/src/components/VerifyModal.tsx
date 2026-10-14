@@ -45,6 +45,7 @@ export default function VerifyModal({ email, onVerified, onLogout }: VerifyModal
   const [loading, setLoading] = useState(false);
   const [ttl, setTtl] = useState(TTL_SECONDS);
   const [cooldown, setCooldown] = useState(0);
+  const [resending, setResending] = useState(false);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -79,6 +80,7 @@ export default function VerifyModal({ email, onVerified, onLogout }: VerifyModal
 
   async function onResend() {
     setError(null);
+    setResending(true);
     try {
       await api.verifyResend();
       // Code mới ghi đè code cũ → reset TTL + cooldown.
@@ -86,12 +88,18 @@ export default function VerifyModal({ email, onVerified, onLogout }: VerifyModal
       setCooldown(RESEND_COOLDOWN);
       setCode("");
     } catch (err) {
-      // 400 {code:"already_verified"} → coi như verified, unlock.
-      if (err instanceof ApiError && err.code === "already_verified") {
+      // 400 {code:"already_verified"} → coi như verified, unlock
+      // (align onSubmit: check code hoặc detail).
+      if (
+        err instanceof ApiError &&
+        (err.code === "already_verified" || err.detail === "already_verified")
+      ) {
         await onVerified?.();
         return;
       }
       setError(verifyError(err, t));
+    } finally {
+      setResending(false);
     }
   }
 
@@ -146,7 +154,7 @@ export default function VerifyModal({ email, onVerified, onLogout }: VerifyModal
             testid="btn-resend"
             type="button"
             variant="secondary"
-            disabled={cooldown > 0}
+            disabled={cooldown > 0 || resending}
             onClick={onResend}
             className="w-full"
           >
