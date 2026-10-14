@@ -6,7 +6,7 @@ import VerifyModal from "./VerifyModal";
 
 /** Lane C2 (S5): route guard — login/register/features ngoài gating; mọi trang
  *  app còn lại khi unverified → modal overlay (nội dung KHÔNG bị ẩn). */
-const EXEMPT_ROUTES = ["/signin", "/signup", "/features"];
+const EXEMPT_ROUTES = ["/signin", "/signup", "/features", "/forgot", "/reset"];
 
 /** Global gating: (a) 403 email_unverified từ bất kỳ API call nào (listener trong
  *  request()) hoặc (b) ["me"] trả is_verified=false → hiện VerifyModal.
