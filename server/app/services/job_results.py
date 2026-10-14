@@ -102,6 +102,8 @@ async def _auto_output(job: Job, storage: StorageDriver) -> None:
                 "status": "failed",
                 "failed_step": "rendering",
                 "finished_at": now,
+                # wave-5 S1 refund: failed → hoàn bytes
+                "upload_bytes": 0,
             }
         )
         await session.execute(

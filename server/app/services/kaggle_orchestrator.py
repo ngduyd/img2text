@@ -790,6 +790,8 @@ async def _fail_job_extracting(session_factory, job_id: int, error: str) -> None
                 error=error,
                 finished_at=datetime.now(timezone.utc),
                 lease_expires_at=None,
+                # wave-5 S1 refund: failed → hoàn bytes
+                upload_bytes=0,
             )
         )
         await session.commit()

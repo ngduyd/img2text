@@ -35,7 +35,7 @@ from app.services.doc_versions import (
     snapshot_current_layout,
 )
 from app.services.job_results import _schedule_auto_output, store_worker_result
-from app.services.quota import ensure_quota, quota_me
+from app.services.quota import ensure_bytes_quota, ensure_quota, quota_me
 from app.services.layout_sync import (
     DOCX_HTML_KEY,
     DOCX_LAYOUT_KEY,
@@ -341,6 +341,8 @@ async def create_job(
     # WS-ADMIN quota: pre-create gate SAU các 422 validation (giữ 422 pin),
     # TRƯỚC khi insert row.
     await ensure_quota(session, user, body.page_count)
+    # wave-5 S1: gate bytes 7 ngày (size thật từ HEAD) → 429 upload_quota.
+    await ensure_bytes_quota(session, user, size)
     filename = _clean_filename(body.filename)
     file_type = "pdf" if ext == "pdf" else "image"
     # Plan W: preprocess validated AFTER page_count known, BEFORE the row write
@@ -386,6 +388,8 @@ async def create_job(
         preprocess=preprocess_json,
         output_format=body.output_format,
         mode=body.mode,
+        # wave-5 S1: bytes thật cho cửa sổ 7 ngày (refund = 0 khi fail/cancel)
+        upload_bytes=size,
     )
     session.add(job)
     await session.commit()
@@ -465,6 +469,9 @@ async def list_jobs(
             "filename": j.filename,
             "created_at": j.created_at,
             "error": j.error,
+            # wave-5 S1: quota bytes + badge "file gốc đã hết hạn"
+            "upload_bytes": j.upload_bytes,
+            "storage_purged_at": j.storage_purged_at,
         }
         for j in rows
     ]
@@ -547,6 +554,9 @@ async def get_job(
         "finished_at": job.finished_at,
         "text_version": job.text_version,
         "stale_layouts": stale_layouts,
+        # wave-5 S1: quota bytes + badge purged
+        "upload_bytes": job.upload_bytes,
+        "storage_purged_at": job.storage_purged_at,
         # Plan M: unified-editor contract — artifact cache flags + word style
         # Plan M3: docx = docx.html (user-edited) OR docx-layout (LLM render)
         "layout_cache": {
@@ -1392,6 +1402,8 @@ async def fail_job(
                 finished_at=now,
                 worker_token=None,
                 lease_expires_at=None,
+                # wave-5 S1 refund: failed → hoàn bytes (không tính cửa sổ 7d)
+                upload_bytes=0,
             )
         )
     ).rowcount
@@ -1481,6 +1493,8 @@ async def cancel_job(
         "status": "cancelled",
         "failed_step": None,
         "finished_at": _utcnow(),
+        # wave-5 S1 refund: cancelled → hoàn bytes
+        "upload_bytes": 0,
     }
     if job.status == "extracting":
         values["kaggle_ref"] = None
