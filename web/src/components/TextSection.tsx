@@ -124,11 +124,16 @@ export default function TextSection({
   regions,
   fileType,
   onSaved,
+  editingText: editingTextProp,
+  onEditingTextChange,
 }: {
   jobId: string;
   regions?: RegionOut[];
   fileType?: string;
   onSaved?: (result: ExtractionSaveResult) => void;
+  /** U2: controlled từ JobDetail (nút Edit ở heading row); thiếu prop → internal (ExtractionPage). */
+  editingText?: boolean;
+  onEditingTextChange?: (editing: boolean) => void;
 }) {
   const { t } = useT();
   const queryClient = useQueryClient();
@@ -147,8 +152,11 @@ export default function TextSection({
   const [customText, setCustomText] = useState("");
   /** P2-5: Lưu khi rỗng → lỗi inline (role="alert" + aria-describedby). */
   const [customError, setCustomError] = useState(false);
-  /** Lane I Task 1: toggle "Soạn thảo" — sửa tay thuần text (Tiptap) song song click-fix. */
-  const [editingText, setEditingText] = useState(false);
+  /** Lane I Task 1: toggle "Soạn thảo" — sửa tay thuần text (Tiptap) song song click-fix.
+   *  U2: JobDetail control qua prop; không prop → internal state (fallback). */
+  const [editingTextInternal, setEditingTextInternal] = useState(false);
+  const editingText = editingTextProp ?? editingTextInternal;
+  const setEditingText = onEditingTextChange ?? setEditingTextInternal;
   const [savingText, setSavingText] = useState(false);
   /** Task 6: save set cờ rerender (rendering | sync targeted-fail) → confirm xếp hàng. */
   const [rerenderModal, setRerenderModal] = useState(false);
@@ -317,16 +325,19 @@ export default function TextSection({
       )}
       {data && (
         <>
-          <div className="flex justify-end">
-            <Button
-              testid="btn-edit-text"
-              variant="secondary"
-              aria-pressed={editingText}
-              onClick={() => setEditingText((v) => !v)}
-            >
-              {editingText ? t("editor.editing") : t("editor.edit")}
-            </Button>
-          </div>
+          {/* U2: controlled (JobDetail) → nút Edit nằm heading row ngoài này; uncontrolled giữ nút nội bộ. */}
+          {onEditingTextChange === undefined && (
+            <div className="flex justify-end">
+              <Button
+                testid="btn-edit-text"
+                variant="secondary"
+                aria-pressed={editingText}
+                onClick={() => setEditingText(!editingText)}
+              >
+                {editingText ? t("editor.editing") : t("editor.edit")}
+              </Button>
+            </div>
+          )}
           {editingText ? (
             <TextEditor
               text={data.text}

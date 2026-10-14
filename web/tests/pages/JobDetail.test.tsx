@@ -296,8 +296,8 @@ it("not done shows status-only panels, ResultPanel hidden until done", async () 
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
   expect(screen.queryByTestId("panel-result")).toBeNull();
   expect(screen.getByTestId("status-5")).toHaveTextContent("Queued");
-  // JD2: chưa có markdown → Edit (inline) vô hiệu, không có dead click
-  expect(screen.getByTestId("btn-edit-doc")).toBeDisabled();
+  // JD2: chưa có markdown → section Layout ẩn, Edit (inline) không render (không dead click)
+  expect(screen.queryByTestId("btn-edit-doc")).not.toBeInTheDocument();
   expect(screen.queryByTestId("detail-reading")).toBeNull();
 });
 
@@ -310,10 +310,13 @@ it("header: back link, title, badge, actions in one row (adjust-only)", async ()
   expect(
     screen.getByRole("heading", { level: 1, name: "Job detail #5" }),
   ).toBeInTheDocument();
-  // JD2: output badge moved to rail meta; header keeps status badge
-  expect(screen.getByTestId("job-header")).toContainElement(
+  // U8: btn-edit-doc dời khỏi header → vào heading row section Layout.
+  expect(screen.getByTestId("job-header")).not.toContainElement(
     screen.getByTestId("btn-edit-doc"),
   );
+  expect(
+    within(screen.getByTestId("section-layout")).getByTestId("btn-edit-doc"),
+  ).toBeInTheDocument();
   expect(screen.queryByTestId("btn-retry-job")).not.toBeInTheDocument();
 });
 
@@ -374,6 +377,26 @@ it("U7: no fmt-md-layout/fmt-docx-layout/preview-mode-md/preview-mode-word in DO
   expect(screen.queryByTestId("preview-mode-word")).not.toBeInTheDocument();
   // fmt fixed init job.output_format=docx → word mode ngay từ đầu (không switch).
   expect(await screen.findByTestId("preview-word")).toBeInTheDocument();
+});
+
+/** U2+U8: nút Edit vào heading row — Text: heading → edit (không chevron); Layout: heading → edit. */
+it("U2+U8: edit buttons live in heading rows (Text no chevron; Layout heading→edit)", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  const textSection = await screen.findByTestId("section-text");
+  const editText = within(textSection).getByTestId("btn-edit-text");
+  const textRow = editText.parentElement!;
+  const textHeading = textSection.querySelector("h2")!;
+  // heading → edit: cùng row, heading đứng TRƯỚC button, đúng 2 children (không chevron).
+  expect(Array.from(textRow.children)).toEqual([textHeading, editText]);
+  // Text KHÔNG collapsible — không nút toggle section (IssuesPanel toggle là panel riêng).
+  expect(textSection.querySelector("[data-testid^='btn-toggle']")).toBeNull();
+  expect(textRow.querySelector("svg")).toBeNull();
+  const layoutSection = await screen.findByTestId("section-layout");
+  const editDoc = within(layoutSection).getByTestId("btn-edit-doc");
+  const layoutRow = editDoc.parentElement!;
+  const layoutHeading = layoutSection.querySelector("h2")!;
+  expect(layoutRow.firstElementChild).toBe(layoutHeading);
 });
 
 /**

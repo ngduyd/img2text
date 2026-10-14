@@ -52,6 +52,8 @@ export default function JobDetail() {
   const [retryError, setRetryError] = useState<string | null>(null);
   /** JD2: btn-edit-doc = inline edit ON THIS PAGE — section Layout: preview ↔ editor. */
   const [editing, setEditing] = useState(false);
+  /** U2: nút Edit text dời ra heading row section Text (controlled xuống TextSection). */
+  const [editingText, setEditingText] = useState(false);
   /** Lane I Task 6: dropdown "Tải xuống" ở header (gộp 4 định dạng text). */
   const [downloadOpen, setDownloadOpen] = useState(false);
   /** U7: bỏ switch MD/Word — fmt fixed init theo job.output_format. */
@@ -86,6 +88,7 @@ export default function JobDetail() {
   useEffect(() => {
     setConfirmDelete(false);
     setEditing(false);
+    setEditingText(false);
     setDownloadOpen(false);
     setRetryingLayout(false);
     setConfirmRetry(false);
@@ -266,17 +269,6 @@ export default function JobDetail() {
               {t("jd.retryLayout")}
             </Button>
           )}
-          {/* JD2 amendment: Edit = inline edit trong section Layout (preview ↔ editor). */}
-          <Button
-            testid="btn-edit-doc"
-            variant="secondary"
-            aria-pressed={editing}
-            disabled={job.status !== "done"}
-            onClick={toggleEdit}
-          >
-            <PenLine className="h-4 w-4" aria-hidden="true" />
-            {editing ? t("jd.editing") : t("jd.edit")}
-          </Button>
           {/* Lane I Task 5: download gộp 1 dropdown, dời lên cạnh "Chỉnh sửa". */}
           <DownloadDropdown
             jobId={id!}
@@ -428,11 +420,28 @@ export default function JobDetail() {
               aria-labelledby="section-text-title"
               className="flex flex-col gap-4"
             >
-              <h2 id="section-text-title" className="text-lg font-semibold tracking-tight">
-                {t("jd.sectionText")}
-              </h2>
+              <div className="flex items-center justify-between gap-2">
+                <h2 id="section-text-title" className="text-lg font-semibold tracking-tight">
+                  {t("jd.sectionText")}
+                </h2>
+                {/* U2: heading → edit; Text KHÔNG collapsible (chỉ scroll — U9). */}
+                <Button
+                  testid="btn-edit-text"
+                  variant="secondary"
+                  aria-pressed={editingText}
+                  onClick={() => setEditingText((v) => !v)}
+                >
+                  {editingText ? t("editor.editing") : t("editor.edit")}
+                </Button>
+              </div>
               <div data-testid="panel-result" className="flex min-w-0 flex-col gap-6">
-                <TextSection jobId={id!} regions={regions} fileType={job.file_type} />
+                <TextSection
+                  jobId={id!}
+                  regions={regions}
+                  fileType={job.file_type}
+                  editingText={editingText}
+                  onEditingTextChange={setEditingText}
+                />
               </div>
             </section>
           )}
@@ -448,6 +457,17 @@ export default function JobDetail() {
                 <h2 id="section-layout-title" className="text-lg font-semibold tracking-tight">
                   Layout
                 </h2>
+                {/* U8: Edit panel dời vào heading row — GIỮ behavior (disabled/aria-pressed/scroll). */}
+                <Button
+                  testid="btn-edit-doc"
+                  variant="secondary"
+                  aria-pressed={editing}
+                  disabled={job.status !== "done"}
+                  onClick={toggleEdit}
+                >
+                  <PenLine className="h-4 w-4" aria-hidden="true" />
+                  {editing ? t("jd.editing") : t("jd.edit")}
+                </Button>
               </div>
               {editing ? (
                 <UnifiedEditor
