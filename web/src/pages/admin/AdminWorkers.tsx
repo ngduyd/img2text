@@ -26,7 +26,7 @@ export default function AdminWorkers() {
   if (isError || !data) return null;
 
   return (
-    <Card testid="admin-workers" title="Workers" >
+    <Card testid="admin-workers" title={t("admin.card.workers")} >
       <p className="mb-2 text-sm text-muted">
         {t("admin.workers.queue")}{" "}
         <span data-testid="queue-depth" className="font-mono font-semibold text-text">

@@ -64,7 +64,7 @@ export default function RegionEditor({
           disabled={saving}
           onClick={save}
         >
-          Lưu
+          {t("common.save")}
         </Button>
         <Button
           testid={`btn-cancel-region-${region.id}`}
@@ -72,7 +72,7 @@ export default function RegionEditor({
           variant="secondary"
           onClick={onCancel}
         >
-          Huỷ
+          {t("common.cancel")}
         </Button>
       </div>
     </div>

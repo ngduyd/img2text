@@ -45,11 +45,16 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     let params: Record<string, string | number> | undefined;
     try {
       const data = (await res.json()) as {
-        detail?: string;
+        detail?: string | { code?: string; detail?: string };
         code?: string;
         params?: Record<string, string | number>;
       } | null;
       if (data && typeof data.detail === "string") detail = data.detail;
+      // Lane M3 P1b: HTTPException detail dict {code, detail} (vd. detached 409).
+      if (data && data.detail && typeof data.detail === "object") {
+        if (typeof data.detail.detail === "string") detail = data.detail.detail;
+        if (typeof data.detail.code === "string") code = data.detail.code;
+      }
       if (data && typeof data.code === "string") code = data.code;
       if (data && data.params && typeof data.params === "object") params = data.params;
     } catch {

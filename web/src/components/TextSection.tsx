@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { Fragment, Slice } from "@tiptap/pm/model";
+import type { EditorView } from "@tiptap/pm/view";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "../api/client";
@@ -33,6 +34,32 @@ const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /**
+ * Lane I Task 1: dán từ Word → preventDefault + chỉ chèn text/plain (mỗi dòng
+ * 1 paragraph, bỏ formatting HTML). PASTE STRIP. Module-level để setOptions
+ * (lane M3 P2 aria-label update) không mất handler.
+ */
+function stripPaste(view: EditorView, event: ClipboardEvent): boolean {
+  const plain = event.clipboardData?.getData("text/plain");
+  if (plain == null) return false;
+  // Review r1 P2f: plain rỗng cũng preventDefault + chèn "" — không rơi về HTML default.
+  event.preventDefault();
+  const frag = Fragment.fromArray(
+    plain
+      .replace(/\r\n?/g, "\n")
+      .split("\n")
+      .map((line) =>
+        view.state.schema.nodes.paragraph.create(
+          null,
+          line ? view.state.schema.text(line) : null,
+        ),
+      ),
+  );
+  // Không .scrollIntoView(): jsdom thiếu getClientRects (crash PM scrollToSelection).
+  view.dispatch(view.state.tr.replaceSelection(new Slice(frag, 0, 0)));
+  return true;
+}
+
+/**
  * Lane I Task 1: soạn thảo thuần text — Tiptap (wordExtensions đã có), mỗi dòng
  * = 1 paragraph; PASTE STRIP: dán từ Word → preventDefault + chỉ chèn
  * text/plain (mỗi dòng 1 paragraph, bỏ mọi formatting HTML).
@@ -46,6 +73,7 @@ function TextEditor({
   saving: boolean;
   onSave: (text: string) => void;
 }) {
+  const { t, lang } = useT();
   const editor = useEditor({
     extensions: wordExtensions,
     content: text
@@ -56,28 +84,19 @@ function TextEditor({
     editorProps: {
       // Review r1 P2b: contenteditable cần accessible name.
       attributes: { "aria-label": translate("editor.textAreaAria") },
-      handlePaste(view, event) {
-        const plain = event.clipboardData?.getData("text/plain");
-        if (plain == null) return false;
-        // Review r1 P2f: plain rỗng cũng preventDefault + chèn "" — không rơi về HTML default.
-        event.preventDefault();
-        const frag = Fragment.fromArray(
-          plain
-            .replace(/\r\n?/g, "\n")
-            .split("\n")
-            .map((line) =>
-              view.state.schema.nodes.paragraph.create(
-                null,
-                line ? view.state.schema.text(line) : null,
-              ),
-            ),
-        );
-        // Không .scrollIntoView(): jsdom thiếu getClientRects (crash PM scrollToSelection).
-        view.dispatch(view.state.tr.replaceSelection(new Slice(frag, 0, 0)));
-        return true;
-      },
+      handlePaste: stripPaste,
     },
   });
+  // Lane M3 P2: aria-label translate() lúc init chỉ snapshot 1 lần — setOptions khi lang đổi.
+  useEffect(() => {
+    if (!editor) return;
+    editor.setOptions({
+      editorProps: {
+        attributes: { "aria-label": translate("editor.textAreaAria") },
+        handlePaste: stripPaste,
+      },
+    });
+  }, [editor, lang]);
   return (
     <div className="flex flex-col gap-3">
       <div
@@ -93,7 +112,7 @@ function TextEditor({
           disabled={!editor}
           onClick={() => editor && onSave(editor.getText({ blockSeparator: "\n" }))}
         >
-          Lưu
+          {t("common.save")}
         </Button>
       </div>
     </div>
@@ -200,9 +219,12 @@ export default function TextSection({
         result = await save(false);
       } catch (err) {
         // P2: detached layout 409 → confirm ghi đè → resend force=true.
+        // Lane M3 P1b: server gửi detail {code:"detached"} — so theo code,
+        // fallback detail string cũ (backward compat server cũ).
         const detached =
           err instanceof ApiError &&
-          err.detail === "Layout có chỉnh tay. Đồng bộ sẽ ghi đè.";
+          (err.code === "detached" ||
+            err.detail === "Layout có chỉnh tay. Đồng bộ sẽ ghi đè.");
         if (!detached || !window.confirm(t("editor.detachedConfirm")))
           throw err;
         result = await save(true);

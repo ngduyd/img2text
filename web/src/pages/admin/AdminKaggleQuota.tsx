@@ -34,7 +34,7 @@ export default function AdminKaggleQuota() {
 
   return (
     <Card
-      title="GPU/Kaggle Quota"
+      title={t("admin.card.kaggleQuota")}
       testid="kaggle-quota"
       actions={
         <Button

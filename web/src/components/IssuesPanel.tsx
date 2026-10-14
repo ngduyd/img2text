@@ -72,7 +72,7 @@ export default function IssuesPanel({
           onClick={() => setOpen((o) => !o)}
           className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1 text-left transition duration-150 ease-out hover:bg-surface-2"
         >
-          Vấn đề ({issues.length})
+          {t("editor.issues.title", { n: issues.length })}
           <ChevronDown
             className={`h-4 w-4 text-muted transition duration-150 ease-out ${open ? "rotate-180" : ""}`}
             aria-hidden="true"
@@ -96,7 +96,7 @@ export default function IssuesPanel({
             {r.text && <p className="text-sm">{r.text}</p>}
             {replacedNotes[r.id] && (
               <p data-testid={`region-note-${r.id}`} className="mt-1 text-sm text-warning">
-                Văn bản vùng đã cập nhật; markdown chưa thay thế (text gốc không còn trong bản xem trước)
+                {t("editor.issues.replacedNote")}
               </p>
             )}
             {activeRid === r.id ? (
@@ -119,7 +119,7 @@ export default function IssuesPanel({
                   size="sm"
                   onClick={() => setActiveRid(r.id)}
                 >
-                  Sửa vùng
+                  {t("editor.issues.editRegion")}
                 </Button>
               </div>
             )}

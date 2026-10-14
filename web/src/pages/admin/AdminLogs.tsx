@@ -160,7 +160,7 @@ export default function AdminLogs() {
           </div>
         )}
       </Card>
-      <Card testid="logs-tail-card" title="Log tail">
+      <Card testid="logs-tail-card" title={t("admin.card.logsTail")}>
         <pre
           data-testid="logs-tail"
           className="overflow-x-auto rounded-sm border border-border bg-surface-2/60 p-3 font-mono text-xs text-muted"

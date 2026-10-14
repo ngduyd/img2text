@@ -263,7 +263,7 @@ export default function UnifiedEditor({
             />
             <div className="mt-3 flex justify-end border-t border-border pt-3">
               <Button testid="btn-save-layout" onClick={() => void saveLayout()}>
-                Lưu
+                {t("common.save")}
               </Button>
             </div>
           </div>
@@ -287,7 +287,7 @@ export default function UnifiedEditor({
             />
             <div className="mt-3 flex justify-end gap-2 border-t border-border pt-3">
               <Button testid="btn-save-style" onClick={() => void saveStyle()}>
-                Lưu kiểu trình bày
+                {t("common.saveLayout")}
               </Button>
             </div>
           </>

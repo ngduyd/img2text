@@ -6,7 +6,9 @@
     "save": "Lưu",
     "close": "Đóng",
     "retry": "Thử lại",
-    "loading": "Đang tải…"
+    "loading": "Đang tải…",
+    "saveLayout": "Lưu kiểu trình bày",
+    "homeAria": "img2text — trang chủ"
   },
   "i18n": {
     "locale": "vi-VN",
@@ -198,7 +200,12 @@
     "detachedConfirm": "Layout có chỉnh tay. Đồng bộ sẽ ghi đè. Tiếp tục?",
     "rerenderQuestion": "Lưu văn bản sẽ cần vẽ lại layout. Thêm vào hàng đợi vẽ layout?",
     "rerenderQueued": "Đã xếp hàng vẽ lại layout.",
-    "saveAndQueue": "Lưu & xếp hàng"
+    "saveAndQueue": "Lưu & xếp hàng",
+    "issues": {
+      "title": "Vấn đề ({n})",
+      "replacedNote": "Văn bản vùng đã cập nhật; markdown chưa thay thế (text gốc không còn trong bản xem trước)",
+      "editRegion": "Sửa vùng"
+    }
   },
   "word": {
     "toolbarAria": "Công cụ soạn thảo Word",
@@ -344,6 +351,11 @@
       "gpu": "GPU: dùng {used}/{total} · còn {remaining}",
       "tpu": "TPU: dùng {used}/{total}",
       "refreshAt": "Refresh: {time}"
+    },
+    "card": {
+      "kaggleQuota": "GPU/Kaggle Quota",
+      "logsTail": "Log tail",
+      "workers": "Workers"
     },
     "logs": {
       "title": "Nhật ký truy cập",

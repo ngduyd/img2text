@@ -6,7 +6,9 @@
     "save": "Save",
     "close": "Close",
     "retry": "Retry",
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "saveLayout": "Save layout style",
+    "homeAria": "img2text home"
   },
   "i18n": {
     "locale": "en-US",
@@ -198,7 +200,12 @@
     "detachedConfirm": "The layout was edited by hand. Syncing will overwrite it. Continue?",
     "rerenderQuestion": "Saving the text requires a layout rebuild. Add to the rebuild queue?",
     "rerenderQueued": "Layout rebuild queued.",
-    "saveAndQueue": "Save & queue"
+    "saveAndQueue": "Save & queue",
+    "issues": {
+      "title": "Problems ({n})",
+      "replacedNote": "Region text updated; markdown not replaced (original text no longer in the preview)",
+      "editRegion": "Edit region"
+    }
   },
   "word": {
     "toolbarAria": "Word editing toolbar",
@@ -344,6 +351,11 @@
       "gpu": "GPU: used {used}/{total} · left {remaining}",
       "tpu": "TPU: used {used}/{total}",
       "refreshAt": "Refresh: {time}"
+    },
+    "card": {
+      "kaggleQuota": "GPU/Kaggle Quota",
+      "logsTail": "Log tail",
+      "workers": "Workers"
     },
     "logs": {
       "title": "Access log",
