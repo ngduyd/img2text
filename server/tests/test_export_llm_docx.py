@@ -493,3 +493,35 @@ async def test_docx_render_empty_response_falls_back(monkeypatch, VALID_RESULT_J
     data = await build_docx(VALID_RESULT_JSONB)
     doc = Document(io.BytesIO(data))
     assert any(p.text.strip() for p in doc.paragraphs)
+
+
+# --- Lane S Task 2: docx-layout route threads storage (S1b) ---
+
+async def test_export_docx_layout_on_demand_crop_embed(
+    auth_client, done_job_with_result, storage, monkeypatch
+):
+    """fmt=docx-layout: figure crop batch miss → get_or_make_crop → media."""
+    from tests.conftest import PNG_1PX
+    import app.routers.exports as exports_mod
+    import zipfile as _zip
+
+    ir = json.loads(json.dumps(FAKE_IR))
+    ir["pages"][0]["content"][1]["type"] = "figure"
+    ir["pages"][0]["content"][1]["source_block_ids"] = ["r1"]
+    html = '<h2>Xin chào</h2><img src="crops/r1.png"/>'
+    fake_llm(monkeypatch, [FakeResponse(json.dumps(ir)), FakeResponse(html)])
+
+    async def fake_crop(job_id, rid, job, result, storage_):
+        key = f"exports/{job_id}/crops/{rid}.png"
+        await storage_.put(key, PNG_1PX)
+        return key
+    monkeypatch.setattr(exports_mod, "get_or_make_crop", fake_crop)
+
+    await storage.delete_prefix(f"exports/{done_job_with_result}/docx-layout")
+    r = await auth_client.post(
+        f"/api/jobs/{done_job_with_result}/export", json={"fmt": "docx-layout"}
+    )
+    assert r.status_code == 200, r.text
+    body = await storage.get(f"exports/{done_job_with_result}/docx-layout")
+    names = _zip.ZipFile(io.BytesIO(body)).namelist()
+    assert any(n.startswith("word/media/") for n in names), names

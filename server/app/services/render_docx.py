@@ -435,7 +435,9 @@ RENDER_DOCX_PROMPT = (
     "Map IR type → HTML: heading → h1 (document_title) / h2, paragraph → p, "
     "list → <ul><li>item</li></ul>, poem → p with lines separated by <br>, "
     "table → <table> HTML, quote → <blockquote>, caption → <p><em>text</em></p>, "
-    "figure → <p>[ảnh]</p>, formula → <pre>text</pre>, separator → <hr>, "
+    "figure → <img src=\"crops/{rid}.png\"/> where rid = the figure node's FIRST "
+    "source_block_ids entry (the builder embeds that crop; NEVER invent rid, "
+    "never render figure as [ảnh] text), formula → <pre>text</pre>, separator → <hr>, "
     "footnote → <p>text</p>, form_field → <p>text</p>, page_number → skip.\n"
     "Empty zones (header/content/footer = []) → render NOTHING for that zone; "
     "do NOT invent content for missing zones. A page may have only content, "
@@ -497,6 +499,13 @@ _BLOCK_HTML_RE = re.compile(
 )
 _TABLE_HTML_RE = re.compile(r"<table[^>]*>(.*?)</table>", re.DOTALL | re.IGNORECASE)
 _PAGE_BREAK_RE = re.compile(r"<page-break\s*/?>|<!--\s*page-break\s*-->", re.IGNORECASE)
+# S1b: LLM render figure → <img src="crops/{rid}.png"> (rid = source_block_ids[0])
+_IMG_SRC_RE = re.compile(
+    r"<img\b[^>]*src=[\"']crops/([^\"'?#/]+)\.[a-z]+[\"'][^>]*>", re.IGNORECASE
+)
+_IMG_BLOCK_RE = re.compile(r"<p\b[^>]*>\s*(<img\b[^>]*>)\s*</p>", re.IGNORECASE | re.DOTALL)
+# marker block: crop embed position giữ nguyên thứ tự document (regex walker)
+_CIMG_RE = re.compile(r"^\[cimg:([^\]]+)\]$")
 # inline tối thiểu (không HTML parser): <br> → ngắt dòng, b/i → run bold/italic
 # capture group bắt buộc: split giữ lại tag → nhánh <br>/bold mới chạy
 _INLINE_RE = re.compile(r"(<br\s*/?>|</?(?:strong|b|em|i)\b[^>]*>)", re.IGNORECASE)
@@ -539,8 +548,42 @@ def _list_para(doc):
         return para
 
 
-def _html_to_docx(html: str, style_overrides: dict | None = None) -> bytes:
-    """HTML (từ LLM render) → DOCX bytes."""
+async def _load_figure_crops(
+    html: str, result: dict, crop_loader
+) -> dict[str, bytes]:
+    """S1b: rid figure phải là OCR region thật (find_region-equivalent) —
+    unknown rid / loader None/fail → placeholder (partial-fail + warning)."""
+    rids = {m.group(1) for m in _IMG_SRC_RE.finditer(html)}
+    if not rids or crop_loader is None:
+        return {}
+    valid = {
+        rg["id"] for pg in result.get("pages", []) for rg in pg.get("regions", [])
+    }
+    out: dict[str, bytes] = {}
+    for rid in rids:
+        if rid not in valid:
+            logger.warning("docx: figure rid %s không có trong OCR — placeholder", rid)
+            continue
+        try:
+            data = await crop_loader(rid)
+        except Exception as exc:  # partial-fail: 1 crop hỏng không kill render
+            logger.warning("docx: crop %s load fail — placeholder: %s", rid, exc)
+            continue
+        if data:
+            out[rid] = data
+    return out
+
+def _html_to_docx(
+    html: str,
+    style_overrides: dict | None = None,
+    figure_crops: dict[str, bytes] | None = None,
+) -> bytes:
+    """HTML (từ LLM render) → DOCX bytes.
+
+    S1b: <img src="crops/{rid}.png"> → marker [cimg:rid] (giữ vị trí document)
+    → add_picture(figure_crops[rid]); thiếu bytes → placeholder [ảnh]."""
+    html = _IMG_BLOCK_RE.sub(r"\1", html)
+    html = _IMG_SRC_RE.sub(lambda m: f"<p>[cimg:{m.group(1)}]</p>", html)
     doc = Document()
     chunks = _PAGE_BREAK_RE.split(html)
     for ci, chunk in enumerate(chunks):
@@ -563,6 +606,19 @@ def _html_to_docx(html: str, style_overrides: dict | None = None) -> bytes:
                 )
                 for li in items:
                     _add_rich_text(_list_para(doc), li)
+            elif (mm := _CIMG_RE.fullmatch(inner)):
+                para = doc.add_paragraph()
+                data = (figure_crops or {}).get(mm.group(1))
+                if data:
+                    try:
+                        para.add_run().add_picture(io.BytesIO(data), width=Inches(6.0))
+                    except Exception as exc:  # bytes hỏng → placeholder
+                        logger.warning("docx: crop %s hỏng — placeholder: %s", mm.group(1), exc)
+                        run = para.add_run(IMAGE_PLACEHOLDER)
+                        run.italic = True
+                else:
+                    run = para.add_run(IMAGE_PLACEHOLDER)
+                    run.italic = True
             elif inner or _INLINE_RE.search(m.group(3)):
                 para = doc.add_paragraph()
                 _add_rich_text(para, m.group(3))
@@ -700,6 +756,7 @@ async def build_docx(
     use_llm: bool = True,
     style_overrides: dict | None = None,
     ir_sink: dict | None = None,
+    crop_loader=None,
 ) -> bytes:
     """Build DOCX from OCR result.
 
@@ -709,6 +766,7 @@ async def build_docx(
     style_overrides: jobs.layout_style applied over the finished doc
     (user's saved style wins the IR). ir_sink: optional dict filled with
     the validated IR on the LLM path (auto-gen job.ir_json — no extra call).
+    crop_loader: async rid → bytes (S1b figure embed); None → placeholder.
     """
     _FALLBACK_STATS["total"] += 1
     if use_llm:
@@ -718,7 +776,8 @@ async def build_docx(
             if ir_sink is not None:
                 ir_sink.update(ir_dict)
             html = await llm_render_docx(ir_doc, result)
-            return _html_to_docx(html, style_overrides)
+            crops = await _load_figure_crops(html, result, crop_loader)
+            return _html_to_docx(html, style_overrides, figure_crops=crops)
         except (LLMError, IRValidationError) as exc:
             logger.warning("HEURISTIC FALLBACK render — layout tạm: %r", exc)
             _log_fallback(exc)
