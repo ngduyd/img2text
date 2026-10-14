@@ -12,6 +12,12 @@ def gating_on(monkeypatch):
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "env", "dev")
+    # env "dev" kích hoạt cả RateLimitMiddleware (Lane C1) — tắt interval
+    # để test gating không dính 429 xen giữa (rate limit có test riêng ở
+    # test_rate_limit.py)
+    from app.core import ratelimit
+
+    monkeypatch.setattr(ratelimit, "MIN_INTERVAL", 0.0)
 
 async def test_unverified_403_on_gated_api(client, gating_on):
     r = await client.post(
