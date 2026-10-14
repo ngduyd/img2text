@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { Briefcase, IdCard, LogOut, Menu, ShieldCheck } from "lucide-react";
+import { Briefcase, IdCard, LogOut, Menu, ShieldCheck, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Toaster, toast } from "sonner";
@@ -9,12 +9,14 @@ import ThemeToggle from "./components/ThemeToggle";
 import OcrBadge from "./components/OcrBadge";
 import QuotaBadge from "./components/QuotaBadge";
 import LangSwitch from "./components/LangSwitch";
+import SiteFooter from "./components/SiteFooter";
 import Button, { buttonClasses } from "./components/ui/Button";
 import Forgot from "./pages/Forgot";
 import Admin from "./pages/Admin";
 import JobDetail from "./pages/JobDetail";
 import ExtractionPage from "./pages/ExtractionPage";
 import Jobs from "./pages/Jobs";
+import Features from "./pages/Features";
 import Landing from "./pages/Landing";
 import Signin from "./pages/Signin";
 import Profile from "./pages/Profile";
@@ -197,6 +199,7 @@ function AppNav() {
 
   const isAdmin = me?.role === "admin";
   const jobsActive = pathname === "/jobs";
+  const featuresActive = pathname === "/features";
   const adminActive = pathname.startsWith("/admin");
 
   return (
@@ -223,6 +226,15 @@ function AppNav() {
             onClick={() => setMenuOpen(false)}
           >
             {t("nav.jobs")}
+          </NavAnchor>
+          <NavAnchor
+            to="/features"
+            testid="nav-link-features"
+            icon={Sparkles}
+            active={featuresActive}
+            onClick={() => setMenuOpen(false)}
+          >
+            {t("nav.features")}
           </NavAnchor>
           {isAdmin && (
             <NavAnchor
@@ -269,6 +281,15 @@ function AppNav() {
               onClick={() => setMenuOpen(false)}
             >
               {t("nav.jobs")}
+            </NavAnchor>
+            <NavAnchor
+              to="/features"
+              testid="nav-link-features"
+              icon={Sparkles}
+              active={featuresActive}
+              onClick={() => setMenuOpen(false)}
+            >
+              {t("nav.features")}
             </NavAnchor>
             {isAdmin && (
               <NavAnchor
@@ -337,7 +358,11 @@ export default function App() {
             <Route path="/edit" element={<Navigate to="/" replace />} />
             <Route path="/word" element={<Navigate to="/" replace />} />
             <Route path="/admin" element={<Admin />} />
+            {/* Lane B1: trang "In the feature" — bản kế tiếp (Organizations). */}
+            <Route path="/features" element={<Features />} />
           </Routes>
+          {/* Global footer: mọi trang, dưới Routes (App không dùng Outlet). */}
+          <SiteFooter />
         </div>
       </BrowserRouter>
       </I18nProvider>

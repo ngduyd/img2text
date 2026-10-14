@@ -30,7 +30,8 @@
     "admin": "Quản trị",
     "menu": "Menu",
     "skip": "Bỏ qua điều hướng",
-    "ariaMain": "Điều hướng chính"
+    "ariaMain": "Điều hướng chính",
+    "features": "Tính năng"
   },
   "status": {
     "queued": "Đang lập lịch",
@@ -479,6 +480,29 @@
       "delete": "Xóa",
       "deleteTitle": "Xóa job #{id}?",
       "deleteMessage": "Toàn bộ dữ liệu (file gốc, kết quả, phiên bản) sẽ bị xóa vĩnh viễn. Không thể hoàn tác."
+    }
+  },
+  "footer": {
+    "aria": "Chân trang",
+    "linksAria": "Liên kết chân trang",
+    "copyright": "© 2026 Nguyen Duy",
+    "feedback": "Góp ý"
+  },
+  "features": {
+    "title": "Tính năng sắp tới",
+    "subtitle": "Sắp ra mắt",
+    "intro": "Organizations là bước tiếp theo: không gian chung cho team, với compute và storage riêng.",
+    "workers": {
+      "title": "Pool worker tự cấu hình",
+      "desc": "Admin tổ chức tự cấu hình GPU worker (Kaggle hoặc cloud riêng) cho cả tổ chức."
+    },
+    "storage": {
+      "title": "Lưu trữ cấp tổ chức",
+      "desc": "Mỗi tổ chức kết nối storage server R2/S3 riêng cho tài liệu và bản xuất."
+    },
+    "members": {
+      "title": "Quota chung & thành viên",
+      "desc": "Một quota chung cho tổ chức, kèm quản lý thành viên và vai trò cho mọi team."
     }
   }
 }

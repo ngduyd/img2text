@@ -30,7 +30,8 @@
     "admin": "Admin",
     "menu": "Menu",
     "skip": "Skip to content",
-    "ariaMain": "Main navigation"
+    "ariaMain": "Main navigation",
+    "features": "Features"
   },
   "status": {
     "queued": "Queued",
@@ -479,6 +480,29 @@
       "delete": "Delete",
       "deleteTitle": "Delete job #{id}?",
       "deleteMessage": "All data (original file, results, versions) will be permanently deleted. This cannot be undone."
+    }
+  },
+  "footer": {
+    "aria": "Site footer",
+    "linksAria": "Footer links",
+    "copyright": "© 2026 Nguyen Duy",
+    "feedback": "Feedback"
+  },
+  "features": {
+    "title": "In the feature",
+    "subtitle": "Coming soon",
+    "intro": "Organizations are next: shared spaces for your team, with their own compute and storage.",
+    "workers": {
+      "title": "Custom worker pools",
+      "desc": "Org admins configure GPU workers (Kaggle or private cloud) for the whole organization."
+    },
+    "storage": {
+      "title": "Org-level storage",
+      "desc": "Each org connects its own R2/S3 storage server for documents and exports."
+    },
+    "members": {
+      "title": "Shared quotas & members",
+      "desc": "One shared quota per org, with member management and roles for every team."
     }
   }
 }
