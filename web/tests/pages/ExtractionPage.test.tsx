@@ -225,7 +225,7 @@ it("409 detached conflict → confirm dialog; confirmed → resend with force=tr
   renderWithSuggestions([pendingSuggestion({})]);
   await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
   await user.click(screen.getByTestId("btn-apply-11"));
-  expect(confirmSpy).toHaveBeenCalledWith("Layout có chỉnh tay. Đồng bộ sẽ ghi đè. Tiếp tục?");
+  expect(confirmSpy).toHaveBeenCalledWith("The layout was edited by hand. Syncing will overwrite it. Continue?");
   await waitFor(() => expect(api.saveExtraction).toHaveBeenCalledTimes(2));
   expect(vi.mocked(api.saveExtraction).mock.calls[1][1]).toMatchObject({ force: true });
   confirmSpy.mockRestore();

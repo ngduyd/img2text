@@ -3,21 +3,23 @@ import { useState } from "react";
 import { api } from "../../api/client";
 import Card from "../../components/ui/Card";
 import Input from "../../components/ui/Input";
+import { useT } from "../../i18n";
 import { last7Days } from "./dateRange";
 
 const HEADERS = [
-  "Ngày",
-  "Đăng ký",
-  "Job",
-  "Hoàn tất",
-  "Thất bại",
-  "Lượt xem",
-  "GPU (giây)",
-  "Chi phí ước tính",
+  "admin.stats.date",
+  "admin.stats.registered",
+  "admin.stats.jobs",
+  "admin.stats.done",
+  "admin.stats.failed",
+  "admin.stats.views",
+  "admin.stats.gpu",
+  "admin.stats.cost",
 ] as const;
 
 /** Daily admin stats with from/to date filters. */
 export default function AdminStats() {
+  const { t } = useT();
   const [range, setRange] = useState(last7Days);
   const { data } = useQuery({
     queryKey: ["admin-stats", range.from, range.to],
@@ -29,14 +31,14 @@ export default function AdminStats() {
       <Card>
         <div className="mb-4 flex items-end gap-4">
           <Input
-            label="Từ"
+            label={t("admin.stats.from")}
             testid="input-stats-from"
             type="date"
             value={range.from}
             onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
           />
           <Input
-            label="Đến"
+            label={t("admin.stats.to")}
             testid="input-stats-to"
             type="date"
             value={range.to}
@@ -48,7 +50,7 @@ export default function AdminStats() {
             <tr className="border-b border-border text-muted">
               {HEADERS.map((h) => (
                 <th key={h} className="px-3 py-2">
-                  {h}
+                  {t(h)}
                 </th>
               ))}
             </tr>

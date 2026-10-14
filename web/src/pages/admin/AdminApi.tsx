@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { api } from "../../api/client";
+import { useT } from "../../i18n";
 import Card from "../../components/ui/Card";
 
 interface LogRow {
@@ -31,6 +32,7 @@ function normalizePath(p: string): string {
  *  Rows = path × status-class (2xx/4xx/5xx) only — no method. Out-of-class statuses
  *  (1xx/3xx) are skipped so total always equals the class-count sum. */
 export default function AdminApi() {
+  const { t } = useT();
   const { data } = useQuery({
     queryKey: ["admin-api"],
     queryFn: () => api.adminLogs({ limit: 500 }),
@@ -62,14 +64,14 @@ export default function AdminApi() {
   return (
     <div>
       <p className="mb-3 text-sm text-muted">
-        Tổng hợp client-side từ request_logs (500 dòng gần nhất)
+        {t("admin.api.intro")}
       </p>
       <Card testid="api-activity-table">
         <table className="w-full border-collapse text-left text-sm">
           <thead>
             <tr className="border-b border-border text-muted">
               <th className="px-3 py-2">Path</th>
-              <th className="px-3 py-2">Tổng</th>
+              <th className="px-3 py-2">{t("admin.api.total")}</th>
               <th className="px-3 py-2">2xx</th>
               <th className="px-3 py-2">4xx</th>
               <th className="px-3 py-2">5xx</th>

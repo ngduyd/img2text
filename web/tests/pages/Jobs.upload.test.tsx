@@ -126,10 +126,10 @@ it("Gửi → presign → XHR progress → pdf.js count → metadata-only create
   // upload done → bar ẩn → bước đếm trang (indeterminate, create còn pending)
   act(() => sentXhr!.onload?.());
   await waitFor(() => expect(screen.queryByTestId("upload-progress")).not.toBeInTheDocument());
-  expect(screen.getByTestId("upload-counting")).toHaveTextContent("Đang đếm trang...");
+  expect(screen.getByTestId("upload-counting")).toHaveTextContent("Counting pages…");
 
   resolveCreate(new Response(JSON.stringify({ id: 42, status: "queued" }), { status: 201 }));
-  await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý."));
+  await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Uploaded — queued for processing."));
   // Lane B Task 5: 1 ảnh → upload THÔ (giữ đuôi .png + content_type match magic-byte
   // Lane A sniff); image luôn page_count 1 (pdf.js chỉ đếm PDF).
   expect(createBodies).toEqual([
@@ -144,8 +144,8 @@ it("Gửi → presign → XHR progress → pdf.js count → metadata-only create
   // create xong → phase idle: chữ đếm trang biến mất
   await waitFor(() => expect(screen.queryByTestId("upload-counting")).not.toBeInTheDocument());
   // T6: badge quota trong Jobs header + invalidate sau khi tạo job → refetch
-  expect(screen.getByTestId("quota-remaining")).toHaveTextContent("Còn 10/25 trang hôm nay");
-  expect(screen.getByTestId("quota-remaining")).toHaveTextContent("105/150 trang tuần này");
+  expect(screen.getByTestId("quota-remaining")).toHaveTextContent("10/25 pages left today");
+  expect(screen.getByTestId("quota-remaining")).toHaveTextContent("105/150 this week");
   await waitFor(() =>
     expect(fetchSpy.mock.calls.filter((c) => String(c[0]) === "/api/quota/me").length).toBeGreaterThan(1),
   );

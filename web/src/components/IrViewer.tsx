@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api } from "../api/client";
 import type { JobStatus } from "../api/types";
 import { mapApiError } from "../lib/errors";
+import { translate } from "../i18n";
 import Button from "./ui/Button";
 
 /**
@@ -58,7 +59,7 @@ export default function IrViewer({ jobId, status }: { jobId: number | string; st
                 onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(json);
-                    toast.success("Đã sao chép IR");
+                    toast.success(translate("ir.copied"));
                   } catch (err) {
                     toast.error(mapApiError(err));
                   }

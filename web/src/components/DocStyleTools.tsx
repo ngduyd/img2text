@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { IndentDecrease, IndentIncrease } from "lucide-react";
 import type { LayoutStyle } from "../api/types";
 import { DEFAULT_PREVIEW_OPTS, buildLayoutStyleCss, buildPreviewCss } from "../lib/docStyle";
+import { useT } from "../i18n";
 import Button from "./ui/Button";
 import Input from "./ui/Input";
 
@@ -46,6 +47,7 @@ export default function DocStyleTools({
   initialStyle?: LayoutStyle | null;
   onStyleChange?: (style: LayoutStyle) => void;
 }) {
+  const { t } = useT();
   // Font/align/underline: state hydrate từ layout_style, không UI control (gỡ theo
   // lệnh user — trùng toolbar Tiptap) nhưng vẫn phát trong wordStyle → PUT giữ key.
   const [fontFamily] = useState(initialStyle?.fontFamily ?? DEFAULT_PREVIEW_OPTS.fontFamily);
@@ -100,20 +102,20 @@ export default function DocStyleTools({
             onChange={(e) => setIndexOn(e.target.checked)}
             className="h-4 w-4 accent-accent"
           />
-          Đánh số heading + sinh mục lục
+          {t("docStyle.indexHeading")}
         </label>
         {indexOn && (
           <div
             data-testid="word-toc"
             className="mt-2 max-h-40 overflow-auto rounded-md border border-border bg-surface-2 p-3 text-sm"
           >
-            <p className="mb-1 font-medium">Mục lục</p>
+            <p className="mb-1 font-medium">{t("docStyle.tocTitle")}</p>
             {toc.length === 0 ? (
-              <p className="text-muted">Không có heading h1-h3.</p>
+              <p className="text-muted">{t("docStyle.tocEmpty")}</p>
             ) : (
               <ol className="list-decimal space-y-1 pl-4">
-                {toc.map((t, i) => (
-                  <li key={`${i}-${t}`}>{t}</li>
+                {toc.map((heading, i) => (
+                  <li key={`${i}-${heading}`}>{heading}</li>
                 ))}
               </ol>
             )}
@@ -124,7 +126,7 @@ export default function DocStyleTools({
       {/* Lề (Margin) */}
       <div className="mb-3 grid grid-cols-2 gap-2">
         <Input
-          label="Lề trái (cm)"
+          label={t("docStyle.marginLeft")}
           testid="tool-margin-left"
           type="number"
           min={0}
@@ -134,7 +136,7 @@ export default function DocStyleTools({
           onChange={(e) => setMarginLeft(clamp(e.target.value, 0, 8, marginLeft))}
         />
         <Input
-          label="Lề phải (cm)"
+          label={t("docStyle.marginRight")}
           testid="tool-margin-right"
           type="number"
           min={0}
@@ -154,7 +156,7 @@ export default function DocStyleTools({
           onChange={(e) => setTableBorders(e.target.checked)}
           className="h-4 w-4 accent-accent"
         />
-        Viền bảng
+        {t("docStyle.tableBorders")}
       </label>
 
       {/* Bố cục trang word: indent/giãn dòng */}
@@ -164,8 +166,8 @@ export default function DocStyleTools({
             testid="word-style-indent-out"
             variant="ghost"
             size="sm"
-            title="Bớt lề"
-            aria-label="Bớt lề"
+            title={t("docStyle.indentOut")}
+            aria-label={t("docStyle.indentOut")}
             disabled={indent === 0}
             onClick={() => setIndent((n) => Math.max(0, n - 1))}
           >
@@ -175,15 +177,15 @@ export default function DocStyleTools({
             testid="word-style-indent-in"
             variant="ghost"
             size="sm"
-            title="Thêm lề"
-            aria-label="Thêm lề"
+            title={t("docStyle.indentIn")}
+            aria-label={t("docStyle.indentIn")}
             onClick={() => setIndent((n) => Math.min(4, n + 1))}
           >
             <IndentIncrease className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
         <label className="flex items-center gap-2 text-sm" htmlFor="tool-line-spacing">
-          <span className="text-muted">Giãn dòng</span>
+          <span className="text-muted">{t("docStyle.lineSpacing")}</span>
           <select
             id="tool-line-spacing"
             data-testid="word-style-spacing"

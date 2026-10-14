@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ScanText } from "lucide-react";
+import { useT } from "../i18n";
 
 interface AuthLayoutProps {
   title: string;
@@ -10,13 +11,14 @@ interface AuthLayoutProps {
 }
 
 export default function AuthLayout({ title, subtitle, footer, children }: AuthLayoutProps) {
+  const { t } = useT();
   return (
     <main id="main" className="flex min-h-dvh flex-col justify-center px-4 py-10">
       <div className="mx-auto w-full max-w-sm">
         <Link
           to="/"
           className="mb-6 flex items-center justify-center gap-2"
-          aria-label="img2text home"
+          aria-label={t("common.homeAria")}
         >
           <span className="flex h-8 w-8 items-center justify-center rounded-md bg-accent">
             <ScanText className="h-5 w-5 text-accent-contrast" aria-hidden="true" />

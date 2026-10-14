@@ -96,11 +96,11 @@ it("renders 6 tabs, default overview with summed stat cards", async () => {
   expect(within(screen.getByTestId("stat-gpu")).getByText("150.5")).toBeInTheDocument();
   expect(within(screen.getByTestId("stat-cost")).getByText("3.75")).toBeInTheDocument();
   // Card labels verbatim.
-  expect(screen.getByText("User mới (7 ngày)")).toBeInTheDocument();
-  expect(screen.getByText("Job hoàn tất")).toBeInTheDocument();
-  expect(screen.getByText("Job thất bại")).toBeInTheDocument();
-  expect(screen.getByText("Tổng GPU (giây)")).toBeInTheDocument();
-  expect(screen.getByText("Chi phí ước tính (USD)")).toBeInTheDocument();
+  expect(screen.getByText("New users (7 days)")).toBeInTheDocument();
+  expect(screen.getByText("Jobs done")).toBeInTheDocument();
+  expect(screen.getByText("Jobs failed")).toBeInTheDocument();
+  expect(screen.getByText("Total GPU (seconds)")).toBeInTheDocument();
+  expect(screen.getByText("Estimated cost (USD)")).toBeInTheDocument();
 });
 
 it("overview quick links navigate to other tabs", async () => {
@@ -111,7 +111,7 @@ it("overview quick links navigate to other tabs", async () => {
   const user = userEvent.setup();
   await user.click(await screen.findByTestId("btn-goto-users"));
   // ui-ux redo: empty users list → empty state box (table hidden); tab mounted
-  expect(await screen.findByText("Chưa có người dùng")).toBeInTheDocument();
+  expect(await screen.findByText("No users yet")).toBeInTheDocument();
   expect(screen.queryByTestId("stat-users")).not.toBeInTheDocument();
   await user.click(screen.getByTestId("tab-overview"));
   await user.click(await screen.findByTestId("btn-goto-api"));
@@ -138,7 +138,7 @@ it("api tab aggregates paths client-side, collapsing numeric segments", async ()
   await user.click(await screen.findByTestId("tab-api"));
   expect(api.adminLogs).toHaveBeenCalledWith({ limit: 500 });
   expect(
-    screen.getByText("Tổng hợp client-side từ request_logs (500 dòng gần nhất)"),
+    screen.getByText("Client-side aggregate from request_logs (last 500 rows)"),
   ).toBeInTheDocument();
   const table = screen.getByTestId("api-activity-table");
   // GET /api/jobs/7 + POST /api/jobs/7 + PATCH /api/jobs/12 + GET /api/jobs/13/regions/r1
@@ -180,8 +180,8 @@ it("users tab shows created_at and toggles ocr", async () => {
   renderWithRouter(<Admin />);
   const user = userEvent.setup();
   await user.click(await screen.findByTestId("tab-users"));
-  expect(screen.getByText("Ngày tạo")).toBeInTheDocument();
-  expect(screen.getByText(/0?4\/10\/2026/)).toBeInTheDocument();
+  expect(screen.getByText("Created")).toBeInTheDocument();
+  expect(screen.getByText(/10\/4\/2026/)).toBeInTheDocument();
   const toggle = await screen.findByTestId("toggle-ocr-2");
   // ui-ux redo: role badge tone + icon toggle exposes pressed state (a11y)
   expect(screen.getByTestId("role-badge-2")).toHaveAttribute("data-tone", "neutral");
@@ -212,7 +212,7 @@ it("stats tab renders cost column", async () => {
   renderWithRouter(<Admin />);
   const user = userEvent.setup();
   await user.click(screen.getByTestId("tab-stats"));
-  expect(await screen.findByText("Chi phí ước tính")).toBeInTheDocument();
+  expect(await screen.findByText("Estimated cost")).toBeInTheDocument();
   expect(screen.getByText("7.5")).toBeInTheDocument();
 });
 
@@ -259,7 +259,7 @@ it("logs tab filters by ip", async () => {
   expect(uaCells[0].firstChild).toHaveAttribute("title", "x");
   expect(screen.getByRole("columnheader", { name: "User-Agent" })).toBeInTheDocument();
   // R60a: actor column — user_id rendered, anonymous → em dash, title = full
-  expect(screen.getByRole("columnheader", { name: "Người dùng" })).toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: "User" })).toBeInTheDocument();
   const actorCells = screen.getAllByTestId("audit-actor");
   expect(actorCells[0]).toHaveTextContent("—");
   expect(actorCells[0].firstChild).toHaveAttribute("title", "");
@@ -300,7 +300,7 @@ it("clicking rail users item mounts AdminUsers", async () => {
   renderWithRouter(<Admin />);
   const user = userEvent.setup();
   await user.click(await screen.findByTestId("tab-users"));
-  expect(await screen.findByText("Chưa có người dùng")).toBeInTheDocument();
+  expect(await screen.findByText("No users yet")).toBeInTheDocument();
 });
 
 it("non-admin is redirected to trang chủ '/'", async () => {

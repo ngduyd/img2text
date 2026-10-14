@@ -1,4 +1,5 @@
 import { PDFDocument } from "pdf-lib";
+import { translate } from "../i18n";
 
 /** Tổng trang cho 1 job gộp — chặn trước khi ghép (spec U2). */
 export const MAX_PAGES = 25;
@@ -22,12 +23,12 @@ export async function mergeToPdf(entries: MergeEntry[]): Promise<Blob> {
     images.length +
     pdfs.reduce((s, e, i) => s + (e.pages ? e.pages.length : docs[i].getPageCount()), 0);
   if (count > MAX_PAGES) {
-    throw new Error(`Tối đa ${MAX_PAGES} trang mỗi lần gửi.`);
+    throw new Error(translate("upload.errMaxPages", { n: MAX_PAGES }));
   }
   // Defense (P1-1): pdf-lib chỉ embed được PNG/JPG.
   for (const e of images) {
     if (e.blob.type !== "image/png" && e.blob.type !== "image/jpeg") {
-      throw new Error("Chỉ hỗ trợ ảnh PNG/JPG.");
+      throw new Error(translate("upload.errPngJpgOnly"));
     }
   }
 
@@ -48,7 +49,7 @@ export async function mergeToPdf(entries: MergeEntry[]): Promise<Blob> {
   }
   // Backstop sau embed — giữ như cũ.
   if (out.getPageCount() > MAX_PAGES) {
-    throw new Error(`Tối đa ${MAX_PAGES} trang mỗi lần gửi.`);
+    throw new Error(translate("upload.errMaxPages", { n: MAX_PAGES }));
   }
   const bytes = await out.save();
   return new Blob(

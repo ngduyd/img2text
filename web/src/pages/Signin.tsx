@@ -2,12 +2,14 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
+import { useT } from "../i18n";
 import { mapApiError } from "../lib/errors";
 import AuthLayout from "../components/AuthLayout";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 
 export default function Login() {
+  const { t } = useT();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,10 +23,10 @@ export default function Login() {
     setLoading(true);
     try {
       await api.login(email, password);
-      toast.success("Signed in.");
+      toast.success(t("auth.signin.signedIn"));
       navigate("/jobs");
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "An error occurred.");
+      setError(err instanceof ApiError ? err.detail : t("errors.generic"));
       toast.error(mapApiError(err));
     } finally {
       setLoading(false);
@@ -33,13 +35,13 @@ export default function Login() {
 
   return (
     <AuthLayout
-      title="Sign in"
-      subtitle="Welcome back. Sign in to continue."
+      title={t("auth.signin.title")}
+      subtitle={t("auth.signin.subtitle")}
       footer={
         <>
-          No account?{" "}
+          {t("auth.signin.noAccount")}{" "}
           <Link to="/signup" className="text-accent-text hover:underline">
-            Sign up
+            {t("nav.signUp")}
           </Link>
         </>
       }
@@ -55,9 +57,9 @@ export default function Login() {
         />
         <div className="flex flex-col gap-1">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted">Password</span>
+            <span className="text-sm text-muted">{t("auth.password")}</span>
             <Link to="/forgot" className="text-xs text-accent-text hover:underline">
-              Forgot password?
+              {t("auth.signin.forgot")}
             </Link>
           </div>
           <div className="relative">
@@ -75,7 +77,7 @@ export default function Login() {
               onClick={() => setShowPassword((s) => !s)}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted hover:text-text"
             >
-              {showPassword ? "Hide" : "Show"}
+              {showPassword ? t("auth.hide") : t("auth.show")}
             </button>
           </div>
         </div>
@@ -85,7 +87,7 @@ export default function Login() {
           </p>
         )}
         <Button testid="btn-login" type="submit" loading={loading} className="w-full">
-          Sign in
+          {t("nav.signIn")}
         </Button>
       </form>
     </AuthLayout>

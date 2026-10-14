@@ -1,0 +1,484 @@
+{
+  "common": {
+    "language": "Ngôn ngữ",
+    "cancel": "Hủy",
+    "delete": "Xóa",
+    "save": "Lưu",
+    "close": "Đóng",
+    "retry": "Thử lại",
+    "loading": "Đang tải…",
+    "saveLayout": "Lưu kiểu trình bày",
+    "homeAria": "img2text — trang chủ"
+  },
+  "i18n": {
+    "locale": "vi-VN",
+    "test": {
+      "count": "{n} trang"
+    }
+  },
+  "lang": {
+    "vi": "VI",
+    "en": "EN"
+  },
+  "nav": {
+    "signIn": "Đăng nhập",
+    "signUp": "Đăng ký",
+    "profile": "Hồ sơ",
+    "logout": "Đăng xuất",
+    "signedOut": "Đã đăng xuất.",
+    "jobs": "Công việc",
+    "admin": "Quản trị",
+    "menu": "Menu",
+    "skip": "Bỏ qua điều hướng",
+    "ariaMain": "Điều hướng chính"
+  },
+  "status": {
+    "queued": "Đang lập lịch",
+    "extracting": "Đang trích xuất văn bản",
+    "rendering": "Đang dựng layout",
+    "failed": "Xử lý thất bại",
+    "done": "Hoàn tất",
+    "cancelled": "Đã hủy"
+  },
+  "verdict": {
+    "ok": "Đã trích xuất",
+    "image_unextractable": "Hình ảnh chưa trích xuất",
+    "unreadable": "Không trích xuất được văn bản",
+    "low_confidence": "Cần kiểm tra"
+  },
+  "errors": {
+    "network": "Không kết nối được máy chủ. Kiểm tra server đang chạy.",
+    "uploadFailed": "Tải file thất bại.",
+    "generic": "Đã xảy ra lỗi."
+  },
+  "ocr": {
+    "enabled": "OCR đã cấp",
+    "pending": "Chờ admin cấp quyền"
+  },
+  "issues": {
+    "cropAria": "Cắt vùng {rid}"
+  },
+  "toast": {
+    "jobDone": "Job đã xong: {name}",
+    "jobFailed": "Job #{id} thất bại",
+    "jobFailedWith": "Job #{id} thất bại: {error}"
+  },
+  "upload": {
+    "errMaxPages": "Tối đa {n} trang mỗi lần gửi.",
+    "errPngJpgOnly": "Chỉ hỗ trợ ảnh PNG/JPG.",
+    "errPdfRead": "Không đọc được file PDF.",
+    "errUnsupported": "Định dạng file không được hỗ trợ.",
+    "errMinPage": "Chọn ít nhất 1 trang.",
+    "errMerge": "Ghép PDF thất bại.",
+    "errPreview": "Không đọc được trang xem trước.",
+    "send": "Gửi",
+    "pick": "Tải file lên",
+    "dropHint": "Kéo thả file vào đây hoặc chọn từ máy",
+    "summary": "{files} file · {pages} trang / {max}",
+    "pagesOf": "{cur}/{total} trang",
+    "onePage": "1 trang",
+    "crop": "Chọn vùng",
+    "cropTitle": "Chọn vùng cần cắt · {name}",
+    "cropFull": "Chọn toàn bộ ảnh",
+    "cropConfirm": "Cắt",
+    "selectPages": "Chọn số trang",
+    "pagesTitle": "Chọn số trang · {name}",
+    "pageN": "Trang {n}",
+    "pagesConfirm": "Chọn {n} trang",
+    "modeTitle": "Chế độ xử lý",
+    "modeExtract": "Lấy văn bản",
+    "modeLayout": "Lấy cả layout",
+    "format": "Định dạng",
+    "formatWord": "word"
+  },
+  "auth": {
+    "password": "Mật khẩu",
+    "show": "Hiện",
+    "hide": "Ẩn",
+    "signin": {
+      "title": "Đăng nhập",
+      "subtitle": "Chào mừng trở lại. Đăng nhập để tiếp tục.",
+      "noAccount": "Chưa có tài khoản?",
+      "forgot": "Quên mật khẩu?",
+      "signedIn": "Đã đăng nhập."
+    },
+    "signup": {
+      "title": "Đăng ký",
+      "subtitle": "Tạo tài khoản để bắt đầu.",
+      "haveAccount": "Đã có tài khoản?",
+      "created": "Đã tạo tài khoản. Hãy đăng nhập."
+    },
+    "forgot": {
+      "title": "Quên mật khẩu",
+      "sent": "Kiểm tra email của bạn.",
+      "submit": "Gửi email đặt lại"
+    },
+    "reset": {
+      "title": "Đặt lại mật khẩu",
+      "newPassword": "Mật khẩu mới",
+      "repeatPassword": "Nhập lại mật khẩu mới",
+      "mismatch": "Mật khẩu nhập lại không khớp.",
+      "submit": "Đặt lại mật khẩu"
+    }
+  },
+  "jd": {
+    "title": "Chi tiết công việc",
+    "download": "Tải xuống",
+    "downloadOriginal": "Tải file gốc",
+    "openNewTab": "Mở tab mới",
+    "backToList": "Về danh sách công việc",
+    "loadFailedTitle": "Không tải được công việc.",
+    "notFoundTitle": "Không tìm thấy công việc.",
+    "notFoundBody": "Công việc không tồn tại hoặc bạn không có quyền xem.",
+    "staleBadge": "Cần đồng bộ",
+    "resync": "Đồng bộ lại",
+    "resyncDone": "Đã đồng bộ layout",
+    "retryOcr": "Chạy lại OCR",
+    "retryFailed": "Thử lại thất bại.",
+    "cancelJob": "Hủy job",
+    "retryLayout": "Vẽ lại layout",
+    "retryLayoutShort": "Vẽ lại",
+    "retryLayoutDone": "Đã tạo lại layout.",
+    "retryLayoutFailed": "Tạo lại layout thất bại.",
+    "retryLayoutConfirmTitle": "Vẽ lại layout?",
+    "retryLayoutConfirmMessage": "Toàn bộ layout (Markdown + DOCX) sẽ được vẽ lại bằng LLM. Tiếp tục?",
+    "layoutFmtAria": "Định dạng layout",
+    "layoutFmtChanged": "Đã đổi định dạng layout.",
+    "edit": "Chỉnh sửa",
+    "editing": "Đang sửa",
+    "history": "Lịch sử",
+    "deleteJob": "Xóa job",
+    "historyAria": "Lịch sử phiên bản",
+    "historyTitle": "Lịch sử phiên bản",
+    "historyError": "Không tải được lịch sử.",
+    "current": "Hiện tại",
+    "restored": "Đã khôi phục bản cũ",
+    "restore": "Khôi phục",
+    "noVersions": "Chưa có phiên bản nào.",
+    "sectionText": "Văn bản",
+    "stats": "{pages} trang · GPU {gpu}s · {model}",
+    "originalFile": "File gốc",
+    "infoTitle": "Thông tin"
+  },
+  "info": {
+    "createdAt": "Tạo lúc:",
+    "startedAt": "Bắt đầu:",
+    "finishedAt": "Hoàn thành:",
+    "pageCount": "Số trang:",
+    "gpuSeconds": "GPU (giây):"
+  },
+  "export": {
+    "created": "Đã tạo bản xuất.",
+    "failed": "Xuất file thất bại.",
+    "mdLayout": "Markdown (layout)",
+    "docxLayout": "DOCX (giữ layout)",
+    "fmtMd": "Tải .md",
+    "fmtHtml": "Tải .html",
+    "fmtDocx": "Tải .docx",
+    "fmtPdf": "Tải .pdf"
+  },
+  "editor": {
+    "textAreaAria": "Soạn thảo văn bản",
+    "panelTitle": "Soạn thảo",
+    "modeAria": "Chế độ soạn thảo",
+    "layoutCached": "Layout đã lưu",
+    "layoutNotCached": "Layout chưa lưu",
+    "llmRendering": "Đang vẽ layout bằng LLM…",
+    "saveFailed": "Lưu thất bại.",
+    "edit": "Soạn thảo",
+    "editing": "Đang soạn",
+    "loadError": "Không tải được văn bản trích xuất.",
+    "apply": "Áp dụng",
+    "reject": "Bỏ qua",
+    "suggestionAria": "Gợi ý sửa",
+    "customOther": "Sửa khác…",
+    "save": "Lưu",
+    "emptyContent": "Nội dung trống.",
+    "saved": "Đã lưu.",
+    "savedSynced": "Đã lưu và đồng bộ layout.",
+    "savedNeedsRender": "Đã lưu. Có layout cần vẽ lại.",
+    "detachedConfirm": "Layout có chỉnh tay. Đồng bộ sẽ ghi đè. Tiếp tục?",
+    "rerenderQuestion": "Lưu văn bản sẽ cần vẽ lại layout. Thêm vào hàng đợi vẽ layout?",
+    "rerenderQueued": "Đã xếp hàng vẽ lại layout.",
+    "saveAndQueue": "Lưu & xếp hàng",
+    "issues": {
+      "title": "Vấn đề ({n})",
+      "replacedNote": "Văn bản vùng đã cập nhật; markdown chưa thay thế (text gốc không còn trong bản xem trước)",
+      "editRegion": "Sửa vùng"
+    }
+  },
+  "word": {
+    "toolbarAria": "Công cụ soạn thảo Word",
+    "undo": "Hoàn tác",
+    "redo": "Làm lại",
+    "bold": "Đậm",
+    "italic": "Nghiêng",
+    "underline": "Gạch chân",
+    "alignLeft": "Căn trái",
+    "alignCenter": "Căn giữa",
+    "alignRight": "Căn phải",
+    "alignJustify": "Căn đều",
+    "listUl": "Danh sách chấm",
+    "listOl": "Danh sách số",
+    "clearFormat": "Xóa định dạng",
+    "font": "Font chữ",
+    "fontOption": "Font",
+    "size": "Cỡ chữ (pt)",
+    "sizeOption": "Cỡ",
+    "insertTable": "Chèn bảng",
+    "addRow": "Thêm hàng",
+    "delRow": "Xóa hàng",
+    "row": "Hàng",
+    "addCol": "Thêm cột",
+    "delCol": "Xóa cột",
+    "col": "Cột",
+    "tableInsert": "Chèn bảng {r}×{c}",
+    "tablePick": "Chọn bảng (tối đa 10×10)"
+  },
+  "extraction": {
+    "title": "Trích xuất văn bản",
+    "backToDetail": "Về chi tiết công việc",
+    "needsRender": "Một số layout chưa đồng bộ được. Vẽ lại layout để cập nhật bản mới nhất."
+  },
+  "theme": {
+    "toLight": "Chuyển sang giao diện sáng",
+    "toDark": "Chuyển sang giao diện tối",
+    "dark": "Giao diện tối",
+    "light": "Giao diện sáng"
+  },
+  "ir": {
+    "copied": "Đã sao chép IR"
+  },
+  "preview": {
+    "modeAria": "Chế độ xem trước",
+    "wordTitle": "Xem trước layout Word"
+  },
+  "region": {
+    "textAria": "Văn bản vùng {id}"
+  },
+  "docStyle": {
+    "indexHeading": "Đánh số heading + sinh mục lục",
+    "tocTitle": "Mục lục",
+    "tocEmpty": "Không có heading h1-h3.",
+    "marginLeft": "Lề trái (cm)",
+    "marginRight": "Lề phải (cm)",
+    "tableBorders": "Viền bảng",
+    "indentOut": "Bớt lề",
+    "indentIn": "Thêm lề",
+    "lineSpacing": "Giãn dòng"
+  },
+  "admin": {
+    "title": "Quản trị",
+    "tab": {
+      "overview": "Tổng quan",
+      "users": "Người dùng",
+      "api": "API",
+      "logs": "Logs",
+      "stats": "Thống kê",
+      "settings": "Hệ thống"
+    },
+    "settings": {
+      "llmBaseUrl": "Địa chỉ LLM",
+      "llmBaseUrlHelp": "Endpoint OpenAI-compatible (vd http://localhost:20128/v1).",
+      "llmModel": "Model layout",
+      "llmModelHelp": "Model dùng cho md-layout + docx-layout.",
+      "proofreadModel": "Model kiểm tra từ",
+      "proofreadModelHelp": "Model dùng cho proofread (gợi ý sửa lỗi OCR).",
+      "schedulerInterval": "Chu kỳ scheduler (giây)",
+      "schedulerIntervalHelp": "Sweep reap-leases; mặc định 60, tối thiểu 5.",
+      "schedulerIntervalFloor": "scheduler_interval_seconds phải từ 5 giây trở lên.",
+      "kaggleMinQueue": "Kaggle min queue",
+      "kaggleMinQueueHelp": "Số job chờ tối thiểu để spawn (mode loop); mặc định 1.",
+      "kaggleMinQueueFloor": "kaggle_min_queue phải từ 1 trở lên.",
+      "kaggleMinGap": "Kaggle min gap (giây)",
+      "kaggleMinGapHelp": "Khoảng cách tối thiểu giữa 2 lần spawn; mặc định 600.",
+      "kaggleMinGapFloor": "kaggle_min_gap_seconds phải từ 60 giây trở lên.",
+      "intRequired": "Giá trị phải là số nguyên.",
+      "intro": "Giá trị lưu vào bảng Setting (runtime override) — áp dụng ngay, không cần restart container; khi DB trống thì dùng giá trị từ env.",
+      "current": "Hiện tại: {value} ({source}).",
+      "kaggleMode": "Chế độ Kaggle (kaggle_mode):",
+      "kaggleModeHelp": "read-only trên API — thay đổi mode cần restart container."
+    },
+    "overview": {
+      "newUsers": "User mới (7 ngày)",
+      "jobsDone": "Job hoàn tất",
+      "jobsFailed": "Job thất bại",
+      "gpuTotal": "Tổng GPU (giây)",
+      "cost": "Chi phí ước tính (USD)"
+    },
+    "stats": {
+      "date": "Ngày",
+      "registered": "Đăng ký",
+      "jobs": "Job",
+      "done": "Hoàn tất",
+      "failed": "Thất bại",
+      "views": "Lượt xem",
+      "gpu": "GPU (giây)",
+      "cost": "Chi phí ước tính",
+      "from": "Từ",
+      "to": "Đến"
+    },
+    "users": {
+      "updated": "Đã cập nhật.",
+      "quotaInvalid": "Giới hạn phải là số nguyên trong khoảng 0–10000.",
+      "emptyTitle": "Chưa có người dùng",
+      "emptyBody": "Người dùng mới sẽ xuất hiện tại đây sau khi đăng ký.",
+      "colId": "ID",
+      "colEmail": "Email",
+      "colRole": "Vai trò",
+      "colCreated": "Ngày tạo",
+      "colQuota": "Quota",
+      "colDaily": "Ngày",
+      "colWeekly": "Tuần",
+      "quotaDaily": "{used}/{limit} hôm nay (còn {remaining})",
+      "quotaWeekly": "{used}/{limit} tuần (còn {remaining})",
+      "saveQuota": "Lưu quota",
+      "ocrOn": "Bật OCR cho {email}",
+      "ocrOff": "Tắt OCR cho {email}"
+    },
+    "workers": {
+      "queue": "Hàng đợi:",
+      "empty": "Chưa có worker nào báo heartbeat.",
+      "silent": "Im lặng {s}s"
+    },
+    "api": {
+      "intro": "Tổng hợp client-side từ request_logs (500 dòng gần nhất)",
+      "total": "Tổng"
+    },
+    "kaggle": {
+      "refreshAria": "Làm mới Kaggle quota",
+      "loading": "Đang tải quota…",
+      "gpu": "GPU: dùng {used}/{total} · còn {remaining}",
+      "tpu": "TPU: dùng {used}/{total}",
+      "refreshAt": "Refresh: {time}"
+    },
+    "card": {
+      "kaggleQuota": "GPU/Kaggle Quota",
+      "logsTail": "Log tail",
+      "workers": "Workers"
+    },
+    "logs": {
+      "title": "Nhật ký truy cập",
+      "ipFilter": "Lọc theo IP",
+      "refreshAria": "Làm mới danh sách nhật ký",
+      "emptyTitle": "Chưa có nhật ký",
+      "emptyBody": "Nhật ký truy cập sẽ xuất hiện tại đây.",
+      "colUser": "Người dùng",
+      "colTime": "Thời gian"
+    }
+  },
+  "profile": {
+    "title": "Hồ sơ",
+    "loading": "Đang tải hồ sơ…",
+    "infoTitle": "Thông tin",
+    "role": "Vai trò:",
+    "joined": "Ngày tham gia: cập nhật sau",
+    "changePassword": "Đổi mật khẩu",
+    "currentPassword": "Mật khẩu hiện tại",
+    "newPassword": "Mật khẩu mới",
+    "repeatPassword": "Nhập lại mật khẩu mới",
+    "pwMismatch": "Mật khẩu xác nhận không khớp.",
+    "pwSuccess": "Đổi mật khẩu thành công. Phiên đăng nhập khác đã bị đăng xuất.",
+    "pwFailed": "Đổi mật khẩu thất bại.",
+    "savePassword": "Lưu mật khẩu",
+    "changeEmail": "Đổi email",
+    "newEmail": "Email mới",
+    "emailSuccess": "Đổi email thành công.",
+    "emailFailed": "Đổi email thất bại.",
+    "saveEmail": "Lưu email",
+    "saved": "Đã lưu thay đổi."
+  },
+  "quota": {
+    "remaining": "Còn {dUsed}/{dLimit} trang hôm nay · {wUsed}/{wLimit} trang tuần này"
+  },
+  "landing": {
+    "hero": {
+      "title": "Biến ảnh và PDF thành văn bản sửa được",
+      "sub": "Ảnh chụp đề thi, sách, tài liệu scan thành văn bản có cấu trúc. Sửa từng vùng lỗi, xuất file bạn cần.",
+      "alt": "Giao diện img2text trên nền tối",
+      "caption": "Toàn bộ trang trên nền tối."
+    },
+    "cta": "Bắt đầu",
+    "howLink": "Xem cách hoạt động",
+    "howTitle": "Cách hoạt động",
+    "how": {
+      "s1": { "label": "OCR đọc chữ", "body": "Máy đọc ảnh và PDF, ra văn bản thô. Hỗ trợ tiếng Việt có dấu." },
+      "s2": { "label": "IR giữ cấu trúc", "body": "Văn bản được tổ chức thành đoạn, tiêu đề, bảng, danh sách. Bạn sửa từng vùng nghi lỗi." },
+      "s3": { "label": "Layout dựng trang", "body": "Trình dựng layout ghép phần đã sửa lại thành trang có-format, giữ cột và canh lề gốc." }
+    },
+    "featuresTitle": "Tính năng",
+    "features": {
+      "f1": { "title": "Soạn hai khung, undo mọi bước", "body": "Văn bản và Layout mở song song. Mỗi thao tác lưu vào lịch sử, Ctrl+Z hoàn tác được về bước trước." },
+      "f2": { "title": "Sửa lỗi proofread bằng cách bấm", "body": "Bấm vào vùng sai trong bản xem trước, chữ tương ứng trong ảnh được tô sáng. Sửa đúng chỗ, không ảnh hưởng phần còn lại." },
+      "f3": { "title": "Sáu định dạng xuất", "body": "Markdown, HTML, DOCX, PDF, cộng bản giữ nguyên layout cho Markdown và DOCX." },
+      "f4": { "title": "Quota minh bạch", "body": "Số trang còn lại của tháng hiển thị ngay trên thanh điều hướng. Không phát sinh chi phí ẩn." },
+      "f5": { "title": "Chuẩn bị trang trước khi chạy", "body": "Chọn trang cần lấy, xoay trang nghiêng, cắt vùng chứa chữ trong wizard trước khi gửi đi." }
+    },
+    "formatsTitle": "Định dạng",
+    "inputLabel": "Nhận vào:",
+    "outputLabel": "Xuất ra:",
+    "colab": "Chạy miễn phí trên Google Colab.",
+    "galleryTitle": "Xem trước",
+    "gallery": {
+      "g1": { "alt": "Trang chủ img2text trên nền tối", "caption": "Trang chủ: hero và lời kêu gọi bắt đầu." },
+      "g2": { "alt": "Màn hình đăng nhập img2text", "caption": "Đăng nhập bằng email và mật khẩu." },
+      "g3": { "alt": "JobDetail 2 section: Văn bản trên, Layout dưới", "caption": "JobDetail 2 section: Văn bản và Layout cuộn dọc." },
+      "g4": { "alt": "Bản xem trước layout dựng trang có format", "caption": "Layout dựng trang có format, giữ cột và canh lề gốc." },
+      "g5": { "alt": "Thanh xuất file với 2 nhóm Văn bản và Layout", "caption": "Xuất file: nhóm Văn bản và nhóm Layout." },
+      "g6": { "alt": "Bảng quản trị người dùng", "caption": "Admin quản trị người dùng và quota." }
+    },
+    "finalTitle": "Tải ảnh đầu tiên của bạn",
+    "footerAria": "Liên kết chân trang"
+  },
+  "jobs": {
+    "title": "Công việc",
+    "subtitle": "Theo dõi tiến trình OCR trên worker Colab.",
+    "stats": {
+      "total": "Tổng",
+      "pending": "Đang chờ",
+      "done": "Hoàn tất"
+    },
+    "searchLabel": "Tìm theo tên file",
+    "searchPlaceholder": "Tìm theo tên file...",
+    "sortLabel": "Sắp xếp",
+    "sortNewest": "Mới nhất",
+    "sortOldest": "Cũ nhất",
+    "filter": {
+      "all": "Tất cả"
+    },
+    "deniedTitle": "Chờ admin cấp quyền",
+    "deniedHint": "Môi trường dev: đăng nhập tài khoản admin → mục Người dùng → bật OCR cho tài khoản này.",
+    "uploadQueued": "Đã tải lên — đang chờ xử lý.",
+    "countingPages": "Đang đếm trang...",
+    "selectAll": "Chọn cả trang",
+    "emptyTitle": "Chưa có công việc",
+    "emptyBody": "Tải ảnh trang sách hoặc file PDF để bắt đầu OCR. Mỗi job xử lý tối đa 50 trang · 50MB.",
+    "emptyWorker": "Job chờ worker Colab kết nối.",
+    "emptyCta": "Tải file lên để tạo công việc đầu tiên.",
+    "emptyFilter": "Không có công việc nào khớp bộ lọc.",
+    "paginationAria": "Phân trang",
+    "prev": "Trước",
+    "next": "Sau",
+    "selectedCount": "{n} đã chọn",
+    "retrySelected": "Chạy lại đã chọn",
+    "bulkRetryQueued": "Đã lên lịch chạy lại",
+    "bulkRetryErrors": "{n} job lỗi khi chạy lại",
+    "row": {
+      "durationSec": "{s} giây",
+      "durationMin": "{m} phút",
+      "retryScheduled": "Đã lên lịch chạy lại",
+      "cancelled": "Đã hủy job",
+      "deleted": "Đã xóa job",
+      "selectAria": "Chọn job {id}",
+      "image": "Ảnh",
+      "pages": "trang",
+      "view": "Xem",
+      "downloadOriginal": "Tải bản gốc",
+      "retry": "Chạy lại",
+      "cancel": "Hủy",
+      "delete": "Xóa",
+      "deleteTitle": "Xóa job #{id}?",
+      "deleteMessage": "Toàn bộ dữ liệu (file gốc, kết quả, phiên bản) sẽ bị xóa vĩnh viễn. Không thể hoàn tác."
+    }
+  }
+}

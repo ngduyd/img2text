@@ -1,18 +1,19 @@
 import type { JobListItem, JobStatus } from "../api/types";
-import { STATUS_TEXT } from "../lib/status";
+import { STATUS_KEY } from "../lib/status";
+import { useT } from "../i18n";
 import Button from "./ui/Button";
 
 export type StatusFilter = "all" | JobStatus;
 
-// P2: chips share STATUS_TEXT spellings with badges (one spelling per status).
+// P2: chips share STATUS_KEY spellings with badges (one spelling per status).
 // "all" is a filter pseudo-status, not a job status — kept short.
-const TABS: { key: StatusFilter; label: string }[] = [
-  { key: "all", label: "Tất cả" },
-  { key: "queued", label: STATUS_TEXT.queued },
-  { key: "extracting", label: STATUS_TEXT.extracting },
-  { key: "rendering", label: STATUS_TEXT.rendering },
-  { key: "done", label: STATUS_TEXT.done },
-  { key: "failed", label: STATUS_TEXT.failed },
+const TAB_KEYS: { key: StatusFilter; labelKey: string }[] = [
+  { key: "all", labelKey: "jobs.filter.all" },
+  { key: "queued", labelKey: STATUS_KEY.queued },
+  { key: "extracting", labelKey: STATUS_KEY.extracting },
+  { key: "rendering", labelKey: STATUS_KEY.rendering },
+  { key: "done", labelKey: STATUS_KEY.done },
+  { key: "failed", labelKey: STATUS_KEY.failed },
 ];
 
 /** Counts computed client-side from the loaded list; default "all". */
@@ -25,6 +26,7 @@ export default function StatusFilterTabs({
   value: StatusFilter;
   onChange: (v: StatusFilter) => void;
 }) {
+  const { t } = useT();
   const counts: Record<StatusFilter, number> = {
     all: items.length,
     queued: 0,
@@ -40,7 +42,7 @@ export default function StatusFilterTabs({
   return (
     // Mobile: 6 chip cuộn ngang (không đẩy nút upload khỏi fold); md+ wrap.
     <div className="flex gap-1 overflow-x-auto whitespace-nowrap [&>*]:shrink-0 md:flex-wrap md:overflow-visible">
-      {TABS.map(({ key, label }) => (
+      {TAB_KEYS.map(({ key, labelKey }) => (
         <Button
           key={key}
           testid={`filter-${key}`}
@@ -54,7 +56,7 @@ export default function StatusFilterTabs({
           }
           onClick={() => onChange(key)}
         >
-          {label} ({counts[key]})
+          {t(labelKey)} ({counts[key]})
         </Button>
       ))}
     </div>

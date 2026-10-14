@@ -78,7 +78,7 @@ it("/ renders Landing publicly (hero H1 + CTA to /signin)", async () => {
   render(<App />);
   expect(await screen.findByTestId("landing-hero")).toBeInTheDocument();
   expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-    "Biến ảnh và PDF thành văn bản sửa được",
+    "Turn photos and PDFs into editable text",
   );
   expect(screen.getByTestId("landing-cta")).toHaveAttribute("href", "/signin");
 });
@@ -112,7 +112,7 @@ it("logged-in user at / still sees the Landing (trang chủ)", async () => {
   render(<App />);
   // Settle authed first: badge-ocr only renders once me resolves.
   // (Old code redirects in the same commit → landing-hero gone → this fails.)
-  expect(await screen.findByTestId("badge-ocr")).toHaveTextContent("OCR đã cấp");
+  expect(await screen.findByTestId("badge-ocr")).toHaveTextContent("OCR enabled");
   expect(screen.getByTestId("landing-hero")).toBeInTheDocument();
   expect(screen.queryByTestId("empty-state")).not.toBeInTheDocument();
   expect(window.location.pathname).toBe("/");
@@ -141,7 +141,7 @@ it("logged-in user sees badge-ocr success + avatar + profile + logout in auth-zo
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   render(<App />);
   const zone = within(await screen.findByTestId("auth-zone"));
-  expect(await screen.findByTestId("badge-ocr")).toHaveTextContent("OCR đã cấp");
+  expect(await screen.findByTestId("badge-ocr")).toHaveTextContent("OCR enabled");
   const avatar = await screen.findByTestId("nav-avatar");
   expect(avatar).toHaveTextContent("US");
   expect(avatar).toHaveAttribute("title", "user@x.io");
@@ -155,8 +155,8 @@ it("logged-in user sees badge-ocr success + avatar + profile + logout in auth-zo
   const menu = screen.getByTestId("nav-user-menu");
   expect(menu).toHaveTextContent("user@x.io");
   expect(menu).toHaveTextContent("user");
-  expect(within(menu).getByTestId("btn-profile")).toHaveTextContent("Hồ sơ");
-  expect(within(menu).getByTestId("btn-logout")).toHaveTextContent("Đăng xuất");
+  expect(within(menu).getByTestId("btn-profile")).toHaveTextContent("Profile");
+  expect(within(menu).getByTestId("btn-logout")).toHaveTextContent("Sign out");
   expect(zone.queryByTestId("btn-login")).not.toBeInTheDocument();
 });
 
@@ -179,8 +179,8 @@ it("header renders quota-remaining when quota resolves; hidden when null", async
   });
   render(<App />);
   const badge = await screen.findByTestId("quota-remaining");
-  expect(badge).toHaveTextContent("Còn 15/25 trang hôm nay");
-  expect(badge).toHaveTextContent("110/150 trang tuần này");
+  expect(badge).toHaveTextContent("15/25 pages left today");
+  expect(badge).toHaveTextContent("110/150 this week");
 });
 
 it("user without OCR sees badge-ocr warning in auth-zone", async () => {
@@ -192,7 +192,7 @@ it("user without OCR sees badge-ocr warning in auth-zone", async () => {
   } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   render(<App />);
-  expect(await screen.findByTestId("badge-ocr")).toHaveTextContent("Chờ admin cấp quyền");
+  expect(await screen.findByTestId("badge-ocr")).toHaveTextContent("Waiting for admin to grant OCR access");
 });
 
 it("admin sees BOTH nav-link-jobs and nav-link-admin (first-run upload path)", async () => {
@@ -239,7 +239,7 @@ it("btn-profile inside dropdown links to /profile placeholder route", async () =
   render(<App />);
   await userEvent.click(await screen.findByTestId("nav-avatar"));
   await userEvent.click(screen.getByTestId("btn-profile"));
-  expect(await screen.findByRole("heading", { name: "Hồ sơ" })).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "Profile" })).toBeInTheDocument();
 });
 
 it("user dropdown: nav-avatar opens nav-user-menu containing email + role", async () => {

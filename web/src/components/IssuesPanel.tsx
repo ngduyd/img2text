@@ -3,7 +3,8 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { api } from "../api/client";
 import type { RegionOut } from "../api/types";
-import { VERDICT_LABELS } from "../lib/verdicts";
+import { VERDICT_KEY } from "../lib/verdicts";
+import { translate, useT } from "../i18n";
 import RegionEditor from "./RegionEditor";
 import Button from "./ui/Button";
 
@@ -25,7 +26,7 @@ function Crop({ jobId, rid, fileType }: { jobId: string; rid: string; fileType: 
     <img
       data-testid={`crop-${rid}`}
       src={data.url}
-      alt={`Cắt vùng ${rid}`}
+      alt={translate("issues.cropAria", { rid })}
       className="mt-1 max-w-40 rounded-md"
     />
   );
@@ -50,6 +51,7 @@ export default function IssuesPanel({
   fileType?: string;
   onRegionUpdated?: (rid: string, text: string) => void;
 }) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const [activeRid, setActiveRid] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<Record<string, string>>({});
@@ -70,7 +72,7 @@ export default function IssuesPanel({
           onClick={() => setOpen((o) => !o)}
           className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1 text-left transition duration-150 ease-out hover:bg-surface-2"
         >
-          Vấn đề ({issues.length})
+          {t("editor.issues.title", { n: issues.length })}
           <ChevronDown
             className={`h-4 w-4 text-muted transition duration-150 ease-out ${open ? "rotate-180" : ""}`}
             aria-hidden="true"
@@ -85,7 +87,7 @@ export default function IssuesPanel({
       >
         {issues.map((r) => (
           <article key={r.id} data-testid={`issue-${r.id}`} className="py-2">
-            <span className="font-semibold">{VERDICT_LABELS[r.verdict] ?? r.verdict}</span>{" "}
+            <span className="font-semibold">{t(VERDICT_KEY[r.verdict] ?? r.verdict)}</span>{" "}
             <span className="text-sm text-muted">{r.id}</span>
             {/* PDF → text region (dưới), không crop image. */}
             {r.bbox != null && fileType === "image" && (
@@ -94,7 +96,7 @@ export default function IssuesPanel({
             {r.text && <p className="text-sm">{r.text}</p>}
             {replacedNotes[r.id] && (
               <p data-testid={`region-note-${r.id}`} className="mt-1 text-sm text-warning">
-                Văn bản vùng đã cập nhật; markdown chưa thay thế (text gốc không còn trong bản xem trước)
+                {t("editor.issues.replacedNote")}
               </p>
             )}
             {activeRid === r.id ? (
@@ -117,7 +119,7 @@ export default function IssuesPanel({
                   size="sm"
                   onClick={() => setActiveRid(r.id)}
                 >
-                  Sửa vùng
+                  {t("editor.issues.editRegion")}
                 </Button>
               </div>
             )}

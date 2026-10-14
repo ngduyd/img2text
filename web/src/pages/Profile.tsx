@@ -4,13 +4,16 @@ import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import { mapApiError } from "../lib/errors";
 import OcrBadge from "../components/OcrBadge";
+import LangSwitch from "../components/LangSwitch";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import Input from "../components/ui/Input";
+import { useT } from "../i18n";
 
 /** Profile for both roles (Task 3). PATCH /api/auth/profile via api.updateProfile. */
 export default function Profile() {
+  const { t } = useT();
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
   const queryClient = useQueryClient();
 
@@ -32,7 +35,7 @@ export default function Profile() {
     return (
       <main id="main" className="mx-auto max-w-md p-4 sm:p-6">
         <p data-testid="profile-loading" className="text-sm text-muted">
-          Đang tải hồ sơ…
+          {t("profile.loading")}
         </p>
       </main>
     );
@@ -43,19 +46,19 @@ export default function Profile() {
     setPwError(null);
     setPwSuccess(false);
     if (newPw !== newPw2) {
-      setPwError("Mật khẩu xác nhận không khớp."); // client-side check — no api call on mismatch
+      setPwError(t("profile.pwMismatch")); // client-side check — no api call on mismatch
       return;
     }
     setPwBusy(true);
     try {
       await api.updateProfile({ current_password: curPw, new_password: newPw });
-      toast.success("Đã lưu thay đổi.");
+      toast.success(t("profile.saved"));
       setPwSuccess(true);
       setCurPw("");
       setNewPw("");
       setNewPw2("");
     } catch (err) {
-      setPwError(err instanceof ApiError ? err.detail : "Đổi mật khẩu thất bại.");
+      setPwError(err instanceof ApiError ? err.detail : t("profile.pwFailed"));
       toast.error(mapApiError(err));
     } finally {
       setPwBusy(false);
@@ -69,13 +72,13 @@ export default function Profile() {
     setEmBusy(true);
     try {
       const updated = await api.updateProfile({ current_password: curPw2, email: newEmail });
-      toast.success("Đã lưu thay đổi.");
+      toast.success(t("profile.saved"));
       queryClient.setQueryData(["me"], updated);
       setEmSuccess(true);
       setCurPw2("");
       setNewEmail("");
     } catch (err) {
-      setEmError(err instanceof ApiError ? err.detail : "Đổi email thất bại.");
+      setEmError(err instanceof ApiError ? err.detail : t("profile.emailFailed"));
       toast.error(mapApiError(err));
     } finally {
       setEmBusy(false);
@@ -84,16 +87,20 @@ export default function Profile() {
 
   return (
     <main id="main" className="mx-auto max-w-md p-4 sm:p-6">
-      <h1 className="mb-6 text-2xl font-bold tracking-tight">Hồ sơ</h1>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold tracking-tight">{t("profile.title")}</h1>
+        {/* Spec S2: switch VI/EN ở Settings. */}
+        <LangSwitch testid="lang-switch-settings" />
+      </div>
       <div className="flex flex-col gap-4">
-        <Card title="Thông tin" testid="card-profile-info">
+        <Card title={t("profile.infoTitle")} testid="card-profile-info">
           <div className="flex flex-col gap-2 text-sm">
             <div className="flex items-center gap-2">
               <span className="text-muted">Email:</span>
               <span data-testid="profile-email">{me.email}</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-muted">Vai trò:</span>
+              <span className="text-muted">{t("profile.role")}</span>
               <Badge testid="profile-role" tone={me.role === "admin" ? "info" : "neutral"}>
                 {me.role === "admin" ? "Admin" : "User"}
               </Badge>
@@ -108,14 +115,14 @@ export default function Profile() {
                 {me.id}
               </span>
             </div>
-            <p className="text-muted">Ngày tham gia: cập nhật sau</p>
+            <p className="text-muted">{t("profile.joined")}</p>
           </div>
         </Card>
 
-        <Card title="Đổi mật khẩu" testid="card-password">
+        <Card title={t("profile.changePassword")} testid="card-password">
           <form onSubmit={savePassword} className="flex flex-col gap-3">
             <Input
-              label="Mật khẩu hiện tại"
+              label={t("profile.currentPassword")}
               type="password"
               autoComplete="current-password"
               testid="input-current-password"
@@ -123,7 +130,7 @@ export default function Profile() {
               onChange={(e) => setCurPw(e.target.value)}
             />
             <Input
-              label="Mật khẩu mới"
+              label={t("profile.newPassword")}
               type="password"
               autoComplete="new-password"
               testid="input-new-password"
@@ -131,7 +138,7 @@ export default function Profile() {
               onChange={(e) => setNewPw(e.target.value)}
             />
             <Input
-              label="Nhập lại mật khẩu mới"
+              label={t("profile.repeatPassword")}
               type="password"
               autoComplete="new-password"
               testid="input-new-password2"
@@ -145,21 +152,21 @@ export default function Profile() {
             )}
             {pwSuccess && (
               <p data-testid="password-success" className="text-sm text-success">
-                Đổi mật khẩu thành công. Phiên đăng nhập khác đã bị đăng xuất.
+                {t("profile.pwSuccess")}
               </p>
             )}
             <div>
               <Button type="submit" testid="btn-save-password" loading={pwBusy}>
-                Lưu mật khẩu
+                {t("profile.savePassword")}
               </Button>
             </div>
           </form>
         </Card>
 
-        <Card title="Đổi email" testid="card-email">
+        <Card title={t("profile.changeEmail")} testid="card-email">
           <form onSubmit={saveEmail} className="flex flex-col gap-3">
             <Input
-              label="Mật khẩu hiện tại"
+              label={t("profile.currentPassword")}
               type="password"
               autoComplete="current-password"
               testid="input-current-password-2"
@@ -167,7 +174,7 @@ export default function Profile() {
               onChange={(e) => setCurPw2(e.target.value)}
             />
             <Input
-              label="Email mới"
+              label={t("profile.newEmail")}
               type="email"
               autoComplete="email"
               testid="input-new-email"
@@ -181,12 +188,12 @@ export default function Profile() {
             )}
             {emSuccess && (
               <p data-testid="email-success" className="text-sm text-success">
-                Đổi email thành công.
+                {t("profile.emailSuccess")}
               </p>
             )}
             <div>
               <Button type="submit" testid="btn-save-email" loading={emBusy}>
-                Lưu email
+                {t("profile.saveEmail")}
               </Button>
             </div>
           </form>

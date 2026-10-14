@@ -7,7 +7,8 @@ import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import type { DocumentVersion, Job } from "../api/types";
 import { mapApiError } from "../lib/errors";
-import { STATUS_TEXT, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
+import { STATUS_KEY, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
+import { translate, useT } from "../i18n";
 import { useJobDoneToasts } from "../hooks/useJobDoneToasts";
 import ExportBar from "../components/ExportBar";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -33,6 +34,7 @@ const jobRefetchInterval = (q: Query<Job>): number | false =>
  * col phải = collapsible "File gốc" + "Thông tin" (Lane I Task 2, bỏ sticky).
  */
 export default function JobDetail() {
+  const { t } = useT();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -102,10 +104,10 @@ export default function JobDetail() {
     setRetryError(null);
     try {
       await api.retryLayout(id!);
-      toast.success("Đã tạo lại layout.");
+      toast.success(t("jd.retryLayoutDone"));
       await queryClient.invalidateQueries({ queryKey: ["job", id] });
     } catch (err) {
-      setRetryError(err instanceof ApiError ? err.detail : "Tạo lại layout thất bại.");
+      setRetryError(err instanceof ApiError ? err.detail : t("jd.retryLayoutFailed"));
       toast.error(mapApiError(err));
     } finally {
       setRetryingLayout(false);
@@ -121,7 +123,7 @@ export default function JobDetail() {
     try {
       await api.exportJob(id!, fmt);
       setLayoutFmtOverride(fmt);
-      toast.success("Đã đổi định dạng layout.");
+      toast.success(t("jd.layoutFmtChanged"));
     } catch (err) {
       toast.error(mapApiError(err));
     }
@@ -147,19 +149,17 @@ export default function JobDetail() {
             )}
             <div className="min-w-0">
               <p className="font-medium">
-                {isError ? "Không tải được công việc." : "Không tìm thấy công việc."}
+                {isError ? t("jd.loadFailedTitle") : t("jd.notFoundTitle")}
               </p>
               <p className="break-words text-sm text-muted">
-                {isError
-                  ? mapApiError(error)
-                  : "Công việc không tồn tại hoặc bạn không có quyền xem."}
+                {isError ? mapApiError(error) : t("jd.notFoundBody")}
               </p>
               <Link
                 to="/jobs"
                 className="mt-2 inline-flex items-center gap-1 text-sm text-accent-text transition duration-150 ease-out hover:underline"
               >
                 <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-                Về danh sách công việc
+                {t("jd.backToList")}
               </Link>
             </div>
           </div>
@@ -190,19 +190,19 @@ export default function JobDetail() {
             className="inline-flex items-center gap-1 text-sm text-accent-text transition duration-150 ease-out hover:underline"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            Về danh sách công việc
+            {t("jd.backToList")}
           </Link>
           <h1 className="min-w-0 break-words text-xl font-bold tracking-tight sm:text-2xl">
-            Chi tiết công việc <span className="font-mono">#{job.id}</span>
+            {t("jd.title")} <span className="font-mono">#{job.id}</span>
           </h1>
-          <Badge tone={STATUS_TONE[job.status]}>{STATUS_TEXT[job.status]}</Badge>
+          <Badge tone={STATUS_TONE[job.status]}>{t(STATUS_KEY[job.status])}</Badge>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* P0-D: stale_layouts > 0 → badge + đồng bộ lại (server trả [] → mất badge). */}
           {(job.stale_layouts?.length ?? 0) > 0 && (
             <>
               <Badge testid="stale-badge" tone="warning">
-                Cần đồng bộ
+                {t("jd.staleBadge")}
               </Badge>
               <Button
                 testid="btn-resync-layout"
@@ -210,14 +210,14 @@ export default function JobDetail() {
                 onClick={async () => {
                   try {
                     await api.retryLayout(id!);
-                    toast.success("Đã đồng bộ layout");
+                    toast.success(t("jd.resyncDone"));
                     await queryClient.invalidateQueries({ queryKey: ["job", id] });
                   } catch (err) {
                     toast.error(mapApiError(err));
                   }
                 }}
               >
-                Đồng bộ lại
+                {t("jd.resync")}
               </Button>
             </>
           )}
@@ -228,17 +228,17 @@ export default function JobDetail() {
                 setRetryError(null);
                 try {
                   await api.retryJob(id!);
-                  toast.success("Đã lên lịch chạy lại");
+                  toast.success(t("jobs.row.retryScheduled"));
                   await queryClient.invalidateQueries({ queryKey: ["job", id] });
                   await queryClient.invalidateQueries({ queryKey: ["jobs"] });
                 } catch (err) {
                   // R51: inline retry-error kept; toast mirrors it (R59a).
-                  setRetryError(err instanceof ApiError ? err.detail : "Thử lại thất bại.");
+                  setRetryError(err instanceof ApiError ? err.detail : t("jd.retryFailed"));
                   toast.error(mapApiError(err));
                 }
               }}
             >
-              Chạy lại OCR
+              {t("jd.retryOcr")}
             </Button>
           )}
           {/* Hủy job: pending → cancelled (204); done|failed|cancelled ẩn nút. */}
@@ -249,7 +249,7 @@ export default function JobDetail() {
               onClick={async () => {
                 try {
                   await api.cancelJob(id!);
-                  toast.success("Đã hủy job");
+                  toast.success(t("jobs.row.cancelled"));
                   await queryClient.invalidateQueries({ queryKey: ["job", id] });
                   await queryClient.invalidateQueries({ queryKey: ["jobs"] });
                 } catch (err) {
@@ -257,7 +257,7 @@ export default function JobDetail() {
                 }
               }}
             >
-              Hủy job
+              {t("jd.cancelJob")}
             </Button>
           )}
           {/* Lane I Task 6: "Vẽ lại layout" — POST retry-layout, confirm + loading + toast. */}
@@ -268,14 +268,14 @@ export default function JobDetail() {
               loading={retryingLayout}
               onClick={() => setConfirmRetry(true)}
             >
-              Vẽ lại layout
+              {t("jd.retryLayout")}
             </Button>
           )}
           {/* Lane I Task 6: switch định dạng layout md-layout ↔ docx-layout. */}
           {job.status === "done" && result && job.mode !== "extract_only" && (
             <div
               role="group"
-              aria-label="Định dạng layout"
+              aria-label={t("jd.layoutFmtAria")}
               className="inline-flex items-center gap-1 rounded-md border border-border p-1"
             >
               <Button
@@ -309,7 +309,7 @@ export default function JobDetail() {
             onClick={toggleEdit}
           >
             <PenLine className="h-4 w-4" aria-hidden="true" />
-            {editing ? "Đang sửa" : "Chỉnh sửa"}
+            {editing ? t("jd.editing") : t("jd.edit")}
           </Button>
           {/* Lane I Task 5: download gộp 1 dropdown, dời lên cạnh "Chỉnh sửa". */}
           <DownloadDropdown
@@ -325,7 +325,7 @@ export default function JobDetail() {
             aria-controls="version-history"
             onClick={() => setShowHistory((v) => !v)}
           >
-            Lịch sử
+            {t("jd.history")}
           </Button>
           {/* Spec #1: Xóa job — destructive, confirm dialog → DELETE → về list. */}
           <Button
@@ -333,21 +333,21 @@ export default function JobDetail() {
             variant="danger"
             onClick={() => setConfirmDelete(true)}
           >
-            Xóa job
+            {t("jd.deleteJob")}
           </Button>
         </div>
       </header>
       <ConfirmDialog
         open={confirmDelete}
-        title={`Xóa job #${job.id}?`}
-        message="Toàn bộ dữ liệu (file gốc, kết quả, phiên bản) sẽ bị xóa vĩnh viễn. Không thể hoàn tác."
+        title={t("jobs.row.deleteTitle", { id: job.id })}
+        message={t("jobs.row.deleteMessage")}
         onCancel={() => setConfirmDelete(false)}
         onConfirm={() => {
           setConfirmDelete(false);
           void (async () => {
             try {
               await api.deleteJob(id!);
-              toast.success("Đã xóa job");
+              toast.success(t("jobs.row.deleted"));
               await queryClient.invalidateQueries({ queryKey: ["jobs"] });
               navigate("/jobs");
             } catch (err) {
@@ -359,9 +359,9 @@ export default function JobDetail() {
       {/* Lane I Task 6: confirm "Vẽ lại layout" (LLM re-run md+docx). */}
       <ConfirmDialog
         open={confirmRetry}
-        title="Vẽ lại layout?"
-        message="Toàn bộ layout (Markdown + DOCX) sẽ được vẽ lại bằng LLM. Tiếp tục?"
-        confirmLabel="Vẽ lại"
+        title={t("jd.retryLayoutConfirmTitle")}
+        message={t("jd.retryLayoutConfirmMessage")}
+        confirmLabel={t("jd.retryLayoutShort")}
         onCancel={() => setConfirmRetry(false)}
         onConfirm={() => void confirmRetryLayout()}
       />
@@ -369,18 +369,18 @@ export default function JobDetail() {
         <section
           id="version-history"
           data-testid="version-history"
-          aria-label="Lịch sử phiên bản"
+          aria-label={t("jd.historyAria")}
           className="mb-4 rounded-card border border-border bg-surface p-4 shadow-card"
         >
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold">Lịch sử phiên bản</h2>
+            <h2 className="text-sm font-semibold">{t("jd.historyTitle")}</h2>
             <Button
               testid="btn-version-history-close"
               variant="ghost"
               size="sm"
               onClick={() => setShowHistory(false)}
             >
-              Đóng
+              {t("common.close")}
             </Button>
           </div>
           <ul className="flex flex-col gap-2">
@@ -392,7 +392,7 @@ export default function JobDetail() {
             )}
             {versionsError && (
               <li role="alert" className="text-sm text-error">
-                Không tải được lịch sử.
+                {t("jd.historyError")}
               </li>
             )}
             {versions?.items.map((v: DocumentVersion) => (
@@ -406,7 +406,7 @@ export default function JobDetail() {
                   <span className="font-mono font-medium">v{v.version}</span>
                   <Badge tone="neutral">{v.kind}</Badge>
                   <time dateTime={v.created_at} className="text-muted">
-                    {new Date(v.created_at).toLocaleString("vi-VN")}
+                    {new Date(v.created_at).toLocaleString(translate("i18n.locale"))}
                   </time>
                   {/* P2: "Hiện tại" = version == MAX trong cùng kind (md snapshot kind "md" khi region edit). */}
                   {versions &&
@@ -414,7 +414,7 @@ export default function JobDetail() {
                       Math.max(
                         ...versions.items.filter((x: DocumentVersion) => x.kind === v.kind).map((x) => x.version),
                       ) && (
-                    <Badge tone="success">Hiện tại</Badge>
+                    <Badge tone="success">{t("jd.current")}</Badge>
                   )}
                 </span>
                 <Button
@@ -425,7 +425,7 @@ export default function JobDetail() {
                     try {
                       // vid = DocumentVersion.id (server: session.get(DocumentVersion, vid)).
                       await api.restoreVersion(id!, v.id);
-                      toast.success("Đã khôi phục bản cũ");
+                      toast.success(t("jd.restored"));
                       await queryClient.invalidateQueries({ queryKey: ["job", id] });
                       await queryClient.invalidateQueries({ queryKey: ["versions", id] });
                     } catch (err) {
@@ -433,12 +433,12 @@ export default function JobDetail() {
                     }
                   }}
                 >
-                  Khôi phục
+                  {t("jd.restore")}
                 </Button>
               </li>
             ))}
             {versions && versions.items.length === 0 && (
-              <li className="text-sm text-muted">Chưa có phiên bản nào.</li>
+              <li className="text-sm text-muted">{t("jd.noVersions")}</li>
             )}
           </ul>
         </section>
@@ -463,7 +463,7 @@ export default function JobDetail() {
               className="flex flex-col gap-4"
             >
               <h2 id="section-text-title" className="text-lg font-semibold tracking-tight">
-                Văn bản
+                {t("jd.sectionText")}
               </h2>
               <div data-testid="panel-result" className="flex min-w-0 flex-col gap-6">
                 <TextSection jobId={id!} regions={regions} fileType={job.file_type} />
@@ -500,7 +500,7 @@ export default function JobDetail() {
               )}
               {/* Stats line dưới preview (spec: SECTION Layout). */}
               <p data-testid="result-stats" className="text-sm text-muted">
-                {job.page_count} trang · GPU {result.gpu_seconds}s · {result.model_version}
+                {t("jd.stats", { pages: job.page_count, gpu: result.gpu_seconds, model: result.model_version })}
               </p>
               {/* WS-UI item 13: ExportBar 2 nhóm DƯỚI preview cột trái (không còn trong rail). */}
               <Card testid="panel-export">
@@ -521,7 +521,7 @@ export default function JobDetail() {
                 className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-base font-semibold"
                 onClick={() => setOriginalOpen((v) => !v)}
               >
-                File gốc
+                {t("jd.originalFile")}
                 <ChevronDown
                   className={`h-4 w-4 text-muted transition duration-150 ease-out ${originalOpen ? "rotate-180" : ""}`}
                   aria-hidden="true"
@@ -542,7 +542,7 @@ export default function JobDetail() {
                 className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-base font-semibold"
                 onClick={() => setInfoOpen((v) => !v)}
               >
-                Thông tin
+                {t("jd.infoTitle")}
                 <ChevronDown
                   className={`h-4 w-4 text-muted transition duration-150 ease-out ${infoOpen ? "rotate-180" : ""}`}
                   aria-hidden="true"

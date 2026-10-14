@@ -72,7 +72,7 @@ it("renders effective values with per-field source badges", async () => {
   expect(screen.getByTestId("source-kaggle-min-queue")).toHaveTextContent("db");
   // kaggle_mode: read-only row (no input)
   expect(screen.getByTestId("kaggle-mode-value")).toHaveTextContent("batch");
-  expect(screen.getByText(/read-only/)).toBeInTheDocument();
+  expect(screen.getByText(/Read-only/i)).toBeInTheDocument();
 });
 
 it("save sends int values via PUT and toasts success", async () => {
@@ -106,7 +106,7 @@ it("save sends int values via PUT and toasts success", async () => {
       proofread_llm_model: "oc/fledge-alpha-free",
     }),
   );
-  expect(toast.success).toHaveBeenCalledWith("Đã lưu.");
+  expect(toast.success).toHaveBeenCalledWith("Saved.");
 });
 
 it("below-floor value shows inline error, PUT skipped", async () => {
@@ -121,7 +121,7 @@ it("below-floor value shows inline error, PUT skipped", async () => {
   await user.click(screen.getByTestId("btn-save-settings"));
   expect(
     screen.getByRole("alert"),
-  ).toHaveTextContent("scheduler_interval_seconds phải từ 5 giây trở lên.");
+  ).toHaveTextContent("scheduler_interval_seconds must be at least 5 seconds.");
   expect(api.putAdminSettings).not.toHaveBeenCalled();
   expect(toast.success).not.toHaveBeenCalled();
 });
@@ -196,7 +196,7 @@ it("save sends LLM string values via PUT", async () => {
       expect.objectContaining({ llm_model: "custom-model" }),
     ),
   );
-  expect(toast.success).toHaveBeenCalledWith("Đã lưu.");
+  expect(toast.success).toHaveBeenCalledWith("Saved.");
 });
 
 it("tab-settings renders the settings form (Admin rail)", async () => {

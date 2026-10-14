@@ -1,4 +1,5 @@
 import Button from "./ui/Button";
+import { useT } from "../i18n";
 import { useDialogA11y } from "./ui/useDialogA11y";
 
 /**
@@ -9,17 +10,19 @@ export default function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = "Xóa",
+  confirmLabel,
   onConfirm,
   onCancel,
 }: {
   open: boolean;
   title: string;
   message: string;
+  /** Omitted → dict common.delete. */
   confirmLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useT();
   const panelRef = useDialogA11y<HTMLDivElement>(open, onCancel);
   if (!open) return null;
   return (
@@ -44,7 +47,7 @@ export default function ConfirmDialog({
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <Button testid="confirm-cancel" variant="secondary" size="sm" onClick={onCancel}>
-            Hủy
+            {t("common.cancel")}
           </Button>
           <Button
             testid="confirm-accept"
@@ -53,7 +56,7 @@ export default function ConfirmDialog({
             className="border border-error/40 bg-error/10"
             onClick={onConfirm}
           >
-            {confirmLabel}
+            {confirmLabel ?? t("common.delete")}
           </Button>
         </div>
       </div>

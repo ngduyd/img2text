@@ -82,7 +82,7 @@ it("forgot shows constant success message", async () => {
   vi.mocked(api.forgotEmail).mockResolvedValue({});
   renderWithRouter(<Forgot />);
   await userEvent.click(screen.getByTestId("btn-forgot"));
-  expect(await screen.findByText("Kiểm tra email của bạn.")).toBeInTheDocument();
+  expect(await screen.findByText("Check your email.")).toBeInTheDocument();
 });
 
 it("reset submits token from query", async () => {

@@ -2,12 +2,14 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
+import { useT } from "../i18n";
 import { mapApiError } from "../lib/errors";
 import AuthLayout from "../components/AuthLayout";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 
 export default function Register() {
+  const { t } = useT();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -20,10 +22,10 @@ export default function Register() {
     setLoading(true);
     try {
       await api.register(email, password);
-      toast.success("Account created. Please sign in.");
+      toast.success(t("auth.signup.created"));
       navigate("/signin");
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "An error occurred.");
+      setError(err instanceof ApiError ? err.detail : t("errors.generic"));
       toast.error(mapApiError(err));
     } finally {
       setLoading(false);
@@ -32,13 +34,13 @@ export default function Register() {
 
   return (
     <AuthLayout
-      title="Sign up"
-      subtitle="Create an account to get started."
+      title={t("auth.signup.title")}
+      subtitle={t("auth.signup.subtitle")}
       footer={
         <>
-          Already have an account?{" "}
+          {t("auth.signup.haveAccount")}{" "}
           <Link to="/signin" className="text-accent-text hover:underline">
-            Sign in
+            {t("nav.signIn")}
           </Link>
         </>
       }
@@ -53,7 +55,7 @@ export default function Register() {
           onChange={(e) => setEmail(e.target.value)}
         />
         <Input
-          label="Password"
+          label={t("auth.password")}
           testid="input-password"
           type="password"
           autoComplete="new-password"
@@ -66,7 +68,7 @@ export default function Register() {
           </p>
         )}
         <Button testid="btn-register" type="submit" loading={loading} className="w-full">
-          Sign up
+          {t("nav.signUp")}
         </Button>
       </form>
     </AuthLayout>

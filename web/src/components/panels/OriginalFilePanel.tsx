@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Download } from "lucide-react";
 import { ApiError } from "../../api/client";
 import { getJobBlob } from "../../lib/blobCache";
+import { translate, useT } from "../../i18n";
 import Button from "../ui/Button";
 import Card from "../ui/Card";
 import Skeleton from "../ui/Skeleton";
@@ -20,6 +21,7 @@ export default function OriginalFilePanel({
   fileType: string;
   testid?: string;
 }) {
+  const { t } = useT();
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +40,7 @@ export default function OriginalFilePanel({
         if (alive) setObjectUrl(URL.createObjectURL(blob));
       })
       .catch((err: unknown) => {
-        if (alive) setError(err instanceof ApiError ? err.detail : "Tải file thất bại.");
+        if (alive) setError(err instanceof ApiError ? err.detail : translate("errors.uploadFailed"));
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -54,18 +56,18 @@ export default function OriginalFilePanel({
   };
 
   return (
-    <Card testid={testid} title="File gốc">
+    <Card testid={testid} title={t("jd.originalFile")}>
       <div className="flex items-center gap-2">
         <Button
           testid="btn-download-original"
           variant="ghost"
           size="sm"
-          title="Tải file gốc"
+          title={t("jd.downloadOriginal")}
           disabled={!objectUrl}
           onClick={handleDownload}
         >
           <Download aria-hidden="true" className="h-4 w-4" />
-          Tải xuống
+          {t("jd.download")}
         </Button>
       </div>
       {error && (
@@ -83,7 +85,7 @@ export default function OriginalFilePanel({
             <img
               data-testid="original-image"
               src={objectUrl}
-              alt="File gốc"
+              alt={t("jd.originalFile")}
               className="max-w-full rounded-md"
             />
           )}
@@ -91,7 +93,7 @@ export default function OriginalFilePanel({
             <iframe
               data-testid="original-pdf-frame"
               src={objectUrl}
-              title="File gốc"
+              title={t("jd.originalFile")}
               // Wave-3: KHÔNG sandbox — blob URL same-origin, sandbox "" chặn
               // browser PDF viewer built-in (trắng).
               className="h-[75vh] w-full rounded-md border border-border"
@@ -103,7 +105,7 @@ export default function OriginalFilePanel({
             rel="noreferrer"
             className="mt-2 inline-block text-sm text-accent-text hover:underline"
           >
-            Mở tab mới
+            {t("jd.openNewTab")}
           </a>
         </div>
       )}

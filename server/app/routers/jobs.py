@@ -1028,8 +1028,14 @@ async def post_extraction(
         )
     detached = await _detached_kinds(session, id, storage)
     if detached and not body.force:
+        # Lane M3 P1b: detail dict {code, detail} — code cho client so sánh
+        # (không phụ thuộc text); detail string giữ backward compat.
         raise HTTPException(
-            status_code=409, detail="Layout có chỉnh tay. Đồng bộ sẽ ghi đè."
+            status_code=409,
+            detail={
+                "code": "detached",
+                "detail": "Layout có chỉnh tay. Đồng bộ sẽ ghi đè.",
+            },
         )
     # 1) persist text + bump + snapshot — P1-4: ONE conditional UPDATE
     #    re-checks expected_text_version at commit time (atomic; closes the

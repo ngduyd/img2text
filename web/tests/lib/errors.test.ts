@@ -10,7 +10,7 @@ describe("mapApiError (R59)", () => {
   });
 
   it("TypeError / 'fetch failed' → network message", () => {
-    const net = "Không kết nối được máy chủ. Kiểm tra server đang chạy.";
+    const net = "Cannot reach the server. Check that it is running.";
     expect(mapApiError(new TypeError("fetch failed"))).toBe(net);
     expect(mapApiError(new Error("TypeError: fetch failed"))).toBe(net);
   });

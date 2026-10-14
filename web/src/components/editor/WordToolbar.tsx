@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { FONT_FAMILIES } from "../../lib/docStyle";
 import { WORD_SIZES } from "../../lib/wordEditor";
+import { useT } from "../../i18n";
 import Button from "../ui/Button";
 
 /**
@@ -46,7 +47,7 @@ interface UiState {
 
 interface Item {
   testid: string;
-  title: string;
+  titleKey: string;
   Icon: typeof Bold;
   run: (editor: Editor) => void;
   toggle?: ToggleKey;
@@ -55,27 +56,27 @@ interface Item {
 
 const CMD_GROUPS: Item[][] = [
   [
-    { testid: "word-tb-undo", title: "Hoàn tác", Icon: Undo2, run: (e) => void e.commands.undo() },
-    { testid: "word-tb-redo", title: "Làm lại", Icon: Redo2, run: (e) => void e.commands.redo() },
+    { testid: "word-tb-undo", titleKey: "word.undo", Icon: Undo2, run: (e) => void e.commands.undo() },
+    { testid: "word-tb-redo", titleKey: "word.redo", Icon: Redo2, run: (e) => void e.commands.redo() },
   ],
   [
     {
       testid: "word-tb-bold",
-      title: "Đậm",
+      titleKey: "word.bold",
       Icon: Bold,
       toggle: "bold",
       run: (e) => void e.chain().focus().toggleBold().run(),
     },
     {
       testid: "word-tb-italic",
-      title: "Nghiêng",
+      titleKey: "word.italic",
       Icon: Italic,
       toggle: "italic",
       run: (e) => void e.chain().focus().toggleItalic().run(),
     },
     {
       testid: "word-tb-underline",
-      title: "Gạch chân",
+      titleKey: "word.underline",
       Icon: Underline,
       toggle: "underline",
       run: (e) => void e.chain().focus().toggleUnderline().run(),
@@ -84,28 +85,28 @@ const CMD_GROUPS: Item[][] = [
   [
     {
       testid: "word-tb-align-left",
-      title: "Căn trái",
+      titleKey: "word.alignLeft",
       Icon: AlignLeft,
       align: "left",
       run: (e) => void e.chain().focus().setTextAlign("left").run(),
     },
     {
       testid: "word-tb-align-center",
-      title: "Căn giữa",
+      titleKey: "word.alignCenter",
       Icon: AlignCenter,
       align: "center",
       run: (e) => void e.chain().focus().setTextAlign("center").run(),
     },
     {
       testid: "word-tb-align-right",
-      title: "Căn phải",
+      titleKey: "word.alignRight",
       Icon: AlignRight,
       align: "right",
       run: (e) => void e.chain().focus().setTextAlign("right").run(),
     },
     {
       testid: "word-tb-align-justify",
-      title: "Căn đều",
+      titleKey: "word.alignJustify",
       Icon: AlignJustify,
       align: "justify",
       run: (e) => void e.chain().focus().setTextAlign("justify").run(),
@@ -114,14 +115,14 @@ const CMD_GROUPS: Item[][] = [
   [
     {
       testid: "word-tb-list-ul",
-      title: "Danh sách chấm",
+      titleKey: "word.listUl",
       Icon: List,
       toggle: "bulletList",
       run: (e) => void e.chain().focus().toggleBulletList().run(),
     },
     {
       testid: "word-tb-list-ol",
-      title: "Danh sách số",
+      titleKey: "word.listOl",
       Icon: ListOrdered,
       toggle: "orderedList",
       run: (e) => void e.chain().focus().toggleOrderedList().run(),
@@ -131,7 +132,7 @@ const CMD_GROUPS: Item[][] = [
     {
       // removeFormat của M3 → bỏ mọi mark + đưa block về mặc định.
       testid: "word-tb-clear",
-      title: "Xóa định dạng",
+      titleKey: "word.clearFormat",
       Icon: Eraser,
       run: (e) => void e.chain().focus().unsetAllMarks().clearNodes().run(),
     },
@@ -149,24 +150,25 @@ function CmdButton({
   editor,
   active,
   testid,
-  title,
+  titleKey,
   run,
   children,
 }: {
   editor: Editor | null;
   active?: boolean;
   testid: string;
-  title: string;
+  titleKey: string;
   run: (editor: Editor) => void;
   children: ReactNode;
 }) {
+  const { t } = useT();
   return (
     <Button
       testid={testid}
       variant="ghost"
       size="sm"
-      title={title}
-      aria-label={title}
+      title={t(titleKey)}
+      aria-label={t(titleKey)}
       aria-pressed={active}
       className={`shrink-0${active === true ? " bg-surface-2" : ""}`}
       // Giữ selection trong editor khi bấm toolbar (mất focus → mất caret).
@@ -189,12 +191,12 @@ function Group({
 }) {
   return (
     <>
-      {items.map(({ testid, title, Icon, run, toggle, align }) => (
+      {items.map(({ testid, titleKey, Icon, run, toggle, align }) => (
         <CmdButton
           key={testid}
           editor={editor}
           testid={testid}
-          title={title}
+          titleKey={titleKey}
           run={run}
           active={
             ui === null ? undefined : toggle !== undefined ? ui[toggle] : align !== undefined ? ui.align === align : undefined
@@ -208,6 +210,7 @@ function Group({
 }
 
 export default function WordToolbar({ editor }: { editor: Editor | null }) {
+  const { t } = useT();
   const rootRef = useRef<HTMLDivElement>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [hover, setHover] = useState<{ r: number; c: number } | null>(null);
@@ -270,20 +273,20 @@ export default function WordToolbar({ editor }: { editor: Editor | null }) {
       <div className="relative flex items-center gap-2">
         <div
           role="toolbar"
-          aria-label="Công cụ soạn thảo Word"
+          aria-label={t("word.toolbarAria")}
           className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap [&>*]:shrink-0"
         >
           <Group items={CMD_GROUPS[0]} editor={editor} ui={ui} />
           {divider}
           <select
             data-testid="word-tb-font"
-            aria-label="Font chữ"
-            title="Font chữ"
+            aria-label={t("word.font")}
+            title={t("word.font")}
             className={SELECT_CLS}
             value={ui?.fontFamily ?? ""}
             onChange={(e) => e.target.value && setTextStyle({ fontFamily: e.target.value })}
           >
-            <option value="">Font</option>
+            <option value="">{t("word.fontOption")}</option>
             {FONT_FAMILIES.map((f) => (
               <option key={f} value={f}>
                 {f}
@@ -292,13 +295,13 @@ export default function WordToolbar({ editor }: { editor: Editor | null }) {
           </select>
           <select
             data-testid="word-tb-size"
-            aria-label="Cỡ chữ (pt)"
-            title="Cỡ chữ (pt)"
+            aria-label={t("word.size")}
+            title={t("word.size")}
             className={SELECT_CLS}
             value={ui?.fontSize ?? ""}
             onChange={(e) => e.target.value && setTextStyle({ fontSize: `${e.target.value}pt` })}
           >
-            <option value="">Cỡ</option>
+            <option value="">{t("word.sizeOption")}</option>
             {WORD_SIZES.map((s) => (
               <option key={s} value={s}>
                 {s}
@@ -316,8 +319,8 @@ export default function WordToolbar({ editor }: { editor: Editor | null }) {
             testid="word-tb-table"
             variant="ghost"
             size="sm"
-            title="Chèn bảng"
-            aria-label="Chèn bảng"
+            title={t("word.insertTable")}
+            aria-label={t("word.insertTable")}
             aria-expanded={pickerOpen}
             className="shrink-0"
             onMouseDown={(e) => e.preventDefault()}
@@ -337,34 +340,34 @@ export default function WordToolbar({ editor }: { editor: Editor | null }) {
             <CmdButton
               editor={editor}
               testid="word-tb-row-add"
-              title="Thêm hàng"
+              titleKey="word.addRow"
               run={(e) => void e.chain().focus().addRowAfter().run()}
             >
-              + Hàng
+              + {t("word.row")}
             </CmdButton>
             <CmdButton
               editor={editor}
               testid="word-tb-row-del"
-              title="Xóa hàng"
+              titleKey="word.delRow"
               run={(e) => void e.chain().focus().deleteRow().run()}
             >
-              - Hàng
+              - {t("word.row")}
             </CmdButton>
             <CmdButton
               editor={editor}
               testid="word-tb-col-add"
-              title="Thêm cột"
+              titleKey="word.addCol"
               run={(e) => void e.chain().focus().addColumnAfter().run()}
             >
-              + Cột
+              + {t("word.col")}
             </CmdButton>
             <CmdButton
               editor={editor}
               testid="word-tb-col-del"
-              title="Xóa cột"
+              titleKey="word.delCol"
               run={(e) => void e.chain().focus().deleteColumn().run()}
             >
-              - Cột
+              - {t("word.col")}
             </CmdButton>
           </div>
         )}
@@ -374,7 +377,9 @@ export default function WordToolbar({ editor }: { editor: Editor | null }) {
             className="absolute right-0 top-full z-20 mt-1 rounded-md border border-border bg-surface p-2 shadow-card"
           >
             <p className="mb-1 text-xs text-muted" aria-live="polite">
-              {hover ? `Chèn bảng ${hover.r}×${hover.c}` : "Chọn bảng (tối đa 10×10)"}
+              {hover
+                ? t("word.tableInsert", { r: hover.r, c: hover.c })
+                : t("word.tablePick")}
             </p>
             <div className="grid grid-cols-10 gap-1">
               {Array.from({ length: 100 }, (_, i) => {
@@ -386,7 +391,7 @@ export default function WordToolbar({ editor }: { editor: Editor | null }) {
                     key={i}
                     type="button"
                     data-testid={`word-tb-table-${r}x${c}`}
-                    aria-label={`Chèn bảng ${r}×${c}`}
+                    aria-label={t("word.tableInsert", { r, c })}
                     className={`h-3.5 w-3.5 rounded-sm border transition duration-150 ease-out ${
                       active
                         ? "border-accent bg-accent/40"

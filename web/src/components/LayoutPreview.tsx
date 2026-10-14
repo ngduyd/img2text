@@ -6,6 +6,7 @@ import { api } from "../api/client";
 import type { Job } from "../api/types";
 import { buildLayoutStyleCss, buildPreviewDocCss } from "../lib/docStyle";
 import { mapApiError } from "../lib/errors";
+import { useT } from "../i18n";
 import Button from "./ui/Button";
 import Skeleton from "./ui/Skeleton";
 
@@ -39,6 +40,7 @@ export default function LayoutPreview({
   fmt: "md-layout" | "docx-layout";
   onFmtChange: (fmt: "md-layout" | "docx-layout") => void;
 }) {
+  const { t } = useT();
   const mode: Mode = fmt === "docx-layout" ? "word" : "md";
   const [mdHtml, setMdHtml] = useState<string | null>(null);
   const [wordHtml, setWordHtml] = useState<string | null>(null);
@@ -102,7 +104,7 @@ export default function LayoutPreview({
     <section data-testid="layout-preview" className="flex min-w-0 flex-col gap-3">
       <div
         role="group"
-        aria-label="Chế độ xem trước"
+        aria-label={t("preview.modeAria")}
         className="inline-flex w-fit items-center gap-1 rounded-md border border-border p-1"
       >
         <Button
@@ -139,7 +141,7 @@ export default function LayoutPreview({
             size="sm"
             onClick={() => void load(mode)}
           >
-            Thử lại
+            {t("common.retry")}
           </Button>
         </div>
       )}
@@ -159,7 +161,7 @@ export default function LayoutPreview({
       ) : (
         <iframe
           data-testid="preview-word"
-          title="Xem trước layout Word"
+          title={t("preview.wordTitle")}
           sandbox=""
           // docStyle (body rule) + docx.html — srcdoc cùng origin iframe, sandbox off script.
           srcDoc={`<style>${wordBase}${docStyle}</style>${wordHtml ?? ""}`}

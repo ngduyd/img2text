@@ -72,6 +72,11 @@ async def test_post_extraction_detached_conflict_409(auth_client, app, done_job_
         },
     )
     assert r.status_code == 409
+    # Lane M3 P1b: detail dict {code:"detached"} — client so theo code, không text.
+    assert r.json()["detail"] == {
+        "code": "detached",
+        "detail": "Layout có chỉnh tay. Đồng bộ sẽ ghi đè.",
+    }
     st = app.state.storage
     assert await st.get(f"exports/{jid}/md-layout") == b"# Tieu de\n\nXin chao the gioi"
     # user confirms → force overwrites, detached cleared

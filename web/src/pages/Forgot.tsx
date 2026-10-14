@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from "react";
 import { ApiError, api } from "../api/client";
+import { useT } from "../i18n";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 
 export default function Forgot() {
+  const { t } = useT();
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState(false);
@@ -17,7 +19,7 @@ export default function Forgot() {
       await api.forgotEmail(email);
       setSent(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Đã xảy ra lỗi.");
+      setError(err instanceof ApiError ? err.detail : t("errors.generic"));
     } finally {
       setLoading(false);
     }
@@ -25,7 +27,7 @@ export default function Forgot() {
 
   return (
     <main id="main" className="mx-auto max-w-sm p-6">
-      <h1 className="mb-4 text-xl font-bold">Quên mật khẩu</h1>
+      <h1 className="mb-4 text-xl font-bold">{t("auth.forgot.title")}</h1>
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <Input
           label="Email"
@@ -43,11 +45,11 @@ export default function Forgot() {
         {/* Constant message on 200 regardless of email existence (anti-enumeration). */}
         {sent && (
           <p data-testid="forgot-success" className="text-sm text-success">
-            Kiểm tra email của bạn.
+            {t("auth.forgot.sent")}
           </p>
         )}
         <Button testid="btn-forgot" type="submit" loading={loading}>
-          Gửi email đặt lại
+          {t("auth.forgot.submit")}
         </Button>
       </form>
     </main>

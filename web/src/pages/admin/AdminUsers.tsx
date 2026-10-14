@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "../../api/client";
 import { mapApiError } from "../../lib/errors";
+import { translate, useT } from "../../i18n";
 import type { User } from "../../api/types";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
@@ -15,6 +16,7 @@ import Skeleton from "../../components/ui/Skeleton";
  * divider rows (no zebra), mono IDs/dates, role badge, icon OCR toggle (44px,
  * title + aria). Testids R51: users-loading/empty, user-row-*, role-badge-*, toggle-ocr-*. */
 export default function AdminUsers() {
+  const { t } = useT();
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["admin-users"], queryFn: () => api.adminListUsers(1) });
 
@@ -22,7 +24,7 @@ export default function AdminUsers() {
     mutationFn: (vars: { id: number; ocr_enabled: boolean }) =>
       api.adminPatchUser(vars.id, { ocr_enabled: vars.ocr_enabled }),
     onSuccess: () => {
-      toast.success("Đã cập nhật.");
+      toast.success(translate("admin.users.updated"));
       qc.invalidateQueries({ queryKey: ["admin-users"] });
     },
     onError: (err) => toast.error(mapApiError(err)),
@@ -36,7 +38,7 @@ export default function AdminUsers() {
         weekly_page_limit: vars.weekly,
       }),
     onSuccess: (_data, vars) => {
-      toast.success("Đã lưu.");
+      toast.success(translate("editor.saved"));
       setDrafts(({ [vars.id]: _drop, ...rest }) => rest);
       setErrors(({ [vars.id]: _drop, ...rest }) => rest);
       qc.invalidateQueries({ queryKey: ["admin-users"] });
@@ -61,7 +63,7 @@ export default function AdminUsers() {
     if (daily === null || weekly === null || daily > 10000 || weekly > 10000) {
       setErrors((e) => ({
         ...e,
-        [u.id]: "Giới hạn phải là số nguyên trong khoảng 0–10000.",
+        [u.id]: t("admin.users.quotaInvalid"),
       }));
       return;
     }
@@ -76,7 +78,7 @@ export default function AdminUsers() {
   const items = data?.items ?? [];
 
   return (
-    <Card title="Người dùng">
+    <Card title={t("admin.tab.users")}>
       {isLoading ? (
         <div data-testid="users-loading" aria-busy="true" className="overflow-x-auto">
           <div className="min-w-[760px] divide-y divide-border">
@@ -97,9 +99,9 @@ export default function AdminUsers() {
           className="flex flex-col items-center gap-2 px-4 py-8 text-center"
         >
           <Users className="h-8 w-8 text-muted" aria-hidden="true" />
-          <p className="text-base font-semibold">Chưa có người dùng</p>
+          <p className="text-base font-semibold">{t("admin.users.emptyTitle")}</p>
           <p className="text-sm text-muted">
-            Người dùng mới sẽ xuất hiện tại đây sau khi đăng ký.
+            {t("admin.users.emptyBody")}
           </p>
         </div>
       ) : (
@@ -107,7 +109,14 @@ export default function AdminUsers() {
           <table className="w-full min-w-[760px] border-collapse text-left text-sm">
             <thead>
               <tr>
-                {["ID", "Email", "Vai trò", "Ngày tạo", "Quota", "OCR"].map((h) => (
+                {[
+                  t("admin.users.colId"),
+                  t("admin.users.colEmail"),
+                  t("admin.users.colRole"),
+                  t("admin.users.colCreated"),
+                  t("admin.users.colQuota"),
+                  "OCR",
+                ].map((h) => (
                   <th
                     key={h}
                     scope="col"
@@ -138,20 +147,28 @@ export default function AdminUsers() {
                       </Badge>
                     </td>
                     <td className="px-4 py-3 font-mono">
-                      {u.created_at ? new Date(u.created_at).toLocaleDateString("vi-VN") : ""}
+                      {u.created_at ? new Date(u.created_at).toLocaleDateString(translate("i18n.locale")) : ""}
                     </td>
                     <td className="px-4 py-3" data-testid={`quota-${u.id}`}>
                       <div className="flex flex-wrap items-end gap-2">
                         <div className="font-mono text-xs leading-tight">
                           <div data-testid={`quota-daily-${u.id}`}>
-                            {u.daily_used}/{u.daily_limit} hôm nay (còn {u.daily_remaining})
+                            {t("admin.users.quotaDaily", {
+                              used: u.daily_used ?? "",
+                              limit: u.daily_limit ?? "",
+                              remaining: u.daily_remaining ?? "",
+                            })}
                           </div>
                           <div data-testid={`quota-weekly-${u.id}`} className="text-muted">
-                            {u.weekly_used}/{u.weekly_limit} tuần (còn {u.weekly_remaining})
+                            {t("admin.users.quotaWeekly", {
+                              used: u.weekly_used ?? "",
+                              limit: u.weekly_limit ?? "",
+                              remaining: u.weekly_remaining ?? "",
+                            })}
                           </div>
                         </div>
                         <Input
-                          label="Ngày"
+                          label={t("admin.users.colDaily")}
                           testid={`daily-limit-${u.id}`}
                           name={`daily-limit-${u.id}`}
                           type="number"
@@ -168,7 +185,7 @@ export default function AdminUsers() {
                           className="w-20"
                         />
                         <Input
-                          label="Tuần"
+                          label={t("admin.users.colWeekly")}
                           testid={`weekly-limit-${u.id}`}
                           name={`weekly-limit-${u.id}`}
                           type="number"
@@ -190,7 +207,7 @@ export default function AdminUsers() {
                           onClick={() => saveQuota(u)}
                           loading={patchQuota.isPending && pendingUserId === u.id}
                         >
-                          Lưu quota
+                          {t("admin.users.saveQuota")}
                         </Button>
                       </div>
                     </td>
@@ -200,7 +217,7 @@ export default function AdminUsers() {
                         data-testid={`toggle-ocr-${u.id}`}
                         aria-pressed={on}
                         aria-label={`OCR ${u.email}`}
-                        title={`${on ? "Tắt" : "Bật"} OCR cho ${u.email}`}
+                        title={t(on ? "admin.users.ocrOff" : "admin.users.ocrOn", { email: u.email })}
                         onClick={() => patchUser.mutate({ id: u.id, ocr_enabled: !on })}
                         className={`inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md border transition duration-150 ease-out active:-translate-y-px ${
                           on

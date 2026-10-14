@@ -89,7 +89,7 @@ it("banner and disabled Gửi/input when ocr_enabled false", async () => {
   vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: false } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Jobs />);
-  expect(await screen.findByTestId("banner-no-access")).toHaveTextContent("Chờ admin cấp quyền");
+  expect(await screen.findByTestId("banner-no-access")).toHaveTextContent("Waiting for admin to grant OCR access");
   expect(screen.getByTestId("muf-submit")).toBeDisabled();
   expect(screen.getByTestId("muf-input")).toBeDisabled();
 });
@@ -109,7 +109,7 @@ it("Gửi → modal → confirm: uploadJob(gộp PDF, layout+md) + toast + navig
       expect.objectContaining({ filename: "photo.png", mode: "layout", output_format: "md" }),
     ),
   );
-  expect(toast.success).toHaveBeenCalledWith("Đã tải lên — đang chờ xử lý.");
+  expect(toast.success).toHaveBeenCalledWith("Uploaded — queued for processing.");
   await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs"));
   // Gửi thành công → cards xóa (revoke thumbnails).
   await waitFor(() => expect(screen.queryByTestId("muf-card-0")).not.toBeInTheDocument());
@@ -193,7 +193,7 @@ it("job rows render status badge", async () => {
   renderWithRouter(<Jobs />);
   expect(await screen.findByTestId("job-row-7")).toBeInTheDocument();
   // P2: badge literal pins the shared STATUS_TEXT spelling ("Đang lập lịch").
-  expect(screen.getByTestId("badge-7")).toHaveTextContent("Đang lập lịch");
+  expect(screen.getByTestId("badge-7")).toHaveTextContent("Queued");
 });
 
 it("filter tabs show counts and click filters rows", async () => {
@@ -211,13 +211,13 @@ it("filter tabs show counts and click filters rows", async () => {
   });
   renderWithRouter(<Jobs />);
   await screen.findByTestId("job-row-4");
-  await waitFor(() => expect(screen.getByTestId("filter-all")).toHaveTextContent("Tất cả (6)"));
-  // P2: chip labels share STATUS_TEXT spellings with badges (one spelling per status).
-  expect(screen.getByTestId("filter-queued")).toHaveTextContent("Đang lập lịch (1)");
-  expect(screen.getByTestId("filter-extracting")).toHaveTextContent("Đang trích xuất văn bản (1)");
-  expect(screen.getByTestId("filter-rendering")).toHaveTextContent("Đang dựng layout (1)");
-  expect(screen.getByTestId("filter-done")).toHaveTextContent("Hoàn tất (2)");
-  expect(screen.getByTestId("filter-failed")).toHaveTextContent("Xử lý thất bại (1)");
+  await waitFor(() => expect(screen.getByTestId("filter-all")).toHaveTextContent("All (6)"));
+  // P2: chip labels share STATUS_KEY spellings with badges (one spelling per status).
+  expect(screen.getByTestId("filter-queued")).toHaveTextContent("Queued (1)");
+  expect(screen.getByTestId("filter-extracting")).toHaveTextContent("Extracting text (1)");
+  expect(screen.getByTestId("filter-rendering")).toHaveTextContent("Rendering layout (1)");
+  expect(screen.getByTestId("filter-done")).toHaveTextContent("Done (2)");
+  expect(screen.getByTestId("filter-failed")).toHaveTextContent("Processing failed (1)");
   // New phase tabs filter to their own rows.
   await userEvent.click(screen.getByTestId("filter-extracting"));
   expect(screen.getByTestId("job-row-5")).toBeInTheDocument();
@@ -238,8 +238,8 @@ it("empty state renders guidance with limits and Colab note", async () => {
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Jobs />);
   const empty = await screen.findByTestId("empty-state");
-  expect(empty).toHaveTextContent("tối đa 50 trang · 50MB");
-  expect(empty).toHaveTextContent("Job chờ worker Colab kết nối");
+  expect(empty).toHaveTextContent("up to 50 pages · 50MB");
+  expect(empty).toHaveTextContent("Jobs wait for the Colab worker to connect");
 });
 
 it("filter with no matches shows empty-filter message", async () => {
@@ -254,7 +254,7 @@ it("filter with no matches shows empty-filter message", async () => {
   await screen.findByTestId("job-row-2");
   await userEvent.click(screen.getByTestId("filter-failed"));
   expect(await screen.findByTestId("empty-filter")).toHaveTextContent(
-    "Không có công việc nào khớp bộ lọc.",
+    "No jobs match the filter.",
   );
   expect(screen.queryByTestId("job-row-2")).not.toBeInTheDocument();
 });
@@ -301,10 +301,10 @@ it("checkbox select shows bulk bar count; select-all toggles the whole page", as
   expect(screen.queryByTestId("bulk-bar")).not.toBeInTheDocument();
   await userEvent.click(screen.getByTestId("row-select-1"));
   await userEvent.click(screen.getByTestId("row-select-2"));
-  expect(screen.getByTestId("bulk-count")).toHaveTextContent("2 đã chọn");
+  expect(screen.getByTestId("bulk-count")).toHaveTextContent("2 selected");
   // select-all-page: chọn cả trang, bấm lại → bỏ chọn tất cả.
   await userEvent.click(screen.getByTestId("select-all-page"));
-  expect(screen.getByTestId("bulk-count")).toHaveTextContent("3 đã chọn");
+  expect(screen.getByTestId("bulk-count")).toHaveTextContent("3 selected");
   await userEvent.click(screen.getByTestId("select-all-page"));
   expect(screen.queryByTestId("bulk-bar")).not.toBeInTheDocument();
 });
@@ -327,7 +327,7 @@ it("bulk retry calls retryJobs per selected failed job, toasts, clears selection
   await userEvent.click(screen.getByTestId("bulk-retry"));
   await waitFor(() => expect(api.retryJobs).toHaveBeenCalledWith([1, 2]));
   // R59: success toast + invalidate → selection cleared.
-  expect(toast.success).toHaveBeenCalledWith("Đã lên lịch chạy lại");
+  expect(toast.success).toHaveBeenCalledWith("Retry scheduled");
   await waitFor(() => expect(screen.queryByTestId("bulk-bar")).not.toBeInTheDocument());
 });
 
@@ -339,8 +339,8 @@ it("bulk retry partial failure: error toast fires, batch not aborted", async () 
   await screen.findByTestId("job-row-1");
   await userEvent.click(screen.getByTestId("select-all-page"));
   await userEvent.click(screen.getByTestId("bulk-retry"));
-  await waitFor(() => expect(toast.error).toHaveBeenCalledWith("1 job lỗi khi chạy lại"));
-  expect(toast.success).toHaveBeenCalledWith("Đã lên lịch chạy lại");
+  await waitFor(() => expect(toast.error).toHaveBeenCalledWith("1 jobs failed to retry"));
+  expect(toast.success).toHaveBeenCalledWith("Retry scheduled");
 });
 
 /** P2: thay vì toast errors[0] only → toast tổng hợp "n job lỗi" (R59 testids giữ). */
@@ -395,7 +395,7 @@ it("empty state shows CTA hint", async () => {
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Jobs />);
   const empty = await screen.findByTestId("empty-state");
-  expect(empty).toHaveTextContent("Tải file lên để tạo công việc đầu tiên.");
+  expect(empty).toHaveTextContent("Upload a file to create your first job.");
 });
 
 it("job row shows file type icon", async () => {

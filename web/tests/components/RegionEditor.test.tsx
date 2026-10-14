@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ApiError, api } from "../../src/api/client";
+import { translate } from "../../src/i18n";
 import type { RegionOut } from "../../src/api/types";
 import IssuesPanel from "../../src/components/IssuesPanel";
 
@@ -85,7 +86,8 @@ it("markdown_replaced false shows inline replaced-note with exact text", async (
   await user.type(screen.getByTestId("textarea-region-p1r0"), "mới");
   await user.click(screen.getByTestId("btn-save-region-p1r0"));
   expect((await screen.findByTestId("region-note-p1r0")).textContent).toBe(
-    "Văn bản vùng đã cập nhật; markdown chưa thay thế (text gốc không còn trong bản xem trước)",
+    // Lane M3 P1a: note đã i18n — so theo dict (fallback lang mặc định "en"), không hardcode VI.
+    translate("editor.issues.replacedNote"),
   );
 });
 

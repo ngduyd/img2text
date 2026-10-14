@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { api } from "../api/client";
 import type { ExtractionSaveResult } from "../api/types";
 import { mapApiError } from "../lib/errors";
+import { useT } from "../i18n";
 import TextSection from "../components/TextSection";
 import Button from "../components/ui/Button";
 
@@ -16,6 +17,7 @@ import Button from "../components/ui/Button";
  * header + hint needs_render + "Vẽ lại layout".
  */
 export default function ExtractionPage() {
+  const { t } = useT();
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
   /** Task 4: layouts không sync được trong lần save gần nhất → cần vẽ lại. */
@@ -33,7 +35,7 @@ export default function ExtractionPage() {
     try {
       await api.retryLayout(id!);
       setNeedsRender([]);
-      toast.success("Đã tạo lại layout.");
+      toast.success(t("jd.retryLayoutDone"));
       await queryClient.invalidateQueries({ queryKey: ["job", id] });
     } catch (err) {
       toast.error(mapApiError(err));
@@ -54,10 +56,10 @@ export default function ExtractionPage() {
           className="inline-flex items-center gap-1 text-sm text-accent-text transition duration-150 ease-out hover:underline"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          Về chi tiết công việc
+          {t("extraction.backToDetail")}
         </Link>
         <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
-          Trích xuất văn bản <span className="font-mono">#{id}</span>
+          {t("extraction.title")} <span className="font-mono">#{id}</span>
         </h1>
       </header>
 
@@ -72,8 +74,7 @@ export default function ExtractionPage() {
             aria-hidden="true"
           />
           <span className="min-w-0 flex-1">
-            Một số layout chưa đồng bộ được. Vẽ lại layout để cập nhật bản mới
-            nhất.
+            {t("extraction.needsRender")}
           </span>
           <Button
             testid="btn-redraw-layout"
@@ -83,7 +84,7 @@ export default function ExtractionPage() {
             disabled={redrawing}
             onClick={() => void handleRedraw()}
           >
-            Vẽ lại layout
+            {t("jd.retryLayout")}
           </Button>
         </div>
       )}

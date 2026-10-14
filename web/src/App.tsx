@@ -8,6 +8,7 @@ import type { User } from "./api/types";
 import ThemeToggle from "./components/ThemeToggle";
 import OcrBadge from "./components/OcrBadge";
 import QuotaBadge from "./components/QuotaBadge";
+import LangSwitch from "./components/LangSwitch";
 import Button, { buttonClasses } from "./components/ui/Button";
 import Forgot from "./pages/Forgot";
 import Admin from "./pages/Admin";
@@ -20,6 +21,7 @@ import Profile from "./pages/Profile";
 import Signup from "./pages/Signup";
 import Reset from "./pages/Reset";
 import { mapApiError } from "./lib/errors";
+import { I18nProvider, useT } from "./i18n";
 
 // BrowserRouter + QueryClientProvider live here (not main.tsx): App.test.tsx
 // renders <App /> standalone, so the shell must be provider-self-contained.
@@ -29,6 +31,7 @@ export const queryClient = new QueryClient();
 
 /** RIGHT auth zone: logged-out btn-login+btn-register; logged-in badge+avatar-menu (profile+logout). */
 export function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () => void }) {
+  const { t } = useT();
   const [menuOpen, setMenuOpen] = useState(false);
   const userRef = useRef<HTMLDivElement>(null);
   const name = me?.email || me?.role || "";
@@ -54,6 +57,8 @@ export function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () 
   return (
     <div data-testid="auth-zone" className="flex items-center gap-2">
       <ThemeToggle />
+      {/* Spec S2: VI/EN switch — Nav (covers Landing header too: Landing renders under AppNav). */}
+      <LangSwitch testid="lang-switch-nav" />
       {me ? (
         <>
           <OcrBadge enabled={me.ocr_enabled} />
@@ -89,7 +94,7 @@ export function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () 
                   className={`${buttonClasses("ghost", "sm")} w-full justify-end`}
                 >
                   <IdCard className="h-4 w-4" aria-hidden="true" />
-                  Hồ sơ
+                  {t("nav.profile")}
                 </Link>
                 <Button
                   variant="danger"
@@ -99,7 +104,7 @@ export function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () 
                   className="w-full justify-end"
                 >
                   <LogOut className="h-4 w-4" aria-hidden="true" />
-                  Đăng xuất
+                  {t("nav.logout")}
                 </Button>
               </div>
             )}
@@ -108,10 +113,10 @@ export function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () 
       ) : (
         <>
           <Link to="/signin" data-testid="btn-login" className={buttonClasses("primary", "sm")}>
-            Sign in
+            {t("nav.signIn")}
           </Link>
           <Link to="/signup" data-testid="btn-register" className={buttonClasses("ghost", "sm")}>
-            Sign up
+            {t("nav.signUp")}
           </Link>
         </>
       )}
@@ -162,6 +167,7 @@ function NavAnchor({
 /** Left nav: brand + Công việc (everyone) + Quản trị (admin only, Review Focus). */
 function AppNav() {
   const navigate = useNavigate();
+  const { t } = useT();
   const { pathname } = useLocation();
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
   const [menuOpen, setMenuOpen] = useState(false);
@@ -170,7 +176,7 @@ function AppNav() {
   async function onLogout() {
     try {
       await api.logout();
-      toast.success("Đã đăng xuất.");
+      toast.success(t("nav.signedOut"));
     } catch (err) {
       // best-effort: clear local session even if server call fails
       toast.error(mapApiError(err));
@@ -196,7 +202,7 @@ function AppNav() {
   return (
     <nav
       ref={navRef}
-      aria-label="Điều hướng chính"
+      aria-label={t("nav.ariaMain")}
       className="sticky top-0 z-20 border-b border-border bg-bg/80 backdrop-blur"
     >
       {/* Single-line bar: ~56px mobile / 64px desktop (DESIGN.md §7). */}
@@ -216,7 +222,7 @@ function AppNav() {
             active={jobsActive}
             onClick={() => setMenuOpen(false)}
           >
-            Công việc
+            {t("nav.jobs")}
           </NavAnchor>
           {isAdmin && (
             <NavAnchor
@@ -226,7 +232,7 @@ function AppNav() {
               active={adminActive}
               onClick={() => setMenuOpen(false)}
             >
-              Quản trị
+              {t("nav.admin")}
             </NavAnchor>
           )}
         </div>
@@ -241,8 +247,8 @@ function AppNav() {
           className="ml-auto inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-md border border-border text-text transition duration-150 ease-out hover:bg-surface-2 md:hidden"
           aria-expanded={menuOpen}
           aria-controls="mobile-menu"
-          aria-label="Menu"
-          title="Menu"
+          aria-label={t("nav.menu")}
+          title={t("nav.menu")}
           onClick={() => setMenuOpen((o) => !o)}
         >
           <Menu className="h-5 w-5" aria-hidden="true" />
@@ -262,7 +268,7 @@ function AppNav() {
               active={jobsActive}
               onClick={() => setMenuOpen(false)}
             >
-              Công việc
+              {t("nav.jobs")}
             </NavAnchor>
             {isAdmin && (
               <NavAnchor
@@ -272,7 +278,7 @@ function AppNav() {
                 active={adminActive}
                 onClick={() => setMenuOpen(false)}
               >
-                Quản trị
+                {t("nav.admin")}
               </NavAnchor>
             )}
             <div className="mt-2 border-t border-border pt-3">
@@ -300,11 +306,12 @@ function AppNav() {
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <div className="min-h-dvh">
-          <a href="#main" className="skip-link">
-            Bỏ qua điều hướng
-          </a>
+      <I18nProvider>
+        <BrowserRouter>
+          <div className="min-h-dvh">
+            <a href="#main" className="skip-link">
+              <SkipLabel />
+            </a>
           <AppNav />
           {/* Theme = html .dark class (ThemeToggle + localStorage; no shared React
               context) — read once at mount; toggle flips CSS only. */}
@@ -333,6 +340,13 @@ export default function App() {
           </Routes>
         </div>
       </BrowserRouter>
+      </I18nProvider>
     </QueryClientProvider>
   );
+}
+
+/** Skip-link label needs useT inside I18nProvider. */
+function SkipLabel() {
+  const { t } = useT();
+  return <>{t("nav.skip")}</>;
 }

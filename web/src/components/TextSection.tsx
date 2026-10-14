@@ -1,12 +1,14 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { Fragment, Slice } from "@tiptap/pm/model";
+import type { EditorView } from "@tiptap/pm/view";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "../api/client";
 import type { ExtractionSaveResult, RegionOut, Suggestion } from "../api/types";
 import { mapApiError } from "../lib/errors";
 import { buildHighlights } from "../lib/highlight";
+import { translate, useT } from "../i18n";
 import { wordExtensions } from "../lib/wordEditor";
 import IssuesPanel from "./IssuesPanel";
 import Button from "./ui/Button";
@@ -32,6 +34,32 @@ const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /**
+ * Lane I Task 1: dán từ Word → preventDefault + chỉ chèn text/plain (mỗi dòng
+ * 1 paragraph, bỏ formatting HTML). PASTE STRIP. Module-level để setOptions
+ * (lane M3 P2 aria-label update) không mất handler.
+ */
+function stripPaste(view: EditorView, event: ClipboardEvent): boolean {
+  const plain = event.clipboardData?.getData("text/plain");
+  if (plain == null) return false;
+  // Review r1 P2f: plain rỗng cũng preventDefault + chèn "" — không rơi về HTML default.
+  event.preventDefault();
+  const frag = Fragment.fromArray(
+    plain
+      .replace(/\r\n?/g, "\n")
+      .split("\n")
+      .map((line) =>
+        view.state.schema.nodes.paragraph.create(
+          null,
+          line ? view.state.schema.text(line) : null,
+        ),
+      ),
+  );
+  // Không .scrollIntoView(): jsdom thiếu getClientRects (crash PM scrollToSelection).
+  view.dispatch(view.state.tr.replaceSelection(new Slice(frag, 0, 0)));
+  return true;
+}
+
+/**
  * Lane I Task 1: soạn thảo thuần text — Tiptap (wordExtensions đã có), mỗi dòng
  * = 1 paragraph; PASTE STRIP: dán từ Word → preventDefault + chỉ chèn
  * text/plain (mỗi dòng 1 paragraph, bỏ mọi formatting HTML).
@@ -45,6 +73,7 @@ function TextEditor({
   saving: boolean;
   onSave: (text: string) => void;
 }) {
+  const { t, lang } = useT();
   const editor = useEditor({
     extensions: wordExtensions,
     content: text
@@ -54,29 +83,20 @@ function TextEditor({
       .join(""),
     editorProps: {
       // Review r1 P2b: contenteditable cần accessible name.
-      attributes: { "aria-label": "Soạn thảo văn bản" },
-      handlePaste(view, event) {
-        const plain = event.clipboardData?.getData("text/plain");
-        if (plain == null) return false;
-        // Review r1 P2f: plain rỗng cũng preventDefault + chèn "" — không rơi về HTML default.
-        event.preventDefault();
-        const frag = Fragment.fromArray(
-          plain
-            .replace(/\r\n?/g, "\n")
-            .split("\n")
-            .map((line) =>
-              view.state.schema.nodes.paragraph.create(
-                null,
-                line ? view.state.schema.text(line) : null,
-              ),
-            ),
-        );
-        // Không .scrollIntoView(): jsdom thiếu getClientRects (crash PM scrollToSelection).
-        view.dispatch(view.state.tr.replaceSelection(new Slice(frag, 0, 0)));
-        return true;
-      },
+      attributes: { "aria-label": translate("editor.textAreaAria") },
+      handlePaste: stripPaste,
     },
   });
+  // Lane M3 P2: aria-label translate() lúc init chỉ snapshot 1 lần — setOptions khi lang đổi.
+  useEffect(() => {
+    if (!editor) return;
+    editor.setOptions({
+      editorProps: {
+        attributes: { "aria-label": translate("editor.textAreaAria") },
+        handlePaste: stripPaste,
+      },
+    });
+  }, [editor, lang]);
   return (
     <div className="flex flex-col gap-3">
       <div
@@ -92,7 +112,7 @@ function TextEditor({
           disabled={!editor}
           onClick={() => editor && onSave(editor.getText({ blockSeparator: "\n" }))}
         >
-          Lưu
+          {t("common.save")}
         </Button>
       </div>
     </div>
@@ -110,6 +130,7 @@ export default function TextSection({
   fileType?: string;
   onSaved?: (result: ExtractionSaveResult) => void;
 }) {
+  const { t } = useT();
   const queryClient = useQueryClient();
   const { data, isPending, isError } = useQuery({
     queryKey: ["extraction", jobId],
@@ -198,13 +219,13 @@ export default function TextSection({
         result = await save(false);
       } catch (err) {
         // P2: detached layout 409 → confirm ghi đè → resend force=true.
+        // Lane M3 P1b: server gửi detail {code:"detached"} — so theo code,
+        // fallback detail string cũ (backward compat server cũ).
         const detached =
           err instanceof ApiError &&
-          err.detail === "Layout có chỉnh tay. Đồng bộ sẽ ghi đè.";
-        if (
-          !detached ||
-          !window.confirm("Layout có chỉnh tay. Đồng bộ sẽ ghi đè. Tiếp tục?")
-        )
+          (err.code === "detached" ||
+            err.detail === "Layout có chỉnh tay. Đồng bộ sẽ ghi đè.");
+        if (!detached || !window.confirm(t("editor.detachedConfirm")))
           throw err;
         result = await save(true);
       }
@@ -217,8 +238,8 @@ export default function TextSection({
       } else {
         toast.success(
           result.needs_render.length > 0
-            ? "Đã lưu. Có layout cần vẽ lại."
-            : "Đã lưu và đồng bộ layout.",
+            ? t("editor.savedNeedsRender")
+            : t("editor.savedSynced"),
         );
       }
       await invalidate();
@@ -268,7 +289,7 @@ export default function TextSection({
         expected_text_version: data.text_version,
       });
       setEditingText(false);
-      toast.success("Đã lưu.");
+      toast.success(t("editor.saved"));
       await invalidate();
     } catch (err) {
       toast.error(mapApiError(err));
@@ -291,7 +312,7 @@ export default function TextSection({
           role="alert"
           className="text-sm text-error"
         >
-          Không tải được văn bản trích xuất.
+          {t("editor.loadError")}
         </p>
       )}
       {data && (
@@ -303,7 +324,7 @@ export default function TextSection({
               aria-pressed={editingText}
               onClick={() => setEditingText((v) => !v)}
             >
-              {editingText ? "Đang soạn" : "Soạn thảo"}
+              {editingText ? t("editor.editing") : t("editor.edit")}
             </Button>
           </div>
           {editingText ? (
@@ -362,7 +383,7 @@ export default function TextSection({
                     <span
                       data-testid={`suggestion-popover-${seg.sid}`}
                       role="group"
-                      aria-label="Gợi ý sửa"
+                      aria-label={t("editor.suggestionAria")}
                       className={`absolute top-full z-20 mt-1 flex w-64 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-md border border-border bg-surface p-3 shadow-card ${popoverPos(
                         anchorEls.current.get(anchorKey),
                       )}`}
@@ -387,7 +408,7 @@ export default function TextSection({
                           disabled={savingSid !== null}
                           onClick={() => handleApply(openSuggestion)}
                         >
-                          Áp dụng
+                          {t("editor.apply")}
                         </Button>
                         <Button
                           testid={`btn-reject-${seg.sid}`}
@@ -396,7 +417,7 @@ export default function TextSection({
                           disabled={savingSid !== null}
                           onClick={() => void handleReject(openSuggestion)}
                         >
-                          Bỏ qua
+                          {t("editor.reject")}
                         </Button>
                       </span>
                       {/* WS-UI: ô nhập "Sửa khác…" — custom phrase → POST /extraction. */}
@@ -404,7 +425,7 @@ export default function TextSection({
                         htmlFor={`custom-${seg.sid}`}
                         className="text-xs font-medium text-muted"
                       >
-                        Sửa khác…
+                        {t("editor.customOther")}
                       </label>
                       <span className="flex gap-2">
                         <input
@@ -434,7 +455,7 @@ export default function TextSection({
                           disabled={savingSid !== null}
                           onClick={() => handleCustom(openSuggestion)}
                         >
-                          Lưu
+                          {t("common.save")}
                         </Button>
                       </span>
                       {/* P2-5: lỗi validate rỗng — alert + describedby cho input. */}
@@ -445,7 +466,7 @@ export default function TextSection({
                           role="alert"
                           className="text-xs text-error"
                         >
-                          Nội dung trống.
+                          {t("editor.emptyContent")}
                         </p>
                       )}
                     </span>
@@ -470,7 +491,7 @@ export default function TextSection({
             className="w-full max-w-md rounded-card border border-border bg-surface p-4 shadow-card focus-visible:outline-2 focus-visible:outline-accent"
           >
             <p id="rerender-modal-title" className="text-sm font-medium">
-              Lưu văn bản sẽ cần vẽ lại layout. Thêm vào hàng đợi vẽ layout?
+              {t("editor.rerenderQuestion")}
             </p>
             <div className="mt-4 flex justify-end gap-2">
               <Button
@@ -478,16 +499,16 @@ export default function TextSection({
                 variant="ghost"
                 onClick={() => setRerenderModal(false)}
               >
-                Hủy
+                {t("common.cancel")}
               </Button>
               <Button
                 testid="btn-rerender-confirm"
                 onClick={() => {
                   setRerenderModal(false);
-                  toast.success("Đã xếp hàng vẽ lại layout.");
+                  toast.success(t("editor.rerenderQueued"));
                 }}
               >
-                Lưu & xếp hàng
+                {t("editor.saveAndQueue")}
               </Button>
             </div>
           </div>

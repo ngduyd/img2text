@@ -225,7 +225,7 @@ describe("api client", () => {
     const done = api.uploadJob(new File(["x"], "a.jpg", { type: "image/jpeg" }));
     await vi.waitFor(() => expect(xhrs).toHaveLength(1));
     xhrs[0].error();
-    await expect(done).rejects.toThrow("Tải file thất bại.");
+    await expect(done).rejects.toThrow("File upload failed.");
   });
 
   it("uploadJob accepts Blob + filename (cropped JPEG — filename chỉ tới presign metadata)", async () => {

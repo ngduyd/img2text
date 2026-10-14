@@ -1,6 +1,7 @@
 import DOMPurify from "dompurify";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { scopeWordPaneCss } from "../../lib/docStyle";
+import { useT } from "../../i18n";
 import { wordExtensions } from "../../lib/wordEditor";
 import Button from "../ui/Button";
 import WordToolbar from "./WordToolbar";
@@ -22,6 +23,7 @@ export default function WordEditor({
   css: string;
   onSave: (html: string) => void;
 }) {
+  const { t } = useT();
   const editor = useEditor({
     extensions: wordExtensions,
     // Ranh giới nạp: sanitize lần nữa trước khi vào nội dung soạn (runFlow đã sanitize lúc load).
@@ -41,7 +43,7 @@ export default function WordEditor({
       </div>
       <div className="mt-3 flex justify-end gap-2">
         <Button testid="btn-save-layout-word" onClick={() => editor && onSave(editor.getHTML())}>
-          Lưu
+          {t("common.save")}
         </Button>
       </div>
     </>

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { BarChart3, LayoutDashboard, ScrollText, Settings, Terminal, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import { useT } from "../i18n";
 import AdminApi from "./admin/AdminApi";
 import AdminKaggleQuota from "./admin/AdminKaggleQuota";
 import AdminLogs from "./admin/AdminLogs";
@@ -15,16 +16,17 @@ import AdminUsers from "./admin/AdminUsers";
 
 // Plan V3: desktop ≥md = vertical sub-rail (icon + label); mobile = horizontal scroll pills. Testids tab-* kept (R51).
 const TABS = [
-  { id: "overview", label: "Tổng quan", icon: LayoutDashboard },
-  { id: "users", label: "Người dùng", icon: Users },
-  { id: "api", label: "API", icon: Terminal },
-  { id: "logs", label: "Logs", icon: ScrollText },
-  { id: "stats", label: "Thống kê", icon: BarChart3 },
-  { id: "settings", label: "Hệ thống", icon: Settings },
+  { id: "overview", labelKey: "admin.tab.overview", icon: LayoutDashboard },
+  { id: "users", labelKey: "admin.tab.users", icon: Users },
+  { id: "api", labelKey: "admin.tab.api", icon: Terminal },
+  { id: "logs", labelKey: "admin.tab.logs", icon: ScrollText },
+  { id: "stats", labelKey: "admin.tab.stats", icon: BarChart3 },
+  { id: "settings", labelKey: "admin.tab.settings", icon: Settings },
 ] as const;
 
 /** Admin-only page; tabs are in-page state (not routes). Non-admins go home. No jobs board. */
 export default function Admin() {
+  const { t } = useT();
   const navigate = useNavigate();
   const { data: me, isError } = useQuery({ queryKey: ["me"], queryFn: api.me });
   const [tab, setTab] = useState<AdminTabId>("overview");
@@ -43,23 +45,23 @@ export default function Admin() {
 
   return (
     <main id="main" className="mx-auto max-w-5xl p-4">
-      <h1 className="mb-4 text-xl font-bold">Quản trị</h1>
+      <h1 className="mb-4 text-xl font-bold">{t("admin.title")}</h1>
       <div className="flex flex-col gap-4 md:flex-row md:gap-6">
         <nav
           data-testid="admin-rail"
-          aria-label="Quản trị"
+          aria-label={t("admin.title")}
           className="flex shrink-0 gap-1 overflow-x-auto border-b border-border pb-2 md:sticky md:top-16 md:w-52 md:flex-col md:self-start md:overflow-visible md:border-b-0 md:border-r md:border-border md:pb-0"
         >
-          {TABS.map((t) => {
-            const active = tab === t.id;
-            const Icon = t.icon;
+          {TABS.map((tabDef) => {
+            const active = tab === tabDef.id;
+            const Icon = tabDef.icon;
             return (
               <button
-                key={t.id}
+                key={tabDef.id}
                 type="button"
-                data-testid={`tab-${t.id}`}
+                data-testid={`tab-${tabDef.id}`}
                 aria-current={active ? "page" : undefined}
-                onClick={() => setTab(t.id)}
+                onClick={() => setTab(tabDef.id)}
                 className={[
                   "relative flex h-11 shrink-0 cursor-pointer items-center gap-2 rounded-md px-3 text-sm transition-colors duration-150 ease-out",
                   active
@@ -68,7 +70,7 @@ export default function Admin() {
                 ].join(" ")}
               >
                 <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                {t.label}
+                {t(tabDef.labelKey)}
               </button>
             );
           })}
@@ -76,7 +78,7 @@ export default function Admin() {
         <div className="min-w-0 flex-1">
           {!me ? (
             <div data-testid="admin-loading" className="p-8 text-center text-muted">
-              Đang tải…
+              {t("common.loading")}
             </div>
           ) : (
             <>

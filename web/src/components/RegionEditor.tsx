@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import { mapApiError } from "../lib/errors";
+import { translate, useT } from "../i18n";
 import type { RegionOut } from "../api/types";
 import Button from "./ui/Button";
 
@@ -18,6 +19,7 @@ export default function RegionEditor({
   onSaved: (rid: string, text: string, markdownReplaced: boolean) => void;
   onCancel: () => void;
 }) {
+  const { t } = useT();
   const [value, setValue] = useState(region.text);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -29,11 +31,11 @@ export default function RegionEditor({
     setError(null);
     try {
       const res = await api.patchRegion(jobId, region.id, value);
-      toast.success("Đã lưu.");
+      toast.success(translate("editor.saved"));
       onSaved(region.id, value, res.markdown_replaced);
       await queryClient.invalidateQueries({ queryKey: ["job", jobId] });
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Lưu thất bại.");
+      setError(err instanceof ApiError ? err.detail : translate("editor.saveFailed"));
       toast.error(mapApiError(err));
     } finally {
       setSaving(false);
@@ -49,7 +51,7 @@ export default function RegionEditor({
       )}
       <textarea
         data-testid={`textarea-region-${region.id}`}
-        aria-label={`Văn bản vùng ${region.id}`}
+        aria-label={t("region.textAria", { id: region.id })}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         className="mb-2 w-full rounded-md border border-border bg-surface p-2 text-sm text-text"
@@ -62,7 +64,7 @@ export default function RegionEditor({
           disabled={saving}
           onClick={save}
         >
-          Lưu
+          {t("common.save")}
         </Button>
         <Button
           testid={`btn-cancel-region-${region.id}`}
@@ -70,7 +72,7 @@ export default function RegionEditor({
           variant="secondary"
           onClick={onCancel}
         >
-          Huỷ
+          {t("common.cancel")}
         </Button>
       </div>
     </div>

@@ -33,9 +33,9 @@ it("renders remaining quota text (testid quota-remaining)", async () => {
   vi.mocked(api.getMyQuota).mockResolvedValue(QUOTA);
   renderBadge();
   const el = await screen.findByTestId("quota-remaining");
-  // Lane B Task 4: X/Y hôm nay + X/Y tuần này.
-  expect(el).toHaveTextContent("Còn 10/25 trang hôm nay");
-  expect(el).toHaveTextContent("105/150 trang tuần này");
+  // Lane B Task 4: X/Y hôm nay + X/Y tuần này (default en).
+  expect(el).toHaveTextContent("10/25 pages left today");
+  expect(el).toHaveTextContent("105/150 this week");
 });
 
 it("hidden when getMyQuota returns null (401/403)", async () => {

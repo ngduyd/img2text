@@ -1,14 +1,14 @@
 import type { Job } from "../api/types";
 import type { BadgeTone } from "../components/ui/Badge";
 
-/** Spec §status: Vietnamese job status texts (single spelling: shell, panels, badges). */
-export const STATUS_TEXT: Record<Job["status"], string> = {
-  queued: "Đang lập lịch",
-  extracting: "Đang trích xuất văn bản",
-  rendering: "Đang dựng layout",
-  failed: "Xử lý thất bại",
-  done: "Hoàn tất",
-  cancelled: "Đã hủy",
+/** Spec §status: single spelling per status → i18n key (dicts hold the text). */
+export const STATUS_KEY: Record<Job["status"], string> = {
+  queued: "status.queued",
+  extracting: "status.extracting",
+  rendering: "status.rendering",
+  failed: "status.failed",
+  done: "status.done",
+  cancelled: "status.cancelled",
 };
 
 /** Badge/chip hues from the DESIGN.md semantic palette only; extracting ≠ rendering. */
