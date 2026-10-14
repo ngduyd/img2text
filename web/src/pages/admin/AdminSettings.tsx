@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { ApiError, api } from "../../api/client";
 import type { AdminSettingsPut } from "../../api/types";
 import { mapApiError } from "../../lib/errors";
+import { translate, useT } from "../../i18n";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
@@ -26,64 +27,65 @@ type StringFieldKey =
 const STRING_FIELDS: {
   key: StringFieldKey;
   slug: string;
-  label: string;
-  helper: string;
+  labelKey: string;
+  helperKey: string;
 }[] = [
   {
     key: "llm_base_url",
     slug: "llm-base-url",
-    label: "Địa chỉ LLM",
-    helper: "Endpoint OpenAI-compatible (vd http://localhost:20128/v1).",
+    labelKey: "admin.settings.llmBaseUrl",
+    helperKey: "admin.settings.llmBaseUrlHelp",
   },
   {
     key: "llm_model",
     slug: "llm-model",
-    label: "Model layout",
-    helper: "Model dùng cho md-layout + docx-layout.",
+    labelKey: "admin.settings.llmModel",
+    helperKey: "admin.settings.llmModelHelp",
   },
   {
     key: "proofread_llm_model",
     slug: "proofread-llm-model",
-    label: "Model kiểm tra từ",
-    helper: "Model dùng cho proofread (gợi ý sửa lỗi OCR).",
+    labelKey: "admin.settings.proofreadModel",
+    helperKey: "admin.settings.proofreadModelHelp",
   },
 ];
 
 const FIELDS: {
   key: FieldKey;
   slug: string;
-  label: string;
-  helper: string;
+  labelKey: string;
+  helperKey: string;
   floor: number;
-  floorMessage: string;
+  floorMessageKey: string;
 }[] = [
   {
     key: "scheduler_interval_seconds",
     slug: "scheduler-interval",
-    label: "Chu kỳ scheduler (giây)",
-    helper: "Sweep reap-leases; mặc định 60, tối thiểu 5.",
+    labelKey: "admin.settings.schedulerInterval",
+    helperKey: "admin.settings.schedulerIntervalHelp",
     floor: 5,
-    floorMessage: "scheduler_interval_seconds phải từ 5 giây trở lên.",
+    floorMessageKey: "admin.settings.schedulerIntervalFloor",
   },
   {
     key: "kaggle_min_queue",
     slug: "kaggle-min-queue",
-    label: "Kaggle min queue",
-    helper: "Số job chờ tối thiểu để spawn (mode loop); mặc định 1.",
+    labelKey: "admin.settings.kaggleMinQueue",
+    helperKey: "admin.settings.kaggleMinQueueHelp",
     floor: 1,
-    floorMessage: "kaggle_min_queue phải từ 1 trở lên.",
+    floorMessageKey: "admin.settings.kaggleMinQueueFloor",
   },
   {
     key: "kaggle_min_gap_seconds",
     slug: "kaggle-min-gap",
-    label: "Kaggle min gap (giây)",
-    helper: "Khoảng cách tối thiểu giữa 2 lần spawn; mặc định 600.",
+    labelKey: "admin.settings.kaggleMinGap",
+    helperKey: "admin.settings.kaggleMinGapHelp",
     floor: 60,
-    floorMessage: "kaggle_min_gap_seconds phải từ 60 giây trở lên.",
+    floorMessageKey: "admin.settings.kaggleMinGapFloor",
   },
 ];
 
 export default function AdminSettings() {
+  const { t } = useT();
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["admin-settings"],
@@ -94,7 +96,7 @@ export default function AdminSettings() {
   const save = useMutation({
     mutationFn: (payload: AdminSettingsPut) => api.putAdminSettings(payload),
     onSuccess: () => {
-      toast.success("Đã lưu.");
+      toast.success(translate("editor.saved"));
       qc.invalidateQueries({ queryKey: ["admin-settings"] });
     },
     onError: (err) => {
@@ -114,9 +116,9 @@ export default function AdminSettings() {
     for (const f of FIELDS) {
       const n = Number.parseInt(String(fd.get(f.key) ?? ""), 10);
       if (!Number.isFinite(n)) {
-        next[f.key] = "Giá trị phải là số nguyên.";
+        next[f.key] = t("admin.settings.intRequired");
       } else if (n < f.floor) {
-        next[f.key] = f.floorMessage;
+        next[f.key] = t(f.floorMessageKey);
       } else {
         payload[f.key] = n;
       }
@@ -134,9 +136,9 @@ export default function AdminSettings() {
 
   if (isLoading || !data) {
     return (
-      <Card title="Hệ thống" testid="card-settings">
+      <Card title={t("admin.tab.settings")} testid="card-settings">
         <div data-testid="settings-loading" aria-busy="true" className="p-4 text-sm text-muted">
-          Đang tải…
+          {t("common.loading")}
         </div>
       </Card>
     );
@@ -144,12 +146,10 @@ export default function AdminSettings() {
 
   const mode = data.kaggle_mode;
   return (
-    <Card title="Hệ thống" testid="card-settings">
+    <Card title={t("admin.tab.settings")} testid="card-settings">
       <form onSubmit={onSubmit} noValidate data-testid="form-settings" className="flex flex-col gap-5">
         <p className="text-sm text-muted">
-          Giá trị lưu vào bảng <span className="font-mono">Setting</span> (runtime
-          override) — áp dụng ngay, không cần restart container; khi DB trống thì
-          dùng giá trị từ env.
+          {t("admin.settings.intro")}
         </p>
         {FIELDS.map((f) => {
           const cur = data[f.key];
@@ -157,14 +157,14 @@ export default function AdminSettings() {
             <div key={f.key} className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <Input
-                  label={f.label}
+                  label={t(f.labelKey)}
                   testid={`input-${f.slug}`}
                   name={f.key}
                   type="number"
                   inputMode="numeric"
                   min={f.floor}
                   defaultValue={String(cur?.value ?? "")}
-                  helper={`${f.helper} Hiện tại: ${cur?.value} (${cur?.source}).`}
+                  helper={t(f.helperKey) + " " + t("admin.settings.current", { value: cur?.value ?? "", source: cur?.source ?? "" })}
                   error={errors[f.key]}
                 />
               </div>
@@ -183,12 +183,12 @@ export default function AdminSettings() {
             <div key={f.key} className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <Input
-                  label={f.label}
+                  label={t(f.labelKey)}
                   testid={`input-${f.slug}`}
                   name={f.key}
                   type="text"
                   defaultValue={String(cur?.value ?? "")}
-                  helper={`${f.helper} Hiện tại: ${cur?.value} (${cur?.source}).`}
+                  helper={t(f.helperKey) + " " + t("admin.settings.current", { value: cur?.value ?? "", source: cur?.source ?? "" })}
                   error={errors[f.key]}
                 />
               </div>
@@ -203,7 +203,7 @@ export default function AdminSettings() {
         })}
         <div className="flex flex-col gap-1 text-sm">
           <div className="flex items-center gap-2">
-            <span className="text-muted">Chế độ Kaggle (kaggle_mode):</span>
+            <span className="text-muted">{t("admin.settings.kaggleMode")}</span>
             <span data-testid="kaggle-mode-value" className="font-mono">
               {String(mode?.value ?? "")}
             </span>
@@ -215,7 +215,7 @@ export default function AdminSettings() {
             </Badge>
           </div>
           <p className="text-sm text-muted">
-            read-only trên API — thay đổi mode cần restart container.
+            {t("admin.settings.kaggleModeHelp")}
           </p>
         </div>
         <div>
@@ -224,7 +224,7 @@ export default function AdminSettings() {
             testid="btn-save-settings"
             loading={save.isPending}
           >
-            Lưu
+            {t("common.save")}
           </Button>
         </div>
       </form>

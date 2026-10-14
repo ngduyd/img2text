@@ -257,6 +257,39 @@
     "indentIn": "Thêm lề",
     "lineSpacing": "Giãn dòng"
   },
+  "admin": {
+    "title": "Quản trị",
+    "tab": {
+      "overview": "Tổng quan",
+      "users": "Người dùng",
+      "api": "API",
+      "logs": "Logs",
+      "stats": "Thống kê",
+      "settings": "Hệ thống"
+    },
+    "settings": {
+      "llmBaseUrl": "Địa chỉ LLM",
+      "llmBaseUrlHelp": "Endpoint OpenAI-compatible (vd http://localhost:20128/v1).",
+      "llmModel": "Model layout",
+      "llmModelHelp": "Model dùng cho md-layout + docx-layout.",
+      "proofreadModel": "Model kiểm tra từ",
+      "proofreadModelHelp": "Model dùng cho proofread (gợi ý sửa lỗi OCR).",
+      "schedulerInterval": "Chu kỳ scheduler (giây)",
+      "schedulerIntervalHelp": "Sweep reap-leases; mặc định 60, tối thiểu 5.",
+      "schedulerIntervalFloor": "scheduler_interval_seconds phải từ 5 giây trở lên.",
+      "kaggleMinQueue": "Kaggle min queue",
+      "kaggleMinQueueHelp": "Số job chờ tối thiểu để spawn (mode loop); mặc định 1.",
+      "kaggleMinQueueFloor": "kaggle_min_queue phải từ 1 trở lên.",
+      "kaggleMinGap": "Kaggle min gap (giây)",
+      "kaggleMinGapHelp": "Khoảng cách tối thiểu giữa 2 lần spawn; mặc định 600.",
+      "kaggleMinGapFloor": "kaggle_min_gap_seconds phải từ 60 giây trở lên.",
+      "intRequired": "Giá trị phải là số nguyên.",
+      "intro": "Giá trị lưu vào bảng Setting (runtime override) — áp dụng ngay, không cần restart container; khi DB trống thì dùng giá trị từ env.",
+      "current": "Hiện tại: {value} ({source}).",
+      "kaggleMode": "Chế độ Kaggle (kaggle_mode):",
+      "kaggleModeHelp": "read-only trên API — thay đổi mode cần restart container."
+    }
+  },
   "profile": {
     "title": "Hồ sơ",
     "loading": "Đang tải hồ sơ…",

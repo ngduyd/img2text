@@ -257,6 +257,39 @@
     "indentIn": "Increase indent",
     "lineSpacing": "Line spacing"
   },
+  "admin": {
+    "title": "Admin",
+    "tab": {
+      "overview": "Overview",
+      "users": "Users",
+      "api": "API",
+      "logs": "Logs",
+      "stats": "Stats",
+      "settings": "System"
+    },
+    "settings": {
+      "llmBaseUrl": "LLM endpoint",
+      "llmBaseUrlHelp": "OpenAI-compatible endpoint (e.g. http://localhost:20128/v1).",
+      "llmModel": "Layout model",
+      "llmModelHelp": "Model used for md-layout + docx-layout.",
+      "proofreadModel": "Proofread model",
+      "proofreadModelHelp": "Model used for proofread (OCR error suggestions).",
+      "schedulerInterval": "Scheduler interval (seconds)",
+      "schedulerIntervalHelp": "Sweep reap-leases; default 60, minimum 5.",
+      "schedulerIntervalFloor": "scheduler_interval_seconds must be at least 5 seconds.",
+      "kaggleMinQueue": "Kaggle min queue",
+      "kaggleMinQueueHelp": "Minimum queued jobs to spawn (loop mode); default 1.",
+      "kaggleMinQueueFloor": "kaggle_min_queue must be at least 1.",
+      "kaggleMinGap": "Kaggle min gap (seconds)",
+      "kaggleMinGapHelp": "Minimum gap between two spawns; default 600.",
+      "kaggleMinGapFloor": "kaggle_min_gap_seconds must be at least 60 seconds.",
+      "intRequired": "Value must be an integer.",
+      "intro": "Values are stored in the Setting table (runtime override) — applied immediately without a container restart; when the DB row is empty, env values are used.",
+      "current": "Current: {value} ({source}).",
+      "kaggleMode": "Kaggle mode (kaggle_mode):",
+      "kaggleModeHelp": "Read-only via API — changing mode requires a container restart."
+    }
+  },
   "profile": {
     "title": "Profile",
     "loading": "Loading profile…",
