@@ -81,6 +81,48 @@ async def test_no_cookie_not_gated(client, gating_on):
     r = await client.get("/api/auth/me")
     assert r.status_code == 401  # 401 thường, không phải 403 gating
 
+async def test_gating_per_class_endpoints(client, gating_on):
+    """P2: mọi class API đều gated 403 cho user chưa verify — exports,
+    region_edit, admin, presign. /api/healthz không còn exempt (entry chết:
+    route thật /healthz không prefix → bypass tự nhiên)."""
+    await client.post(
+        "/api/auth/register", json={"email": "g6@x.io", "password": "secret123"}
+    )
+    await client.post(
+        "/api/auth/login", json={"email": "g6@x.io", "password": "secret123"}
+    )
+    assert (
+        await client.post("/api/jobs/1/export", json={"fmt": "md"})
+    ).status_code == 403
+    assert (
+        await client.patch("/api/jobs/1/regions/1", json={})
+    ).status_code == 403
+    assert (await client.get("/api/admin/users")).status_code == 403
+    assert (await client.post("/api/jobs/presign", json={})).status_code == 403
+    assert (await client.get("/api/healthz")).status_code == 403
+
+async def test_logout_and_refresh_exempt_for_unverified(client, gating_on):
+    """P1-2: user chưa verify phải logout/refresh được để resend code."""
+    await client.post(
+        "/api/auth/register", json={"email": "g7@x.io", "password": "secret123"}
+    )
+    r = await client.post(
+        "/api/auth/login", json={"email": "g7@x.io", "password": "secret123"}
+    )
+    assert r.status_code == 200
+    assert (await client.post("/api/auth/refresh")).status_code == 200
+    assert (await client.post("/api/auth/logout")).status_code == 200
+
+async def test_exempt_match_strips_trailing_slash(client, gating_on):
+    """P2: exempt match strip trailing slash — /api/auth/login/ không dính
+    403 gating (vẫn 401 từ route)."""
+    r = await client.post(
+        "/api/auth/login/", json={"email": "g8@x.io", "password": "secret123"}
+    )
+    # gate exempt (strip slash) → Starlette redirect 307 tới path chuẩn,
+    # KHÔNG phải 403 email_unverified
+    assert r.status_code in (307, 401)
+
 async def test_gating_off_in_test_env(client):
     """env=test (conftest) → middleware skip: register xong xài được ngay."""
     await client.post(

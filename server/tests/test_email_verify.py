@@ -292,6 +292,35 @@ async def test_resend_new_code_overwrites_old(client, monkeypatch, db_session):
         await client.post("/api/auth/verify", json={"code": new})
     ).status_code == 200
 
+async def test_resend_already_verified_400(client, monkeypatch, db_session):
+    """P2: resend khi đã verified → 400 {code:already_verified}, KHÔNG gửi
+    email (không dùng resend làm kênh email-bomb)."""
+    from sqlalchemy import select
+    from app.core.models import User
+
+    sent, fake = _capture()
+    monkeypatch.setattr("app.services.mailer.send_email", fake)
+    code = await _register_with_code(client, monkeypatch, email="av@x.io")
+    assert (await client.post("/api/auth/verify", json={"code": code})).status_code == 200
+    n = len(sent)
+    r = await client.post("/api/auth/verify/resend")
+    assert r.status_code == 400 and r.json() == {"code": "already_verified"}
+    assert len(sent) == n  # không gửi thêm email
+    user = await db_session.scalar(select(User).where(User.email == "av@x.io"))
+    assert user.email_verify_code_hash is None  # không sinh code mới
+
+async def test_eleven_wrong_verify_codes_429(client, monkeypatch):
+    """P2: 11 lần verify sai mã liên tiếp → rate limiter cắt (429), không
+    rò rỉ 200/422 vĩnh viễn."""
+    await _register_with_code(client, monkeypatch, email="br@x.io")
+    statuses = []
+    for _ in range(11):
+        r = await client.post("/api/auth/verify", json={"code": "000000"})
+        statuses.append(r.status_code)
+    assert set(statuses) <= {422, 429}
+    assert 429 in statuses
+    assert statuses[-1] == 429  # các lần sau bị chặn tiếp
+
 async def test_resend_over_email_limit_429(client, monkeypatch, db_session):
     """verify_code đã gửi 5 lần/24h → resend 429 flat body email_limit."""
     from sqlalchemy import select

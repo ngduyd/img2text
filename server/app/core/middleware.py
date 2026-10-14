@@ -70,8 +70,12 @@ class _LoggingMiddleware:
 class EmailVerifyGateMiddleware:
     """Wave-5 S5: user chưa verify (is_verified=false) → 403 flat
     {code:"email_unverified"} trên MỌI /api/* trừ exempt (auth endpoints
-    sinh/refresh verify code + /api/healthz). Admin bypass. Không có access
-    cookie → không phải user → downstream 401/404 xử lý bình thường.
+    sinh/refresh verify code + login/logout/refresh — P1-2: user chưa
+    verify phải logout/refresh được để resend code). Admin bypass. Không
+    có access cookie → không phải user → downstream 401/404 xử lý bình thường.
+
+    Review P2: bỏ entry chết /api/healthz (route thật /healthz không prefix
+    → bypass tự nhiên); exempt match strip trailing slash.
 
     settings.env == "test" → skip (toàn bộ suite cũ không vỡ; test gating
     bật lại bằng monkeypatch). Lookup fail → log + passthrough (downstream
@@ -81,11 +85,12 @@ class EmailVerifyGateMiddleware:
         {
             "/api/auth/register",
             "/api/auth/login",
+            "/api/auth/logout",
+            "/api/auth/refresh",
             "/api/auth/verify",
             "/api/auth/verify/resend",
             "/api/auth/password/forgot",
             "/api/auth/password/reset",
-            "/api/healthz",
         }
     )
 
@@ -96,7 +101,8 @@ class EmailVerifyGateMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        path = _normalized_path(scope)
+        # P2: strip trailing slash trước exempt match
+        path = _normalized_path(scope).rstrip("/")
         if (
             not path.startswith("/api/")
             or path in self.EXEMPT
