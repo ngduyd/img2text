@@ -13,8 +13,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.services.admin_bootstrap import bootstrap_admin
+from app.services.email_sends import EmailLimitExceeded
 from app.core.config import settings
 from app.core.db import Base, SessionLocal, engine
 from app.core.middleware import PageViewsMiddleware, RequestLogsMiddleware
@@ -52,6 +54,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     app = FastAPI(lifespan=lifespan)
     app.state.settings = settings
+    # S5: 429 flat body {code:"email_limit", retry_after_seconds} (không bọc detail)
+    @app.exception_handler(EmailLimitExceeded)
+    async def _email_limit_handler(request, exc):
+        return JSONResponse(
+            status_code=429,
+            content={
+                "code": "email_limit",
+                "retry_after_seconds": exc.retry_after_seconds,
+            },
+        )
     # Ruling R6: pure-ASGI logging middlewares open their own sessions here
     app.state.session_factory = SessionLocal
     app.state.storage = build_storage()

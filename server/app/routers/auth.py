@@ -1,6 +1,7 @@
 """Auth endpoints: register / login / me / refresh / logout (Task 3+4)."""
 
 import hashlib
+import hmac
 import warnings
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
@@ -177,13 +178,67 @@ async def register(
         mailer.send_email,
         user.email,
         "Verify your email",
-        f"Your email verification code is: {code}\n\n"
-        "It expires in 5 minutes. If you did not request this, "
-        "ignore this email.\n",
+        _verify_email_body(code),
     )
     token = create_access_token(sub=str(user.id), role=user.role)
     set_auth_cookies(response, access=token)
     return _user_out(user)
+
+def _verify_email_body(code: str) -> str:
+    return (
+        f"Your email verification code is: {code}\n\n"
+        "It expires in 5 minutes. If you did not request this, "
+        "ignore this email.\n"
+    )
+
+class CodeIn(BaseModel):
+    # S5: mã 6 số — check format ở boundary; khác format → 422
+    code: str = Field(pattern=r"^\d{6}$")
+
+@router.post("/verify")
+async def verify_email(
+    body: CodeIn,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit_auth),
+) -> dict:
+    """S5: hash compare + TTL 5p — sai/hết hạn → 422. Đúng →
+    is_verified=true, xóa code (single-use). Gated user gọi được (exempt)."""
+    now = datetime.now(timezone.utc)
+    if (
+        user.email_verify_code_hash is None
+        or user.email_verify_expires_at is None
+        or user.email_verify_expires_at <= now
+        or not hmac.compare_digest(
+            user.email_verify_code_hash, hash_email_code(body.code)
+        )
+    ):
+        raise HTTPException(status_code=422, detail="invalid or expired code")
+    user.is_verified = True
+    user.email_verify_code_hash = None
+    user.email_verify_expires_at = None
+    await session.commit()
+    return {}
+
+@router.post("/verify/resend", status_code=202)
+async def verify_resend(
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit_auth),
+) -> dict:
+    """S5: code MỚI ghi đè code cũ (single active/user); qua per-kind
+    email limit — vượt → 429 email_limit (handler ở main.py)."""
+    await email_sends.check_limit(session, user.id, "verify_code")
+    code = generate_email_code()
+    user.email_verify_code_hash = hash_email_code(code)
+    user.email_verify_expires_at = datetime.now(timezone.utc) + _EMAIL_CODE_TTL
+    email_sends.record(session, user.id, "verify_code")
+    await session.commit()
+    background_tasks.add_task(
+        mailer.send_email, user.email, "Verify your email", _verify_email_body(code)
+    )
+    return {}
 
 
 @router.post("/login", response_model=UserOut)

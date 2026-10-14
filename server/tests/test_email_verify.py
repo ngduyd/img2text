@@ -183,3 +183,109 @@ async def test_register_smtp_down_still_201(client, monkeypatch):
         "/api/auth/register", json={"email": "down@x.io", "password": "secret123"}
     )
     assert r.status_code == 201
+
+# --- POST /api/auth/verify + /verify/resend ---
+
+async def _register_with_code(client, monkeypatch, email="v@x.io"):
+    """Register + trả về mã 6 số từ email verify vừa capture."""
+    sent, fake = _capture()
+    monkeypatch.setattr("app.services.mailer.send_email", fake)
+    r = await client.post(
+        "/api/auth/register", json={"email": email, "password": "secret123"}
+    )
+    assert r.status_code == 201
+    for _, _, body in sent:
+        m = _CODE_RE.search(body)
+        if m:
+            return m.group(1)
+    raise AssertionError(f"no code in {sent!r}")
+
+async def test_verify_correct_code_200(client, monkeypatch, db_session):
+    from sqlalchemy import select
+    from app.core.models import User
+
+    code = await _register_with_code(client, monkeypatch)
+    r = await client.post("/api/auth/verify", json={"code": code})
+    assert r.status_code == 200 and r.json() == {}
+    r2 = await client.get("/api/auth/me")
+    assert r2.json()["is_verified"] is True
+    user = await db_session.scalar(select(User).where(User.email == "v@x.io"))
+    assert user.email_verify_code_hash is None  # single-use: xóa sau khi dùng
+
+async def test_verify_wrong_code_422(client, monkeypatch):
+    await _register_with_code(client, monkeypatch)
+    r = await client.post("/api/auth/verify", json={"code": "000000"})
+    assert r.status_code == 422
+
+async def test_verify_expired_code_422(client, monkeypatch, db_session):
+    """Code ĐÚNG nhưng hết hạn → 422 (tách bạch với lỗi sai mã)."""
+    import hashlib as _h
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import update
+    from app.core.models import User
+
+    await _register_with_code(client, monkeypatch)
+    code = "123456"
+    await db_session.execute(
+        update(User).values(
+            email_verify_code_hash=_h.sha256(code.encode()).hexdigest(),
+            email_verify_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        )
+    )
+    await db_session.commit()
+    r = await client.post("/api/auth/verify", json={"code": code})
+    assert r.status_code == 422
+
+async def test_verify_requires_auth(client):
+    r = await client.post("/api/auth/verify", json={"code": "123456"})
+    assert r.status_code == 401
+
+def _code_from(body: str) -> str:
+    m = _CODE_RE.search(body)
+    assert m, f"no code in email body: {body!r}"
+    return m.group(1)
+
+async def test_resend_new_code_overwrites_old(client, monkeypatch, db_session):
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import update
+    from app.core.models import EmailSend
+
+    sent, fake = _capture()
+    monkeypatch.setattr("app.services.mailer.send_email", fake)
+    r = await client.post(
+        "/api/auth/register", json={"email": "rs@x.io", "password": "secret123"}
+    )
+    assert r.status_code == 201
+    old = _code_from(sent[1][2])
+    # spacing: verify email của register là send #1 → backdate 11 phút để
+    # resend (#2, gap ≥10p) qua limit
+    await db_session.execute(
+        update(EmailSend)
+        .where(EmailSend.kind == "verify_code")
+        .values(created_at=datetime.now(timezone.utc) - timedelta(minutes=11))
+    )
+    await db_session.commit()
+    r = await client.post("/api/auth/verify/resend")
+    assert r.status_code == 202 and r.json() == {}
+    new = _code_from(sent[-1][2])
+    assert new != old  # single active code: resend ghi đè
+    assert (
+        await client.post("/api/auth/verify", json={"code": old})
+    ).status_code == 422
+    assert (
+        await client.post("/api/auth/verify", json={"code": new})
+    ).status_code == 200
+
+async def test_resend_over_email_limit_429(client, monkeypatch, db_session):
+    """verify_code đã gửi 5 lần/24h → resend 429 flat body email_limit."""
+    from sqlalchemy import select
+    from app.core.models import User
+
+    await _register_with_code(client, monkeypatch, email="rl@x.io")
+    u = await db_session.scalar(select(User).where(User.email == "rl@x.io"))
+    _seed(db_session, u.id, "verify_code", [100, 50, 10, 5, 1])
+    await db_session.commit()
+    r = await client.post("/api/auth/verify/resend")
+    assert r.status_code == 429
+    body = r.json()
+    assert body["code"] == "email_limit" and body["retry_after_seconds"] >= 1
