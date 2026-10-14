@@ -492,12 +492,15 @@ async def _llm_md_export(
             status_code=502, detail="Không kết nối LLM máy chủ."
         ) from exc
 
-async def _docx_html_export(job_id: int, storage: StorageDriver) -> bytes | None:
+async def _docx_html_export(
+    job_id: int, job: Job, storage: StorageDriver
+) -> bytes | None:
     """Plan M3: exports/{id}/docx.html → python-docx walker; None if absent
     (caller falls back to the pandoc docx path).
 
-    WS-PIPE: img src tham chiếu crop artifact → load bytes (partial-fail:
-    crop thiếu → img drop trong walker)."""
+    WS-PIPE: img src tham chiếu crop artifact → load bytes; batch miss →
+    on-demand get_or_make_crop (S1a). Partial-fail: crop KeyError → img drop
+    trong walker; HTTPException propagate (R27)."""
     key = f"exports/{job_id}/docx.html"
     if not await storage.exists(key):
         return None
@@ -507,7 +510,13 @@ async def _docx_html_export(job_id: int, storage: StorageDriver) -> bytes | None
         try:
             crops[rid] = await storage.get(f"exports/{job_id}/crops/{rid}.png")
         except KeyError:
-            logger.info("docx export: crop %s chưa ingest — img bị drop", rid)
+            try:  # batch miss → on-demand (S1a), không drop img oan
+                crop_key = await get_or_make_crop(
+                    job_id, rid, job, job.result or {}, storage
+                )
+                crops[rid] = await storage.get(crop_key)
+            except KeyError:
+                logger.info("docx export: crop %s chưa ingest — img bị drop", rid)
     return html_to_docx(html, crops=crops)
 
 async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
@@ -602,7 +611,7 @@ async def export_job(
         elif body.fmt == "md-layout":
             data = await _llm_md_export(id, job, storage=storage)  # LLM errors → 502, no put
         elif body.fmt == "docx" and (
-            data := await _docx_html_export(id, storage)
+            data := await _docx_html_export(id, job, storage)
         ) is not None:
             pass  # Plan M3: user-edited docx.html wins over pandoc
         else:
