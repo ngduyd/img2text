@@ -148,7 +148,8 @@ it("queued shows waiting message and polls", async () => {
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   // Task 2: header badge duplicates status text — scope to InfoPanel's status badge.
   // Lane I Task 2: InfoPanel = collapsible default closed → mở trước.
-  await userEvent.click(await screen.findByTestId("btn-toggle-info"));
+  await screen.findByTestId("job-header");
+  // U4+U5: Original + Info default mở — không cần click toggle.
   expect(await screen.findByTestId("status-5")).toHaveTextContent("Queued");
   // Back link points at the /jobs list route (root is public landing now).
   expect(screen.getByTestId("link-back-jobs")).toHaveAttribute("href", "/jobs");
@@ -167,7 +168,7 @@ it("failed shows retry button and calls api", async () => {
   mockJob({ id: 5, status: "failed", error: "boom", result: null } as Job);
   vi.mocked(api.retryJob).mockResolvedValue(undefined);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  await userEvent.click(await screen.findByTestId("btn-toggle-info"));
+  // U4+U5: Info default mở.
   expect(await screen.findByTestId("status-5")).toHaveTextContent("Processing failed");
   const invalidate = vi.spyOn(lastQueryClient!, "invalidateQueries");
   const user = userEvent.setup();
@@ -185,7 +186,6 @@ it("retry failure shows retry-error with server detail", async () => {
   mockJob({ id: 5, status: "failed", error: "boom", result: null } as Job);
   vi.mocked(api.retryJob).mockRejectedValue(new ApiError("Forbidden."));
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  await userEvent.click(await screen.findByTestId("btn-toggle-info"));
   expect(await screen.findByTestId("status-5")).toHaveTextContent("Processing failed");
   const user = userEvent.setup();
   await user.click(screen.getByTestId("btn-retry-job"));
@@ -262,10 +262,7 @@ const DONE_JOB: Job = {
 it("done renders 3 panels: original + result + info with status badge", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  const user = userEvent.setup();
-  // Lane I Task 2: File gốc + Thông tin = collapsible (default closed) → mở trước.
-  await user.click(await screen.findByTestId("btn-toggle-original"));
-  await user.click(screen.getByTestId("btn-toggle-info"));
+  // U4+U5: default mở cả 2 panel — không cần click toggle.
   expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
   expect(screen.getByTestId("panel-result")).toBeInTheDocument();
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
@@ -289,9 +286,7 @@ it("done: no job-meta/output badge, stats line + ExportBar render", async () => 
 it("not done shows status-only panels, ResultPanel hidden until done", async () => {
   mockJob({ ...DONE_JOB, status: "queued", result: null });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  const user = userEvent.setup();
-  await user.click(await screen.findByTestId("btn-toggle-original"));
-  await user.click(screen.getByTestId("btn-toggle-info"));
+  // U4+U5: default mở cả 2 panel.
   expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
   expect(screen.queryByTestId("panel-result")).toBeNull();
@@ -377,6 +372,32 @@ it("U7: no fmt-md-layout/fmt-docx-layout/preview-mode-md/preview-mode-word in DO
   expect(screen.queryByTestId("preview-mode-word")).not.toBeInTheDocument();
   // fmt fixed init job.output_format=docx → word mode ngay từ đầu (không switch).
   expect(await screen.findByTestId("preview-word")).toBeInTheDocument();
+});
+
+/** U4+U5: Original + Info mặc định mở, label trái / chevron phải (justify-between). */
+it("U4+U5: original+info default open with label left / chevron right", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await screen.findByTestId("panel-original");
+  await screen.findByTestId("panel-info");
+  for (const [btnId, panelId, wrapId] of [
+    ["btn-toggle-original", "panel-original", "original-panel-wrap"],
+    ["btn-toggle-info", "panel-info", "info-panel-wrap"],
+  ] as const) {
+    const btn = screen.getByTestId(btnId);
+    expect(btn).toHaveAttribute("aria-expanded", "true");
+    expect(btn).toHaveAttribute("aria-controls", wrapId);
+    // justify-between: label (text node) trong btn, chevron (svg) đứng CUỐI.
+    expect(btn.textContent?.trim()).toBeTruthy();
+    const svg = btn.querySelector("svg")!;
+    expect(btn.lastElementChild).toBe(svg);
+    expect(svg.getAttribute("class")).toContain("rotate-180");
+    expect(screen.getByTestId(panelId)).toBeInTheDocument();
+  }
+  // Đóng → unmount.
+  const user = userEvent.setup();
+  await user.click(screen.getByTestId("btn-toggle-original"));
+  expect(screen.queryByTestId("panel-original")).not.toBeInTheDocument();
 });
 
 /** U3: section Layout collapsible — btn-toggle-layout, default mở, chevron rotate, aria-expanded/controls. */
@@ -546,7 +567,7 @@ it("no btn-edit-layout / layout-editor-textarea; btn-edit-doc opens UnifiedEdito
 });
 
 /** Wave-3 #5 → Lane I Task 2: col phải KHÔNG còn sticky; File gốc + Info = collapsible default closed. */
-it("renders single wrapper grid: collapsible original+info right (default closed, no sticky)", async () => {
+it("renders single wrapper grid: collapsible original+info right (U4+U5 default open, no sticky)", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("section-text");
@@ -557,30 +578,24 @@ it("renders single wrapper grid: collapsible original+info right (default closed
   expect(colClasses.length).toBeGreaterThan(0);
   expect(colClasses.every((c) => c.startsWith("lg:"))).toBe(true);
   expect(grid.querySelector(".lg\\:col-span-7")).not.toBeNull();
-  // BỎ sticky (wave-3 G) — cột phải bình thường.
   const aside = grid.querySelector("aside");
   expect(aside).not.toBeNull();
   expect(aside!.className).toContain("lg:col-span-5");
   expect(aside!.className).not.toContain("sticky");
-  // Default closed: panel chưa mount, aria-expanded=false, không fetch blob.
-  expect(screen.queryByTestId("panel-original")).not.toBeInTheDocument();
-  expect(screen.queryByTestId("panel-info")).not.toBeInTheDocument();
-  expect(screen.getByTestId("btn-toggle-original")).toHaveAttribute("aria-expanded", "false");
-  expect(screen.getByTestId("btn-toggle-info")).toHaveAttribute("aria-expanded", "false");
-  expect(api.downloadJobFile).not.toHaveBeenCalled();
-  // Mở → mount 1 panel duy nhất + blob fetch 1 lần; Đóng → unmount.
-  const user = userEvent.setup();
-  await user.click(screen.getByTestId("btn-toggle-original"));
+  // U4+U5: default MỞ — panel mount ngay, aria-expanded=true.
   expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
-  expect(screen.queryByTestId("panel-original-layout")).not.toBeInTheDocument();
+  expect(screen.getByTestId("panel-info")).toBeInTheDocument();
+  expect(screen.getByTestId("btn-toggle-original")).toHaveAttribute("aria-expanded", "true");
+  expect(screen.getByTestId("btn-toggle-info")).toHaveAttribute("aria-expanded", "true");
   await screen.findByTestId("original-pdf-frame");
   await waitFor(() => expect(api.downloadJobFile).toHaveBeenCalledTimes(1));
-  await user.click(screen.getByTestId("btn-toggle-info"));
-  expect(await screen.findByTestId("panel-info")).toBeInTheDocument();
   expect(screen.getByTestId("layout-preview")).toBeInTheDocument();
   expect(screen.getByTestId("export-bar")).toBeInTheDocument();
+  // Đóng → unmount + fetch không tăng (1 panel duy nhất).
+  const user = userEvent.setup();
   await user.click(screen.getByTestId("btn-toggle-original"));
   expect(screen.queryByTestId("panel-original")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("panel-original-layout")).not.toBeInTheDocument();
   expect(screen.getByTestId("btn-toggle-original")).toHaveAttribute("aria-expanded", "false");
 });
 

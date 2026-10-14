@@ -83,9 +83,9 @@ export default function JobDetail() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [showHistory]);
   const editorHostRef = useRef<HTMLElement>(null);
-  /** Lane I Task 2: File gốc + Thông tin = collapsible (default closed; U4+U5 sẽ mở default). */
-  const [originalOpen, setOriginalOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
+  /** U4+U5: File gốc + Thông tin = collapsible, mặc định MỞ (justify-between label/chevron). */
+  const [originalOpen, setOriginalOpen] = useState(true);
+  const [infoOpen, setInfoOpen] = useState(true);
   /** U1 P0: đổi :id KHÔNG remount → reset states JobDetail theo id (grid remount bằng key). */
   useEffect(() => {
     setConfirmDelete(false);
@@ -96,8 +96,8 @@ export default function JobDetail() {
     setRetryingLayout(false);
     setConfirmRetry(false);
     setShowHistory(false);
-    setOriginalOpen(false);
-    setInfoOpen(false);
+    setOriginalOpen(true);
+    setInfoOpen(true);
     setRetryError(null);
     // oxlint-disable-next-line react/set-state-in-effect -- reset theo id (U1)
   }, [id]);
