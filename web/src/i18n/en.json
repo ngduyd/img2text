@@ -50,7 +50,8 @@
   "errors": {
     "network": "Cannot reach the server. Check that it is running.",
     "uploadFailed": "File upload failed.",
-    "generic": "An error occurred."
+    "generic": "An error occurred.",
+    "email_limit": "Too many emails requested. Please try again later."
   },
   "ocr": {
     "enabled": "OCR enabled",
@@ -112,7 +113,22 @@
     "forgot": {
       "title": "Forgot password",
       "sent": "Check your email.",
-      "submit": "Send reset email"
+      "submit": "Send reset email",
+      "enterCode": "Enter the code and new password"
+    },
+    "verify": {
+      "title": "Verify your email",
+      "subtitle": "Enter the 6-digit code we sent to your email.",
+      "subtitleWithEmail": "Enter the 6-digit code we sent to {email}.",
+      "codeLabel": "Verification code",
+      "expiresIn": "Code expires in {time}",
+      "expired": "Code expired. Request a new one.",
+      "invalid": "Invalid or expired code.",
+      "submit": "Verify",
+      "resend": "Resend code",
+      "resendIn": "Resend code in {s}s",
+      "logout": "Log out",
+      "success": "Email verified."
     },
     "reset": {
       "title": "Reset password",

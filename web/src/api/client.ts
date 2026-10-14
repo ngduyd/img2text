@@ -199,6 +199,10 @@ export const api = {
   updateProfile: (body: { current_password: string; email?: string; new_password?: string }) =>
     request<User>("/api/auth/profile", { method: "PATCH", body }),
   refresh: () => request<unknown>("/api/auth/refresh", { method: "POST" }),
+  // S5: verify mã 6 số / resend — exempt khỏi gating 403 email_unverified.
+  verifyCode: (code: string) =>
+    request<unknown>("/api/auth/verify", { method: "POST", body: { code } }),
+  verifyResend: () => request<unknown>("/api/auth/verify/resend", { method: "POST" }),
   forgotEmail: (email: string) =>
     request<unknown>("/api/auth/password/forgot", { method: "POST", body: { email } }),
   resetPassword: (token: string, password: string) =>
