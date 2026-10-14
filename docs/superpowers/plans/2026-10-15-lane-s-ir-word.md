@@ -1,34 +1,38 @@
-# Plan: Lane S — IR per-page + word images (2026-10-15)
+# Plan: Lane S — IR per-page + word images (2026-10-15) — rev3
 
-Spec: `docs/superpowers/specs/2026-10-15-lane-s-ir-word-design.md`.
+Spec: `docs/superpowers/specs/2026-10-15-lane-s-ir-word-design.md` (rev2).
 Base `cb70a8f`. Worktree `lane-s-ir`. Server: venv chung, DB `img2text_test`@5436, PYTHONPATH, targeted pytest chunk 8'. Commit mỗi task. TDD.
+Rev3: fix plan-review (P0 build_docx params, P1 callers/DI/signature/sweep, P2 regex/PDF).
 
-## Task 1 — S1: docx crop on-demand fallback
-- Test đỏ: `_docx_html_export` — html chứa `crops/rid.png`, storage.get crop → KeyError, monkeypatch `get_or_make_crop` trả bytes → assert bytes truyền vào `html_to_docx` (spy) / docx có media.
-- Fix: `_docx_html_export` thêm fallback `get_or_make_crop` (pattern `_llm_md_export`).
+## Task 1 — S1a: `_docx_html_export` crop on-demand (fmt=docx)
+- Test đỏ: html chứa `crops/rid.png`, batch crop KeyError, monkeypatch `get_or_make_crop` → bytes truyền vào `html_to_docx` (spy).
+- Fix: `_docx_html_export(job_id, job, storage)`; catch `KeyError` only. **Call site duy nhất: `export_job` exports.py:605** (download_export serve cache qua storage.get — KHÔNG gọi → không sửa).
 
-## Task 2 — S5: retry-layout render docx (verify trước)
-- Test đỏ: `POST /jobs/{id}/retry-layout` (done job, LLM mock) → assert `exports/{id}/docx-layout` được put (spy storage).
-- Chạy → nếu xanh = flow OK (test ghi nhận) → ghi chú evidence; đỏ → fix wiring (gọi `_llm_docx_export` song song md).
+## Task 2 — S1b: `build_docx` figure embed crop (fmt=docx-layout)
+- **Design** (P0): placeholder hiện tại `<p>[ảnh]</p>` KHÔNG mang rid → đổi IR docx render: figure node → `<img src="crops/{rid}.png">` (rid = image region id, có sẵn từ IR figure marker/source ids); builder parse `<img>` → crop loader → `add_picture(bytes)`.
+- `build_docx(..., crop_loader=None)` param mới; caller `_llm_docx_export` (exports.py:439) wire crop_loader = load `exports/{id}/crops/{rid}.png` → miss → `get_or_make_crop` (on-demand, job/result đã có trong scope) → None.
+- Test đỏ: (a) figure với crop bytes → docx zip có `word/media/*`; (b) crop_loader None/thất bại → giữ `<p>[ảnh]</p>` placeholder (partial-fail); (c) prompt emit `<img src="crops/...">` (assert prompt content).
+- Note ceiling: PDF source (R26 `get_or_make_crop` image-only) → placeholder-only, warning.
 
-## Task 3 — S3a: heading anchor helper + prompt annotation
-- Test đỏ: `extract_heading_anchors(page_blocks)` → list `(block_id, "§2.1")` từ text regex (`1.`, `1.1`, `2.2`) y-order; header y-band top ≠ heading; non-numbered → None.
-- Fix: helper trong `services/ir.py` (hoặc render_md), unit tests.
+## Task 3 — S5: retry-layout render docx (verify)
+- Test: `POST /jobs/{id}/retry-layout` (LLM mock) → spy put `exports/{id}/docx-layout`. Xanh = evidence ghi nhận; đỏ → fix wiring `auto_generate_output`.
 
-## Task 4 — S2: `_ir_page` sequential + merge
-- Test đỏ: `llm_ir` per-page — mock `_chat` trả 2 page IR khác nhau; assert `_chat` gọi ĐÚNG 2 lần, sequential (log call order), gộp `pages[]` theo page_number; running_ctx truyền từ page1→2 (assert prompt page2 chứa section context).
-- Fix: tách `_ir_page(result, page, ctx)`, loop sequential, merge; fallback 1-call full result khi all fail (mock LLM fail → degrade test).
+## Task 4 — S3a: `extract_heading_anchors` trong `services/ir.py`
+- **Signature** (P1): `extract_heading_anchors(pages: list[dict], state: AnchorState | None) -> (list annotations, AnchorState)` — page_height per page cho y-band 15%; state = doc-level §counter + stack carry xuyên trang.
+- Test đỏ matrix:
+  - positive: `"1. Benefit"`, `"1) Foo"` (trailing space bắt buộc), `"1.1.1"`, `"   2.2 Indent"`,
+  - negative: `"2024. Năm"` (4-digit guard explicit), `"Câu 1:"`, `"Bài 2"`, `"abc 1. x"` (không đầu block),
+  - y-order → §sequence liên tục xuyên trang (state carry), header y-band 15% top + không số → excluded → header/doc_title.
+- Fix: helper shared trong ir.py.
 
-## Task 5 — S4: cross-column normalize
-- Test đỏ: (a) prompt chứa rule "same y-band 2 columns → same type, EXCEPT table"; (b) `validate_ir` warning khi cùng y-band + 2 cột + khác type + không bảng; bảng (cells) → không warn.
-- Fix: prompt update + validate check (warning không fail).
+## Task 5 — S2: `_ir_page` sequential shared (DI)
+- **Signature** (P1): `_ir_page(page_ocr: dict, running_ctx: str, chat_fn) -> dict` trong ir.py — KHÔNG import httpx; `render_md.llm_ir` + `render_docx.llm_ir` delegate, mỗi nơi pass `_chat` của mình (giữ 2 HTTP clients hiện có, 1 shared logic).
+- Test đỏ (inject `chat_fn` fake): 2 page → đúng 2 call **đúng thứ tự** (log order), page2 prompt chứa §context page1, merge sort page_number + check trùng/thiếu; >20 page (`MAX_IR_PAGE_CALLS=20`) → degrade 1-call; page fail → retry 1 → fail → fallback legacy `IR_PROMPT` full-result.
+- Fix: loop sequential + merge.
 
-## Task 6 — S3b: header/heading phân tách trong prompt
-- Test đỏ: prompt assertion — header y-band top rule + §index chỉ cho numbered headings.
-- Fix: `IR_PROMPT_PAGE` sections update.
+## Task 6 — S4+S3b: prompt rules + validator
+- Test đỏ: (a) `IR_PROMPT_PAGE` chứa cross-column rule + table exception + header y-band 15% + §anchor instruction; (b) `validate_ir` (sau `_fill_bbox`) warning: cùng y-band + 2 cột + khác type + không bảng (lookup `source_block_ids` → OCR region `cells`/`<table`, pattern `render_md.py:147`); bảng → không warn; (c) legacy `IR_PROMPT` snapshot không đổi.
+- Fix: prompt + validate warn-only (rationale: fail đã có heuristic fallback — warning giữ signal).
 
-## Task 7 — sweep
-- `pytest tests/test_ir.py tests/test_render_md.py tests/test_export_md_layout.py tests/test_export_docx*.py tests/test_retry*.py` + related chunks.
-
-## Rollout
-1 worker sequential (S3→S2 phụ thuộc S3a), commit/task. Report: git log + red-green.
+## Task 7 — sweep (glob THẬT)
+- `test_ir.py test_render_md.py test_render_docx.py test_export_md_layout.py test_export_llm_docx.py test_docx_html.py test_export_docx.py test_crop_embed.py test_job_retry.py test_jobs_retry.py`.

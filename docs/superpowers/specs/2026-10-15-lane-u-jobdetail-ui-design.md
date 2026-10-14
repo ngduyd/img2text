@@ -1,59 +1,91 @@
-# Spec: Lane U — JobDetail UI rework + P0 state reset (2026-10-15)
+# Spec: Lane U — JobDetail UI rework + P0 state reset (2026-10-15) — rev2
 
 Base: master `cb70a8f`. Web-only. TDD. i18n keys mới → en+vi parity.
+Rev2: fix theo spec-review (2 P0 + 4 P1).
 
 ## U1 — P0: state trộn content giữa các job
 
-**Bug**: `LayoutPreview` state `mdHtml/wordHtml` + UnifiedEditor không reset khi
-đổi job (React Router đổi `:id` KHÔNG remount) → job1 word hiện html job2;
-"Lưu layout" PUT `exports/1/docx.html` với html job2 (evidence: exports/1/docx.html
-= content đề Hóa của job2, docx-layout/md-layout job1 = UNIT1 đúng).
+**Bug**: React Router đổi `:id` KHÔNG remount → state cache giữ html job cũ;
+"Lưu layout" PUT `exports/1/docx.html` với html job2 (evidence có sẵn).
 
-**Fix**: `key={job.id}` tại mọi mount point trong JobDetail (`<LayoutPreview
-key={job.id} …>`, UnifiedEditor mount, editor containers) + reset state trong
-`useEffect` deps `[job.id]` cho component giữ cache cục bộ. TDD: test render
-job A → job B → mdHtml/wordHtml của B là fetch của B (mock đếm call đúng id).
+**Fix — 2 lớp**:
+1. `key={job.id}` tại mount-level đủ cao (grid/section wrap trong JobDetail,
+   mounts ~469-500; `key` dùng `id` từ params — undefined-safe với early-return
+   `!job`).
+2. Null-reset effect trong `LayoutPreview`: deps `[mode, job.id]` →
+   `setMdHtml(null); setWordHtml(null)` TRƯỚC khi `load()` (thêm job.id vào
+   deps KHÔNG đủ vì `load()` early-return khi state !== null).
+
+**Full reset table** (component giữ state theo job):
+| Component | States reset khi job.id đổi |
+|---|---|
+| LayoutPreview | mdHtml, wordHtml, loading |
+| JobDetail | editing, downloadOpen, layoutFmtOverride, showHistory, originalOpen, infoOpen, anchorEls |
+| TextSection | editingText, open, customText |
+| UnifiedEditor | mode, mdText, docxHtml, loaded, error, baseCss, wordCss, styleMap |
+
+Áp dụng: `key={job.id}` cover 90% (unmount/remount). State nào nằm TRONG
+component được key → khỏi xử lý riêng. State nằm ở JobDetail (không remount)
+→ reset effect deps `[id]`. Test đỏ→xanh: navigate A→B, mock đếm call id=2,
+không còn html A.
 
 ## U2 — Nút "Edit text" vào heading section Text
 
-Nút `btn-edit-text` chuyển từ vị trí hiện tại vào header row của section
-"Text/Văn bản" (bên phải heading, trái chevron). Không đổi testid.
+- Lift `editingText` state lên JobDetail (prop `editingText` +
+  `onEditingTextChange` vào TextSection) — button render ở JobDetail header row.
+- Thứ tự header row Text: **heading trái → edit button phải**.
+- **Text section KHÔNG collapsible** (chỉ scroll — U9). Không chevron ở Text.
 
 ## U3 — Section Layout = collapsible
 
-Section Layout có heading row (text-trái + chevron-phải) click toggle
-mở/đóng, `aria-expanded`. **Mặc định mở**. Nội dung: ExportBar + preview/editor
-(behavior giữ nguyên). Testid toggle mới `btn-toggle-layout`.
+- Header row: **heading trái → nút Edit (U8) → chevron phải**.
+- `useState(true)` mặc định mở, chevron `rotate-180`, `aria-expanded` +
+  `aria-controls="layout-panel-wrap"`, testid `btn-toggle-layout`.
+- Scroll region của Layout GIỮ NGUYÊN (đã đúng).
+- Đầu row đây cũng là chỗ đặt nút Edit (U8) — gộp Task.
 
 ## U4+U5 — Original + Info: text trái, chevron phải, mặc định mở
 
-Header row `File gốc`/`Thông tin`: label trái, chevron `rotate-180` phải.
-`useState(true)` cả hai (mặc định mở). Testid giữ nguyên.
+- `justify-between`: label trái, chevron phải. `useState(true)` ×2.
+- Testid giữ; header row có `aria-expanded` (đã có pattern).
 
-## U6 — Original + Info sticky
+## U6 — Original + Info sticky (offset 2 layer)
 
-Sidebar ≥lg: `lg:sticky lg:top-16` (dưới AppNav) — hiện trong lúc cuộn qua
-Layout/Text. Không sticky <md.
+- Sidebar wrap `lg:sticky lg:top-32` (AppNav h-16 4rem + job-header sticky
+  ~4rem — TRÁNH chồng overlap khi cả 2 sticky cùng top-16).
+- <lg không sticky. Chấp nhận: job-header wrap cao hơn → top-32 vẫn an toàn.
 
-## U7 — Bỏ switch MD/Word trong Layout section
+## U7 — XÓA toàn bộ switch MD/Word (2 chỗ, option a)
 
-Xóa `fmt-md-layout`/`fmt-docx-layout` buttons + `onFmtChange` prop wiring ở
-JobDetail. `LayoutPreview` nhận `fmt` fixed từ parent (init từ
-`job.output_format`) — bỏ controlled switch, giữ nội bộ (mode word/md theo
-fmt). Update tests có assert 2 testid này.
+- **Xóa**: header switch `fmt-md-layout`/`fmt-docx-layout` (JobDetail ~282-292)
+  + preview toggle `preview-mode-md`/`preview-mode-word` (LayoutPreview ~111-126).
+- `LayoutPreview({job, fmt})` — `fmt` fixed từ parent init
+  `job.output_format` (`md-layout`↔`docx-layout`); bỏ `onFmtChange`,
+  `layoutFmtOverride`/`switchLayoutFmt` (JobDetail ~59-61, 121), `key={layoutFmt}`
+  crossfade.
+- **GIỮ**: UnifiedEditor `switch-mode-md/word` (editor mode switch độc lập
+  trong editor — không phải layout fmt switch).
+- Dead cleanup: i18n `jd.layoutFmtChanged`/`jd.layoutFmtAria`,
+  `layout-crossfade` CSS, tests assert `fmt-*`.
 
-## U8 — Nút Edit panel chung → xuống section Layout
+## U8 — Nút Edit panel chung → heading section Layout
 
-Nút edit chung (hiện ở panel trên) dời vào heading row của section Layout
-(bên phải heading). Thống nhất với U2 pattern (heading trái, edit, chevron phải).
+- Nút Edit (panel trên, `btn-edit-doc`-style hiện tại) dời vào header row
+  Layout: **heading → edit → chevron** (U3).
+- State wiring giữ nguyên (chỉ đổi vị trí render).
 
 ## U9 — Section Text cuộn được
 
-Vùng nội dung section Text (editor + suggestions) = scroll region:
-`max-h` hợp lý + `overflow-y-auto` (pattern section Layout đang dùng). Text
-dài cuộn trong section, không tràn trang.
+- Scroll region = **vùng text editor** (`max-h-[75vh] overflow-y-auto`,
+  match Layout preview pattern).
+- **IssuesPanel/suggestion popover**: KHÔNG nằm trong scroll region
+  (popover `absolute top-full` sẽ bị clip) — tách sibling ngoài region hoặc
+  portal. Chọn: IssuesPanel ngoài scroll region, text editor cuộn riêng.
+- Test: text dài → region có overflow, page không tràn; popover render
+  không bị clip (assert ngoài container có overflow).
 
 ## Ràng buộc
-- Testid không đổi (R51) trừ phần xóa (U7).
-- i18n: mọi string mới → t() en+vi.
+- Testid: giữ nguyên các id cũ; testid MỚI cho phép thêm (`btn-toggle-layout`).
+- i18n: mọi string mới → t() en+vi; `jd.layout` heading hardcoded → key mới.
+- Default-open Original/Info → mount eager (double-fetch chấp nhận, perf note).
 - Không sửa server.

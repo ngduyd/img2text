@@ -1,39 +1,40 @@
-# Plan: Lane U — JobDetail UI rework (2026-10-15)
+# Plan: Lane U — JobDetail UI rework (2026-10-15) — rev3
 
-Spec: `docs/superpowers/specs/2026-10-15-lane-u-jobdetail-ui-design.md`.
-Base `cb70a8f`. Worktree `lane-u-ui`. Web: `npx tsc -b --force` + targeted vitest. Commit mỗi task. TDD red→green.
+Spec: `docs/superpowers/specs/2026-10-15-lane-u-jobdetail-ui-design.md` (rev2).
+Base `cb70a8f`. Worktree `lane-u-ui`. Web: `npx tsc -b --force` + targeted vitest. Commit mỗi task. TDD.
+Rev3: fix plan-review (P0 popover, P1 state list/order, P2 wiring).
 
-## Task 1 — P0 U1: state reset theo job.id
-- Test đỏ: `JobDetail state test` — render job A (mock md fetch id=1), navigate → job B (id=2), assert `api.exportJob` được gọi với id=2 + mdHtml re-render của B (không còn html A). Pattern: mock client, `key`/deps.
-- Fix: `<LayoutPreview key={job.id}>` + `<UnifiedEditor key={job.id}>` (JobDetail ~497); LayoutPreview `useEffect(..., [mode])` → thêm `job.id` reset `mdHtml/wordHtml/loading`. UnifiedEditor check cache load deps similar.
-- Green: test pass, toàn bộ existing JobDetail/LayoutPreview tests pass.
+## Task 1 — U7: xóa TOÀN BỘ switch MD/Word (2 chỗ) — TRƯỚC Task2
+- Test đỏ: `fmt-md-layout`/`fmt-docx-layout`/`preview-mode-md`/`preview-mode-word` = 0 trong DOM sau khi gỡ (JobDetail + LayoutPreview render, tsc pass với prop types gỡ).
+- Fix: xóa header switch (JobDetail ~282-292) + preview toggle (LayoutPreview ~111-126) + `onFmtChange` + `layoutFmtOverride`/`switchLayoutFmt` (JobDetail ~59,121,287,297) + `key={layoutFmt}` crossfade (~497-498). `fmt` fixed init `job.output_format`.
+- GIỮ: UnifiedEditor `switch-mode-md/word`.
+- Dead cleanup: i18n `jd.layoutFmtAria`/`jd.layoutFmtChanged` (en/vi.json:164-165), `layout-crossfade` (index.css:106), toast `switchLayoutFmt`.
+- Note: KHÔNG có test assert fmt-* sẵn (empty set) → test mới assert vắng.
 
-## Task 2 — U9: section Text cuộn
-- Test đỏ: TextSection wrapper có class scroll (`overflow-y-auto` + max-h) — assert className.
-- Fix: bọc vùng nội dung text section (editor + suggestions) scroll container.
+## Task 2 — U1 P0: state reset theo job.id — SAU Task1
+- Test đỏ: navigate A→B → fetch gọi id=2, mdHtml là của B (không html A).
+- Fix: `key={job.id}` grid/section wrap (JobDetail ~469-500) + LayoutPreview null-reset effect (`setMdHtml(null);setWordHtml(null)` deps `[mode, job.id]` — thêm deps KHÔNG đủ vì `load()` early-return).
+- JobDetail states (reset effect `[id]`, local states KHÔNG remount): `confirmDelete, editing, downloadOpen, retryingLayout, confirmRetry, showHistory, originalOpen, infoOpen, retryError` (— `layoutFmtOverride` đã xóa Task1; `anchorEls` nằm TextSection useRef Map, ref không cần reset).
 
-## Task 3 — U2 + U8: Edit buttons vào headings
-- Test đỏ: `btn-edit-text` nằm trong section Text header (container assert); nút Edit panel → section Layout header.
-- Fix: move buttons, layout row: heading trái → edit button → chevron phải.
+## Task 3 — U2+U8: Edit buttons vào headings — TRƯỚC Task4 (cùng region TextSection)
+- Test đỏ: `btn-edit-text` trong Text header row (heading → edit, Text KHÔNG chevron/collapsible); Edit panel → Layout header row (heading → edit → chevron).
+- Fix: lift `editingText` lên JobDetail → TextSection props `{editingText, onEditingTextChange}`; **`saveFullText` nội bộ gọi `setEditingText(false)` → đổi gọi prop callback**. Nút `btn-edit-doc` move: GIỮ behavior (`disabled={job.status!=="done"}`, `aria-pressed`, scroll → `panel-editor`).
 
-## Task 4 — U3: Layout collapsible
-- Test đỏ: `btn-toggle-layout` toggle `aria-expanded`, content ẩn khi đóng, mặc định mở.
-- Fix: heading row + `useState(true)` + chevron rotate.
+## Task 4 — U9: section Text cuộn + suggestion popover không clip
+- Test đỏ: text inner container có `max-h-[75vh] overflow-y-auto`; **suggestion popover** (`suggestion-popover-*`, `absolute top-full` trong `article[data-testid=extraction-text]`) render NGOÀI overflow ancestor (portal hoặc container khác — assert không có overflow ancestor clip); IssuesPanel giữ sibling (đã OK).
+- Fix: scroll wrap chỉ bọc inner text content; popover → portal ra ngoài (createPortal → document.body) hoặc tách row.
 
-## Task 5 — U4+U5: Original/Info text-trái-chevron-phải + default open
-- Test đỏ: initial render OriginalFilePanel + InfoPanel present (default open); chevron vị trí phải (flex justify-between).
-- Fix: `useState(true)` ×2, header row `justify-between`.
+## Task 5 — U3: Layout collapsible
+- Test đỏ: `btn-toggle-layout` toggle `aria-expanded` + `aria-controls="layout-panel-wrap"`, default mở, chevron rotate. GIỮ scroll region Layout hiện tại.
+- Fix: header row `heading | edit (Task3) | chevron` + `useState(true)`.
 
-## Task 6 — U6: sticky sidebar
-- Test đỏ: sidebar wrapper className có `lg:sticky lg:top-16`.
-- Fix: apply (≥lg only).
+## Task 6 — U4+U5: Original/Info justify-between + default open
+- Test đỏ: default render cả panel, label trái / chevron phải.
+- Fix: `useState(true)` ×2 + `justify-between`.
 
-## Task 7 — U7: bỏ switch MD/Word
-- Test đỏ: existing tests assert `fmt-md-layout`/`fmt-docx-layout` → xóa assertion (green sau xóa UI).
-- Fix: gỡ 2 buttons + wiring `onFmtChange`; `fmt` init `job.output_format` fixed ở parent. Check `switchLayoutFmt` + `layoutFmtOverride` còn cần cho preview không — giữ internal mode nếu unified editor cần; chỉ XÓA button switch.
+## Task 7 — U6: sticky `lg:top-32`
+- Test đỏ: sidebar className `lg:sticky lg:top-32` (AppNav 4rem + job-header 4rem, tránh chồng job-header sticky top-16).
+- Fix.
 
 ## Task 8 — sweep
-- i18n parity, grep testid mới/cũ, tsc + vitest full + vite build.
-
-## Rollout
-Đơn giản — 1 worker, commit/task. Report: git log + red-green.
+- i18n parity + key `jd.layout` (thay hardcoded `<h2>Layout</h2>`), grep dead keys/testids, tsc + vitest full + vite build.
