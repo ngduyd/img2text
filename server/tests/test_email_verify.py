@@ -137,7 +137,7 @@ async def test_register_sends_welcome_and_verify_code(client, monkeypatch, db_se
         "/api/auth/register", json={"email": "new@x.io", "password": "secret123"}
     )
     assert r.status_code == 201
-    assert r.json()["is_verified"] is False
+    assert r.json() == {"status": "ok"}  # P1-1: body bằng nhau 2 case
     assert [s[0] for s in sent] == ["new@x.io", "new@x.io"]
     code = None
     for _, subject, body in sent:
@@ -159,21 +159,21 @@ async def test_register_sends_welcome_and_verify_code(client, monkeypatch, db_se
     ).scalars().all()
     assert kinds == ["welcome", "verify_code"]
 
-async def test_register_duplicate_201_no_leak_no_cookie(client, monkeypatch):
-    """S5: luôn 201, không leak tồn tại — không cookie, không email cho
-    email đã đăng ký."""
+async def test_register_duplicate_identical_body(client, monkeypatch):
+    """P1-1: luôn 201 — fresh lẫn duplicate body identical {"status":"ok"},
+    không cookie, không email cho email đã đăng ký."""
     sent, fake = _capture()
     monkeypatch.setattr("app.services.mailer.send_email", fake)
     r1 = await client.post(
         "/api/auth/register", json={"email": "dup@x.io", "password": "secret123"}
     )
-    assert r1.status_code == 201 and r1.json()["id"] != 0
+    assert r1.status_code == 201 and r1.json() == {"status": "ok"}
+    assert "set-cookie" not in r1.headers
     n_first = len(sent)
     r2 = await client.post(
         "/api/auth/register", json={"email": "dup@x.io", "password": "secret123"}
     )
-    assert r2.status_code == 201
-    assert r2.json()["id"] == 0  # decoy — không trả id thật
+    assert r2.status_code == 201 and r2.json() == {"status": "ok"}
     assert "set-cookie" not in r2.headers
     assert len(sent) == n_first  # không gửi thêm email
 
@@ -190,13 +190,18 @@ async def test_register_smtp_down_still_201(client, monkeypatch):
 # --- POST /api/auth/verify + /verify/resend ---
 
 async def _register_with_code(client, monkeypatch, email="v@x.io"):
-    """Register + trả về mã 6 số từ email verify vừa capture."""
+    """Register + login (P1-1: register không cookie) + trả về mã 6 số
+    từ email verify vừa capture."""
     sent, fake = _capture()
     monkeypatch.setattr("app.services.mailer.send_email", fake)
     r = await client.post(
         "/api/auth/register", json={"email": email, "password": "secret123"}
     )
     assert r.status_code == 201
+    login = await client.post(
+        "/api/auth/login", json={"email": email, "password": "secret123"}
+    )
+    assert login.status_code == 200
     for _, _, body in sent:
         m = _CODE_RE.search(body)
         if m:
@@ -261,6 +266,12 @@ async def test_resend_new_code_overwrites_old(client, monkeypatch, db_session):
         "/api/auth/register", json={"email": "rs@x.io", "password": "secret123"}
     )
     assert r.status_code == 201
+    # P1-1: register không cookie → login để có session cho resend
+    assert (
+        await client.post(
+            "/api/auth/login", json={"email": "rs@x.io", "password": "secret123"}
+        )
+    ).status_code == 200
     old = _code_from(sent[1][2])
     # spacing: verify email của register là send #1 → backdate 11 phút để
     # resend (#2, gap ≥10p) qua limit

@@ -18,6 +18,12 @@ async def test_unverified_403_on_gated_api(client, gating_on):
         "/api/auth/register", json={"email": "g1@x.io", "password": "secret123"}
     )
     assert r.status_code == 201
+    # P1-1: register không cookie → login để gate nhận diện user
+    assert (
+        await client.post(
+            "/api/auth/login", json={"email": "g1@x.io", "password": "secret123"}
+        )
+    ).status_code == 200
     r2 = await client.get("/api/auth/me")  # không thuộc exempt list
     assert r2.status_code == 403
     assert r2.json() == {"code": "email_unverified"}
@@ -25,6 +31,9 @@ async def test_unverified_403_on_gated_api(client, gating_on):
 async def test_gated_also_other_api(client, gating_on):
     await client.post(
         "/api/auth/register", json={"email": "g2@x.io", "password": "secret123"}
+    )
+    await client.post(
+        "/api/auth/login", json={"email": "g2@x.io", "password": "secret123"}
     )
     assert (await client.get("/api/jobs")).status_code == 403
     assert (await client.get("/api/auth/profile")).status_code in (401, 403, 405)
@@ -44,7 +53,8 @@ async def test_exempt_endpoints_work_unverified(client, gating_on):
     r = await client.post("/api/auth/password/forgot", json={"email": "g3@x.io"})
     assert r.status_code == 202
     r = await client.post(
-        "/api/auth/password/reset", json={"code": "123456", "password": "newsecret1"}
+        "/api/auth/password/reset",
+        json={"email": "g3@x.io", "code": "123456", "password": "newsecret1"},
     )
     assert r.status_code == 422
 
@@ -54,6 +64,9 @@ async def test_verified_user_passes_gate(client, gating_on, db_session):
 
     await client.post(
         "/api/auth/register", json={"email": "g4@x.io", "password": "secret123"}
+    )
+    await client.post(
+        "/api/auth/login", json={"email": "g4@x.io", "password": "secret123"}
     )
     await db_session.execute(update(User).values(is_verified=True))
     await db_session.commit()
@@ -72,5 +85,8 @@ async def test_gating_off_in_test_env(client):
     """env=test (conftest) → middleware skip: register xong xài được ngay."""
     await client.post(
         "/api/auth/register", json={"email": "g5@x.io", "password": "secret123"}
+    )
+    await client.post(
+        "/api/auth/login", json={"email": "g5@x.io", "password": "secret123"}
     )
     assert (await client.get("/api/auth/me")).status_code == 200

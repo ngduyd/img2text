@@ -3,19 +3,22 @@
 
 async def test_register_201_and_me(client):
     r = await client.post("/api/auth/register", json={"email":"u@x.io","password":"secret123"})
-    assert r.status_code == 201
-    body = r.json(); assert body["role"] == "user" and body["ocr_enabled"] is False
+    # P1-1: body {"status":"ok"} — không id/email, không cookie (client tự login)
+    assert r.status_code == 201 and r.json() == {"status": "ok"}
+    assert "set-cookie" not in r.headers
+    await client.post("/api/auth/login", json={"email":"u@x.io","password":"secret123"})
     r2 = await client.get("/api/auth/me")
     assert r2.status_code == 200 and r2.json()["email"] == "u@x.io"
 
 
-async def test_register_duplicate_201_no_leak(client):
-    """S5: register luôn 201 — email trùng trả body decoy (id=0), không cookie."""
+async def test_register_duplicate_identical_body_no_leak(client):
+    """P1-1: fresh lẫn duplicate trả body identical — không existence oracle
+    (id/email), không cookie cả 2 case."""
     r1 = await client.post("/api/auth/register", json={"email":"d@x.io","password":"secret123"})
-    assert r1.status_code == 201 and r1.json()["id"] != 0
     r2 = await client.post("/api/auth/register", json={"email":"d@x.io","password":"secret123"})
-    assert r2.status_code == 201 and r2.json()["id"] == 0
-    assert "set-cookie" not in r2.headers
+    assert r1.status_code == 201 and r2.status_code == 201
+    assert r1.json() == r2.json() == {"status": "ok"}
+    assert "set-cookie" not in r1.headers and "set-cookie" not in r2.headers
 
 
 async def test_login_wrong_password_401_not_500(client):
@@ -50,7 +53,7 @@ async def test_email_case_insensitive(client):
     r = await client.post(
         "/api/auth/register", json={"email": "  Case@X.IO ", "password": "secret123"}
     )
-    assert r.status_code == 201 and r.json()["email"] == "case@x.io"
+    assert r.status_code == 201 and r.json() == {"status": "ok"}
     r2 = await client.post(
         "/api/auth/login", json={"email": "case@x.io", "password": "secret123"}
     )
@@ -58,4 +61,4 @@ async def test_email_case_insensitive(client):
     dup = await client.post(
         "/api/auth/register", json={"email": "CASE@x.io", "password": "secret123"}
     )
-    assert dup.status_code == 201 and dup.json()["id"] == 0  # S5: không leak
+    assert dup.status_code == 201 and dup.json() == {"status": "ok"}  # P1-1: không leak

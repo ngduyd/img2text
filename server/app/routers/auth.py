@@ -135,25 +135,23 @@ def _user_out(user: User) -> UserOut:
     )
 
 
-@router.post("/register", status_code=201, response_model=UserOut)
+@router.post("/register", status_code=201)
 async def register(
     creds: Credentials,
-    response: Response,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     _: None = Depends(rate_limit_auth),
-) -> UserOut:
-    """S5: luôn 201, không leak tồn tại — email đã đăng ký → body decoy
-    (id=0), KHÔNG cookie, KHÔNG email (chống email-bomb tài khoản thật).
+) -> dict:
+    """S5+P1-1 review: luôn 201, body {"status":"ok"} GIỐNG NHAU cho cả
+    email mới lẫn email trùng — không id/email (đóng existence oracle),
+    KHÔNG cookie cả 2 case (client tự login). User mới: is_verified=false
+    → send welcome + verify-code email (mã 6 số TTL 5p, hash lưu DB).
 
-    User mới: is_verified=false → send welcome + verify-code email (mã 6 số
-    TTL 5p, hash lưu DB). User vừa tạo → 2 kind đều là lần #1 trong window,
-    quota không thể vượt — bỏ check, record rồi commit chung."""
+    User vừa tạo → 2 kind đều là lần #1 trong window, quota không thể
+    vượt — bỏ check, record rồi commit chung."""
     existing = await session.scalar(select(User).where(User.email == creds.email))
     if existing is not None:
-        return UserOut(
-            id=0, email=creds.email, role="user", ocr_enabled=False, is_verified=False
-        )
+        return {"status": "ok"}
     user = User(email=creds.email, password_hash=hash_password(creds.password))
     session.add(user)
     await session.commit()  # id ổn định cho email_sends + code hash
@@ -179,9 +177,7 @@ async def register(
         "Verify your email",
         _verify_email_body(code),
     )
-    token = create_access_token(sub=str(user.id), role=user.role)
-    set_auth_cookies(response, access=token)
-    return _user_out(user)
+    return {"status": "ok"}
 
 def _verify_email_body(code: str) -> str:
     return (
