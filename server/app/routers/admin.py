@@ -3,6 +3,8 @@ filter + safe tail. Job retry lives in jobs.py (POST /api/jobs/{id}/retry).
 """
 
 import asyncio
+import logging
+import re
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
@@ -297,6 +299,68 @@ async def stats(
         })
         cur += timedelta(days=1)
     return {"days": days}
+
+# --- Lane K: Kaggle GPU/TPU quota (admin card) ---
+
+def _seconds(value) -> float:
+    """Kaggle quota duration → float giây. Số pass-through; chuỗi "21600.0s"
+    bỏ đuôi "s"; "5900.915.0s" (thừa dấu chấm) → số đầu tiên 5900.915."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if text.endswith("s"):
+        text = text[:-1]
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    m = re.match(r"\d+(?:\.\d+)?", text)
+    if m is None:
+        raise ValueError(f"bad duration: {value!r}")
+    return float(m.group())
+
+def _field(obj, name):
+    """Response kaggle 2.2.4: attr (proto/dataclass) hoặc dict — cả hai."""
+    return obj[name] if isinstance(obj, dict) else getattr(obj, name)
+
+def _kaggle_quota_payload() -> dict:
+    """KaggleApi.quota_view() → {gpu|tpu: {used_s, total_s, remaining_s, refresh}}.
+
+    ImportError → 503; lỗi Kaggle API/khớp shape → 502.
+    """
+    try:
+        from kaggle.api.kaggle_api_extended import KaggleApi
+    except ImportError:
+        raise HTTPException(status_code=503, detail="kaggle package not installed")
+    try:
+        api = KaggleApi()
+        api.authenticate()
+        resp = api.quota_view()
+        refresh_raw = _field(resp, "quotaRefreshTime")
+        refresh = str(refresh_raw) if refresh_raw is not None else None
+        out: dict = {}
+        for key in ("gpu", "tpu"):
+            q = _field(resp, f"{key}Quota")
+            used = _seconds(_field(q, "timeUsed"))
+            total = _seconds(_field(q, "totalTimeAllowed"))
+            out[key] = {
+                "used_s": used,
+                "total_s": total,
+                "remaining_s": max(total - used, 0.0),
+                "refresh": refresh,
+            }
+        return out
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.getLogger(__name__).warning("kaggle quota_view failed: %r", exc)
+        raise HTTPException(status_code=502, detail="Kaggle API lỗi, thử lại sau")
+
+@router.get("/kaggle-quota")
+def kaggle_quota(_: User = Depends(_admin_user)) -> dict:
+    """Lane K: quota GPU/TPU hiện tại từ Kaggle. sync def → threadpool
+    (quota_view() network call chặn event loop nếu chạy async)."""
+    return _kaggle_quota_payload()
 
 # --- Plan S: runtime settings (admin live tuning, scheduler/kaggle) ---
 

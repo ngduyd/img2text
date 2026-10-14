@@ -4,6 +4,7 @@ import { BarChart3, LayoutDashboard, ScrollText, Settings, Terminal, Users } fro
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import AdminApi from "./admin/AdminApi";
+import AdminKaggleQuota from "./admin/AdminKaggleQuota";
 import AdminLogs from "./admin/AdminLogs";
 import AdminOverview from "./admin/AdminOverview";
 import type { AdminTabId } from "./admin/AdminOverview";
@@ -80,8 +81,10 @@ export default function Admin() {
           ) : (
             <>
               {/* Spec #7: card Workers — poll 30s, 403/401 → ẩn. */}
-              <div className="mb-4">
+              <div className="mb-4 flex flex-col gap-4">
                 <AdminWorkers />
+                {/* Lane K: quota GPU/TPU Kaggle — refresh icon (R51 testid). */}
+                <AdminKaggleQuota />
               </div>
               {tab === "overview" && <AdminOverview onNavigate={setTab} />}
               {tab === "users" && <AdminUsers />}

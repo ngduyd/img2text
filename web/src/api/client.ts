@@ -70,6 +70,19 @@ export interface QuotaMe {
   weekly_remaining: number;
 }
 
+/** Lane K (admin): Kaggle GPU/TPU quota — giây; refresh = quotaRefreshTime. */
+export interface KaggleQuotaBlock {
+  used_s: number;
+  total_s: number;
+  remaining_s: number;
+  refresh: string | null;
+}
+
+export interface KaggleQuota {
+  gpu: KaggleQuotaBlock;
+  tpu: KaggleQuotaBlock;
+}
+
 const TYPE_BY_EXT: Record<string, string> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
@@ -329,6 +342,8 @@ export const api = {
     request<{ days: AdminStatsDay[] }>(`/api/admin/stats?from=${from}&to=${to}`),
   // Spec #7: worker heartbeats (admin-only) — 403/401 → UI ẩn card.
   getWorkers: () => request<WorkersResponse>("/api/admin/workers"),
+  // Lane K: Kaggle GPU/TPU quota (admin-only, 503 khi thiếu package).
+  getKaggleQuota: () => request<KaggleQuota>("/api/admin/kaggle-quota"),
   adminLogs: (filters: { status_class?: string; ip?: string; limit?: number }) => {
     const q = new URLSearchParams();
     if (filters.status_class !== undefined) q.set("status_class", filters.status_class);
