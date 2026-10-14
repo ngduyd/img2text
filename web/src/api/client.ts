@@ -221,8 +221,9 @@ export const api = {
   verifyResend: () => request<unknown>("/api/auth/verify/resend", { method: "POST" }),
   forgotEmail: (email: string) =>
     request<unknown>("/api/auth/password/forgot", { method: "POST", body: { email } }),
-  resetPassword: (token: string, password: string) =>
-    request<unknown>("/api/auth/password/reset", { method: "POST", body: { token, password } }),
+  // S5: reset contract {email, code, password} (mã 6 số TTL 5p — không còn token).
+  resetPassword: (body: { email: string; code: string; password: string }) =>
+    request<unknown>("/api/auth/password/reset", { method: "POST", body }),
   // Phase 4: server-side pagination (page default 1, page_size default 10 max 100).
   // Spec #3: filters q (filename ILIKE) / sort (newest|oldest) / status — server-side.
   listJobs: (page = 1, page_size = 10, filters?: { q?: string; sort?: string; status?: string }) => {

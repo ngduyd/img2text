@@ -132,6 +132,8 @@
     },
     "reset": {
       "title": "Đặt lại mật khẩu",
+      "email": "Email",
+      "code": "Mã xác thực",
       "newPassword": "Mật khẩu mới",
       "repeatPassword": "Nhập lại mật khẩu mới",
       "mismatch": "Mật khẩu nhập lại không khớp.",

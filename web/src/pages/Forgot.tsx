@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import { useT } from "../i18n";
 import Button from "../components/ui/Button";
@@ -47,6 +48,16 @@ export default function Forgot() {
           <p data-testid="forgot-success" className="text-sm text-success">
             {t("auth.forgot.sent")}
           </p>
+        )}
+        {/* S5: code 6 số → form reset {email, code, password} (không còn token link). */}
+        {sent && (
+          <Link
+            to={`/reset?email=${encodeURIComponent(email)}`}
+            data-testid="link-reset"
+            className="text-sm text-accent-text hover:underline"
+          >
+            {t("auth.forgot.enterCode")}
+          </Link>
         )}
         <Button testid="btn-forgot" type="submit" loading={loading}>
           {t("auth.forgot.submit")}

@@ -109,16 +109,45 @@ it("register → login: đã verify → /jobs (như login thường)", async () 
   await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs"));
 });
 
-it("forgot shows constant success message", async () => {
+it("forgot shows constant success message + link sang form reset", async () => {
   vi.mocked(api.forgotEmail).mockResolvedValue({});
   renderWithRouter(<Forgot />);
+  await userEvent.type(screen.getByTestId("input-email"), "u@x.io");
   await userEvent.click(screen.getByTestId("btn-forgot"));
   expect(await screen.findByText("Check your email.")).toBeInTheDocument();
+  // S5: code 6 số → form reset {email, code, password} (không còn token link).
+  expect(screen.getByTestId("link-reset")).toHaveAttribute(
+    "href",
+    "/reset?email=u%40x.io",
+  );
 });
 
-it("reset submits token from query", async () => {
+it("reset submits {email, code, password} (S5 contract, email prefill query)", async () => {
   vi.mocked(api.resetPassword).mockResolvedValue({});
-  renderWithRouter(<Reset />, { route: "/reset?token=abc123" });
+  renderWithRouter(<Reset />, { route: "/reset?email=u%40x.io" });
+  expect(screen.getByTestId("input-email")).toHaveValue("u@x.io");
+  await userEvent.type(screen.getByTestId("input-code"), "123456");
+  await userEvent.type(screen.getByTestId("input-password"), "secret123");
+  await userEvent.type(screen.getByTestId("input-password2"), "secret123");
   await userEvent.click(screen.getByTestId("btn-reset"));
-  expect(api.resetPassword).toHaveBeenCalledWith("abc123", expect.any(String));
+  expect(api.resetPassword).toHaveBeenCalledWith({
+    email: "u@x.io",
+    code: "123456",
+    password: "secret123",
+  });
+  expect(mockNavigate).toHaveBeenCalledWith("/signin");
+});
+
+it("reset sai mã 422 → hiện lỗi i18n auth.verify.invalid", async () => {
+  vi.mocked(api.resetPassword).mockRejectedValue(
+    new ApiError("invalid or expired code"),
+  );
+  renderWithRouter(<Reset />);
+  await userEvent.type(screen.getByTestId("input-code"), "000000");
+  await userEvent.type(screen.getByTestId("input-password"), "secret123");
+  await userEvent.type(screen.getByTestId("input-password2"), "secret123");
+  await userEvent.click(screen.getByTestId("btn-reset"));
+  expect(await screen.findByTestId("error-detail")).toHaveTextContent(
+    "Invalid or expired code.",
+  );
 });
