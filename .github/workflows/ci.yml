@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_call:
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: img2text
+          POSTGRES_PASSWORD: img2text
+          POSTGRES_DB: img2text_test
+        ports:
+          - 5436:5432
+        options: >-
+          --health-cmd "pg_isready -U img2text -d img2text_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://img2text:img2text@localhost:5436/img2text_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: server/pyproject.toml
+      # Extra tên `test` (pyproject) — không có extra `dev`.
+      - run: pip install -e "./server[test]"
+      # Schema từ models (create_all) TRƯỚC — migrations là ALTER/CREATE
+      # idempotent trên bảng đã có (codebase không Alembic).
+      - name: Apply migrations
+        working-directory: server
+        run: |
+          command -v psql >/dev/null || (sudo apt-get update && sudo apt-get install -y postgresql-client)
+          python - <<'PY'
+          import asyncio
+          from app.core.db import Base, engine
+
+          async def main():
+              async with engine.begin() as conn:
+                  await conn.run_sync(Base.metadata.create_all)
+
+          asyncio.run(main)
+          PY
+          PGURL=${DATABASE_URL/postgresql+asyncpg/postgresql}
+          for f in ../docs/migrations/*.sql; do
+            echo "== $f"
+            psql "$PGURL" -v ON_ERROR_STOP=1 -f "$f"
+          done
+      - name: pytest
+        working-directory: server
+        run: pytest -q
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npx tsc -b --force
+        working-directory: web
+      - run: npx vitest run
+        working-directory: web
+      - run: npx vite build
+        working-directory: web

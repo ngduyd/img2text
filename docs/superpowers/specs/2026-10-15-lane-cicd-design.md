@@ -13,8 +13,8 @@ User ruling: **CD = build docker image + push Docker Hub THÔI** (không deploy,
 ## CI (mọi PR + push `master`)
 
 - **server**: job postgres:16-alpine service (user/pass `img2text`, db `img2text_test`),
-  `pip install -e ".[dev]"`, apply migrations (docs/migrations/*.sql), `pytest -q`.
-  Env `DATABASE_URL=postgresql+asyncpg://img2text:img2text@postgres:5436/img2text_test` (port service).
+  `pip install -e "./server[test]"` (pyproject extra = `test`, KHÔNG có `dev`), apply migrations (docs/migrations/*.sql), `pytest -q`.
+  Env `DATABASE_URL=...@localhost:5436/...` (GH runner: services map qua localhost — KHÔNG phải hostname `postgres`).
 - **web**: `npm ci`, `npx tsc -b --force`, `npx vitest run`, `npx vite build`.
 - Cả 2 job phải pass mới chạy CD job.
 
