@@ -45,7 +45,8 @@
   },
   "errors": {
     "network": "Không kết nối được máy chủ. Kiểm tra server đang chạy.",
-    "uploadFailed": "Tải file thất bại."
+    "uploadFailed": "Tải file thất bại.",
+    "generic": "Đã xảy ra lỗi."
   },
   "toast": {
     "jobDone": "Job đã xong: {name}",
@@ -79,6 +80,36 @@
     "modeLayout": "Lấy cả layout",
     "format": "Định dạng",
     "formatWord": "word"
+  },
+  "auth": {
+    "password": "Mật khẩu",
+    "show": "Hiện",
+    "hide": "Ẩn",
+    "signin": {
+      "title": "Đăng nhập",
+      "subtitle": "Chào mừng trở lại. Đăng nhập để tiếp tục.",
+      "noAccount": "Chưa có tài khoản?",
+      "forgot": "Quên mật khẩu?",
+      "signedIn": "Đã đăng nhập."
+    },
+    "signup": {
+      "title": "Đăng ký",
+      "subtitle": "Tạo tài khoản để bắt đầu.",
+      "haveAccount": "Đã có tài khoản?",
+      "created": "Đã tạo tài khoản. Hãy đăng nhập."
+    },
+    "forgot": {
+      "title": "Quên mật khẩu",
+      "sent": "Kiểm tra email của bạn.",
+      "submit": "Gửi email đặt lại"
+    },
+    "reset": {
+      "title": "Đặt lại mật khẩu",
+      "newPassword": "Mật khẩu mới",
+      "repeatPassword": "Nhập lại mật khẩu mới",
+      "mismatch": "Mật khẩu nhập lại không khớp.",
+      "submit": "Đặt lại mật khẩu"
+    }
   },
   "quota": {
     "remaining": "Còn {dUsed}/{dLimit} trang hôm nay · {wUsed}/{wLimit} trang tuần này"

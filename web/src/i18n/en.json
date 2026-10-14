@@ -45,7 +45,8 @@
   },
   "errors": {
     "network": "Cannot reach the server. Check that it is running.",
-    "uploadFailed": "File upload failed."
+    "uploadFailed": "File upload failed.",
+    "generic": "An error occurred."
   },
   "toast": {
     "jobDone": "Job done: {name}",
@@ -79,6 +80,36 @@
     "modeLayout": "Text + layout",
     "format": "Format",
     "formatWord": "word"
+  },
+  "auth": {
+    "password": "Password",
+    "show": "Show",
+    "hide": "Hide",
+    "signin": {
+      "title": "Sign in",
+      "subtitle": "Welcome back. Sign in to continue.",
+      "noAccount": "No account?",
+      "forgot": "Forgot password?",
+      "signedIn": "Signed in."
+    },
+    "signup": {
+      "title": "Sign up",
+      "subtitle": "Create an account to get started.",
+      "haveAccount": "Already have an account?",
+      "created": "Account created. Please sign in."
+    },
+    "forgot": {
+      "title": "Forgot password",
+      "sent": "Check your email.",
+      "submit": "Send reset email"
+    },
+    "reset": {
+      "title": "Reset password",
+      "newPassword": "New password",
+      "repeatPassword": "Repeat new password",
+      "mismatch": "Passwords do not match.",
+      "submit": "Reset password"
+    }
   },
   "quota": {
     "remaining": "{dUsed}/{dLimit} pages left today · {wUsed}/{wLimit} this week"
