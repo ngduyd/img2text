@@ -1,7 +1,7 @@
-/** Spec §7 verdict → Vietnamese UI label. Keys match server RegionOut.verdict. */
-export const VERDICT_LABELS: Record<string, string> = {
-  ok: "Đã trích xuất",
-  image_unextractable: "Hình ảnh chưa trích xuất",
-  unreadable: "Không trích xuất được văn bản",
-  low_confidence: "Cần kiểm tra",
+/** Spec §7 verdict → UI label i18n key. Keys match server RegionOut.verdict. */
+export const VERDICT_KEY: Record<string, string> = {
+  ok: "verdict.ok",
+  image_unextractable: "verdict.image_unextractable",
+  unreadable: "verdict.unreadable",
+  low_confidence: "verdict.low_confidence",
 };

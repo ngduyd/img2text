@@ -19,6 +19,7 @@ import Card from "../components/ui/Card";
 import Button from "../components/ui/Button";
 import Skeleton from "../components/ui/Skeleton";
 import { PENDING_STATUSES } from "../lib/status";
+import { useT } from "../i18n";
 
 /** Windowed page numbers: luôn 1 + last + ±2 quanh current; gap > 1 → "…". */
 export function pageWindow(current: number, total: number): (number | "…")[] {
@@ -35,6 +36,7 @@ export function pageWindow(current: number, total: number): (number | "…")[] {
 
 export default function Jobs() {
   const navigate = useNavigate();
+  const { t } = useT();
   const queryClient = useQueryClient();
   // Phase 4: server-side page state — mỗi trang 10 job (mặc định server).
   const [page, setPage] = useState(1);
@@ -99,8 +101,8 @@ export default function Jobs() {
     mutationFn: () => api.retryJobs(selectedFailed.map((j) => j.id)),
     onSuccess: ({ ok, errors }) => {
       // R59: partial failure → toast tổng hợp đếm (không nuốt các lỗi sau đầu).
-      if (ok > 0) toast.success("Đã lên lịch chạy lại");
-      if (errors.length > 0) toast.error(`${errors.length} job lỗi khi chạy lại`);
+      if (ok > 0) toast.success(t("jobs.bulkRetryQueued"));
+      if (errors.length > 0) toast.error(t("jobs.bulkRetryErrors", { n: errors.length }));
       setSelected(new Set());
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
@@ -121,7 +123,7 @@ export default function Jobs() {
         onProgress: setPercent,
       });
       // R59: toast + invalidate + navigate về list route.
-      toast.success("Đã tải lên — đang chờ xử lý.");
+      toast.success(t("jobs.uploadQueued"));
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
       // T6: quota giảm sau khi tạo job thành công → refetch badge
       queryClient.invalidateQueries({ queryKey: ["quota"] });
@@ -129,7 +131,7 @@ export default function Jobs() {
       return true;
     } catch (err) {
       // R51: inline block kept; toast mirrors it (R59). Files giữ lại để gửi lại.
-      setUploadError(err instanceof ApiError ? err.detail : "Tải file thất bại.");
+      setUploadError(err instanceof ApiError ? err.detail : t("errors.uploadFailed"));
       toast.error(mapApiError(err));
       return false;
     } finally {
@@ -142,19 +144,19 @@ export default function Jobs() {
       {/* Asymmetric header: title + subtitle left, stats right (DESIGN.md §5). */}
       <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Công việc</h1>
-          <p className="mt-1 text-sm text-muted">Theo dõi tiến trình OCR trên worker Colab.</p>
+          <h1 className="text-2xl font-bold tracking-tight">{t("jobs.title")}</h1>
+          <p className="mt-1 text-sm text-muted">{t("jobs.subtitle")}</p>
           <QuotaBadge />
         </div>
         <dl className="flex gap-4">
           <div className="text-right">
-            <dt className="text-xs text-muted">Tổng</dt>
+            <dt className="text-xs text-muted">{t("jobs.stats.total")}</dt>
             <dd data-testid="stats-total" className="font-mono text-lg font-semibold leading-tight">
               {jobs?.total ?? items.length}
             </dd>
           </div>
           <div className="text-right">
-            <dt className="text-xs text-muted">Đang chờ</dt>
+            <dt className="text-xs text-muted">{t("jobs.stats.pending")}</dt>
             <dd
               data-testid="stats-pending"
               className="font-mono text-lg font-semibold leading-tight text-warning"
@@ -163,7 +165,7 @@ export default function Jobs() {
             </dd>
           </div>
           <div className="text-right">
-            <dt className="text-xs text-muted">Hoàn tất</dt>
+            <dt className="text-xs text-muted">{t("jobs.stats.done")}</dt>
             <dd
               data-testid="stats-done"
               className="font-mono text-lg font-semibold leading-tight text-success"
@@ -178,7 +180,7 @@ export default function Jobs() {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-1 flex-wrap items-center gap-2">
           <label className="relative min-w-40 flex-1 sm:max-w-xs">
-            <span className="sr-only">Tìm theo tên file</span>
+            <span className="sr-only">{t("jobs.searchLabel")}</span>
             <input
               type="search"
               data-testid="jobs-search"
@@ -187,12 +189,12 @@ export default function Jobs() {
                 setSearch(e.target.value);
                 resetToFirstPage();
               }}
-              placeholder="Tìm theo tên file..."
+              placeholder={t("jobs.searchPlaceholder")}
               className="w-full rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-text placeholder:text-muted focus-visible:outline-2 focus-visible:outline-accent"
             />
           </label>
           <label className="inline-flex items-center gap-2 text-sm text-muted">
-            <span>Sắp xếp</span>
+            <span>{t("jobs.sortLabel")}</span>
             <select
               data-testid="jobs-sort"
               value={sort}
@@ -202,8 +204,8 @@ export default function Jobs() {
               }}
               className="cursor-pointer rounded-md border border-border bg-surface px-2 py-1.5 text-sm text-text focus-visible:outline-2 focus-visible:outline-accent"
             >
-              <option value="newest">Mới nhất</option>
-              <option value="oldest">Cũ nhất</option>
+              <option value="newest">{t("jobs.sortNewest")}</option>
+              <option value="oldest">{t("jobs.sortOldest")}</option>
             </select>
           </label>
         </div>
@@ -223,10 +225,9 @@ export default function Jobs() {
           data-testid="banner-no-access"
           className="mb-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-warning"
         >
-          Chờ admin cấp quyền
+          {t("jobs.deniedTitle")}
           <p className="mt-1 text-xs">
-            Môi trường dev: đăng nhập tài khoản admin → mục Người dùng → bật OCR cho tài khoản
-            này.
+            {t("jobs.deniedHint")}
           </p>
         </div>
       )}
@@ -257,7 +258,7 @@ export default function Jobs() {
       )}
       {phase === "counting" && (
         <p data-testid="upload-counting" className="mb-2 text-sm text-muted">
-          Đang đếm trang...
+          {t("jobs.countingPages")}
         </p>
       )}
       <MultiFileUpload
@@ -343,7 +344,7 @@ export default function Jobs() {
             }
             className="h-4 w-4 accent-accent"
           />
-          Chọn cả trang
+          {t("jobs.selectAll")}
         </label>
       )}
 
@@ -369,15 +370,10 @@ export default function Jobs() {
           <Card testid="empty-state">
             <div className="flex flex-col items-center px-2 py-6 text-center">
               <Inbox className="h-10 w-10 text-muted" aria-hidden="true" />
-              <h2 className="mt-3 text-base font-semibold">Chưa có công việc</h2>
-              <p className="mt-1 max-w-sm text-sm text-muted">
-                Tải ảnh trang sách hoặc file PDF để bắt đầu OCR. Mỗi job xử lý tối đa 50 trang ·
-                50MB.
-              </p>
-              <p className="mt-1 text-sm text-muted">Job chờ worker Colab kết nối.</p>
-              <p className="mt-4 text-sm font-medium text-accent-text">
-                Tải file lên để tạo công việc đầu tiên.
-              </p>
+              <h2 className="mt-3 text-base font-semibold">{t("jobs.emptyTitle")}</h2>
+              <p className="mt-1 max-w-sm text-sm text-muted">{t("jobs.emptyBody")}</p>
+              <p className="mt-1 text-sm text-muted">{t("jobs.emptyWorker")}</p>
+              <p className="mt-4 text-sm font-medium text-accent-text">{t("jobs.emptyCta")}</p>
             </div>
           </Card>
         ) : visible.length === 0 ? (
@@ -386,7 +382,7 @@ export default function Jobs() {
             className="flex items-center gap-2 rounded-card border border-border bg-surface px-4 py-3 text-sm text-muted"
           >
             <Inbox className="h-4 w-4 shrink-0" aria-hidden="true" />
-            Không có công việc nào khớp bộ lọc.
+            {t("jobs.emptyFilter")}
           </div>
         ) : (
           <ul className="divide-y divide-border rounded-card border border-border bg-surface">
@@ -413,7 +409,7 @@ export default function Jobs() {
       {!isLoading && (jobs?.total ?? 0) > pageSize && (
         <nav
           data-testid="pagination"
-          aria-label="Phân trang"
+          aria-label={t("jobs.paginationAria")}
           className="mt-4 flex flex-wrap items-center justify-center gap-2"
         >
           <Button
@@ -423,7 +419,7 @@ export default function Jobs() {
             disabled={page <= 1}
             onClick={() => changePage(page - 1)}
           >
-            Trước
+            {t("jobs.prev")}
           </Button>
           {pageWindow(page, totalPages).map((n, i) =>
             typeof n === "number" ? (
@@ -450,7 +446,7 @@ export default function Jobs() {
             disabled={page >= totalPages}
             onClick={() => changePage(page + 1)}
           >
-            Sau
+            {t("jobs.next")}
           </Button>
         </nav>
       )}
@@ -463,7 +459,7 @@ export default function Jobs() {
         >
           <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
             <span data-testid="bulk-count" className="text-sm font-medium text-text">
-              {selected.size} đã chọn
+              {t("jobs.selectedCount", { n: selected.size })}
             </span>
             <Button
               testid="bulk-retry"
@@ -472,7 +468,7 @@ export default function Jobs() {
               disabled={bulkRetry.isPending || selectedFailed.length === 0}
               onClick={() => bulkRetry.mutate()}
             >
-              Chạy lại đã chọn
+              {t("jobs.retrySelected")}
             </Button>
           </div>
         </div>

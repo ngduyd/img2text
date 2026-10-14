@@ -1,8 +1,14 @@
 {
   "common": {
-    "language": "Language"
+    "language": "Language",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "save": "Save",
+    "close": "Close",
+    "loading": "Loading…"
   },
   "i18n": {
+    "locale": "en-US",
     "test": {
       "count": "{n} pages"
     }
@@ -22,5 +28,83 @@
     "menu": "Menu",
     "skip": "Skip to content",
     "ariaMain": "Main navigation"
+  },
+  "status": {
+    "queued": "Queued",
+    "extracting": "Extracting text",
+    "rendering": "Rendering layout",
+    "failed": "Processing failed",
+    "done": "Done",
+    "cancelled": "Cancelled"
+  },
+  "verdict": {
+    "ok": "Extracted",
+    "image_unextractable": "Image not extractable",
+    "unreadable": "Text not extractable",
+    "low_confidence": "Needs review"
+  },
+  "errors": {
+    "network": "Cannot reach the server. Check that it is running.",
+    "uploadFailed": "File upload failed."
+  },
+  "toast": {
+    "jobDone": "Job done: {name}",
+    "jobFailed": "Job #{id} failed",
+    "jobFailedWith": "Job #{id} failed: {error}"
+  },
+  "upload": {
+    "errMaxPages": "At most {n} pages per submission.",
+    "errPngJpgOnly": "Only PNG/JPG images are supported."
+  },
+  "jobs": {
+    "title": "Jobs",
+    "subtitle": "Track OCR progress on the Colab worker.",
+    "stats": {
+      "total": "Total",
+      "pending": "Pending",
+      "done": "Done"
+    },
+    "searchLabel": "Search by filename",
+    "searchPlaceholder": "Search by filename…",
+    "sortLabel": "Sort",
+    "sortNewest": "Newest",
+    "sortOldest": "Oldest",
+    "filter": {
+      "all": "All"
+    },
+    "deniedTitle": "Waiting for admin to grant OCR access",
+    "deniedHint": "Dev environment: sign in as an admin, open Users, and enable OCR for this account.",
+    "uploadQueued": "Uploaded — queued for processing.",
+    "countingPages": "Counting pages…",
+    "selectAll": "Select all on this page",
+    "emptyTitle": "No jobs yet",
+    "emptyBody": "Upload photos of book pages or a PDF to start OCR. Each job processes up to 50 pages · 50MB.",
+    "emptyWorker": "Jobs wait for the Colab worker to connect.",
+    "emptyCta": "Upload a file to create your first job.",
+    "emptyFilter": "No jobs match the filter.",
+    "paginationAria": "Pagination",
+    "prev": "Previous",
+    "next": "Next",
+    "selectedCount": "{n} selected",
+    "retrySelected": "Retry selected",
+    "bulkRetryQueued": "Retry scheduled",
+    "bulkRetryErrors": "{n} jobs failed to retry",
+    "row": {
+      "durationSec": "{s}s",
+      "durationMin": "{m}m",
+      "retryScheduled": "Retry scheduled",
+      "cancelled": "Job cancelled",
+      "deleted": "Job deleted",
+      "selectAria": "Select job {id}",
+      "image": "Image",
+      "pages": "pages",
+      "view": "View",
+      "downloadOriginal": "Download original",
+      "retry": "Retry",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "deleteTitle": "Delete job #{id}?",
+      "deleteMessage": "All data (original file, results, versions) will be permanently deleted. This cannot be undone."
+    }
   }
 }

@@ -1,8 +1,14 @@
 {
   "common": {
-    "language": "Ngôn ngữ"
+    "language": "Ngôn ngữ",
+    "cancel": "Hủy",
+    "delete": "Xóa",
+    "save": "Lưu",
+    "close": "Đóng",
+    "loading": "Đang tải…"
   },
   "i18n": {
+    "locale": "vi-VN",
     "test": {
       "count": "{n} trang"
     }
@@ -22,5 +28,83 @@
     "menu": "Menu",
     "skip": "Bỏ qua điều hướng",
     "ariaMain": "Điều hướng chính"
+  },
+  "status": {
+    "queued": "Đang lập lịch",
+    "extracting": "Đang trích xuất văn bản",
+    "rendering": "Đang dựng layout",
+    "failed": "Xử lý thất bại",
+    "done": "Hoàn tất",
+    "cancelled": "Đã hủy"
+  },
+  "verdict": {
+    "ok": "Đã trích xuất",
+    "image_unextractable": "Hình ảnh chưa trích xuất",
+    "unreadable": "Không trích xuất được văn bản",
+    "low_confidence": "Cần kiểm tra"
+  },
+  "errors": {
+    "network": "Không kết nối được máy chủ. Kiểm tra server đang chạy.",
+    "uploadFailed": "Tải file thất bại."
+  },
+  "toast": {
+    "jobDone": "Job đã xong: {name}",
+    "jobFailed": "Job #{id} thất bại",
+    "jobFailedWith": "Job #{id} thất bại: {error}"
+  },
+  "upload": {
+    "errMaxPages": "Tối đa {n} trang mỗi lần gửi.",
+    "errPngJpgOnly": "Chỉ hỗ trợ ảnh PNG/JPG."
+  },
+  "jobs": {
+    "title": "Công việc",
+    "subtitle": "Theo dõi tiến trình OCR trên worker Colab.",
+    "stats": {
+      "total": "Tổng",
+      "pending": "Đang chờ",
+      "done": "Hoàn tất"
+    },
+    "searchLabel": "Tìm theo tên file",
+    "searchPlaceholder": "Tìm theo tên file...",
+    "sortLabel": "Sắp xếp",
+    "sortNewest": "Mới nhất",
+    "sortOldest": "Cũ nhất",
+    "filter": {
+      "all": "Tất cả"
+    },
+    "deniedTitle": "Chờ admin cấp quyền",
+    "deniedHint": "Môi trường dev: đăng nhập tài khoản admin → mục Người dùng → bật OCR cho tài khoản này.",
+    "uploadQueued": "Đã tải lên — đang chờ xử lý.",
+    "countingPages": "Đang đếm trang...",
+    "selectAll": "Chọn cả trang",
+    "emptyTitle": "Chưa có công việc",
+    "emptyBody": "Tải ảnh trang sách hoặc file PDF để bắt đầu OCR. Mỗi job xử lý tối đa 50 trang · 50MB.",
+    "emptyWorker": "Job chờ worker Colab kết nối.",
+    "emptyCta": "Tải file lên để tạo công việc đầu tiên.",
+    "emptyFilter": "Không có công việc nào khớp bộ lọc.",
+    "paginationAria": "Phân trang",
+    "prev": "Trước",
+    "next": "Sau",
+    "selectedCount": "{n} đã chọn",
+    "retrySelected": "Chạy lại đã chọn",
+    "bulkRetryQueued": "Đã lên lịch chạy lại",
+    "bulkRetryErrors": "{n} job lỗi khi chạy lại",
+    "row": {
+      "durationSec": "{s} giây",
+      "durationMin": "{m} phút",
+      "retryScheduled": "Đã lên lịch chạy lại",
+      "cancelled": "Đã hủy job",
+      "deleted": "Đã xóa job",
+      "selectAria": "Chọn job {id}",
+      "image": "Ảnh",
+      "pages": "trang",
+      "view": "Xem",
+      "downloadOriginal": "Tải bản gốc",
+      "retry": "Chạy lại",
+      "cancel": "Hủy",
+      "delete": "Xóa",
+      "deleteTitle": "Xóa job #{id}?",
+      "deleteMessage": "Toàn bộ dữ liệu (file gốc, kết quả, phiên bản) sẽ bị xóa vĩnh viễn. Không thể hoàn tác."
+    }
   }
 }

@@ -7,16 +7,17 @@ import { api } from "../api/client";
 import type { JobListItem } from "../api/types";
 import { mapApiError } from "../lib/errors";
 // Single spelling + tone per status (spec: shell, panels, badges share lib/status).
-import { STATUS_TEXT, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
+import { STATUS_KEY, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
+import { translate, useT } from "../i18n";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
 import ConfirmDialog from "./ConfirmDialog";
 
-const DATE_FORMAT = new Intl.DateTimeFormat("vi-VN", { dateStyle: "medium", timeStyle: "short" });
-
 function formatDuration(ms: number): string {
   const s = Math.round(ms / 1000);
-  return s < 60 ? `${s} giây` : `${Math.round(s / 60)} phút`;
+  return s < 60
+    ? translate("jobs.row.durationSec", { s })
+    : translate("jobs.row.durationMin", { m: Math.round(s / 60) });
 }
 
 /** File-centric list row (R52): server list has NO storage_key → name line from id/type/pages.
@@ -32,12 +33,14 @@ export default function JobRow({
   onToggle?: (id: number) => void;
 }) {
   const navigate = useNavigate();
+  const { t } = useT();
   const queryClient = useQueryClient();
+  const dateFormat = new Intl.DateTimeFormat(translate("i18n.locale"), { dateStyle: "medium", timeStyle: "short" });
   const retry = useMutation({
     mutationFn: () => api.retryJob(job.id),
     onSuccess: () => {
       // Plan job-phases R59: retry upsert lịch chạy lại.
-      toast.success("Đã lên lịch chạy lại");
+      toast.success(translate("jobs.row.retryScheduled"));
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
     onError: (err) => toast.error(mapApiError(err)),
@@ -45,7 +48,7 @@ export default function JobRow({
   const cancel = useMutation({
     mutationFn: () => api.cancelJob(job.id),
     onSuccess: () => {
-      toast.success("Đã hủy job");
+      toast.success(translate("jobs.row.cancelled"));
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
     onError: (err) => toast.error(mapApiError(err)),
@@ -53,7 +56,7 @@ export default function JobRow({
   const deleteJob = useMutation({
     mutationFn: () => api.deleteJob(job.id),
     onSuccess: () => {
-      toast.success("Đã xóa job");
+      toast.success(translate("jobs.row.deleted"));
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
     },
     onError: (err) => toast.error(mapApiError(err)),
@@ -81,7 +84,7 @@ export default function JobRow({
             data-testid={`row-select-${job.id}`}
             checked={selected}
             onChange={() => onToggle(job.id)}
-            aria-label={`Chọn job ${job.id}`}
+            aria-label={t("jobs.row.selectAria", { id: job.id })}
             className="h-4 w-4 shrink-0 accent-accent"
           />
         )}
@@ -93,11 +96,11 @@ export default function JobRow({
         </span>
         <div className="min-w-0">
           <span className="block truncate font-medium text-text">
-            <span className="font-mono">#{job.id}</span> · {isPdf ? "PDF" : "Ảnh"} ·{" "}
-            <span className="font-mono">{job.page_count}</span> trang
+            <span className="font-mono">#{job.id}</span> · {isPdf ? "PDF" : t("jobs.row.image")} ·{" "}
+            <span className="font-mono">{job.page_count}</span> {t("jobs.row.pages")}
           </span>
           <div className="mt-0.5 text-xs text-muted">
-            <span className="font-mono">{DATE_FORMAT.format(new Date(job.created_at))}</span>
+            <span className="font-mono">{dateFormat.format(new Date(job.created_at))}</span>
             {duration && <span className="ml-2 font-mono">{duration}</span>}
           </div>
         </div>
@@ -105,7 +108,7 @@ export default function JobRow({
       {/* 320px: wrap + justify-end; nhãn dài → icon+aria-label dưới sm (label ẩn sm:inline). */}
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Badge tone={STATUS_TONE[job.status]} testid={`badge-${job.id}`}>
-          {STATUS_TEXT[job.status]}
+          {t(STATUS_KEY[job.status])}
         </Badge>
         <Button
           testid={`btn-view-${job.id}`}
@@ -113,15 +116,15 @@ export default function JobRow({
           variant="secondary"
           onClick={() => navigate(`/jobs/${job.id}`)}
         >
-          Xem
+          {t("jobs.row.view")}
         </Button>
         {job.status === "done" && (
           <Button
             testid={`btn-dl-original-${job.id}`}
             size="sm"
             variant="secondary"
-            title="Tải bản gốc"
-            aria-label="Tải bản gốc"
+            title={t("jobs.row.downloadOriginal")}
+            aria-label={t("jobs.row.downloadOriginal")}
             onClick={async () => {
               // P2: same-origin blob download (presigned host unreachable via port-forward).
               // R59a: download failure surfaces as toast (no inline slot here).
@@ -141,7 +144,7 @@ export default function JobRow({
             }}
           >
             <Download className="h-4 w-4 sm:hidden" aria-hidden="true" />
-            <span className="hidden sm:inline">Tải bản gốc</span>
+            <span className="hidden sm:inline">{t("jobs.row.downloadOriginal")}</span>
           </Button>
         )}
         {job.status === "failed" && (
@@ -149,13 +152,13 @@ export default function JobRow({
             testid={`btn-retry-job-${job.id}`}
             size="sm"
             variant="secondary"
-            title="Chạy lại"
-            aria-label="Chạy lại"
+            title={t("jobs.row.retry")}
+            aria-label={t("jobs.row.retry")}
             disabled={retry.isPending}
             onClick={() => retry.mutate()}
           >
             <RotateCcw className="h-4 w-4 sm:hidden" aria-hidden="true" />
-            <span className="hidden sm:inline">Chạy lại</span>
+            <span className="hidden sm:inline">{t("jobs.row.retry")}</span>
           </Button>
         )}
         {cancellable && (
@@ -166,7 +169,7 @@ export default function JobRow({
             disabled={cancel.isPending}
             onClick={() => cancel.mutate()}
           >
-            Hủy
+            {t("jobs.row.cancel")}
           </Button>
         )}
         {/* Spec #1: xóa job — destructive, confirm trước khi gọi DELETE. */}
@@ -176,13 +179,14 @@ export default function JobRow({
           variant="danger"
           onClick={() => setConfirmDelete(true)}
         >
-          Xóa
+          {t("jobs.row.delete")}
         </Button>
       </div>
       <ConfirmDialog
         open={confirmDelete}
-        title={`Xóa job #${job.id}?`}
-        message="Toàn bộ dữ liệu (file gốc, kết quả, phiên bản) sẽ bị xóa vĩnh viễn. Không thể hoàn tác."
+        title={t("jobs.row.deleteTitle", { id: job.id })}
+        message={t("jobs.row.deleteMessage")}
+        confirmLabel={t("jobs.row.delete")}
         onCancel={() => setConfirmDelete(false)}
         onConfirm={() => {
           setConfirmDelete(false);

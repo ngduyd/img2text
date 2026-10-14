@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import type { JobStatus } from "../api/types";
+import { translate } from "../i18n";
 import { PENDING_STATUSES } from "../lib/status";
 
 /** Job subset theo dõi transition pending → terminal (spec #2). */
@@ -24,7 +25,9 @@ function notifyDone(job: WatchedJob) {
       void Notification.requestPermission().catch(() => {});
     }
     if (Notification.permission === "granted") {
-      new Notification("img2text", { body: `Job đã xong: ${job.filename ?? `#${job.id}`}` });
+      new Notification("img2text", {
+        body: translate("toast.jobDone", { name: job.filename ?? `#${job.id}` }),
+      });
     }
   } catch {
     // best-effort — sandbox/browser có thể ném
@@ -49,10 +52,14 @@ export function useJobDoneToasts(jobs: WatchedJob[] | undefined) {
       if (before === undefined || before === j.status) continue;
       if (!PENDING_STATUSES.includes(before)) continue;
       if (j.status === "done") {
-        toast.success(`Job đã xong: ${j.filename ?? `#${j.id}`}`);
+        toast.success(translate("toast.jobDone", { name: j.filename ?? `#${j.id}` }));
         notifyDone(j);
       } else if (j.status === "failed") {
-        toast.error(`Job #${j.id} thất bại${j.error ? `: ${j.error}` : ""}`);
+        toast.error(
+          j.error
+            ? translate("toast.jobFailedWith", { id: j.id, error: j.error })
+            : translate("toast.jobFailed", { id: j.id }),
+        );
       }
     }
     // eslint/oxlint: stamp là snapshot của jobs.

@@ -7,7 +7,8 @@ import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import type { DocumentVersion, Job } from "../api/types";
 import { mapApiError } from "../lib/errors";
-import { STATUS_TEXT, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
+import { STATUS_KEY, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
+import { useT } from "../i18n";
 import { useJobDoneToasts } from "../hooks/useJobDoneToasts";
 import ExportBar from "../components/ExportBar";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -33,6 +34,7 @@ const jobRefetchInterval = (q: Query<Job>): number | false =>
  * col phải = collapsible "File gốc" + "Thông tin" (Lane I Task 2, bỏ sticky).
  */
 export default function JobDetail() {
+  const { t } = useT();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -195,7 +197,7 @@ export default function JobDetail() {
           <h1 className="min-w-0 break-words text-xl font-bold tracking-tight sm:text-2xl">
             Chi tiết công việc <span className="font-mono">#{job.id}</span>
           </h1>
-          <Badge tone={STATUS_TONE[job.status]}>{STATUS_TEXT[job.status]}</Badge>
+          <Badge tone={STATUS_TONE[job.status]}>{t(STATUS_KEY[job.status])}</Badge>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {/* P0-D: stale_layouts > 0 → badge + đồng bộ lại (server trả [] → mất badge). */}

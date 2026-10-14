@@ -1,14 +1,20 @@
 import type { AdminStatsDay, Job, JobsPage, QuotaPatch, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion, WorkersResponse } from "./types";
 import { loadPdf } from "../lib/pdfjs";
+import { translate } from "../i18n";
 
-/** Thrown for any non-2xx response; `detail` mirrors FastAPI {detail} bodies. */
+/** Thrown for any non-2xx response; `detail` mirrors FastAPI {detail} bodies.
+ *  Spec S2: `{code, params}` (S1/S5) ride along for dict mapping in mapApiError. */
 export class ApiError extends Error {
   detail: string;
+  code?: string;
+  params?: Record<string, string | number>;
 
-  constructor(detail: string) {
+  constructor(detail: string, code?: string, params?: Record<string, string | number>) {
     super(detail);
     this.name = "ApiError";
     this.detail = detail;
+    this.code = code;
+    this.params = params;
   }
 }
 
@@ -35,9 +41,17 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   });
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
+    let code: string | undefined;
+    let params: Record<string, string | number> | undefined;
     try {
-      const data = (await res.json()) as { detail?: string } | null;
+      const data = (await res.json()) as {
+        detail?: string;
+        code?: string;
+        params?: Record<string, string | number>;
+      } | null;
       if (data && typeof data.detail === "string") detail = data.detail;
+      if (data && typeof data.code === "string") code = data.code;
+      if (data && data.params && typeof data.params === "object") params = data.params;
     } catch {
       // non-JSON error body → keep generic detail
     }
@@ -46,7 +60,7 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     if (res.status === 401 && !path.startsWith("/api/auth/")) {
       window.location.assign("/signin");
     }
-    throw new ApiError(detail);
+    throw new ApiError(detail, code, params);
   }
   // 204 = no body (Plan M PUTs) — res.json() would throw on empty payload.
   if (res.status === 204) return undefined as T;
@@ -121,7 +135,7 @@ export function putPresigned(
       if (xhr.status >= 200 && xhr.status < 300) resolve();
       else reject(new ApiError(`HTTP ${xhr.status}`));
     };
-    xhr.onerror = () => reject(new ApiError("Tải file thất bại."));
+    xhr.onerror = () => reject(new ApiError(translate("errors.uploadFailed")));
     xhr.send(data);
   });
 }

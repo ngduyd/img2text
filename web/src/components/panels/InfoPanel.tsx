@@ -1,5 +1,6 @@
 import type { Job } from "../../api/types";
-import { STATUS_TEXT, STATUS_TONE } from "../../lib/status";
+import { STATUS_KEY, STATUS_TONE } from "../../lib/status";
+import { useT } from "../../i18n";
 import IrViewer from "../IrViewer";
 import Badge from "../ui/Badge";
 import Card from "../ui/Card";
@@ -12,6 +13,7 @@ function fmt(iso: string | null | undefined): string | null {
 
 /** Task 2: job metadata Card — status badge + timestamps + counts. */
 export default function InfoPanel({ job }: { job: Job }) {
+  const { t } = useT();
   const created = fmt(job.created_at);
   const started = fmt(job.started_at);
   const finished = fmt(job.finished_at);
@@ -21,7 +23,7 @@ export default function InfoPanel({ job }: { job: Job }) {
         tone={STATUS_TONE[job.status]}
         testid={`status-${job.id}`}
       >
-        {STATUS_TEXT[job.status]}
+        {t(STATUS_KEY[job.status])}
       </Badge>
       <dl className="mt-2 space-y-1 text-sm">
         {created && (

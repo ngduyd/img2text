@@ -3,7 +3,8 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { api } from "../api/client";
 import type { RegionOut } from "../api/types";
-import { VERDICT_LABELS } from "../lib/verdicts";
+import { VERDICT_KEY } from "../lib/verdicts";
+import { useT } from "../i18n";
 import RegionEditor from "./RegionEditor";
 import Button from "./ui/Button";
 
@@ -50,6 +51,7 @@ export default function IssuesPanel({
   fileType?: string;
   onRegionUpdated?: (rid: string, text: string) => void;
 }) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const [activeRid, setActiveRid] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<Record<string, string>>({});
@@ -85,7 +87,7 @@ export default function IssuesPanel({
       >
         {issues.map((r) => (
           <article key={r.id} data-testid={`issue-${r.id}`} className="py-2">
-            <span className="font-semibold">{VERDICT_LABELS[r.verdict] ?? r.verdict}</span>{" "}
+            <span className="font-semibold">{t(VERDICT_KEY[r.verdict] ?? r.verdict)}</span>{" "}
             <span className="text-sm text-muted">{r.id}</span>
             {/* PDF → text region (dưới), không crop image. */}
             {r.bbox != null && fileType === "image" && (
