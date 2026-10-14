@@ -24,7 +24,7 @@ from app.core.middleware import (
     PageViewsMiddleware,
     RequestLogsMiddleware,
 )
-from app.routers import admin, auth, exports, health, jobs, profile, region_edit
+from app.routers import admin, auth, exports, feedback, health, jobs, profile, region_edit
 from app.services.scheduler import init_scheduler
 from app.services.storage import build_storage
 
@@ -79,6 +79,8 @@ def create_app() -> FastAPI:
     app.include_router(jobs.router)
     app.include_router(exports.router)
     app.include_router(region_edit.router)
+    # wave-5 S6: POST /api/feedback + GET /api/admin/feedbacks
+    app.include_router(feedback.router)
     # Starlette add_middleware inserts at head → last added = outermost
     app.add_middleware(PageViewsMiddleware)
     app.add_middleware(RequestLogsMiddleware)

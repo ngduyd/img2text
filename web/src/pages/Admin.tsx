@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { BarChart3, LayoutDashboard, ScrollText, Settings, Terminal, Users } from "lucide-react";
+import { BarChart3, LayoutDashboard, MessageSquare, ScrollText, Settings, Terminal, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import { useT } from "../i18n";
 import AdminApi from "./admin/AdminApi";
+import AdminFeedbacks from "./admin/AdminFeedbacks";
 import AdminKaggleQuota from "./admin/AdminKaggleQuota";
 import AdminLogs from "./admin/AdminLogs";
 import AdminOverview from "./admin/AdminOverview";
@@ -22,6 +23,8 @@ const TABS = [
   { id: "logs", labelKey: "admin.tab.logs", icon: ScrollText },
   { id: "stats", labelKey: "admin.tab.stats", icon: BarChart3 },
   { id: "settings", labelKey: "admin.tab.settings", icon: Settings },
+  // Lane B2 (wave-5 S6): feedback list.
+  { id: "feedbacks", labelKey: "admin.tab.feedbacks", icon: MessageSquare },
 ] as const;
 
 /** Admin-only page; tabs are in-page state (not routes). Non-admins go home. No jobs board. */
@@ -94,6 +97,7 @@ export default function Admin() {
               {tab === "logs" && <AdminLogs />}
               {tab === "stats" && <AdminStats />}
               {tab === "settings" && <AdminSettings />}
+              {tab === "feedbacks" && <AdminFeedbacks />}
             </>
           )}
         </div>

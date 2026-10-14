@@ -55,7 +55,7 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-it("renders 6 tabs, default overview with summed stat cards", async () => {
+it("renders 7 tabs, default overview with summed stat cards", async () => {
   vi.mocked(api.me).mockResolvedValue(adminMe);
   vi.mocked(api.adminStats).mockResolvedValue({
     days: [
@@ -288,8 +288,9 @@ it("admin sub-rail renders 6 items; active item has aria-current=page", async ()
   renderWithRouter(<Admin />, { route: "/admin" });
   await screen.findByTestId("stat-users"); // admin content rendered
   const rail = screen.getByTestId("admin-rail");
-  // V3: one responsive nav (mobile scroll / desktop vertical), 6 items with icons
-  expect(within(rail).getAllByRole("button")).toHaveLength(6);
+  // V3: one responsive nav (mobile scroll / desktop vertical), 7 items with icons
+  // (lane B2 wave-5 S6: +tab Feedbacks).
+  expect(within(rail).getAllByRole("button")).toHaveLength(7);
   expect(within(rail).getByTestId("tab-overview")).toHaveAttribute("aria-current", "page");
   expect(within(rail).getByTestId("tab-users")).not.toHaveAttribute("aria-current");
 });

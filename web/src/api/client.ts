@@ -1,4 +1,4 @@
-import type { AdminStatsDay, Job, JobsPage, QuotaPatch, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion, WorkersResponse } from "./types";
+import type { AdminStatsDay, FeedbackItem, Job, JobsPage, QuotaPatch, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion, WorkersResponse } from "./types";
 import { loadPdf } from "../lib/pdfjs";
 import { translate } from "../i18n";
 
@@ -405,4 +405,14 @@ export const api = {
   // 204 no body — request() đã xử lý.
   restoreVersion: (id: number | string, vid: number) =>
     request<unknown>(`/api/jobs/${id}/versions/${vid}/restore`, { method: "POST" }),
+  // Lane B2 (wave-5 S6): feedback — POST auth, content ≤2000; admin list paged.
+  submitFeedback: (content: string, page_path?: string) =>
+    request<{ id: number }>("/api/feedback", {
+      method: "POST",
+      body: { content, page_path },
+    }),
+  adminListFeedbacks: (page = 1, page_size = 20) =>
+    request<{ items: FeedbackItem[]; total: number }>(
+      `/api/admin/feedbacks?page=${page}&page_size=${page_size}`,
+    ),
 };

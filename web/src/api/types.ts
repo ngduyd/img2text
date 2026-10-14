@@ -202,3 +202,12 @@ export interface AdminSettingsPut {
   proofread_llm_model?: string;
   llm_api_key?: string;
 }
+/** Lane B2 (wave-5 S6): GET /api/admin/feedbacks row. */
+export interface FeedbackItem {
+  id: number;
+  content: string;
+  page_path: string | null;
+  user_id: number | null;
+  email: string | null;
+  created_at: string | null;
+}

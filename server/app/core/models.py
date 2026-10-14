@@ -114,6 +114,27 @@ class EmailSend(Base):
         server_default=text("now()"),
     )
 
+class Feedback(Base):
+    """Wave-5 S6 (Lane B2): user feedback. user_id nullable (anon form
+    không dùng — POST auth, nhưng cột nullable cho import tay).
+    Hand-SQL migration (test DB đã apply; create_all tạo trong test volume):
+      docs/migrations/2026-10-15_feedback.sql
+    """
+
+    __tablename__ = "feedbacks"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    content: Mapped[str] = mapped_column(Text)
+    page_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=text("now()"),
+    )
+
 class PageView(Base):
     __tablename__ = "page_views"
 
