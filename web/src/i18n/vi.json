@@ -5,6 +5,7 @@
     "delete": "Xóa",
     "save": "Lưu",
     "close": "Đóng",
+    "retry": "Thử lại",
     "loading": "Đang tải…"
   },
   "i18n": {
@@ -163,6 +164,9 @@
   },
   "export": {
     "created": "Đã tạo bản xuất.",
+    "failed": "Xuất file thất bại.",
+    "mdLayout": "Markdown (layout)",
+    "docxLayout": "DOCX (giữ layout)",
     "fmtMd": "Tải .md",
     "fmtHtml": "Tải .html",
     "fmtDocx": "Tải .docx",
@@ -170,6 +174,12 @@
   },
   "editor": {
     "textAreaAria": "Soạn thảo văn bản",
+    "panelTitle": "Soạn thảo",
+    "modeAria": "Chế độ soạn thảo",
+    "layoutCached": "Layout đã lưu",
+    "layoutNotCached": "Layout chưa lưu",
+    "llmRendering": "Đang vẽ layout bằng LLM…",
+    "saveFailed": "Lưu thất bại.",
     "edit": "Soạn thảo",
     "editing": "Đang soạn",
     "loadError": "Không tải được văn bản trích xuất.",
@@ -228,6 +238,24 @@
   },
   "ir": {
     "copied": "Đã sao chép IR"
+  },
+  "preview": {
+    "modeAria": "Chế độ xem trước",
+    "wordTitle": "Xem trước layout Word"
+  },
+  "region": {
+    "textAria": "Văn bản vùng {id}"
+  },
+  "docStyle": {
+    "indexHeading": "Đánh số heading + sinh mục lục",
+    "tocTitle": "Mục lục",
+    "tocEmpty": "Không có heading h1-h3.",
+    "marginLeft": "Lề trái (cm)",
+    "marginRight": "Lề phải (cm)",
+    "tableBorders": "Viền bảng",
+    "indentOut": "Bớt lề",
+    "indentIn": "Thêm lề",
+    "lineSpacing": "Giãn dòng"
   },
   "profile": {
     "title": "Hồ sơ",

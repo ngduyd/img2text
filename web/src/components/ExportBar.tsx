@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import { mapApiError } from "../lib/errors";
+import { translate, useT } from "../i18n";
 import Button from "./ui/Button";
 
 /**
@@ -11,13 +12,14 @@ import Button from "./ui/Button";
  * R51 testids cũ giữ nguyên (btn-export-md-layout/btn-export-docx-layout/...).
  */
 const LAYOUT_FORMATS = [
-  { fmt: "md-layout", testid: "btn-export-md-layout", label: "Markdown (layout)" },
-  { fmt: "docx-layout", testid: "btn-export-docx-layout", label: "DOCX (giữ layout)" },
+  { fmt: "md-layout", testid: "btn-export-md-layout", labelKey: "export.mdLayout" },
+  { fmt: "docx-layout", testid: "btn-export-docx-layout", labelKey: "export.docxLayout" },
 ] as const;
 
 type Fmt = (typeof LAYOUT_FORMATS)[number]["fmt"];
 
 export default function ExportBar({ jobId }: { jobId: string }) {
+  const { t } = useT();
   const [busy, setBusy] = useState<Set<Fmt>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
   const [layoutMore, setLayoutMore] = useState(false);
@@ -28,10 +30,10 @@ export default function ExportBar({ jobId }: { jobId: string }) {
     const w = window.open("", "_blank");
     try {
       const { url } = await api.exportJob(jobId, fmt);
-      toast.success("Đã tạo bản xuất.");
+      toast.success(translate("export.created"));
       if (w) w.location = url;
     } catch (err) {
-      setError(err instanceof ApiError ? err.detail : "Xuất file thất bại.");
+      setError(err instanceof ApiError ? err.detail : translate("export.failed"));
       toast.error(mapApiError(err));
     } finally {
       setBusy((prev) => {
@@ -46,7 +48,7 @@ export default function ExportBar({ jobId }: { jobId: string }) {
     label: string,
     open: boolean,
     setOpen: (v: boolean) => void,
-    formats: ReadonlyArray<{ fmt: Fmt; testid: string; label: string }>,
+    formats: ReadonlyArray<{ fmt: Fmt; testid: string; labelKey: string }>,
     moreTestid: string,
     listTestid: string,
   ) => (
@@ -66,7 +68,7 @@ export default function ExportBar({ jobId }: { jobId: string }) {
         hidden={!open}
         className="flex flex-wrap gap-2"
       >
-        {formats.map(({ fmt, testid, label: fmtLabel }) => (
+        {formats.map(({ fmt, testid, labelKey }) => (
           <Button
             key={fmt}
             testid={testid}
@@ -74,7 +76,7 @@ export default function ExportBar({ jobId }: { jobId: string }) {
             loading={busy.has(fmt)}
             onClick={() => exportFmt(fmt)}
           >
-            {fmtLabel}
+            {t(labelKey)}
           </Button>
         ))}
       </div>

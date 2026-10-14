@@ -9,6 +9,7 @@ import { api } from "../api/client";
 import type { Job, LayoutStyle } from "../api/types";
 import { buildLayoutStyleCss } from "../lib/docStyle";
 import { mapApiError } from "../lib/errors";
+import { translate, useT } from "../i18n";
 import DocStyleTools from "./DocStyleTools";
 import WordEditor from "./editor/WordEditor";
 import Badge from "./ui/Badge";
@@ -47,6 +48,7 @@ export default function UnifiedEditor({
   onEditingChange: (editing: boolean) => void;
   hostRef?: RefObject<HTMLElement | null>;
 }) {
+  const { t } = useT();
   const queryClient = useQueryClient();
   // Binding: default mode theo output_format chọn lúc upload.
   const [mode, setMode] = useState<Mode>(job.output_format === "docx" ? "word" : "md");
@@ -142,7 +144,7 @@ export default function UnifiedEditor({
     try {
       // Lane I Task 4: Lưu layout → PATCH /layout-content (kind md-layout snapshot).
       await api.patchLayoutContent(jobId, mdText);
-      toast.success("Đã lưu.");
+      toast.success(translate("editor.saved"));
       // Flag layout_cache đổi phía server → refresh job để badge cập nhật.
       await queryClient.invalidateQueries({ queryKey: ["job", jobId] });
     } catch (err) {
@@ -153,7 +155,7 @@ export default function UnifiedEditor({
   const saveStyle = async () => {
     try {
       await api.putLayoutStyle(jobId, styleMap);
-      toast.success("Đã lưu.");
+      toast.success(translate("editor.saved"));
     } catch (err) {
       toast.error(mapApiError(err));
     }
@@ -163,7 +165,7 @@ export default function UnifiedEditor({
   const saveWord = async (html: string) => {
     try {
       await api.putDocxHtml(jobId, html);
-      toast.success("Đã lưu.");
+      toast.success(translate("editor.saved"));
       // Flag layout_cache.docx_html đổi phía server → refresh job (badge + load sau).
       await queryClient.invalidateQueries({ queryKey: ["job", jobId] });
     } catch (err) {
@@ -178,11 +180,11 @@ export default function UnifiedEditor({
   return (
     /* scroll-mt-32: offset qua sticky header job khi btn-edit-doc scroll tới. */
     <section ref={hostRef} className="scroll-mt-32">
-      <Card testid="panel-editor" title="Soạn thảo">
+      <Card testid="panel-editor" title={t("editor.panelTitle")}>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <div
             role="group"
-            aria-label="Chế độ soạn thảo"
+            aria-label={t("editor.modeAria")}
             className="inline-flex items-center gap-1 rounded-md border border-border p-1"
           >
             <Button
@@ -208,7 +210,7 @@ export default function UnifiedEditor({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge testid="layout-badge" tone={cached ? "success" : "neutral"}>
-              {cached ? "Layout đã lưu" : "Layout chưa lưu"}
+              {cached ? t("editor.layoutCached") : t("editor.layoutNotCached")}
             </Badge>
           </div>
         </div>
@@ -228,7 +230,7 @@ export default function UnifiedEditor({
                 void runFlow(activeMode);
               }}
             >
-              Thử lại
+              {t("common.retry")}
             </Button>
           </div>
         )}
@@ -242,7 +244,7 @@ export default function UnifiedEditor({
           >
             <Skeleton className="h-4 w-1/3" />
             <Skeleton className="h-96 w-full" />
-            <p className="text-sm text-muted">Đang vẽ layout bằng LLM…</p>
+            <p className="text-sm text-muted">{t("editor.llmRendering")}</p>
           </div>
         ) : activeMode === "md" ? (
           /*

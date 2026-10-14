@@ -5,6 +5,7 @@
     "delete": "Delete",
     "save": "Save",
     "close": "Close",
+    "retry": "Retry",
     "loading": "Loading…"
   },
   "i18n": {
@@ -163,6 +164,9 @@
   },
   "export": {
     "created": "Export ready.",
+    "failed": "Could not export the file.",
+    "mdLayout": "Markdown (layout)",
+    "docxLayout": "DOCX (keep layout)",
     "fmtMd": "Download .md",
     "fmtHtml": "Download .html",
     "fmtDocx": "Download .docx",
@@ -170,6 +174,12 @@
   },
   "editor": {
     "textAreaAria": "Edit text",
+    "panelTitle": "Editor",
+    "modeAria": "Editing mode",
+    "layoutCached": "Layout saved",
+    "layoutNotCached": "Layout not saved",
+    "llmRendering": "Rendering layout with the LLM…",
+    "saveFailed": "Could not save.",
     "edit": "Edit text",
     "editing": "Editing",
     "loadError": "Could not load the extracted text.",
@@ -228,6 +238,24 @@
   },
   "ir": {
     "copied": "IR copied"
+  },
+  "preview": {
+    "modeAria": "Preview mode",
+    "wordTitle": "Word layout preview"
+  },
+  "region": {
+    "textAria": "Text of region {id}"
+  },
+  "docStyle": {
+    "indexHeading": "Number headings + build table of contents",
+    "tocTitle": "Table of contents",
+    "tocEmpty": "No h1-h3 headings.",
+    "marginLeft": "Left margin (cm)",
+    "marginRight": "Right margin (cm)",
+    "tableBorders": "Table borders",
+    "indentOut": "Decrease indent",
+    "indentIn": "Increase indent",
+    "lineSpacing": "Line spacing"
   },
   "profile": {
     "title": "Profile",

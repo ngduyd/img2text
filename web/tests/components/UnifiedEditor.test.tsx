@@ -105,8 +105,8 @@ it("md cache miss: exportJob md-layout + layout-loading spinner → content rend
   );
   vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["# Mới từ LLM"]));
   render(<Harness job={JOB} />);
-  expect(screen.getByTestId("layout-loading")).toHaveTextContent("Đang vẽ layout bằng LLM…");
-  expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout chưa lưu");
+  expect(screen.getByTestId("layout-loading")).toHaveTextContent("Rendering layout with the LLM…");
+  expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout not saved");
   expect(api.exportJob).toHaveBeenCalledWith("5", "md-layout");
   await act(async () => release?.());
   const editor = await screen.findByTestId("md-editor");
@@ -117,7 +117,7 @@ it("md cache miss: exportJob md-layout + layout-loading spinner → content rend
 it("md cache hit (layout_cache.md=true): badge đã lưu + exportJob/downloadExport path vẫn chạy (mock, không LLM thật)", async () => {
   vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["# Cached"]));
   render(<Harness job={{ ...JOB, layout_cache: { md: true, docx: true } }} />);
-  expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout đã lưu");
+  expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout saved");
   const editor = await screen.findByTestId("md-editor");
   expect(api.exportJob).toHaveBeenCalledWith("5", "md-layout");
   expect(api.downloadExport).toHaveBeenCalledWith("5", "md-layout");
@@ -161,7 +161,7 @@ it("switch mode: word → exportJob docx-layout + Tiptap editor + word tools; md
   expect(screen.getByTestId("word-toolbar")).toBeInTheDocument();
   expect(screen.getByTestId("btn-save-layout-word")).toBeInTheDocument();
   // badge theo mode: docx chưa cache
-  expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout chưa lưu");
+  expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout not saved");
   // M4: editor Tiptap thay iframe — container giữ testid, nội dung là .ProseMirror contenteditable
   const pane = screen.getByTestId("preview-docx-frame");
   expect(pane.className).toContain("min-h-[60vh]");
@@ -197,7 +197,7 @@ it("M5: md mode = MDEditor (value/onChange wiring); Lưu → PATCH layout-conten
   expect(ta.value).toBe("# Đã sửa");
   await user.click(screen.getByTestId("btn-save-layout"));
   expect(api.patchLayoutContent).toHaveBeenCalledWith("5", "# Đã sửa");
-  expect(toast.success).toHaveBeenCalledWith("Đã lưu.");
+  expect(toast.success).toHaveBeenCalledWith("Saved.");
 });
 
 /** Lane I Task 4: XÓA nút proofread/refresh + panel suggestions (server route giữ nguyên). */
@@ -226,7 +226,7 @@ it("word style: đổi line spacing → btn-save-style → putLayoutStyle (objec
     "5",
     expect.objectContaining({ spacing: "1" }),
   );
-  expect(toast.success).toHaveBeenCalledWith("Đã lưu.");
+  expect(toast.success).toHaveBeenCalledWith("Saved.");
 });
 
 it("word tools hydrate từ job.layout_style (session trước đã lưu)", async () => {
@@ -324,7 +324,7 @@ it("Plan M4: Lưu word → editor.getHTML() → putDocxHtml + toast 'Đã lưu.'
   await waitFor(() => expect(pane.querySelector(".ProseMirror")).toHaveTextContent("Chào"));
   await user.click(screen.getByTestId("btn-save-layout-word"));
   expect(api.putDocxHtml).toHaveBeenCalledWith("5", "<p>Chào</p>");
-  expect(toast.success).toHaveBeenCalledWith("Đã lưu.");
+  expect(toast.success).toHaveBeenCalledWith("Saved.");
 });
 
 it("Plan M3: layout_cache.docx_html=true → GET docx.html (getDocxHtml), KHÔNG exportJob/mammoth", async () => {
@@ -341,7 +341,7 @@ it("Plan M3: layout_cache.docx_html=true → GET docx.html (getDocxHtml), KHÔNG
   );
   expect(api.exportJob).not.toHaveBeenCalled();
   expect(mammoth.convertToHtml).not.toHaveBeenCalled();
-  expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout đã lưu");
+  expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout saved");
 });
 
 it("Plan M3: docx_html cache nhưng GET 404 (null) → fallback mammoth docx-layout", async () => {
