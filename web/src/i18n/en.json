@@ -161,8 +161,6 @@
     "retryLayoutFailed": "Could not rebuild the layout.",
     "retryLayoutConfirmTitle": "Rebuild layout?",
     "retryLayoutConfirmMessage": "The whole layout (Markdown + DOCX) will be rebuilt by the LLM. Continue?",
-    "layoutFmtAria": "Layout format",
-    "layoutFmtChanged": "Layout format changed.",
     "edit": "Edit",
     "editing": "Editing",
     "history": "History",
@@ -177,7 +175,9 @@
     "sectionText": "Text",
     "stats": "{pages} pages · GPU {gpu}s · {model}",
     "originalFile": "Original file",
-    "infoTitle": "Info"
+    "infoTitle": "Info",
+    "layoutToggleAria": "Toggle layout panel",
+    "layout": "Layout"
   },
   "info": {
     "createdAt": "Created:",
@@ -269,7 +269,6 @@
     "copied": "IR copied"
   },
   "preview": {
-    "modeAria": "Preview mode",
     "wordTitle": "Word layout preview"
   },
   "region": {

@@ -52,13 +52,14 @@ export default function JobDetail() {
   const [retryError, setRetryError] = useState<string | null>(null);
   /** JD2: btn-edit-doc = inline edit ON THIS PAGE — section Layout: preview ↔ editor. */
   const [editing, setEditing] = useState(false);
-  /** Lane I Task 5: dropdown "Tải xuống" ở header (gộp 4 định dạng text). */
+  /** U2: nút Edit text dời ra heading row section Text (controlled xuống TextSection). */
+  const [editingText, setEditingText] = useState(false);
+  /** U3: section Layout collapsible — default mở, chevron rotate-180. */
+  const [layoutOpen, setLayoutOpen] = useState(true);
+  /** Lane I Task 6: dropdown "Tải xuống" ở header (gộp 4 định dạng text). */
   const [downloadOpen, setDownloadOpen] = useState(false);
-  /** Lane I Task 6: định dạng layout đang xem (header switch → export → crossfade preview).
-   *  Review r1 P0: override của switch; null → init theo job.output_format (đồng bộ preview). */
-  const [layoutFmtOverride, setLayoutFmtOverride] = useState<"md-layout" | "docx-layout" | null>(null);
-  const layoutFmt =
-    layoutFmtOverride ?? (job?.output_format === "docx" ? "docx-layout" : "md-layout");
+  /** U7: bỏ switch MD/Word — fmt fixed init theo job.output_format. */
+  const layoutFmt = job?.output_format === "docx" ? "docx-layout" : "md-layout";
   const [retryingLayout, setRetryingLayout] = useState(false);
   const [confirmRetry, setConfirmRetry] = useState(false);
   /** P0-C: panel "Lịch sử" — list lazy-fetch khi mở (queryKey "versions" để invalidate). */
@@ -82,9 +83,24 @@ export default function JobDetail() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [showHistory]);
   const editorHostRef = useRef<HTMLElement>(null);
-  /** Lane I Task 2: File gốc + Thông tin = collapsible (default closed, bỏ sticky). */
-  const [originalOpen, setOriginalOpen] = useState(false);
-  const [infoOpen, setInfoOpen] = useState(false);
+  /** U4+U5: File gốc + Thông tin = collapsible, mặc định MỞ (justify-between label/chevron). */
+  const [originalOpen, setOriginalOpen] = useState(true);
+  const [infoOpen, setInfoOpen] = useState(true);
+  /** U1 P0: đổi :id KHÔNG remount → reset states JobDetail theo id (grid remount bằng key). */
+  useEffect(() => {
+    setConfirmDelete(false);
+    setEditing(false);
+    setEditingText(false);
+    setLayoutOpen(true);
+    setDownloadOpen(false);
+    setRetryingLayout(false);
+    setConfirmRetry(false);
+    setShowHistory(false);
+    setOriginalOpen(true);
+    setInfoOpen(true);
+    setRetryError(null);
+    // oxlint-disable-next-line react/set-state-in-effect -- reset theo id (U1)
+  }, [id]);
 
   const toggleEdit = () => {
     if (editing) {
@@ -111,21 +127,6 @@ export default function JobDetail() {
       toast.error(mapApiError(err));
     } finally {
       setRetryingLayout(false);
-    }
-  };
-
-  /**
-   * Lane I Task 6: switch md-layout ↔ docx-layout — export fmt (cache-hit server
-   * trả URL presigned ngay) → toast + crossfade preview (CSS 200ms, key remount).
-   */
-  const switchLayoutFmt = async (fmt: "md-layout" | "docx-layout") => {
-    if (fmt === layoutFmt) return;
-    try {
-      await api.exportJob(id!, fmt);
-      setLayoutFmtOverride(fmt);
-      toast.success(t("jd.layoutFmtChanged"));
-    } catch (err) {
-      toast.error(mapApiError(err));
     }
   };
 
@@ -271,46 +272,6 @@ export default function JobDetail() {
               {t("jd.retryLayout")}
             </Button>
           )}
-          {/* Lane I Task 6: switch định dạng layout md-layout ↔ docx-layout. */}
-          {job.status === "done" && result && job.mode !== "extract_only" && (
-            <div
-              role="group"
-              aria-label={t("jd.layoutFmtAria")}
-              className="inline-flex items-center gap-1 rounded-md border border-border p-1"
-            >
-              <Button
-                testid="fmt-md-layout"
-                variant="ghost"
-                size="sm"
-                aria-pressed={layoutFmt === "md-layout"}
-                className={layoutFmt === "md-layout" ? "bg-surface-2 font-semibold" : ""}
-                onClick={() => void switchLayoutFmt("md-layout")}
-              >
-                Markdown
-              </Button>
-              <Button
-                testid="fmt-docx-layout"
-                variant="ghost"
-                size="sm"
-                aria-pressed={layoutFmt === "docx-layout"}
-                className={layoutFmt === "docx-layout" ? "bg-surface-2 font-semibold" : ""}
-                onClick={() => void switchLayoutFmt("docx-layout")}
-              >
-                DOCX
-              </Button>
-            </div>
-          )}
-          {/* JD2 amendment: Edit = inline edit trong section Layout (preview ↔ editor). */}
-          <Button
-            testid="btn-edit-doc"
-            variant="secondary"
-            aria-pressed={editing}
-            disabled={job.status !== "done"}
-            onClick={toggleEdit}
-          >
-            <PenLine className="h-4 w-4" aria-hidden="true" />
-            {editing ? t("jd.editing") : t("jd.edit")}
-          </Button>
           {/* Lane I Task 5: download gộp 1 dropdown, dời lên cạnh "Chỉnh sửa". */}
           <DownloadDropdown
             jobId={id!}
@@ -453,7 +414,7 @@ export default function JobDetail() {
         Wave-3 #5 → Lane I Task 2: col trái stack 2 section; col phải = collapsible
         "File gốc" + "Thông tin" (Button aria-expanded, default closed — mở mới mount).
       */}
-      <div data-testid="detail-grid" className="grid gap-4 lg:grid-cols-12 lg:gap-6">
+      <div key={job.id} data-testid="detail-grid" className="grid gap-4 lg:grid-cols-12 lg:gap-6">
         <div className="flex min-w-0 flex-col gap-6 lg:col-span-7">
           {/* SECTION "Văn bản" — hiện cả khi status rendering (OCR xong). */}
           {textReady && (
@@ -462,11 +423,28 @@ export default function JobDetail() {
               aria-labelledby="section-text-title"
               className="flex flex-col gap-4"
             >
-              <h2 id="section-text-title" className="text-lg font-semibold tracking-tight">
-                {t("jd.sectionText")}
-              </h2>
+              <div className="flex items-center justify-between gap-2">
+                <h2 id="section-text-title" className="text-lg font-semibold tracking-tight">
+                  {t("jd.sectionText")}
+                </h2>
+                {/* U2: heading → edit; Text KHÔNG collapsible (chỉ scroll — U9). */}
+                <Button
+                  testid="btn-edit-text"
+                  variant="secondary"
+                  aria-pressed={editingText}
+                  onClick={() => setEditingText((v) => !v)}
+                >
+                  {editingText ? t("editor.editing") : t("editor.edit")}
+                </Button>
+              </div>
               <div data-testid="panel-result" className="flex min-w-0 flex-col gap-6">
-                <TextSection jobId={id!} regions={regions} fileType={job.file_type} />
+                <TextSection
+                  jobId={id!}
+                  regions={regions}
+                  fileType={job.file_type}
+                  editingText={editingText}
+                  onEditingTextChange={setEditingText}
+                />
               </div>
             </section>
           )}
@@ -480,9 +458,38 @@ export default function JobDetail() {
             >
               <div className="flex items-center justify-between gap-2">
                 <h2 id="section-layout-title" className="text-lg font-semibold tracking-tight">
-                  Layout
+                  {t("jd.layout")}
                 </h2>
+                {/* U3: chevron toggle — heading → edit → chevron; aria-controls vào wrap panel. */}
+                <div className="flex items-center gap-1">
+                  <Button
+                    testid="btn-edit-doc"
+                    variant="secondary"
+                    aria-pressed={editing}
+                    disabled={job.status !== "done"}
+                    onClick={toggleEdit}
+                  >
+                    <PenLine className="h-4 w-4" aria-hidden="true" />
+                    {editing ? t("jd.editing") : t("jd.edit")}
+                  </Button>
+                  <Button
+                    testid="btn-toggle-layout"
+                    variant="ghost"
+                    aria-expanded={layoutOpen}
+                    aria-controls="layout-panel-wrap"
+                    aria-label={t("jd.layoutToggleAria")}
+                    onClick={() => setLayoutOpen((v) => !v)}
+                  >
+                    <ChevronDown
+                      className={`h-4 w-4 text-muted transition duration-150 ease-out ${layoutOpen ? "rotate-180" : ""}`}
+                      aria-hidden="true"
+                    />
+                  </Button>
+                </div>
               </div>
+              <div id="layout-panel-wrap">
+              {layoutOpen && (
+                <>
               {editing ? (
                 <UnifiedEditor
                   jobId={id!}
@@ -493,15 +500,15 @@ export default function JobDetail() {
                   hostRef={editorHostRef}
                 />
               ) : (
-                /* Lane I Task 6: key remount + CSS crossfade 200ms khi đổi định dạng. */
-                <div key={layoutFmt} className="layout-crossfade">
-                  <LayoutPreview job={job} fmt={layoutFmt} onFmtChange={setLayoutFmtOverride} />
-                </div>
+                <LayoutPreview job={job} fmt={layoutFmt} />
               )}
               {/* Stats line dưới preview (spec: SECTION Layout). */}
               <p data-testid="result-stats" className="text-sm text-muted">
                 {t("jd.stats", { pages: job.page_count, gpu: result.gpu_seconds, model: result.model_version })}
               </p>
+                </>
+              )}
+              </div>
               {/* WS-UI item 13: ExportBar 2 nhóm DƯỚI preview cột trái (không còn trong rail). */}
               <Card testid="panel-export">
                 <ExportBar jobId={id!} />
@@ -509,8 +516,8 @@ export default function JobDetail() {
             </section>
           )}
         </div>
-        {/* ẢNH GỐC + Thông tin — collapsible (Lane I Task 2, không còn sticky). */}
-        <aside className="flex min-w-0 flex-col gap-4 lg:col-span-5">
+        {/* ẢNH GỐC + Thông tin — collapsible (U6: sticky lg:top-32 = AppNav 4rem + job-header 4rem). */}
+        <aside className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-32 lg:col-span-5 lg:self-start">
           <section className="rounded-card border border-border bg-surface shadow-card">
             <h2>
               <Button

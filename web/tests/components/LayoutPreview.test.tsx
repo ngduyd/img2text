@@ -1,6 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { api } from "../../src/api/client";
@@ -37,15 +36,11 @@ const JOB: Job = {
   layout_style: { fontFamily: "Times New Roman", fontSize: 18 },
 };
 
-function previewUi(
-  job: Job,
-  fmt: "md-layout" | "docx-layout",
-  onFmtChange: (f: "md-layout" | "docx-layout") => void = () => {},
-): ReactElement {
+function previewUi(job: Job, fmt: "md-layout" | "docx-layout"): ReactElement {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (
     <QueryClientProvider client={queryClient}>
-      <LayoutPreview job={job} fmt={fmt} onFmtChange={onFmtChange} />
+      <LayoutPreview job={job} fmt={fmt} />
     </QueryClientProvider>
   );
 }
@@ -102,21 +97,14 @@ it("word mode renders sandboxed iframe with docStyle in srcDoc", async () => {
   expect(api.getDocxHtml).toHaveBeenCalledWith(5);
 });
 
-it("switch mode md → word (onFmtChange → rerender) renders preview-word", async () => {
+/** U7: preview toggle MD/Word bị gỡ — không còn testid preview-mode-*. */
+it("U7: no preview-mode-md/preview-mode-word toggle in DOM", async () => {
   vi.mocked(api.exportJob).mockResolvedValue({ url: "" });
   vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["# A"]));
-  vi.mocked(api.getDocxHtml).mockResolvedValue("<p>B</p>");
-  let currentFmt: "md-layout" | "docx-layout" = "md-layout";
-  const onFmtChange = (f: "md-layout" | "docx-layout") => {
-    currentFmt = f;
-  };
-  const { rerender } = render(previewUi(JOB, currentFmt, onFmtChange));
+  renderPreview();
   await screen.findByTestId("preview-md");
-  const user = userEvent.setup();
-  await user.click(screen.getByTestId("preview-mode-word"));
-  rerender(previewUi(JOB, currentFmt, onFmtChange));
-  await waitFor(() => expect(screen.getByTestId("preview-word")).toBeInTheDocument());
-  expect(screen.getByTestId("preview-mode-word")).toHaveAttribute("aria-pressed", "true");
+  expect(screen.queryByTestId("preview-mode-md")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("preview-mode-word")).not.toBeInTheDocument();
 });
 
 it("export failure → role=alert error + retry button", async () => {

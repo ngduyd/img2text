@@ -161,8 +161,6 @@
     "retryLayoutFailed": "Tạo lại layout thất bại.",
     "retryLayoutConfirmTitle": "Vẽ lại layout?",
     "retryLayoutConfirmMessage": "Toàn bộ layout (Markdown + DOCX) sẽ được vẽ lại bằng LLM. Tiếp tục?",
-    "layoutFmtAria": "Định dạng layout",
-    "layoutFmtChanged": "Đã đổi định dạng layout.",
     "edit": "Chỉnh sửa",
     "editing": "Đang sửa",
     "history": "Lịch sử",
@@ -177,7 +175,9 @@
     "sectionText": "Văn bản",
     "stats": "{pages} trang · GPU {gpu}s · {model}",
     "originalFile": "File gốc",
-    "infoTitle": "Thông tin"
+    "infoTitle": "Thông tin",
+    "layoutToggleAria": "Thu gọn/mở panel Layout",
+    "layout": "Layout"
   },
   "info": {
     "createdAt": "Tạo lúc:",
@@ -269,7 +269,6 @@
     "copied": "Đã sao chép IR"
   },
   "preview": {
-    "modeAria": "Chế độ xem trước",
     "wordTitle": "Xem trước layout Word"
   },
   "region": {
