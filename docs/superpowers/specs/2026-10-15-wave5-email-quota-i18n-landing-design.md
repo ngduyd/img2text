@@ -40,13 +40,18 @@ Base: master `095e691`. User-approval từ brainstorming chat (từng mục).
 - Web: trang `/feedback` form (textarea + submit + toast R59). Link ở footer/nav.
 - `GET /api/admin/feedbacks` (admin, phân trang) + `/admin/feedbacks` trang list.
 
-## S7 — Footer (Lane L, web)
+## S7 — Footer (Lane B1, web)
 
-- Footer toàn trang (landing + app): "© 2026 Nguyen Duy" · email `nguyenduy2004.d@gmail.com` (mailto) · portfolio `ngduyd.id.vn` (external link rel="noopener") · link /feedback. i18n keys.
+- Footer toàn trang: "© 2026 Nguyen Duy" · mailto `nguyenduy2004.d@gmail.com` · `https://ngduyd.id.vn` (blank+noopener) · link /feedback. i18n keys footer.*.
 
-## S8 — Landing v2 "In the feature" (Lane L, web)
+## S8 — Trang "In the feature" — tính năng bản kế tiếp (Lane B1, web)
 
-- Section "In the feature / Sắp ra mắt" trên Landing: teaser **Tổ chức (Organizations)** — "Teams will configure their own GPU workers and storage servers". 3 bullet: custom worker pools, org-level storage, shared quotas. Tag "Coming soon". DESIGN.md + taste skill (design-taste-frontend) apply. Ảnh minh họa không cần (text section).
+**User correction (2026-10-15): KHÔNG redesign landing — trang RIÊNG `/features`.**
+
+- Route `/features` + Nav link. Hero "In the feature · Coming soon".
+- Nội dung: **Organizations (Tổ chức)** — teams tạo không gian riêng, org admin tự cấu hình GPU worker pool + storage server (R2/S3 riêng) cho org, quota chung, member management.
+- 3 feature cards: Custom worker pools, Org-level storage, Shared quotas & members (badge "Soon", icon inline SVG, không ảnh bitmap).
+- Taste skill design-taste-frontend; responsive; i18n keys features.*.
 
 ## S2 — i18n vi/en (Lane M3, web)
 
@@ -68,7 +73,7 @@ Base: master `095e691`. User-approval từ brainstorming chat (từng mục).
 ## Lane order
 
 ```
-Wave A (parallel): M1 quota+purge (DB test2) ∥ E email (DB test) ∥ M3 i18n (web)
-Wave B: L footer+landing v2 ∥ F feedback ∥ S4 admin storage-cleanup page
+Wave A (merged): M1 quota+purge ∥ E email ∥ M3 i18n — master 2841330
+Wave B (parallel): B1 footer+features ∥ B2 feedback ∥ B3 admin storage
 Wave C: R rate-limit
 ```

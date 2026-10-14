@@ -403,17 +403,41 @@
     "howLink": "Xem cách hoạt động",
     "howTitle": "Cách hoạt động",
     "how": {
-      "s1": { "label": "OCR đọc chữ", "body": "Máy đọc ảnh và PDF, ra văn bản thô. Hỗ trợ tiếng Việt có dấu." },
-      "s2": { "label": "IR giữ cấu trúc", "body": "Văn bản được tổ chức thành đoạn, tiêu đề, bảng, danh sách. Bạn sửa từng vùng nghi lỗi." },
-      "s3": { "label": "Layout dựng trang", "body": "Trình dựng layout ghép phần đã sửa lại thành trang có-format, giữ cột và canh lề gốc." }
+      "s1": {
+        "label": "OCR đọc chữ",
+        "body": "Máy đọc ảnh và PDF, ra văn bản thô. Hỗ trợ tiếng Việt có dấu."
+      },
+      "s2": {
+        "label": "IR giữ cấu trúc",
+        "body": "Văn bản được tổ chức thành đoạn, tiêu đề, bảng, danh sách. Bạn sửa từng vùng nghi lỗi."
+      },
+      "s3": {
+        "label": "Layout dựng trang",
+        "body": "Trình dựng layout ghép phần đã sửa lại thành trang có-format, giữ cột và canh lề gốc."
+      }
     },
     "featuresTitle": "Tính năng",
     "features": {
-      "f1": { "title": "Soạn hai khung, undo mọi bước", "body": "Văn bản và Layout mở song song. Mỗi thao tác lưu vào lịch sử, Ctrl+Z hoàn tác được về bước trước." },
-      "f2": { "title": "Sửa lỗi proofread bằng cách bấm", "body": "Bấm vào vùng sai trong bản xem trước, chữ tương ứng trong ảnh được tô sáng. Sửa đúng chỗ, không ảnh hưởng phần còn lại." },
-      "f3": { "title": "Sáu định dạng xuất", "body": "Markdown, HTML, DOCX, PDF, cộng bản giữ nguyên layout cho Markdown và DOCX." },
-      "f4": { "title": "Quota minh bạch", "body": "Số trang còn lại của tháng hiển thị ngay trên thanh điều hướng. Không phát sinh chi phí ẩn." },
-      "f5": { "title": "Chuẩn bị trang trước khi chạy", "body": "Chọn trang cần lấy, xoay trang nghiêng, cắt vùng chứa chữ trong wizard trước khi gửi đi." }
+      "f1": {
+        "title": "Soạn hai khung, undo mọi bước",
+        "body": "Văn bản và Layout mở song song. Mỗi thao tác lưu vào lịch sử, Ctrl+Z hoàn tác được về bước trước."
+      },
+      "f2": {
+        "title": "Sửa lỗi proofread bằng cách bấm",
+        "body": "Bấm vào vùng sai trong bản xem trước, chữ tương ứng trong ảnh được tô sáng. Sửa đúng chỗ, không ảnh hưởng phần còn lại."
+      },
+      "f3": {
+        "title": "Sáu định dạng xuất",
+        "body": "Markdown, HTML, DOCX, PDF, cộng bản giữ nguyên layout cho Markdown và DOCX."
+      },
+      "f4": {
+        "title": "Quota minh bạch",
+        "body": "Số trang còn lại của tháng hiển thị ngay trên thanh điều hướng. Không phát sinh chi phí ẩn."
+      },
+      "f5": {
+        "title": "Chuẩn bị trang trước khi chạy",
+        "body": "Chọn trang cần lấy, xoay trang nghiêng, cắt vùng chứa chữ trong wizard trước khi gửi đi."
+      }
     },
     "formatsTitle": "Định dạng",
     "inputLabel": "Nhận vào:",
@@ -421,15 +445,32 @@
     "colab": "Chạy miễn phí trên Google Colab.",
     "galleryTitle": "Xem trước",
     "gallery": {
-      "g1": { "alt": "Trang chủ img2text trên nền tối", "caption": "Trang chủ: hero và lời kêu gọi bắt đầu." },
-      "g2": { "alt": "Màn hình đăng nhập img2text", "caption": "Đăng nhập bằng email và mật khẩu." },
-      "g3": { "alt": "JobDetail 2 section: Văn bản trên, Layout dưới", "caption": "JobDetail 2 section: Văn bản và Layout cuộn dọc." },
-      "g4": { "alt": "Bản xem trước layout dựng trang có format", "caption": "Layout dựng trang có format, giữ cột và canh lề gốc." },
-      "g5": { "alt": "Thanh xuất file với 2 nhóm Văn bản và Layout", "caption": "Xuất file: nhóm Văn bản và nhóm Layout." },
-      "g6": { "alt": "Bảng quản trị người dùng", "caption": "Admin quản trị người dùng và quota." }
+      "g1": {
+        "alt": "Trang chủ img2text trên nền tối",
+        "caption": "Trang chủ: hero và lời kêu gọi bắt đầu."
+      },
+      "g2": {
+        "alt": "Màn hình đăng nhập img2text",
+        "caption": "Đăng nhập bằng email và mật khẩu."
+      },
+      "g3": {
+        "alt": "JobDetail 2 section: Văn bản trên, Layout dưới",
+        "caption": "JobDetail 2 section: Văn bản và Layout cuộn dọc."
+      },
+      "g4": {
+        "alt": "Bản xem trước layout dựng trang có format",
+        "caption": "Layout dựng trang có format, giữ cột và canh lề gốc."
+      },
+      "g5": {
+        "alt": "Thanh xuất file với 2 nhóm Văn bản và Layout",
+        "caption": "Xuất file: nhóm Văn bản và nhóm Layout."
+      },
+      "g6": {
+        "alt": "Bảng quản trị người dùng",
+        "caption": "Admin quản trị người dùng và quota."
+      }
     },
-    "finalTitle": "Tải ảnh đầu tiên của bạn",
-    "footerAria": "Liên kết chân trang"
+    "finalTitle": "Tải ảnh đầu tiên của bạn"
   },
   "jobs": {
     "title": "Công việc",
