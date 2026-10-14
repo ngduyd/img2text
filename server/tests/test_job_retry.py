@@ -4,6 +4,7 @@ Binding (Plan D final review): retry must invalidate BOTH storage prefixes —
 stale export bytes + old-bbox crops must not survive a re-run.
 """
 
+import json
 from uuid import uuid4
 
 import httpx
@@ -131,3 +132,43 @@ async def test_retry_layout_unknown_404(auth_client):
 
 async def test_retry_layout_other_user_403(other_client, done_job_with_result):
     assert (await other_client.post(f"/api/jobs/{done_job_with_result}/retry-layout")).status_code == 403
+
+
+# --- Lane S Task 3: retry-layout → docx-layout thật sự được ghi (S5) ---
+
+async def test_retry_layout_writes_docx_layout(
+    auth_client, done_job_with_result, storage, monkeypatch
+):
+    """retry-layout (LLM mock) → exports/{id}/docx-layout được put (wiring thật,
+    không monkeypatch auto_generate_output): md LLM down → fallback md,
+    docx LLM ok → docx-layout artifact."""
+    from app.services.job_results import drain_auto_output
+    from app.services.render_md import LLMError
+    from tests.test_export_llm_docx import FAKE_IR, FAKE_IR_HTML, FakeResponse
+    import app.services.render_docx as render_docx
+
+    await drain_auto_output()
+    await storage.delete_prefix(f"exports/{done_job_with_result}/")
+
+    async def md_down(*args, **kwargs):
+        raise LLMError("md LLM down — chỉ xác minh docx path")
+    monkeypatch.setattr("app.services.render_md._chat", md_down)
+
+    # LLM mock cho render_docx (pattern test_export_llm_docx.fake_llm)
+    calls: list = []
+    responses = [FakeResponse(json.dumps(FAKE_IR)), FakeResponse(FAKE_IR_HTML)]
+    class Client:
+        def __init__(self, *a, **k): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *exc): return False
+        async def post(self, url, json=None, headers=None):
+            calls.append(url)
+            return responses.pop(0)
+    monkeypatch.setattr(render_docx.httpx, "AsyncClient", Client)
+
+    r = await auth_client.post(f"/api/jobs/{done_job_with_result}/retry-layout")
+    assert r.status_code == 200, r.text
+    assert r.json()["docx"] is True
+    body = await storage.get(f"exports/{done_job_with_result}/docx-layout")
+    assert body[:2] == b"PK"
+    assert len(calls) == 2  # IR + render — đúng contract 2 call
