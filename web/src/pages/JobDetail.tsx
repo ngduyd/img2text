@@ -458,7 +458,7 @@ export default function JobDetail() {
             >
               <div className="flex items-center justify-between gap-2">
                 <h2 id="section-layout-title" className="text-lg font-semibold tracking-tight">
-                  Layout
+                  {t("jd.layout")}
                 </h2>
                 {/* U3: chevron toggle — heading → edit → chevron; aria-controls vào wrap panel. */}
                 <div className="flex items-center gap-1">
