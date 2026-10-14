@@ -35,6 +35,7 @@ from app.services.doc_versions import (
     snapshot_current_layout,
 )
 from app.services.job_results import _schedule_auto_output, store_worker_result
+from app.services.purge import purge_binary
 from app.services.quota import ensure_bytes_quota, ensure_quota, quota_me
 from app.services.layout_sync import (
     DOCX_HTML_KEY,
@@ -405,6 +406,29 @@ async def create_job(
         "mode": body.mode,
     }
 
+# --- Wave-5 S1: POST /api/jobs/{id}/purge-storage (user opt-in purge) ---
+
+@router.post("/api/jobs/{id}/purge-storage", status_code=204)
+async def purge_storage(
+    id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> Response:
+    """User chủ động purge file gốc (opt-in, cùng logic scheduler):
+    binary-only — xóa upload + exports/{id}/pdf + exports/{id}/docx;
+    GIỮ crops/md-layout/docx.html/versions/job row. done-only 409; đã
+    purge → idempotent 204 (IS NULL guard của batch; ở đây early-return).
+    Owner-or-admin (_job_or_403)."""
+    job = await _job_or_403(session, id, user)
+    if job.status != "done":
+        raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
+    if job.storage_purged_at is not None:
+        return Response(status_code=204)
+    await purge_binary(session, storage, job)
+    await session.commit()
+    return Response(status_code=204)
+
 # --- Owner reads: GET /api/jobs, /{id}, /{id}/file ---
 
 async def _job_or_403(
@@ -708,6 +732,12 @@ async def retry_job(
         raise HTTPException(status_code=403, detail="forbidden")
     if job.status != "failed":
         raise HTTPException(status_code=409, detail="job not retryable")
+    # wave-5 S1: file gốc đã purge → KHÔNG re-run OCR (binary gone).
+    # failed_step rendering chỉ render lại layout từ result → cho qua.
+    if job.storage_purged_at is not None and job.failed_step != "rendering":
+        raise HTTPException(
+            status_code=410, detail={"code": "purged"}
+        )
     if job.failed_step == "rendering":
         _schedule_auto_output(job, storage)  # fire-and-forget; 204 now
         return Response(status_code=204)
