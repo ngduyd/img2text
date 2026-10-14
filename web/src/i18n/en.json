@@ -48,6 +48,10 @@
     "uploadFailed": "File upload failed.",
     "generic": "An error occurred."
   },
+  "ocr": {
+    "enabled": "OCR enabled",
+    "pending": "Waiting for admin to grant OCR access"
+  },
   "toast": {
     "jobDone": "Job done: {name}",
     "jobFailed": "Job #{id} failed",
@@ -110,6 +114,27 @@
       "mismatch": "Passwords do not match.",
       "submit": "Reset password"
     }
+  },
+  "profile": {
+    "title": "Profile",
+    "loading": "Loading profile…",
+    "infoTitle": "Info",
+    "role": "Role:",
+    "joined": "Joined: updated later",
+    "changePassword": "Change password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "repeatPassword": "Repeat new password",
+    "pwMismatch": "Passwords do not match.",
+    "pwSuccess": "Password changed. Other sessions were signed out.",
+    "pwFailed": "Could not change the password.",
+    "savePassword": "Save password",
+    "changeEmail": "Change email",
+    "newEmail": "New email",
+    "emailSuccess": "Email changed.",
+    "emailFailed": "Could not change the email.",
+    "saveEmail": "Save email",
+    "saved": "Changes saved."
   },
   "quota": {
     "remaining": "{dUsed}/{dLimit} pages left today · {wUsed}/{wLimit} this week"

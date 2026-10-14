@@ -48,6 +48,10 @@
     "uploadFailed": "Tải file thất bại.",
     "generic": "Đã xảy ra lỗi."
   },
+  "ocr": {
+    "enabled": "OCR đã cấp",
+    "pending": "Chờ admin cấp quyền"
+  },
   "toast": {
     "jobDone": "Job đã xong: {name}",
     "jobFailed": "Job #{id} thất bại",
@@ -110,6 +114,27 @@
       "mismatch": "Mật khẩu nhập lại không khớp.",
       "submit": "Đặt lại mật khẩu"
     }
+  },
+  "profile": {
+    "title": "Hồ sơ",
+    "loading": "Đang tải hồ sơ…",
+    "infoTitle": "Thông tin",
+    "role": "Vai trò:",
+    "joined": "Ngày tham gia: cập nhật sau",
+    "changePassword": "Đổi mật khẩu",
+    "currentPassword": "Mật khẩu hiện tại",
+    "newPassword": "Mật khẩu mới",
+    "repeatPassword": "Nhập lại mật khẩu mới",
+    "pwMismatch": "Mật khẩu xác nhận không khớp.",
+    "pwSuccess": "Đổi mật khẩu thành công. Phiên đăng nhập khác đã bị đăng xuất.",
+    "pwFailed": "Đổi mật khẩu thất bại.",
+    "savePassword": "Lưu mật khẩu",
+    "changeEmail": "Đổi email",
+    "newEmail": "Email mới",
+    "emailSuccess": "Đổi email thành công.",
+    "emailFailed": "Đổi email thất bại.",
+    "saveEmail": "Lưu email",
+    "saved": "Đã lưu thay đổi."
   },
   "quota": {
     "remaining": "Còn {dUsed}/{dLimit} trang hôm nay · {wUsed}/{wLimit} trang tuần này"

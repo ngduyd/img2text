@@ -45,9 +45,9 @@ it("renders info card: email, role badge, ocr badge, id, join note", async () =>
   renderWithRouter(<Profile />);
   expect(await screen.findByTestId("profile-email")).toHaveTextContent("u@x.io");
   expect(screen.getByTestId("profile-role")).toHaveTextContent("User");
-  expect(screen.getByTestId("badge-ocr-profile")).toHaveTextContent("OCR đã cấp");
+  expect(screen.getByTestId("badge-ocr-profile")).toHaveTextContent("OCR enabled");
   expect(screen.getByTestId("profile-id")).toHaveTextContent("7");
-  expect(screen.getByText("Ngày tham gia: cập nhật sau")).toBeInTheDocument();
+  expect(screen.getByText("Joined: updated later")).toBeInTheDocument();
 });
 
 it("password submit calls updateProfile with exact args", async () => {
@@ -73,7 +73,7 @@ it("password success message after update", async () => {
   await user.type(screen.getByTestId("input-new-password2"), "New123!");
   await user.click(screen.getByTestId("btn-save-password"));
   expect(await screen.findByTestId("password-success")).toHaveTextContent(
-    "Đổi mật khẩu thành công. Phiên đăng nhập khác đã bị đăng xuất.",
+    "Password changed. Other sessions were signed out.",
   );
 });
 
@@ -88,7 +88,7 @@ it("email submit calls updateProfile with exact args and shows success", async (
     current_password: "Old123!",
     email: "new@x.io",
   });
-  expect(await screen.findByTestId("email-success")).toHaveTextContent("Đổi email thành công.");
+  expect(await screen.findByTestId("email-success")).toHaveTextContent("Email changed.");
   // me cache updated from PATCH response
   expect(await screen.findByTestId("profile-email")).toHaveTextContent("new@x.io");
 });
@@ -111,7 +111,7 @@ it("password mismatch is client-side: error text, NO api call", async () => {
   await user.type(screen.getByTestId("input-new-password2"), "Bbb123!");
   await user.click(screen.getByTestId("btn-save-password"));
   expect(await screen.findByTestId("password-error")).toHaveTextContent(
-    "Mật khẩu xác nhận không khớp.",
+    "Passwords do not match.",
   );
   expect(api.updateProfile).not.toHaveBeenCalled();
 });
