@@ -61,6 +61,15 @@ export default function VerifyModal({ email, onVerified, onLogout }: VerifyModal
       await api.verifyCode(code);
       await onVerified?.();
     } catch (err) {
+      // 400 already_verified (code hoặc detail) → user đã verify (tab khác),
+      // refetch ["me"] + đóng modal thay vì kẹt submit code stale.
+      if (
+        err instanceof ApiError &&
+        (err.code === "already_verified" || err.detail === "already_verified")
+      ) {
+        await onVerified?.();
+        return;
+      }
       setError(verifyError(err, t));
     } finally {
       setLoading(false);
