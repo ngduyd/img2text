@@ -24,6 +24,18 @@ interface RequestOptions {
   body?: unknown;
 }
 
+/** Lane C2 (S5): 403 {code:"email_unverified"} từ BẤT KỲ API call nào →
+ *  listener (VerifyGate) mở modal verify. Trả về hàm unsubscribe. */
+type UnverifiedListener = () => void;
+const unverifiedListeners = new Set<UnverifiedListener>();
+
+export function onEmailUnverified(listener: UnverifiedListener): () => void {
+  unverifiedListeners.add(listener);
+  return () => {
+    unverifiedListeners.delete(listener);
+  };
+}
+
 export async function request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {};
   let body: BodyInit | undefined;
@@ -64,6 +76,10 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     // (login/signup/forgot/reset/refresh/logout) handle their own failures.
     if (res.status === 401 && !path.startsWith("/api/auth/")) {
       window.location.assign("/signin");
+    }
+    // Lane C2 (S5): gating 403 email_unverified → mở verify modal.
+    if (res.status === 403 && code === "email_unverified") {
+      for (const listener of unverifiedListeners) listener();
     }
     throw new ApiError(detail, code, params);
   }

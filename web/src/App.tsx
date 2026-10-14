@@ -10,6 +10,7 @@ import OcrBadge from "./components/OcrBadge";
 import QuotaBadge from "./components/QuotaBadge";
 import LangSwitch from "./components/LangSwitch";
 import SiteFooter from "./components/SiteFooter";
+import VerifyGate from "./components/VerifyGate";
 import Button, { buttonClasses } from "./components/ui/Button";
 import Forgot from "./pages/Forgot";
 import Feedback from "./pages/Feedback";
@@ -366,6 +367,8 @@ export default function App() {
           </Routes>
           {/* Global footer: mọi trang, dưới Routes (App không dùng Outlet). */}
           <SiteFooter />
+          {/* Lane C2 (S5): gating verify — overlay toàn màn, nav+vùng content vẫn render. */}
+          <VerifyGate />
         </div>
       </BrowserRouter>
       </I18nProvider>
