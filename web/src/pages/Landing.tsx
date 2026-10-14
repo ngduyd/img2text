@@ -271,20 +271,6 @@ export default function Landing() {
         </Reveal>
       </section>
 
-      {/* Footer: brand + 2 auth links, muted, hairline top. */}
-      <footer data-testid="landing-footer" className="border-t border-border py-8">
-        <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-muted">
-          <span className="font-semibold text-text">img2text</span>
-          <nav className="flex gap-4" aria-label={t("landing.footerAria")}>
-            <Link to="/signin" className="hover:text-text">
-              {t("nav.signIn")}
-            </Link>
-            <Link to="/signup" className="hover:text-text">
-              {t("nav.signUp")}
-            </Link>
-          </nav>
-        </div>
-      </footer>
     </div>
   );
 }
