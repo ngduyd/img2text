@@ -54,7 +54,7 @@ it("shows quota columns (đã dùng/còn) per user", async () => {
   renderPage();
   const cell = await screen.findByTestId("quota-2");
   expect(cell).toHaveTextContent("3/25");
-  expect(cell).toHaveTextContent("còn 22");
+  expect(cell).toHaveTextContent("22 left");
   expect(cell).toHaveTextContent("3/150");
 });
 
@@ -74,7 +74,7 @@ it("inline edit 2 limits → PATCH quota + toast R59 + invalidate", async () => 
     }),
   );
   // R59: success toast
-  expect(toast.success).toHaveBeenCalledWith("Đã lưu.");
+  expect(toast.success).toHaveBeenCalledWith("Saved.");
   // invalidate → list refetch (quota hiển thị lại từ server)
   await waitFor(() => expect(vi.mocked(api.adminListUsers).mock.calls.length).toBeGreaterThan(1));
 });

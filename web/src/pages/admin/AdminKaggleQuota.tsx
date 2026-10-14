@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { api } from "../../api/client";
+import { translate, useT } from "../../i18n";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 
@@ -16,7 +17,7 @@ export function fmtDuration(seconds: number): string {
 function fmtRefresh(iso: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("vi-VN");
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString(translate("i18n.locale"));
 }
 
 /**
@@ -24,6 +25,7 @@ function fmtRefresh(iso: string | null): string {
  * Loading skeleton text + lỗi (503 thiếu package / 502 Kaggle API) hiển thị inline.
  */
 export default function AdminKaggleQuota() {
+  const { t } = useT();
   const { data, isPending, isError, error, refetch, isFetching } = useQuery({
     queryKey: ["admin-kaggle-quota"],
     queryFn: api.getKaggleQuota,
@@ -40,8 +42,8 @@ export default function AdminKaggleQuota() {
           variant="secondary"
           size="sm"
           className="min-h-11 min-w-11 p-0"
-          title="Làm mới Kaggle quota"
-          aria-label="Làm mới Kaggle quota"
+          title={t("admin.kaggle.refreshAria")}
+          aria-label={t("admin.kaggle.refreshAria")}
           loading={isFetching}
           onClick={() => refetch()}
         >
@@ -51,7 +53,7 @@ export default function AdminKaggleQuota() {
     >
       {isPending ? (
         <p data-testid="kaggle-quota-loading" aria-busy="true" className="text-sm text-muted">
-          Đang tải quota…
+          {t("admin.kaggle.loading")}
         </p>
       ) : isError ? (
         // ApiError.detail (503/502 body) — không instanceof (module có thể mock)
@@ -61,14 +63,20 @@ export default function AdminKaggleQuota() {
       ) : (
         <div className="flex flex-col gap-1 text-sm">
           <p data-testid="kaggle-quota-gpu">
-            GPU: dùng {fmtDuration(data.gpu.used_s)}/{fmtDuration(data.gpu.total_s)} · còn{" "}
-            {fmtDuration(data.gpu.remaining_s)}
+            {t("admin.kaggle.gpu", {
+              used: fmtDuration(data.gpu.used_s),
+              total: fmtDuration(data.gpu.total_s),
+              remaining: fmtDuration(data.gpu.remaining_s),
+            })}
           </p>
           <p data-testid="kaggle-quota-tpu">
-            TPU: dùng {fmtDuration(data.tpu.used_s)}/{fmtDuration(data.tpu.total_s)}
+            {t("admin.kaggle.tpu", {
+              used: fmtDuration(data.tpu.used_s),
+              total: fmtDuration(data.tpu.total_s),
+            })}
           </p>
           <p data-testid="kaggle-quota-refresh-time" className="text-muted">
-            Refresh: {fmtRefresh(data.gpu.refresh)}
+            {t("admin.kaggle.refreshAt", { time: fmtRefresh(data.gpu.refresh) })}
           </p>
         </div>
       )}

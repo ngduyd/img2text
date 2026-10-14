@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
+import { translate, useT } from "../../i18n";
 import Badge from "../../components/ui/Badge";
 import Card from "../../components/ui/Card";
 
@@ -7,7 +8,7 @@ import Card from "../../components/ui/Card";
 const SILENT_THRESHOLD = 2700;
 
 function fmt(iso: string): string {
-  return new Date(iso).toLocaleString("vi-VN");
+  return new Date(iso).toLocaleString(translate("i18n.locale"));
 }
 
 /**
@@ -15,6 +16,7 @@ function fmt(iso: string): string {
  * 403/401 (ApiError) → ẩn card (không phải admin / session hết).
  */
 export default function AdminWorkers() {
+  const { t } = useT();
   const { data, isError } = useQuery({
     queryKey: ["admin-workers"],
     queryFn: api.getWorkers,
@@ -26,13 +28,13 @@ export default function AdminWorkers() {
   return (
     <Card testid="admin-workers" title="Workers" >
       <p className="mb-2 text-sm text-muted">
-        Hàng đợi:{" "}
+        {t("admin.workers.queue")}{" "}
         <span data-testid="queue-depth" className="font-mono font-semibold text-text">
           {data.queue_depth}
         </span>
       </p>
       {data.items.length === 0 ? (
-        <p className="text-sm text-muted">Chưa có worker nào báo heartbeat.</p>
+        <p className="text-sm text-muted">{t("admin.workers.empty")}</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {data.items.map((w) => {
@@ -53,7 +55,7 @@ export default function AdminWorkers() {
                 </span>
                 {silent && (
                   <Badge testid={`worker-silent-${w.worker_id}`} tone="warning">
-                    Im lặng {w.silent_seconds}s
+                    {t("admin.workers.silent", { s: w.silent_seconds })}
                   </Badge>
                 )}
               </li>

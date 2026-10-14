@@ -288,6 +288,68 @@
       "current": "Hiện tại: {value} ({source}).",
       "kaggleMode": "Chế độ Kaggle (kaggle_mode):",
       "kaggleModeHelp": "read-only trên API — thay đổi mode cần restart container."
+    },
+    "overview": {
+      "newUsers": "User mới (7 ngày)",
+      "jobsDone": "Job hoàn tất",
+      "jobsFailed": "Job thất bại",
+      "gpuTotal": "Tổng GPU (giây)",
+      "cost": "Chi phí ước tính (USD)"
+    },
+    "stats": {
+      "date": "Ngày",
+      "registered": "Đăng ký",
+      "jobs": "Job",
+      "done": "Hoàn tất",
+      "failed": "Thất bại",
+      "views": "Lượt xem",
+      "gpu": "GPU (giây)",
+      "cost": "Chi phí ước tính",
+      "from": "Từ",
+      "to": "Đến"
+    },
+    "users": {
+      "updated": "Đã cập nhật.",
+      "quotaInvalid": "Giới hạn phải là số nguyên trong khoảng 0–10000.",
+      "emptyTitle": "Chưa có người dùng",
+      "emptyBody": "Người dùng mới sẽ xuất hiện tại đây sau khi đăng ký.",
+      "colId": "ID",
+      "colEmail": "Email",
+      "colRole": "Vai trò",
+      "colCreated": "Ngày tạo",
+      "colQuota": "Quota",
+      "colDaily": "Ngày",
+      "colWeekly": "Tuần",
+      "quotaDaily": "{used}/{limit} hôm nay (còn {remaining})",
+      "quotaWeekly": "{used}/{limit} tuần (còn {remaining})",
+      "saveQuota": "Lưu quota",
+      "ocrOn": "Bật OCR cho {email}",
+      "ocrOff": "Tắt OCR cho {email}"
+    },
+    "workers": {
+      "queue": "Hàng đợi:",
+      "empty": "Chưa có worker nào báo heartbeat.",
+      "silent": "Im lặng {s}s"
+    },
+    "api": {
+      "intro": "Tổng hợp client-side từ request_logs (500 dòng gần nhất)",
+      "total": "Tổng"
+    },
+    "kaggle": {
+      "refreshAria": "Làm mới Kaggle quota",
+      "loading": "Đang tải quota…",
+      "gpu": "GPU: dùng {used}/{total} · còn {remaining}",
+      "tpu": "TPU: dùng {used}/{total}",
+      "refreshAt": "Refresh: {time}"
+    },
+    "logs": {
+      "title": "Nhật ký truy cập",
+      "ipFilter": "Lọc theo IP",
+      "refreshAria": "Làm mới danh sách nhật ký",
+      "emptyTitle": "Chưa có nhật ký",
+      "emptyBody": "Nhật ký truy cập sẽ xuất hiện tại đây.",
+      "colUser": "Người dùng",
+      "colTime": "Thời gian"
     }
   },
   "profile": {

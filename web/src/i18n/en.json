@@ -288,6 +288,68 @@
       "current": "Current: {value} ({source}).",
       "kaggleMode": "Kaggle mode (kaggle_mode):",
       "kaggleModeHelp": "Read-only via API — changing mode requires a container restart."
+    },
+    "overview": {
+      "newUsers": "New users (7 days)",
+      "jobsDone": "Jobs done",
+      "jobsFailed": "Jobs failed",
+      "gpuTotal": "Total GPU (seconds)",
+      "cost": "Estimated cost (USD)"
+    },
+    "stats": {
+      "date": "Date",
+      "registered": "Signups",
+      "jobs": "Jobs",
+      "done": "Done",
+      "failed": "Failed",
+      "views": "Views",
+      "gpu": "GPU (seconds)",
+      "cost": "Estimated cost",
+      "from": "From",
+      "to": "To"
+    },
+    "users": {
+      "updated": "Updated.",
+      "quotaInvalid": "Limits must be integers between 0 and 10000.",
+      "emptyTitle": "No users yet",
+      "emptyBody": "New users will appear here after they sign up.",
+      "colId": "ID",
+      "colEmail": "Email",
+      "colRole": "Role",
+      "colCreated": "Created",
+      "colQuota": "Quota",
+      "colDaily": "Daily",
+      "colWeekly": "Weekly",
+      "quotaDaily": "{used}/{limit} today ({remaining} left)",
+      "quotaWeekly": "{used}/{limit} this week ({remaining} left)",
+      "saveQuota": "Save quota",
+      "ocrOn": "Enable OCR for {email}",
+      "ocrOff": "Disable OCR for {email}"
+    },
+    "workers": {
+      "queue": "Queue:",
+      "empty": "No worker has sent a heartbeat yet.",
+      "silent": "Silent {s}s"
+    },
+    "api": {
+      "intro": "Client-side aggregate from request_logs (last 500 rows)",
+      "total": "Total"
+    },
+    "kaggle": {
+      "refreshAria": "Refresh Kaggle quota",
+      "loading": "Loading quota…",
+      "gpu": "GPU: used {used}/{total} · left {remaining}",
+      "tpu": "TPU: used {used}/{total}",
+      "refreshAt": "Refresh: {time}"
+    },
+    "logs": {
+      "title": "Access log",
+      "ipFilter": "Filter by IP",
+      "refreshAria": "Refresh the log list",
+      "emptyTitle": "No logs yet",
+      "emptyBody": "Access logs will appear here.",
+      "colUser": "User",
+      "colTime": "Time"
     }
   },
   "profile": {

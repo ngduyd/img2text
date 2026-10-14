@@ -32,7 +32,7 @@ it("renders worker rows with kind/last_seen + amber silent badge + queue_depth",
   expect(card).toHaveTextContent("kaggle-batch");
   expect(card).toHaveTextContent("4");
   // silent_seconds > 2700 (2 lease × 45p) → badge im lặng.
-  expect(screen.getByTestId("worker-silent-w2")).toHaveTextContent("Im lặng");
+  expect(screen.getByTestId("worker-silent-w2")).toHaveTextContent("Silent");
   expect(screen.queryByTestId("worker-silent-w1")).not.toBeInTheDocument();
 });
 

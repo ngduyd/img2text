@@ -7,6 +7,7 @@ import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import Input from "../../components/ui/Input";
 import Skeleton from "../../components/ui/Skeleton";
+import { useT } from "../../i18n";
 
 interface LogRow {
   id: number;
@@ -29,6 +30,7 @@ function statusTone(status: number): "success" | "warning" | "error" {
  * truncate + title. Testids R60/R51 kept: input-log-ip, btn-logs-refresh,
  * logs-loading/empty, audit-actor/ip/ua, logs-tail(-card). */
 export default function AdminLogs() {
+  const { t } = useT();
   const [ipInput, setIpInput] = useState("");
   const [ip, setIp] = useState("");
 
@@ -45,10 +47,10 @@ export default function AdminLogs() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Card title="Nhật ký truy cập">
+      <Card title={t("admin.logs.title")}>
         <div className="mb-4 flex flex-wrap items-end gap-4">
           <Input
-            label="Lọc theo IP"
+            label={t("admin.logs.ipFilter")}
             testid="input-log-ip"
             value={ipInput}
             onChange={(e) => setIpInput(e.target.value)}
@@ -59,8 +61,8 @@ export default function AdminLogs() {
             variant="secondary"
             size="sm"
             className="min-h-11 min-w-11 p-0"
-            title="Làm mới danh sách nhật ký"
-            aria-label="Làm mới danh sách nhật ký"
+            title={t("admin.logs.refreshAria")}
+            aria-label={t("admin.logs.refreshAria")}
             onClick={() => setIp(ipInput)}
           >
             <RefreshCw className="h-4 w-4" aria-hidden="true" />
@@ -88,15 +90,23 @@ export default function AdminLogs() {
             className="flex flex-col items-center gap-2 px-4 py-8 text-center"
           >
             <FileText className="h-8 w-8 text-muted" aria-hidden="true" />
-            <p className="text-base font-semibold">Chưa có nhật ký</p>
-            <p className="text-sm text-muted">Nhật ký truy cập sẽ xuất hiện tại đây.</p>
+            <p className="text-base font-semibold">{t("admin.logs.emptyTitle")}</p>
+            <p className="text-sm text-muted">{t("admin.logs.emptyBody")}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] border-collapse text-left text-sm">
               <thead>
                 <tr>
-                  {["Người dùng", "IP", "User-Agent", "Method", "Path", "Status", "Thời gian"].map(
+                  {[
+                    t("admin.logs.colUser"),
+                    "IP",
+                    "User-Agent",
+                    "Method",
+                    "Path",
+                    "Status",
+                    t("admin.logs.colTime"),
+                  ].map(
                     (h) => (
                       <th
                         key={h}
