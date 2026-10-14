@@ -83,6 +83,45 @@
   "quota": {
     "remaining": "{dUsed}/{dLimit} pages left today · {wUsed}/{wLimit} this week"
   },
+  "landing": {
+    "hero": {
+      "title": "Turn photos and PDFs into editable text",
+      "sub": "Scan exams, books, and documents into structured text. Fix problem areas and export the file you need.",
+      "alt": "img2text home page on a dark background",
+      "caption": "The whole page on a dark background."
+    },
+    "cta": "Get started",
+    "howLink": "See how it works",
+    "howTitle": "How it works",
+    "how": {
+      "s1": { "label": "OCR reads the text", "body": "Machines read photos and PDFs into raw text. Vietnamese diacritics supported." },
+      "s2": { "label": "IR keeps the structure", "body": "Text is organized into paragraphs, headings, tables, and lists. Fix each suspect region individually." },
+      "s3": { "label": "Layout rebuilds the page", "body": "The layout engine reassembles your fixes into a formatted page, keeping original columns and margins." }
+    },
+    "featuresTitle": "Features",
+    "features": {
+      "f1": { "title": "Two-pane editing, undo everything", "body": "Text and Layout open side by side. Every action is logged; Ctrl+Z steps back." },
+      "f2": { "title": "Click to fix proofread errors", "body": "Click a wrong spot in the preview to highlight the matching text in the image. Fix it in place without touching anything else." },
+      "f3": { "title": "Six export formats", "body": "Markdown, HTML, DOCX, PDF, plus layout-preserving copies of Markdown and DOCX." },
+      "f4": { "title": "Transparent quota", "body": "Pages remaining this month show right in the nav bar. No hidden costs." },
+      "f5": { "title": "Prepare pages before running", "body": "Pick pages, straighten rotated ones, and crop text areas in the wizard before submitting." }
+    },
+    "formatsTitle": "Formats",
+    "inputLabel": "Input:",
+    "outputLabel": "Output:",
+    "colab": "Runs free on Google Colab.",
+    "galleryTitle": "Preview",
+    "gallery": {
+      "g1": { "alt": "img2text home page on a dark background", "caption": "Home: hero and call to action." },
+      "g2": { "alt": "img2text sign-in screen", "caption": "Sign in with email and password." },
+      "g3": { "alt": "JobDetail two sections: text on top, layout below", "caption": "JobDetail: text and layout scroll together." },
+      "g4": { "alt": "Preview of a formatted layout page", "caption": "Formatted layout, keeping columns and margins." },
+      "g5": { "alt": "Export bar with Text and Layout groups", "caption": "Export: text group and layout group." },
+      "g6": { "alt": "Admin user table", "caption": "Admin manages users and quota." }
+    },
+    "finalTitle": "Upload your first page",
+    "footerAria": "Footer links"
+  },
   "jobs": {
     "title": "Jobs",
     "subtitle": "Track OCR progress on the Colab worker.",

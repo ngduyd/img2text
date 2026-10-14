@@ -2,6 +2,7 @@ import { motion, useReducedMotion } from "motion/react";
 import { Link } from "react-router-dom";
 import Badge from "../components/ui/Badge";
 import { buttonClasses } from "../components/ui/Button";
+import { useT } from "../i18n";
 
 /** Client leaf (Vite SPA, no RSC): one reveal helper reused by all sections. */
 function Reveal({
@@ -56,47 +57,47 @@ function Shot({ src, alt, caption }: { src: string; alt: string; caption: string
 
 const HOW_STEPS = [
   {
-    label: "OCR đọc chữ",
-    body: "Máy đọc ảnh và PDF, ra văn bản thô. Hỗ trợ tiếng Việt có dấu.",
+    labelKey: "landing.how.s1.label",
+    bodyKey: "landing.how.s1.body",
   },
   {
-    label: "IR giữ cấu trúc",
-    body: "Văn bản được tổ chức thành đoạn, tiêu đề, bảng, danh sách. Bạn sửa từng vùng nghi lỗi.",
+    labelKey: "landing.how.s2.label",
+    bodyKey: "landing.how.s2.body",
   },
   {
-    label: "Layout dựng trang",
-    body: "Trình dựng layout ghép phần đã sửa lại thành trang có-format, giữ cột và canh lề gốc.",
+    labelKey: "landing.how.s3.label",
+    bodyKey: "landing.how.s3.body",
   },
 ];
 
 type Feature = {
-  title: string;
-  body: string;
+  titleKey: string;
+  bodyKey: string;
   className?: string;
 };
 
 const FEATURES: Feature[] = [
   {
-    title: "Soạn hai khung, undo mọi bước",
-    body: "Văn bản và Layout mở song song. Mỗi thao tác lưu vào lịch sử, Ctrl+Z hoàn tác được về bước trước.",
+    titleKey: "landing.features.f1.title",
+    bodyKey: "landing.features.f1.body",
     className: "md:col-span-2",
   },
   {
-    title: "Sửa lỗi proofread bằng cách bấm",
-    body: "Bấm vào vùng sai trong bản xem trước, chữ tương ứng trong ảnh được tô sáng. Sửa đúng chỗ, không ảnh hưởng phần còn lại.",
+    titleKey: "landing.features.f2.title",
+    bodyKey: "landing.features.f2.body",
     className: "bg-accent/10 border-accent/30",
   },
   {
-    title: "Sáu định dạng xuất",
-    body: "Markdown, HTML, DOCX, PDF, cộng bản giữ nguyên layout cho Markdown và DOCX.",
+    titleKey: "landing.features.f3.title",
+    bodyKey: "landing.features.f3.body",
   },
   {
-    title: "Quota minh bạch",
-    body: "Số trang còn lại của tháng hiển thị ngay trên thanh điều hướng. Không phát sinh chi phí ẩn.",
+    titleKey: "landing.features.f4.title",
+    bodyKey: "landing.features.f4.body",
   },
   {
-    title: "Chuẩn bị trang trước khi chạy",
-    body: "Chọn trang cần lấy, xoay trang nghiêng, cắt vùng chứa chữ trong wizard trước khi gửi đi.",
+    titleKey: "landing.features.f5.title",
+    bodyKey: "landing.features.f5.body",
   },
 ];
 
@@ -109,38 +110,39 @@ const INPUT_FORMATS = ["JPG", "PNG", "WebP", "PDF"];
 const GALLERY = [
   {
     src: "/screenshots/landing-hero.png",
-    alt: "Trang chủ img2text trên nền tối",
-    caption: "Trang chủ: hero và lời kêu gọi bắt đầu.",
+    altKey: "landing.gallery.g1.alt",
+    captionKey: "landing.gallery.g1.caption",
   },
   {
     src: "/screenshots/login.png",
-    alt: "Màn hình đăng nhập img2text",
-    caption: "Đăng nhập bằng email và mật khẩu.",
+    altKey: "landing.gallery.g2.alt",
+    captionKey: "landing.gallery.g2.caption",
   },
   {
     src: "/screenshots/jobdetail.png",
-    alt: "JobDetail 2 section: Văn bản trên, Layout dưới",
-    caption: "JobDetail 2 section: Văn bản và Layout cuộn dọc.",
+    altKey: "landing.gallery.g3.alt",
+    captionKey: "landing.gallery.g3.caption",
   },
   {
     src: "/screenshots/layout-preview.png",
-    alt: "Bản xem trước layout dựng trang có format",
-    caption: "Layout dựng trang có format, giữ cột và canh lề gốc.",
+    altKey: "landing.gallery.g4.alt",
+    captionKey: "landing.gallery.g4.caption",
   },
   {
     src: "/screenshots/export-menu.png",
-    alt: "Thanh xuất file với 2 nhóm Văn bản và Layout",
-    caption: "Xuất file: nhóm Văn bản và nhóm Layout.",
+    altKey: "landing.gallery.g5.alt",
+    captionKey: "landing.gallery.g5.caption",
   },
   {
     src: "/screenshots/admin-users.png",
-    alt: "Bảng quản trị người dùng",
-    caption: "Admin quản trị người dùng và quota.",
+    altKey: "landing.gallery.g6.alt",
+    captionKey: "landing.gallery.g6.caption",
   },
 ];
 
 export default function Landing() {
   const reduce = useReducedMotion();
+  const { t } = useT();
   return (
     <div data-testid="landing" className="mx-auto max-w-6xl px-4 pb-0">
       {/* Hero: split, clamp typography, motion entry. */}
@@ -154,37 +156,37 @@ export default function Landing() {
           transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
         >
           <h1 className="text-[clamp(2rem,5vw,3.5rem)] font-bold leading-[1.15] tracking-tight">
-            Biến ảnh và PDF thành văn bản sửa được
+            {t("landing.hero.title")}
           </h1>
           <p className="mt-5 max-w-[45ch] text-muted">
-            Ảnh chụp đề thi, sách, tài liệu scan thành văn bản có cấu trúc. Sửa từng vùng lỗi, xuất file bạn cần.
+            {t("landing.hero.sub")}
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-4">
             <Link to="/signin" data-testid="landing-cta" className={buttonClasses("primary", "md")}>
-              Bắt đầu
+              {t("landing.cta")}
             </Link>
             <a href="#how" className="text-accent-text hover:underline">
-              Xem cách hoạt động
+              {t("landing.howLink")}
             </a>
           </div>
         </motion.div>
         <Reveal delay={0.15}>
           <Shot
             src="/screenshots/landing-hero.png"
-            alt="Giao diện img2text trên nền tối"
-            caption="Toàn bộ trang trên nền tối."
+            alt={t("landing.hero.alt")}
+            caption={t("landing.hero.caption")}
           />
         </Reveal>
       </section>
 
       {/* #how: pipeline OCR → IR → Layout, so numbered list, verb-noun labels. */}
       <section data-testid="landing-how" id="how" className="py-16 md:py-24">
-        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Cách hoạt động</h2>
+        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("landing.howTitle")}</h2>
         <ol className="mt-8 divide-y divide-border">
           {HOW_STEPS.map((step, i) => (
             <Reveal
               as="li"
-              key={step.label}
+              key={step.labelKey}
               delay={i * 0.06}
               className="flex items-baseline gap-6 py-6"
             >
@@ -192,8 +194,8 @@ export default function Landing() {
                 {i + 1}
               </span>
               <div>
-                <h3 className="text-lg font-semibold">{step.label}</h3>
-                <p className="mt-1 max-w-[65ch] text-muted">{step.body}</p>
+                <h3 className="text-lg font-semibold">{t(step.labelKey)}</h3>
+                <p className="mt-1 max-w-[65ch] text-muted">{t(step.bodyKey)}</p>
               </div>
             </Reveal>
           ))}
@@ -202,17 +204,17 @@ export default function Landing() {
 
       {/* Features: bento, exactly 5 cells, 2-span + tinted cell for rhythm. */}
       <section data-testid="landing-features" className="py-16 md:py-24">
-        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Tính năng</h2>
+        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("landing.featuresTitle")}</h2>
         <div className="mt-8 grid gap-4 md:grid-cols-3">
           {FEATURES.map((f, i) => (
             <Reveal
-              key={f.title}
+              key={f.titleKey}
               delay={(i % 3) * 0.06}
               className={`rounded-card border border-border bg-surface p-5 ${f.className ?? ""}`}
             >
               <div data-testid="feature-cell">
-                <h3 className="text-lg font-semibold">{f.title}</h3>
-                <p className="mt-1 text-muted">{f.body}</p>
+                <h3 className="text-lg font-semibold">{t(f.titleKey)}</h3>
+                <p className="mt-1 text-muted">{t(f.bodyKey)}</p>
               </div>
             </Reveal>
           ))}
@@ -221,10 +223,10 @@ export default function Landing() {
 
       {/* Formats strip: nhận vào / xuất ra + Colab. */}
       <section data-testid="landing-formats" className="py-16 md:py-24">
-        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Định dạng</h2>
+        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("landing.formatsTitle")}</h2>
         <Reveal className="mt-8 space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium">Nhận vào:</span>
+            <span className="text-sm font-medium">{t("landing.inputLabel")}</span>
             {INPUT_FORMATS.map((fmt) => (
               <Badge key={fmt} tone="neutral">
                 {fmt}
@@ -232,24 +234,24 @@ export default function Landing() {
             ))}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium">Xuất ra:</span>
+            <span className="text-sm font-medium">{t("landing.outputLabel")}</span>
             {["MD", "HTML", "DOCX", "PDF"].map((fmt) => (
               <Badge key={fmt} tone="info">
                 {fmt}
               </Badge>
             ))}
           </div>
-          <p className="text-muted">Chạy miễn phí trên Google Colab.</p>
+          <p className="text-muted">{t("landing.colab")}</p>
         </Reveal>
       </section>
 
       {/* Gallery: real screenshots (placeholder-friendly khi anh chua chup). */}
       <section data-testid="landing-gallery" className="py-16 md:py-24">
-        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Xem trước</h2>
+        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("landing.galleryTitle")}</h2>
         <div className="mt-8 grid gap-6 sm:grid-cols-2">
           {GALLERY.map((shot, i) => (
             <Reveal key={shot.src} delay={(i % 2) * 0.06}>
-              <Shot {...shot} />
+              <Shot src={shot.src} alt={t(shot.altKey)} caption={t(shot.captionKey)} />
             </Reveal>
           ))}
         </div>
@@ -259,11 +261,11 @@ export default function Landing() {
       <section className="py-16 text-center md:py-24">
         <Reveal>
           <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            Tải ảnh đầu tiên của bạn
+            {t("landing.finalTitle")}
           </h2>
           <div className="mt-8">
             <Link to="/signin" className={buttonClasses("primary", "md")}>
-              Bắt đầu
+              {t("landing.cta")}
             </Link>
           </div>
         </Reveal>
@@ -273,12 +275,12 @@ export default function Landing() {
       <footer data-testid="landing-footer" className="border-t border-border py-8">
         <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-muted">
           <span className="font-semibold text-text">img2text</span>
-          <nav className="flex gap-4" aria-label="Liên kết chân trang">
+          <nav className="flex gap-4" aria-label={t("landing.footerAria")}>
             <Link to="/signin" className="hover:text-text">
-              Đăng nhập
+              {t("nav.signIn")}
             </Link>
             <Link to="/signup" className="hover:text-text">
-              Đăng ký
+              {t("nav.signUp")}
             </Link>
           </nav>
         </div>

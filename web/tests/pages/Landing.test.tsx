@@ -25,14 +25,14 @@ function renderLanding() {
   );
 }
 
-it("renders landing shell, H1, and CTA 'Bắt đầu' to /signin", () => {
+it("renders landing shell, H1, and CTA 'Get started' to /signin", () => {
   renderLanding();
   expect(screen.getByTestId("landing")).toBeInTheDocument();
   expect(screen.getByTestId("landing-hero")).toBeInTheDocument();
   const h1 = screen.getByRole("heading", { level: 1 });
-  expect(h1).toHaveTextContent("Biến ảnh và PDF thành văn bản sửa được");
+  expect(h1).toHaveTextContent("Turn photos and PDFs into editable text");
   const cta = screen.getByTestId("landing-cta");
-  expect(cta).toHaveTextContent("Bắt đầu");
+  expect(cta).toHaveTextContent("Get started");
   expect(cta).toHaveAttribute("href", "/signin");
 });
 
@@ -46,7 +46,7 @@ it("formats strip contains DOCX and the Colab free note", () => {
   renderLanding();
   const formats = screen.getByTestId("landing-formats");
   expect(formats).toHaveTextContent("DOCX");
-  expect(formats).toHaveTextContent("Chạy miễn phí trên Google Colab");
+  expect(formats).toHaveTextContent("Runs free on Google Colab");
 });
 
 it("#how shows pipeline labels OCR/IR/Layout (no 'Bước')", () => {
