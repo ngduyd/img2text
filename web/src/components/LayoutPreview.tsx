@@ -89,6 +89,13 @@ export default function LayoutPreview({
     }
   };
 
+  // U1 P0: job đổi → null html TRƯỚC (load() early-return khi state != null → thêm id vào deps không đủ).
+  // oxlint-disable-next-line react/set-state-in-effect
+  useEffect(() => {
+    setMdHtml(null);
+    setWordHtml(null);
+  }, [mode, job.id]);
+
   // Chỉ fetch mode đầu tiên; đổi mode → fetch cache state (mdHtml/wordHtml null check).
   // oxlint-disable-next-line react/set-state-in-effect
   useEffect(() => {

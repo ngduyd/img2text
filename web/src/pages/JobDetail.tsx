@@ -79,9 +79,22 @@ export default function JobDetail() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [showHistory]);
   const editorHostRef = useRef<HTMLElement>(null);
-  /** Lane I Task 2: File gốc + Thông tin = collapsible (default closed, bỏ sticky). */
+  /** Lane I Task 2: File gốc + Thông tin = collapsible (default closed; U4+U5 sẽ mở default). */
   const [originalOpen, setOriginalOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
+  /** U1 P0: đổi :id KHÔNG remount → reset states JobDetail theo id (grid remount bằng key). */
+  useEffect(() => {
+    setConfirmDelete(false);
+    setEditing(false);
+    setDownloadOpen(false);
+    setRetryingLayout(false);
+    setConfirmRetry(false);
+    setShowHistory(false);
+    setOriginalOpen(false);
+    setInfoOpen(false);
+    setRetryError(null);
+    // oxlint-disable-next-line react/set-state-in-effect -- reset theo id (U1)
+  }, [id]);
 
   const toggleEdit = () => {
     if (editing) {
@@ -406,7 +419,7 @@ export default function JobDetail() {
         Wave-3 #5 → Lane I Task 2: col trái stack 2 section; col phải = collapsible
         "File gốc" + "Thông tin" (Button aria-expanded, default closed — mở mới mount).
       */}
-      <div data-testid="detail-grid" className="grid gap-4 lg:grid-cols-12 lg:gap-6">
+      <div key={job.id} data-testid="detail-grid" className="grid gap-4 lg:grid-cols-12 lg:gap-6">
         <div className="flex min-w-0 flex-col gap-6 lg:col-span-7">
           {/* SECTION "Văn bản" — hiện cả khi status rendering (OCR xong). */}
           {textReady && (

@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, Link, RouterProvider, createMemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import * as mammoth from "mammoth";
@@ -374,6 +374,59 @@ it("U7: no fmt-md-layout/fmt-docx-layout/preview-mode-md/preview-mode-word in DO
   expect(screen.queryByTestId("preview-mode-word")).not.toBeInTheDocument();
   // fmt fixed init job.output_format=docx → word mode ngay từ đầu (không switch).
   expect(await screen.findByTestId("preview-word")).toBeInTheDocument();
+});
+
+/**
+ * U1 P0: đổi :id KHÔNG remount → state cache giữ html job cũ (Lưu layout PUT nhầm html).
+ * Repro: cache sẵn cả 2 job → navigate có data NGAY, không skeleton → state sót.
+ */
+it("U1 P0: navigate A→B → getJob id=2, preview shows B (không html A), history panel reset", async () => {
+  const jobA = { ...DONE_JOB, id: 1 };
+  const jobB = { ...DONE_JOB, id: 2 };
+  vi.mocked(api.getJob).mockImplementation((jid) =>
+    Promise.resolve(jid === "2" ? jobB : jobA),
+  );
+  vi.mocked(api.listVersions).mockResolvedValue({ items: [] });
+  const blobs = [new Blob(["# JOB-A"]), new Blob(["# JOB-B"])];
+  let dl = 0;
+  vi.mocked(api.downloadExport).mockImplementation(() =>
+    Promise.resolve(blobs[Math.min(dl++, blobs.length - 1)]),
+  );
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClient.setQueryData(["job", "1"], jobA);
+  queryClient.setQueryData(["job", "2"], jobB);
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/jobs/:id",
+        element: (
+          <>
+            <Link to="/jobs/2" data-testid="nav-b">go B</Link>
+            <JobDetail />
+          </>
+        ),
+      },
+    ],
+    { initialEntries: ["/jobs/1"] },
+  );
+  render(
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+  await waitFor(() => expect(screen.getByTestId("preview-md")).toHaveTextContent("JOB-A"));
+  // Mở panel lịch sử trên job A — JobDetail states không remount khi đổi id.
+  await userEvent.click(screen.getByTestId("btn-version-history"));
+  expect(await screen.findByTestId("version-history")).toBeInTheDocument();
+  await userEvent.click(screen.getByTestId("nav-b"));
+  // Fetch id=2 + mdHtml là của B (không còn html A).
+  await waitFor(() =>
+    expect(vi.mocked(api.getJob).mock.calls.map((c) => c[0])).toContain("2"),
+  );
+  await waitFor(() => expect(screen.getByTestId("preview-md")).toHaveTextContent("JOB-B"));
+  expect(screen.getByTestId("preview-md")).not.toHaveTextContent("JOB-A");
+  // JobDetail reset effect [id] — history panel đóng lại.
+  expect(screen.queryByTestId("version-history")).not.toBeInTheDocument();
 });
 
 /** Review r1 P1: btn-retry-layout DUY NHẤT — editor retry đổi tên btn-retry-layout-error. */
