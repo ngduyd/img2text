@@ -9,6 +9,9 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    # S5 gating: env=="test" → EmailVerifyGateMiddleware skip (conftest set;
+    # test gating bật lại bằng monkeypatch). Deploy/dev giữ default "dev".
+    env: str = "dev"
     database_url: str = (
         "postgresql+asyncpg://img2text:img2text@localhost:5433/img2text_test"
     )

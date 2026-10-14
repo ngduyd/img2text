@@ -142,6 +142,10 @@ async def test_presign_requires_ocr_enabled(client):
     await client.post(
         "/api/auth/register", json={"email": "e@x.io", "password": "secret123"}
     )
+    # P1-1: register không cookie → login để test ocr_enabled gate
+    await client.post(
+        "/api/auth/login", json={"email": "e@x.io", "password": "secret123"}
+    )
     r = await client.post("/api/jobs/presign", json=_presign_body())
     assert r.status_code == 403
 

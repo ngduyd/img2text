@@ -1,21 +1,15 @@
-"""Task 5: password forgot/reset via SMTP.
+"""Wave-5 S5 (Lane E): forgot/reset = mã 6 số TTL 5p (hash), thay token-link.
 
-Ruling R2: tests extract the raw reset token from the captured email body
-(regex on the link); token_hash in DB stays sha256(raw). No hash monkeypatching.
-
-Ruling R8 (forgot timing oracle): NO wall-clock latency assertion — httpx
-ASGITransport awaits background tasks within the app call, so strict latency
-parity is untestable here; real timing parity is a Plan G manual e2e item.
-Behavioral coverage instead: unknown→202, known→202 + send_email called,
-mailer-swallowed SMTP failure → still 202.
+Ruling R2 cũ (regex token khỏi email) đổi theo spec: email chứa mã 6 số;
+tests extract mã bằng regex rồi POST /api/auth/password/reset {code, password}.
 """
 
-import asyncio
 import re
+from datetime import datetime, timedelta, timezone
 
+_CODE_RE = re.compile(r"code is:?\s*(\d{6})")
 
 def _capture():
-    """Monkeypatch target: app.mailer.send_email (route calls via module)."""
     sent = []
 
     async def fake(to, subject, body):
@@ -23,93 +17,139 @@ def _capture():
 
     return sent, fake
 
-
-def _token_from(sent) -> str:
-    to, subject, body = sent[-1]
-    m = re.search(r"token=([A-Za-z0-9_-]+)", body)
-    assert m, f"no token in email body: {body!r}"
+def _code_from(body: str) -> str:
+    m = _CODE_RE.search(body)
+    assert m, f"no code in email body: {body!r}"
     return m.group(1)
 
+async def _register(client, monkeypatch, email="r@x.io"):
+    sent, fake = _capture()
+    monkeypatch.setattr("app.services.mailer.send_email", fake)
+    r = await client.post(
+        "/api/auth/register", json={"email": email, "password": "secret123"}
+    )
+    assert r.status_code == 201
+    return sent
 
 async def test_forgot_unknown_email_202_no_send(client, monkeypatch):
-    """(a) unknown email → 202 identical body, nothing enqueued."""
     sent, fake = _capture()
     monkeypatch.setattr("app.services.mailer.send_email", fake)
     r = await client.post("/api/auth/password/forgot", json={"email": "ghost@x.io"})
     assert r.status_code == 202 and r.json() == {}
     assert sent == []
 
+async def test_forgot_known_email_202_code_email(client, monkeypatch, db_session):
+    from sqlalchemy import select
+    from app.core.models import EmailSend, User
 
-async def test_forgot_known_email_202_send_called(client, monkeypatch):
-    """(b) known email → 202 AND send_email eventually called (recorder;
-    ASGITransport awaits background tasks in-call, so poll briefly)."""
-    sent, fake = _capture()
-    monkeypatch.setattr("app.services.mailer.send_email", fake)
-    await client.post(
-        "/api/auth/register", json={"email": "Known@X.io", "password": "secret123"}
+    sent = await _register(client, monkeypatch)
+    n_first = len(sent)
+    r = await client.post("/api/auth/password/forgot", json={"email": "r@x.io"})
+    assert r.status_code == 202 and r.json() == {}
+    to, subject, body = sent[-1]
+    assert to == "r@x.io"
+    code = _code_from(body)
+    assert len(code) == 6 and code.isdigit()
+    assert "token=" not in body  # S5: bỏ link-token
+    user = await db_session.scalar(select(User).where(User.email == "r@x.io"))
+    from app.core.security import hash_email_code
+
+    # P1-3: hash per-user = sha256(f"{email}:{code}:{app_secret}")
+    assert user.password_reset_code == hash_email_code("r@x.io", code)
+    assert user.password_reset_expires_at is not None
+    kinds = (
+        await db_session.execute(
+            select(EmailSend.kind)
+            .where(EmailSend.user_id == user.id, EmailSend.kind == "reset_code")
+        )
+    ).scalars().all()
+    assert kinds == ["reset_code"]
+    assert len(sent) == n_first + 1
+
+async def test_reset_with_code_changes_password(client, monkeypatch):
+    sent = await _register(client, monkeypatch, email="q@x.io")
+    await client.post("/api/auth/login", json={"email": "q@x.io", "password": "secret123"})
+    assert client.cookies.get("refresh")  # có refresh để revoke
+    await client.post("/api/auth/password/forgot", json={"email": "q@x.io"})
+    code = _code_from(sent[-1][2])
+    r = await client.post(
+        "/api/auth/password/reset",
+        json={"email": "q@x.io", "code": code, "password": "newsecret1"},
     )
-    # mixed case proves ForgotIn normalization (spec §4) reaches the lookup
-    r = await client.post("/api/auth/password/forgot", json={"email": "known@X.IO"})
-    assert r.status_code == 202
-    for _ in range(100):
-        if sent:
-            break
-        await asyncio.sleep(0.01)
-    assert sent and sent[0][0] == "known@x.io"
+    assert r.status_code == 200
+    # single-use: code đã claim (NULL) → reset lại 422
+    r2 = await client.post(
+        "/api/auth/password/reset",
+        json={"email": "q@x.io", "code": code, "password": "another99"},
+    )
+    assert r2.status_code == 422
+    assert (await client.post("/api/auth/refresh")).status_code == 401  # revoked
+    assert (
+        await client.post("/api/auth/login", json={"email": "q@x.io", "password": "newsecret1"})
+    ).status_code == 200
+    assert (
+        await client.post("/api/auth/login", json={"email": "q@x.io", "password": "secret123"})
+    ).status_code == 401
 
+async def test_reset_wrong_code_422(client, monkeypatch):
+    await _register(client, monkeypatch)
+    r = await client.post(
+        "/api/auth/password/reset",
+        json={"email": "r@x.io", "code": "000000", "password": "newsecret1"},
+    )
+    assert r.status_code == 422
+
+async def test_reset_wrong_email_422(client, monkeypatch):
+    """P1-3: code của user A + email user B → 422 (lookup per-user)."""
+    sent = await _register(client, monkeypatch)
+    await client.post("/api/auth/password/forgot", json={"email": "r@x.io"})
+    code = _code_from(sent[-1][2])
+    r = await client.post(
+        "/api/auth/password/reset",
+        json={"email": "other@x.io", "code": code, "password": "newsecret1"},
+    )
+    assert r.status_code == 422
+
+async def test_reset_expired_code_422(client, monkeypatch, db_session):
+    from sqlalchemy import update
+    from app.core.models import User
+
+    sent = await _register(client, monkeypatch)
+    await client.post("/api/auth/password/forgot", json={"email": "r@x.io"})
+    code = _code_from(sent[-1][2])
+    await db_session.execute(
+        update(User).values(
+            password_reset_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1)
+        )
+    )
+    await db_session.commit()
+    r = await client.post(
+        "/api/auth/password/reset",
+        json={"email": "r@x.io", "code": code, "password": "newsecret1"},
+    )
+    assert r.status_code == 422
+
+async def test_forgot_over_email_limit_429(client, monkeypatch, db_session):
+    from sqlalchemy import select
+    from app.core.models import User
+    from tests.test_email_verify import _seed
+
+    sent = await _register(client, monkeypatch, email="rl@x.io")
+    n = len(sent)
+    user = await db_session.scalar(select(User).where(User.email == "rl@x.io"))
+    _seed(db_session, user.id, "reset_code", [100, 50, 10, 5, 1])
+    await db_session.commit()
+    r = await client.post("/api/auth/password/forgot", json={"email": "rl@x.io"})
+    assert r.status_code == 429
+    body = r.json()
+    assert body["code"] == "email_limit" and body["retry_after_seconds"] >= 1
+    assert len(sent) == n  # check TRƯỚC enqueue — không gửi
 
 async def test_forgot_smtp_failure_still_202(client, monkeypatch):
-    """(c) SMTP failure does NOT fail the request: send_email swallows
-    exceptions itself (mailer try/except + logger.exception), so the
-    background task completes cleanly and the response stays 202."""
     def boom(*args, **kwargs):
         raise RuntimeError("smtp down")
 
     monkeypatch.setattr("app.services.mailer._send_sync", boom)
-    await client.post(
-        "/api/auth/register", json={"email": "f@x.io", "password": "secret123"}
-    )
+    await _register(client, monkeypatch, email="f@x.io")
     r = await client.post("/api/auth/password/forgot", json={"email": "f@x.io"})
     assert r.status_code == 202
-
-
-async def test_forgot_identical_response(client, monkeypatch):
-    sent, fake = _capture()
-    monkeypatch.setattr("app.services.mailer.send_email", fake)
-    await client.post("/api/auth/register", json={"email": "p@x.io", "password": "secret123"})
-    r1 = await client.post("/api/auth/password/forgot", json={"email": "p@x.io"})
-    r2 = await client.post("/api/auth/password/forgot", json={"email": "nobody@x.io"})
-    assert r1.status_code == r2.status_code == 202 and r1.json() == r2.json()
-    assert [to for to, _, _ in sent] == ["p@x.io"]
-
-
-async def test_reset_changes_password_and_revokes(client, monkeypatch):
-    sent, fake = _capture()
-    monkeypatch.setattr("app.services.mailer.send_email", fake)
-    await client.post("/api/auth/register", json={"email": "q@x.io", "password": "secret123"})
-    await client.post("/api/auth/login", json={"email": "q@x.io", "password": "secret123"})
-    assert client.cookies.get("refresh")  # session has a refresh token to revoke
-    await client.post("/api/auth/password/forgot", json={"email": "q@x.io"})
-    token = _token_from(sent)
-    r = await client.post("/api/auth/password/reset", json={"token": token, "password": "newsecret1"})
-    assert r.status_code == 200
-    assert (await client.post("/api/auth/refresh")).status_code == 401  # all refresh tokens revoked
-    assert (await client.post("/api/auth/login", json={"email": "q@x.io", "password": "newsecret1"})).status_code == 200
-    assert (await client.post("/api/auth/login", json={"email": "q@x.io", "password": "secret123"})).status_code == 401
-
-
-async def test_reset_invalid_token_422(client):
-    r = await client.post("/api/auth/password/reset", json={"token": "nope", "password": "newsecret1"})
-    assert r.status_code == 422
-
-
-async def test_used_token_cannot_be_reused(client, monkeypatch):
-    sent, fake = _capture()
-    monkeypatch.setattr("app.services.mailer.send_email", fake)
-    await client.post("/api/auth/register", json={"email": "s@x.io", "password": "secret123"})
-    await client.post("/api/auth/password/forgot", json={"email": "s@x.io"})
-    token = _token_from(sent)
-    r1 = await client.post("/api/auth/password/reset", json={"token": token, "password": "newsecret1"})
-    assert r1.status_code == 200
-    r2 = await client.post("/api/auth/password/reset", json={"token": token, "password": "another99"})
-    assert r2.status_code == 422

@@ -13,11 +13,17 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.services.admin_bootstrap import bootstrap_admin
+from app.services.email_sends import EmailLimitExceeded
 from app.core.config import settings
 from app.core.db import Base, SessionLocal, engine
-from app.core.middleware import PageViewsMiddleware, RequestLogsMiddleware
+from app.core.middleware import (
+    EmailVerifyGateMiddleware,
+    PageViewsMiddleware,
+    RequestLogsMiddleware,
+)
 from app.routers import admin, auth, exports, health, jobs, profile, region_edit
 from app.services.scheduler import init_scheduler
 from app.services.storage import build_storage
@@ -52,6 +58,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     app = FastAPI(lifespan=lifespan)
     app.state.settings = settings
+    # S5: 429 flat body {code:"email_limit", retry_after_seconds} (không bọc detail)
+    @app.exception_handler(EmailLimitExceeded)
+    async def _email_limit_handler(request, exc):
+        return JSONResponse(
+            status_code=429,
+            content={
+                "code": "email_limit",
+                "retry_after_seconds": exc.retry_after_seconds,
+            },
+        )
     # Ruling R6: pure-ASGI logging middlewares open their own sessions here
     app.state.session_factory = SessionLocal
     app.state.storage = build_storage()
@@ -66,6 +82,8 @@ def create_app() -> FastAPI:
     # Starlette add_middleware inserts at head → last added = outermost
     app.add_middleware(PageViewsMiddleware)
     app.add_middleware(RequestLogsMiddleware)
+    # S5: gate email-verify — innermost OK (403 xẩy ra trước routing deps)
+    app.add_middleware(EmailVerifyGateMiddleware)
     # R58 CORS: prod nginx serves same-origin; regex covers localhost/127.0.0.1
     # ports and VSCode forwarded origins. allow_methods: full safe set —
     # Starlette's GET-only default would 400 the POST /jobs preflight.

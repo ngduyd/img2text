@@ -4,9 +4,11 @@ bcrypt used directly (not passlib): bcrypt 5.x + passlib 1.7.4 log a
 `__about__` AttributeError that pollutes test output.
 """
 
+import hashlib
 import warnings
 from datetime import datetime, timedelta, timezone
-from secrets import token_urlsafe
+import secrets
+import warnings
 
 import bcrypt
 import jwt
@@ -68,11 +70,16 @@ def _cookie_secure() -> bool:
     return str(settings.base_url).startswith("https")
 
 
-def generate_reset_token() -> str:
-    """Raw password-reset token. Route and tests share this generator (ruling
-    R2); DB stores sha256(token) only — tests regex the raw token out of the
-    captured email body."""
-    return token_urlsafe(32)
+def generate_email_code() -> str:
+    """Mã 6 số (000000-999999) cho email verify / password reset (S5)."""
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+def hash_email_code(email: str, code: str) -> str:
+    """sha256 hex per-user — salt = email + app_secret (P1-3 review):
+    hash = sha256(f"{email}:{code}:{settings.app_secret}"). Lookup/reset
+    identify the user by email FIRST, then compare with hmac.compare_digest
+    — DB chỉ lưu hash."""
+    return hashlib.sha256(f"{email}:{code}:{settings.app_secret}".encode()).hexdigest()
 
 
 def set_auth_cookies(response: Response, access: str, refresh: str | None = None) -> None:

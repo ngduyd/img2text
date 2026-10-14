@@ -1,6 +1,7 @@
 """Auth endpoints: register / login / me / refresh / logout (Task 3+4)."""
 
 import hashlib
+import hmac
 import warnings
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
@@ -14,20 +15,22 @@ from fastapi import (
     Request,
     Response,
 )
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services import mailer
+from app.services import email_sends, mailer
 from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user
 from app.core.limiter import rate_limit_auth
-from app.core.models import PasswordResetToken, RefreshToken, User
+from app.core.models import RefreshToken, User
 from app.core.security import (
     JWT_ISSUER,
     create_access_token,
-    generate_reset_token,
+    generate_email_code,
+    hash_email_code,
     hash_password,
     set_auth_cookies,
     verify_password,
@@ -36,7 +39,8 @@ from app.core.security import (
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _REFRESH_TTL = timedelta(days=30)
-_RESET_TTL = timedelta(hours=1)
+# S5: mã verify/reset 6 số TTL 5 phút (single active code/user, ghi đè)
+_EMAIL_CODE_TTL = timedelta(minutes=5)
 
 
 # Deviation from plan Task 3 interface: refresh minting is a private 3-tuple
@@ -117,30 +121,126 @@ class UserOut(BaseModel):
     email: str
     role: str
     ocr_enabled: bool
+    # S5: gating 403 email_unverified đọc state này (web route guard)
+    is_verified: bool
 
 
 def _user_out(user: User) -> UserOut:
     return UserOut(
-        id=user.id, email=user.email, role=user.role, ocr_enabled=user.ocr_enabled
+        id=user.id,
+        email=user.email,
+        role=user.role,
+        ocr_enabled=user.ocr_enabled,
+        is_verified=user.is_verified,
     )
 
 
-@router.post("/register", status_code=201, response_model=UserOut)
+@router.post("/register", status_code=201)
 async def register(
     creds: Credentials,
-    response: Response,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     _: None = Depends(rate_limit_auth),
-) -> UserOut:
+) -> dict:
+    """S5+P1-1 review: luôn 201, body {"status":"ok"} GIỐNG NHAU cho cả
+    email mới lẫn email trùng — không id/email (đóng existence oracle),
+    KHÔNG cookie cả 2 case (client tự login). User mới: is_verified=false
+    → send welcome + verify-code email (mã 6 số TTL 5p, hash lưu DB).
+
+    User vừa tạo → 2 kind đều là lần #1 trong window, quota không thể
+    vượt — bỏ check, record rồi commit chung."""
     existing = await session.scalar(select(User).where(User.email == creds.email))
     if existing is not None:
-        raise HTTPException(status_code=409, detail="email already registered")
+        return {"status": "ok"}
     user = User(email=creds.email, password_hash=hash_password(creds.password))
     session.add(user)
+    await session.commit()  # id ổn định cho email_sends + code hash
+    code = generate_email_code()
+    user.email_verify_code_hash = hash_email_code(user.email, code)
+    user.email_verify_expires_at = datetime.now(timezone.utc) + _EMAIL_CODE_TTL
+    email_sends.record(session, user.id, "welcome")
+    email_sends.record(session, user.id, "verify_code")
     await session.commit()
-    token = create_access_token(sub=str(user.id), role=user.role)
-    set_auth_cookies(response, access=token)
-    return _user_out(user)
+    background_tasks.add_task(
+        mailer.send_email,
+        user.email,
+        "Welcome to img2text",
+        "Welcome to img2text.\n\n"
+        "Your account is created. Use the 6-digit code we just emailed you "
+        "to verify your email — until then only login, register and "
+        "password-reset endpoints work.\n\n"
+        "If you did not create this account, ignore this email.\n",
+    )
+    background_tasks.add_task(
+        mailer.send_email,
+        user.email,
+        "Verify your email",
+        _verify_email_body(code),
+    )
+    return {"status": "ok"}
+
+def _verify_email_body(code: str) -> str:
+    return (
+        f"Your email verification code is: {code}\n\n"
+        "It expires in 5 minutes. If you did not request this, "
+        "ignore this email.\n"
+    )
+
+class CodeIn(BaseModel):
+    # S5: mã 6 số — check format ở boundary; khác format → 422
+    code: str = Field(pattern=r"^\d{6}$")
+
+@router.post("/verify")
+async def verify_email(
+    body: CodeIn,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit_auth),
+) -> dict:
+    """S5: hash compare + TTL 5p — sai/hết hạn → 422. Đúng →
+    is_verified=true, xóa code (single-use). Gated user gọi được (exempt)."""
+    now = datetime.now(timezone.utc)
+    if (
+        user.email_verify_code_hash is None
+        or user.email_verify_expires_at is None
+        or user.email_verify_expires_at <= now
+        or not hmac.compare_digest(
+            user.email_verify_code_hash, hash_email_code(user.email, body.code)
+        )
+    ):
+        raise HTTPException(status_code=422, detail="invalid or expired code")
+    user.is_verified = True
+    user.email_verify_code_hash = None
+    user.email_verify_expires_at = None
+    await session.commit()
+    return {}
+
+@router.post("/verify/resend", status_code=202)
+async def verify_resend(
+    background_tasks: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit_auth),
+) -> dict:
+    """S5: code MỚI ghi đè code cũ (single active/user); qua per-kind
+    email limit — vượt → 429 email_limit (handler ở main.py).
+
+    P2 review: đã verified → 400 {code:"already_verified"}, KHÔNG gửi
+    email (không dùng resend làm kênh email-bomb)."""
+    if user.is_verified:
+        return JSONResponse(
+            status_code=400, content={"code": "already_verified"}
+        )
+    await email_sends.check_limit(session, user.id, "verify_code")
+    code = generate_email_code()
+    user.email_verify_code_hash = hash_email_code(user.email, code)
+    user.email_verify_expires_at = datetime.now(timezone.utc) + _EMAIL_CODE_TTL
+    email_sends.record(session, user.id, "verify_code")
+    await session.commit()
+    background_tasks.add_task(
+        mailer.send_email, user.email, "Verify your email", _verify_email_body(code)
+    )
+    return {}
 
 
 @router.post("/login", response_model=UserOut)
@@ -234,8 +334,11 @@ class ForgotIn(_EmailIn):
     email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-class ResetIn(BaseModel):
-    token: str
+class ResetIn(_EmailIn):
+    # P1-3 review: body có email — lookup per-user theo email rồi mới
+    # so sánh hash; rate_limit_auth + TTL 5p chặn brute force
+    email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    code: str = Field(pattern=r"^\d{6}$")
     password: str = Field(min_length=8)
 
 
@@ -246,59 +349,67 @@ async def forgot(
     session: AsyncSession = Depends(get_session),
     _: None = Depends(rate_limit_auth),
 ) -> dict:
-    """Always 202 {} — identical body for known/unknown email (no user
-    enumeration). SMTP is enqueued via BackgroundTasks AFTER the token
-    commit: the handler never awaits the mail server, so a slow SMTP cannot
-    create a timing oracle. (Real timing parity is a Plan G manual e2e item —
-    ruling R8 forbids a wall-clock assertion here: httpx ASGITransport awaits
-    background tasks within the app call.) send_email swallows SMTP failures
-    itself, so a mail outage never turns this into a 500."""
+    """Luôn 202 {} cho email không tồn tại (không enumeration). Known →
+    mã 6 số TTL 5p (hash lưu users.password_reset_code; single active code
+    — ghi đè), qua per-kind email limit — check TRƯỚC enqueue; vượt →
+    429 email_limit (leak tồn tại chấp nhận để chặn spam).
+
+    SMTP enqueue SAU commit; mailer tự swallow lỗi → không 500."""
     user = await session.scalar(select(User).where(User.email == body.email))
-    if user is not None:
-        raw = generate_reset_token()
-        session.add(
-            PasswordResetToken(
-                user_id=user.id,
-                token_hash=hashlib.sha256(raw.encode()).hexdigest(),
-                expires_at=datetime.now(timezone.utc) + _RESET_TTL,
-            )
-        )
-        await session.commit()
-        background_tasks.add_task(
-            mailer.send_email,
-            user.email,
-            "Reset your password",
-            f"Reset your password: {settings.base_url}/reset?token={raw}\n"
-            "If you did not request this, ignore this email.",
-        )
+    if user is None:
+        return {}
+    await email_sends.check_limit(session, user.id, "reset_code")
+    code = generate_email_code()
+    user.password_reset_code = hash_email_code(user.email, code)
+    user.password_reset_expires_at = datetime.now(timezone.utc) + _EMAIL_CODE_TTL
+    email_sends.record(session, user.id, "reset_code")
+    await session.commit()
+    background_tasks.add_task(
+        mailer.send_email,
+        user.email,
+        "Reset your password",
+        f"Your password reset code is: {code}\n\n"
+        "It expires in 5 minutes. If you did not request this, "
+        "ignore this email.\n",
+    )
     return {}
 
 
 @router.post("/password/reset")
 async def reset(
-    body: ResetIn, session: AsyncSession = Depends(get_session)
+    body: ResetIn,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(rate_limit_auth),
 ) -> dict:
-    """Consume reset token (single-use), rehash password, revoke ALL refresh
-    tokens. Invalid/expired/used token → 422."""
-    token_hash = hashlib.sha256(body.token.encode()).hexdigest()
+    """S5+P1-3: {email, code, password} — lookup user theo email, so hash
+    per-user (sha256(email:code:secret)) + chưa hết hạn trong MỘT conditional
+    UPDATE ... RETURNING (atomic claim — không check-then-set race).
+    0 match → 422. Đúng → đổi mật khẩu + revoke ALL refresh CÙNG transaction
+    (single commit; code single-use vì đã NULL claim)."""
     now = datetime.now(timezone.utc)
-    # atomic single-use claim: WHERE used_at IS NULL AND not expired —
-    # concurrent resets with same token → one winner, rest get rowcount 0
     claim = await session.execute(
-        update(PasswordResetToken)
+        update(User)
         .where(
-            PasswordResetToken.token_hash == token_hash,
-            PasswordResetToken.used_at.is_(None),
-            PasswordResetToken.expires_at > now,
+            User.id
+            == select(User.id)
+            .where(User.email == body.email)
+            .scalar_subquery(),
+            User.password_reset_code == hash_email_code(body.email, body.code),
+            User.password_reset_expires_at > now,
         )
-        .values(used_at=now)
+        .values(
+            password_reset_code=None,
+            password_reset_expires_at=None,
+            password_hash=hash_password(body.password),
+        )
+        .returning(User.id),
     )
-    if claim.rowcount != 1:
-        raise HTTPException(status_code=422, detail="invalid or expired token")
-    row = await session.scalar(
-        select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash)
+    user_id = claim.scalar_one_or_none()
+    if user_id is None:
+        await session.rollback()
+        raise HTTPException(status_code=422, detail="invalid or expired code")
+    await session.execute(
+        delete(RefreshToken).where(RefreshToken.user_id == user_id)
     )
-    user = await session.get(User, row.user_id)
-    user.password_hash = hash_password(body.password)
-    await revoke_all_refresh(session, user.id)
+    await session.commit()
     return {}
