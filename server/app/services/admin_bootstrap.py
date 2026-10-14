@@ -20,13 +20,16 @@ async def bootstrap_admin(session: AsyncSession, email: str, password: str) -> N
     existing = await session.scalar(select(User).where(User.email == email))
     if existing is not None:
         return
-    # First-run must work: bootstrap admin is the trusted identity, OCR always on.
+    # First-run must work: bootstrap admin is the trusted identity, OCR always on
+    # + bỏ qua email-verify gate (admin bypass đã có trong middleware; đây là
+    # state nhất quán từ đầu, admin không cần verify lần đầu).
     session.add(
         User(
             email=email,
             password_hash=hash_password(password),
             role="admin",
             ocr_enabled=True,
+            is_verified=True,
         )
     )
     await session.commit()

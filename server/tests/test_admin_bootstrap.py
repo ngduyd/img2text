@@ -14,6 +14,8 @@ async def test_bootstrap_admin_creates_admin_and_is_idempotent(db_session):
     assert u.role == "admin"
     # Task: first-run upload path — bootstrap admin is OCR-enabled.
     assert u.ocr_enabled is True
+    # Admin bootstrap bỏ qua verify gate — trusted first identity.
+    assert u.is_verified is True
 
     await bootstrap_admin(db_session, "admin@x.io", "adminpass1")
     rows = (
