@@ -102,14 +102,16 @@ def _embed_crops_as_data_uris(html: str, tempdir: Path) -> str:
             b64 = base64.b64encode(crop.read_bytes()).decode("ascii")
         except OSError:
             return m.group(0)  # crop missing → keep ref (no data loss)
-        return f'src="data:image/jpeg;base64,{b64}"'
+        mime = "png" if m.group(1).endswith(".png") else "jpeg"
+        return f'src="data:image/{mime};base64,{b64}"'
 
-    return re.sub(r'src="(crops/[^\"]+\.jpg)"', _repl, html)
+    # jpg = on-demand crop (fallback); png = batch crop kernel (chính)
+    return re.sub(r'src="(crops/[^\"]+\.(?:jpg|png))"', _repl, html)
 
 def _run_pandoc(cmd: list[str], fmt: str, job_id: int, cwd: Path) -> None:
     """Run pandoc; any failure → sanitized 500 (never raw subprocess error)."""
     try:
-        # cwd=tempdir: markdown image paths (crops/{rid}.jpg) resolve here
+        # cwd=tempdir: markdown image paths (crops/{rid}.png|jpg) resolve here
         proc = subprocess.run(
             cmd, capture_output=True, timeout=PANDOC_TIMEOUT_SECONDS, cwd=str(cwd)
         )
@@ -181,11 +183,15 @@ async def get_or_make_crop(
 async def _materialize_crops(
     job_id: int, markdown: str, job: Job, storage: StorageDriver, tempdir: Path
 ) -> str:
-    """Marker→image rewrite: materialize crops into tempdir/crops/{rid}.jpg.
+    """Marker→image rewrite: materialize crops into tempdir/crops/{rid}.{png,jpg}.
+
+    Batch crop kernel `exports/{job_id}/crops/{rid}.png` thắng (server chỉ
+    LƯỮ + DÙNG); thiếu → on-demand `crops/{job_id}/{rid}.jpg` (fallback).
 
     Region verdict image_unextractable WITH bbox → crop cached/generated,
     marker `**[Hình ảnh chưa trích xuất: vùng {rid}]**` replaced by
-    `![vùng {rid}](crops/{rid}.jpg)`. bbox-less/missing regions keep the
+    `![vùng {rid}](crops/{rid}.png)` (batch) hoặc `(crops/{rid}.jpg)`
+    (fallback). bbox-less/missing regions keep the
     marker text (Plan D Global Constraints). Returns rewritten markdown.
     """
     result = dict(job.result or {})
@@ -199,18 +205,27 @@ async def _materialize_crops(
             marker = IMAGE_MARKER.format(region_id=rid)
             if marker not in markdown:
                 continue  # no marker → no rewrite → no crop needed
+            # batch-first (Lane K): crop kernel đã ingest → DÙNG, server
+            # không cắt lại; on-demand jpg chỉ fallback khi batch thiếu.
+            fname = f"{rid}.jpg"
             try:
-                key = await get_or_make_crop(job_id, rid, job, result, storage)
-                crop_bytes = await storage.get(key)
+                crop_bytes = await storage.get(
+                    f"exports/{job_id}/crops/{rid}.png"
+                )
+                fname = f"{rid}.png"
             except KeyError:
-                # R27: only KeyError swallowed; HTTPException (missing
-                # original) and other R2 failures must propagate
-                continue
+                try:
+                    key = await get_or_make_crop(job_id, rid, job, result, storage)
+                    crop_bytes = await storage.get(key)
+                except KeyError:
+                    # R27: only KeyError swallowed; HTTPException (missing
+                    # original) and other R2 failures must propagate
+                    continue
             crop_dir = tempdir / "crops"
             crop_dir.mkdir(parents=True, exist_ok=True)
-            (crop_dir / f"{rid}.jpg").write_bytes(crop_bytes)
+            (crop_dir / fname).write_bytes(crop_bytes)
             # ceiling: .md exports need sibling crops/ dir (documented)
-            markdown = markdown.replace(marker, f"![vùng {rid}](crops/{rid}.jpg)")
+            markdown = markdown.replace(marker, f"![vùng {rid}](crops/{fname})")
     return markdown
 
 async def _pandoc_export(

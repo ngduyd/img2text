@@ -502,3 +502,33 @@ async def test_export_md_layout_ondemand_crop_embeds_data_uri(
     assert "http" not in body  # không URL baked
     # crop on-demand được cache: crops/{jid}/{rid}.jpg (lần sau cache-hit)
     assert await st.exists(f"crops/{jid}/{rid}.jpg")
+
+# --- Lane K: batch crop (kernel PNG) thắng on-demand tại route ---
+
+async def test_export_md_layout_batch_crop_wins_relative_key(
+    auth_client, app, done_job_with_result, monkeypatch
+):
+    """Crop kernel ĐÃ ingest exports/{jid}/crops/r1.png → md-layout chứa
+    relative key crops/r1.png (KHÔNG data-URI); on-demand get_or_make_crop
+    KHÔNG chạy (không sinh crops/{jid}/r1.jpg)."""
+    jid = done_job_with_result
+    st = app.state.storage
+    png = bytes.fromhex(
+        "89504e470d0a1a0a0000000d494844520000000100000001080200000090"
+        "7753de0000000c4944415408d763f8cfc000000301010018dd8db0000000"
+        "0049454e44ae426082"
+    )
+    await st.put(f"exports/{jid}/crops/r1.png", png)
+
+    fake_llm(
+        monkeypatch,
+        [httpx.ConnectError("refused"), httpx.ConnectError("refused")],
+    )
+    r = await auth_client.post(
+        f"/api/jobs/{jid}/export", json={"fmt": "md-layout"}
+    )
+    assert r.status_code == 200, r.text
+    body = (await st.get(f"exports/{jid}/md-layout")).decode()
+    assert "![vùng r1](crops/r1.png)" in body
+    assert "data:image" not in body
+    assert not await st.exists(f"crops/{jid}/r1.jpg")  # on-demand không chạy
