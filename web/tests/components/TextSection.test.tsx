@@ -58,6 +58,26 @@ beforeEach(() => {
 
 // --- Lane I Task 1: toggle "Soạn thảo" (Tiptap thuần text) + paste strip ---
 
+/** U9: text inner cuộn max-h-[75vh]; popover portal ra body — không bị clip bởi overflow ancestor. */
+it("U9: text scrolls in max-h-[75vh] region; suggestion popover portaled outside overflow ancestors", async () => {
+  const user = userEvent.setup();
+  renderSection(<TextSection jobId="5" />);
+  const article = await screen.findByTestId("extraction-text");
+  const scroller = article.parentElement!;
+  expect(scroller.className).toMatch(/max-h-\[75vh\]/);
+  expect(scroller.className).toMatch(/overflow-y-auto/);
+  await user.click(within(await screen.findByTestId("suggestion-mark-11")).getByRole("button"));
+  const pop = screen.getByTestId("suggestion-popover-11");
+  // Portal: cha trực tiếp = body, không ancestor nào có overflow/max-h clip.
+  expect(pop.parentElement).toBe(document.body);
+  let el: HTMLElement | null = pop.parentElement;
+  while (el && el !== document.documentElement) {
+    const cls = el.getAttribute("class") ?? "";
+    expect(cls).not.toMatch(/overflow|(^|\s)max-h/);
+    el = el.parentElement;
+  }
+});
+
 it("toggle Soạn thảo → text editor; toggle off → article again", async () => {
   const user = userEvent.setup();
   renderSection(<TextSection jobId="5" />);

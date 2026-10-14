@@ -2,7 +2,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { Fragment, Slice } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
+import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { api, ApiError } from "../api/client";
 import type { ExtractionSaveResult, RegionOut, Suggestion } from "../api/types";
@@ -27,6 +29,15 @@ import { useDialogA11y } from "./ui/useDialogA11y";
 function popoverPos(anchor: HTMLElement | undefined): string {
   const rect = anchor?.getBoundingClientRect();
   return rect && rect.right + 256 > window.innerWidth ? "right-0 left-auto" : "left-0";
+}
+
+/** U9: popover portaled (fixed ra body — không clip overflow ancestor) → tọa độ từ anchor rect. */
+function popoverStyle(anchor: HTMLElement | undefined): CSSProperties {
+  const rect = anchor?.getBoundingClientRect();
+  if (!rect) return { top: 0, left: 0 };
+  return rect.right + 256 > window.innerWidth
+    ? { top: rect.bottom, right: Math.max(8, window.innerWidth - rect.right) }
+    : { top: rect.bottom, left: rect.left };
 }
 
 /** Escape text thường trước khi nhét làm HTML content của Tiptap. */
@@ -190,7 +201,9 @@ export default function TextSection({
       if (e.key === "Escape") close();
     };
     const onDown = (e: PointerEvent) => {
-      if (!(e.target as HTMLElement).closest("[data-suggestion-anchor]"))
+      const target = e.target as HTMLElement;
+      // U9: popover portaled khỏi anchor → cho phép click bên trong popover (apply/reject/custom).
+      if (!target.closest("[data-suggestion-anchor], [data-suggestion-popover]"))
         close();
     };
     document.addEventListener("keydown", onKey);
@@ -345,6 +358,7 @@ export default function TextSection({
               onSave={(text) => void saveFullText(text)}
             />
           ) : (
+        <div className="max-h-[75vh] overflow-y-auto">
         <article
           data-testid="extraction-text"
           data-text-version={data.text_version}
@@ -390,14 +404,17 @@ export default function TextSection({
                 </mark>
                 {open?.sid === seg.sid &&
                   open?.occ === (seg.occurrence ?? 0) &&
-                  openSuggestion && (
+                  openSuggestion &&
+                  createPortal(
                     <span
                       data-testid={`suggestion-popover-${seg.sid}`}
+                      data-suggestion-popover
                       role="group"
                       aria-label={t("editor.suggestionAria")}
-                      className={`absolute top-full z-20 mt-1 flex w-64 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-md border border-border bg-surface p-3 shadow-card ${popoverPos(
+                      className={`fixed z-20 mt-1 flex w-64 max-w-[calc(100vw-2rem)] flex-col gap-2 rounded-md border border-border bg-surface p-3 shadow-card ${popoverPos(
                         anchorEls.current.get(anchorKey),
                       )}`}
+                      style={popoverStyle(anchorEls.current.get(anchorKey))}
                     >
                       <span className="flex items-baseline gap-2">
                         <span className="text-sm line-through decoration-error text-error">
@@ -480,12 +497,14 @@ export default function TextSection({
                           {t("editor.emptyContent")}
                         </p>
                       )}
-                    </span>
+                    </span>,
+                    document.body,
                   )}
               </span>
             );
           })}
         </article>
+        </div>
           )}
         </>
       )}

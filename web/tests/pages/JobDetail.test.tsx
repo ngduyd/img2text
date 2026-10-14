@@ -553,20 +553,16 @@ it("renders single wrapper grid: collapsible original+info right (default closed
   expect(screen.getByTestId("btn-toggle-original")).toHaveAttribute("aria-expanded", "false");
 });
 
-/**
- * Wave-3 #6: section "Văn bản" bỏ khung chiều cao — nội dung dài cuộn trang chính.
- * Verify: TextSection article/panel-result KHÔNG còn max-h/overflow (frame còn
- * lại đều ngoài section: aside File gốc viewer, preview Layout, IrViewer JSON
- * max-h-64 — hợp lý, giữ nguyên).
- */
-it("section-text content has no fixed-height/overflow frame", async () => {
+/** U9 supersede wave-3 #6: section Văn bản CUỘN trong vùng max-h-[75vh] (không tràn trang). */
+it("section-text content scrolls in max-h-[75vh] region", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   const section = await screen.findByTestId("section-text");
-  const framed = Array.from(section.querySelectorAll("*")).filter((el) =>
-    /max-h|overflow/.test(el.getAttribute("class") ?? ""),
-  );
-  expect(framed).toEqual([]);
+  const article = await screen.findByTestId("extraction-text");
+  expect(section).toContainElement(article);
+  const scroller = article.parentElement!;
+  expect(scroller.className).toMatch(/max-h-\[75vh\]/);
+  expect(scroller.className).toMatch(/overflow-y-auto/);
 });
 
 // P1-2 review r1: extract_only không gen layout → ẩn Section Layout + export-bar.
