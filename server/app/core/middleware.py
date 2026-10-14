@@ -11,13 +11,15 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.core import net
+from app.core.config import settings
 from app.core.deps import ACCESS_COOKIE
-from app.core.models import PageView, RefreshToken, RequestLog
+from app.core.models import PageView, RefreshToken, RequestLog, User
 from app.core.security import decode_access_sub
 
 logger = logging.getLogger(__name__)
@@ -64,6 +66,58 @@ class _LoggingMiddleware:
         except Exception:
             logger.exception("logging middleware write failed")
 
+
+class EmailVerifyGateMiddleware:
+    """Wave-5 S5: user chưa verify (is_verified=false) → 403 flat
+    {code:"email_unverified"} trên MỌI /api/* trừ exempt (auth endpoints
+    sinh/refresh verify code + /api/healthz). Admin bypass. Không có access
+    cookie → không phải user → downstream 401/404 xử lý bình thường.
+
+    settings.env == "test" → skip (toàn bộ suite cũ không vỡ; test gating
+    bật lại bằng monkeypatch). Lookup fail → log + passthrough (downstream
+    500/401 — gate không nuốt lỗi DB)."""
+
+    EXEMPT = frozenset(
+        {
+            "/api/auth/register",
+            "/api/auth/login",
+            "/api/auth/verify",
+            "/api/auth/verify/resend",
+            "/api/auth/password/forgot",
+            "/api/auth/password/reset",
+            "/api/healthz",
+        }
+    )
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        path = _normalized_path(scope)
+        if (
+            not path.startswith("/api/")
+            or path in self.EXEMPT
+            or settings.env == "test"
+        ):
+            await self.app(scope, receive, send)
+            return
+        user_id = _user_id(Request(scope))
+        if user_id is not None:
+            user = None
+            try:
+                async with scope["app"].state.session_factory() as session:
+                    user = await session.get(User, user_id)
+            except Exception:
+                logger.exception("email gate: user lookup failed")
+            if user is not None and not user.is_verified and user.role != "admin":
+                await JSONResponse(
+                    status_code=403, content={"code": "email_unverified"}
+                )(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 class RequestLogsMiddleware(_LoggingMiddleware):
     """Writes RequestLog for EVERY request after the response."""

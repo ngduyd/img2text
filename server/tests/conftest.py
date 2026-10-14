@@ -35,6 +35,10 @@ from app.main import create_app
 from app.core.models import Job, User
 from app.services.storage import S3Driver
 
+# S5 gating (Lane E): middleware email-verify skip khi env=="test" —
+# toàn bộ suite cũ giữ nguyên; test gating bật lại bằng monkeypatch.
+settings.env = "test"
+
 # Test payloads shared by tests (moved from the removed test_upload.py).
 def _jpeg_bytes() -> bytes:
     from PIL import Image

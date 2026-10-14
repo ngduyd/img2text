@@ -19,7 +19,11 @@ from app.services.admin_bootstrap import bootstrap_admin
 from app.services.email_sends import EmailLimitExceeded
 from app.core.config import settings
 from app.core.db import Base, SessionLocal, engine
-from app.core.middleware import PageViewsMiddleware, RequestLogsMiddleware
+from app.core.middleware import (
+    EmailVerifyGateMiddleware,
+    PageViewsMiddleware,
+    RequestLogsMiddleware,
+)
 from app.routers import admin, auth, exports, health, jobs, profile, region_edit
 from app.services.scheduler import init_scheduler
 from app.services.storage import build_storage
@@ -78,6 +82,8 @@ def create_app() -> FastAPI:
     # Starlette add_middleware inserts at head → last added = outermost
     app.add_middleware(PageViewsMiddleware)
     app.add_middleware(RequestLogsMiddleware)
+    # S5: gate email-verify — innermost OK (403 xẩy ra trước routing deps)
+    app.add_middleware(EmailVerifyGateMiddleware)
     # R58 CORS: prod nginx serves same-origin; regex covers localhost/127.0.0.1
     # ports and VSCode forwarded origins. allow_methods: full safe set —
     # Starlette's GET-only default would 400 the POST /jobs preflight.
