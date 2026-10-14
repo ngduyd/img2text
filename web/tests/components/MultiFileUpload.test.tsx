@@ -40,10 +40,10 @@ function add(files: File[]) {
   fireEvent.change(screen.getByTestId("muf-input"), { target: { files } });
 }
 
-it("empty state: 'Tải file lên' + 'Kéo thả file vào'; thêm N file → N cards", () => {
+it("empty state: 'Upload file' + 'Drag files here'; thêm N file → N cards", () => {
   render(<MultiFileUpload onSubmit={vi.fn()} />);
-  expect(screen.getByText("Tải file lên")).toBeInTheDocument();
-  expect(screen.getByText(/Kéo thả file vào/)).toBeInTheDocument();
+  expect(screen.getByText("Upload file")).toBeInTheDocument();
+  expect(screen.getByText(/Drag files here/)).toBeInTheDocument();
   add([img("a.png"), img("b.png"), img("c.png")]);
   expect(screen.getAllByTestId(/muf-card-/)).toHaveLength(3);
 });
@@ -98,7 +98,7 @@ it("P1-2: deselect-all → giữ selection cũ, không merge full PDF", async ()
   await waitFor(() => expect(screen.getByTestId("muf-card-0")));
   fireEvent.click(screen.getByTestId("muf-pages-0"));
   fireEvent.click(screen.getByTestId("muf-pages-0")); // deselect-all
-  await waitFor(() => expect(screen.getByText("2/3 trang")).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText("2/3 pages")).toBeInTheDocument());
   fireEvent.click(screen.getByTestId("muf-submit"));
   await waitFor(() => expect(onSubmit).toHaveBeenCalled());
   const meta = onSubmit.mock.calls[0][1];

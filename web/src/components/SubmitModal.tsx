@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { JobMode } from "../api/types";
+import { useT } from "../i18n";
 import Button from "./ui/Button";
 import { useDialogA11y } from "./ui/useDialogA11y";
 
@@ -17,6 +18,7 @@ export default function SubmitModal({
   onCancel: () => void;
 }) {
   const [mode, setMode] = useState<JobMode>("layout");
+  const { t } = useT();
   const [format, setFormat] = useState<SubmitFormat>("md");
   const panelRef = useDialogA11y<HTMLDivElement>(open, onCancel);
   if (!open) return null;
@@ -35,7 +37,7 @@ export default function SubmitModal({
       >
         <fieldset className="mb-3">
           <legend id="submit-modal-title" className="mb-2 text-sm font-medium">
-            Chế độ xử lý
+            {t("upload.modeTitle")}
           </legend>
           <label className="mr-4 inline-flex cursor-pointer items-center gap-1.5 text-sm">
             <input
@@ -46,7 +48,7 @@ export default function SubmitModal({
               onChange={() => setMode("extract_only")}
               className="accent-accent"
             />
-            Lấy văn bản
+            {t("upload.modeExtract")}
           </label>
           <label className="inline-flex cursor-pointer items-center gap-1.5 text-sm">
             <input
@@ -57,12 +59,12 @@ export default function SubmitModal({
               onChange={() => setMode("layout")}
               className="accent-accent"
             />
-            Lấy cả layout
+            {t("upload.modeLayout")}
           </label>
         </fieldset>
         {mode === "layout" && (
           <fieldset className="mb-4">
-            <legend className="mb-2 text-sm font-medium">Định dạng</legend>
+            <legend className="mb-2 text-sm font-medium">{t("upload.format")}</legend>
             {(["md", "docx"] as const).map((f) => (
               <label key={f} className="mr-4 inline-flex cursor-pointer items-center gap-1.5 text-sm">
                 <input
@@ -73,20 +75,20 @@ export default function SubmitModal({
                   onChange={() => setFormat(f)}
                   className="accent-accent"
                 />
-                {f === "md" ? "md" : "word"}
+                {f === "md" ? "md" : t("upload.formatWord")}
               </label>
             ))}
           </fieldset>
         )}
         <div className="flex justify-end gap-2">
           <Button testid="sm-cancel" variant="ghost" onClick={onCancel}>
-            Hủy
+            {t("common.cancel")}
           </Button>
           <Button
             testid="sm-confirm"
             onClick={() => onConfirm({ mode, output_format: mode === "extract_only" ? "md" : format })}
           >
-            Gửi
+            {t("upload.send")}
           </Button>
         </div>
       </div>

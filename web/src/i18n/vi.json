@@ -54,7 +54,34 @@
   },
   "upload": {
     "errMaxPages": "Tối đa {n} trang mỗi lần gửi.",
-    "errPngJpgOnly": "Chỉ hỗ trợ ảnh PNG/JPG."
+    "errPngJpgOnly": "Chỉ hỗ trợ ảnh PNG/JPG.",
+    "errPdfRead": "Không đọc được file PDF.",
+    "errUnsupported": "Định dạng file không được hỗ trợ.",
+    "errMinPage": "Chọn ít nhất 1 trang.",
+    "errMerge": "Ghép PDF thất bại.",
+    "errPreview": "Không đọc được trang xem trước.",
+    "send": "Gửi",
+    "pick": "Tải file lên",
+    "dropHint": "Kéo thả file vào đây hoặc chọn từ máy",
+    "summary": "{files} file · {pages} trang / {max}",
+    "pagesOf": "{cur}/{total} trang",
+    "onePage": "1 trang",
+    "crop": "Chọn vùng",
+    "cropTitle": "Chọn vùng cần cắt · {name}",
+    "cropFull": "Chọn toàn bộ ảnh",
+    "cropConfirm": "Cắt",
+    "selectPages": "Chọn số trang",
+    "pagesTitle": "Chọn số trang · {name}",
+    "pageN": "Trang {n}",
+    "pagesConfirm": "Chọn {n} trang",
+    "modeTitle": "Chế độ xử lý",
+    "modeExtract": "Lấy văn bản",
+    "modeLayout": "Lấy cả layout",
+    "format": "Định dạng",
+    "formatWord": "word"
+  },
+  "quota": {
+    "remaining": "Còn {dUsed}/{dLimit} trang hôm nay · {wUsed}/{wLimit} trang tuần này"
   },
   "jobs": {
     "title": "Công việc",

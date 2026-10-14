@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useT } from "../i18n";
 import Button from "./ui/Button";
 import { useDialogA11y } from "./ui/useDialogA11y";
 
@@ -44,6 +45,7 @@ export default function CropDialog({
   onCancel: () => void;
   onDone: (blob: Blob) => void;
 }) {
+  const { t } = useT();
   const [url, setUrl] = useState<string | null>(null);
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null);
   const [rect, setRect] = useState<Rect | null>(null);
@@ -127,7 +129,7 @@ export default function CropDialog({
         className="w-full max-w-lg rounded-card border border-border bg-surface p-4 text-left outline-none"
       >
         <p id="crop-dialog-title" className="mb-2 text-sm font-medium">
-          Chọn vùng cần cắt · {name}
+          {t("upload.cropTitle", { name })}
         </p>
         {/* Measurement-only — canvas is the sole visible surface. */}
         <img
@@ -175,13 +177,13 @@ export default function CropDialog({
             disabled={!dims}
             onClick={() => dims && setRect({ x: 0, y: 0, w: dims.w, h: dims.h })}
           >
-            Chọn toàn bộ ảnh
+            {t("upload.cropFull")}
           </Button>
           <Button testid="crop-cancel" variant="ghost" onClick={onCancel}>
-            Hủy
+            {t("common.cancel")}
           </Button>
           <Button testid="crop-confirm" onClick={() => void confirm()}>
-            Cắt
+            {t("upload.cropConfirm")}
           </Button>
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { loadPdf } from "../lib/pdfjs";
+import { translate, useT } from "../i18n";
 import Button from "./ui/Button";
 import { useDialogA11y } from "./ui/useDialogA11y";
 
@@ -28,6 +29,7 @@ export default function PageSelectDialog({
   const [selected, setSelected] = useState<number[]>(
     entry.pages.length > 0 ? entry.pages : Array.from({ length: entry.numPages }, (_, i) => i + 1),
   );
+  const { t } = useT();
   const canvasRefs = useRef<Array<HTMLCanvasElement | null>>([]);
   const panelRef = useDialogA11y<HTMLDivElement>(true, onCancel);
 
@@ -45,7 +47,7 @@ export default function PageSelectDialog({
         }
       } catch {
         // Đã validate lúc thêm file — hiếm khi fail; bỏ thumbnail, giữ chọn trang.
-        if (!cancelled) toast.error("Không đọc được trang xem trước.");
+        if (!cancelled) toast.error(translate("upload.errPreview"));
       }
     })();
     return () => {
@@ -70,7 +72,7 @@ export default function PageSelectDialog({
         className="w-full max-w-lg rounded-card border border-border bg-surface p-4 text-left outline-none"
       >
         <p id="pages-dialog-title" className="mb-2 text-sm font-medium">
-          Chọn số trang · {entry.name}
+          {t("upload.pagesTitle", { name: entry.name })}
         </p>
         <div
           data-testid="pages-grid"
@@ -95,17 +97,17 @@ export default function PageSelectDialog({
                   }}
                   className="mb-1 h-auto w-full bg-paper"
                 />
-                <span>Trang {n}</span>
+                <span>{t("upload.pageN", { n })}</span>
               </button>
             );
           })}
         </div>
         <div className="flex justify-end gap-2">
           <Button testid="pages-cancel" variant="ghost" onClick={onCancel}>
-            Hủy
+            {t("common.cancel")}
           </Button>
           <Button testid="pages-confirm" onClick={() => onDone(selected)}>
-            Chọn {selected.length} trang
+            {t("upload.pagesConfirm", { n: selected.length })}
           </Button>
         </div>
       </div>

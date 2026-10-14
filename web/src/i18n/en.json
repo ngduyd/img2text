@@ -54,7 +54,34 @@
   },
   "upload": {
     "errMaxPages": "At most {n} pages per submission.",
-    "errPngJpgOnly": "Only PNG/JPG images are supported."
+    "errPngJpgOnly": "Only PNG/JPG images are supported.",
+    "errPdfRead": "Could not read the PDF file.",
+    "errUnsupported": "Unsupported file format.",
+    "errMinPage": "Select at least 1 page.",
+    "errMerge": "Could not merge the PDF.",
+    "errPreview": "Could not read the preview page.",
+    "send": "Upload",
+    "pick": "Upload file",
+    "dropHint": "Drag files here or choose from your computer",
+    "summary": "{files} files · {pages} pages / {max}",
+    "pagesOf": "{cur}/{total} pages",
+    "onePage": "1 page",
+    "crop": "Crop",
+    "cropTitle": "Select the area to crop · {name}",
+    "cropFull": "Select entire image",
+    "cropConfirm": "Crop",
+    "selectPages": "Select pages",
+    "pagesTitle": "Select pages · {name}",
+    "pageN": "Page {n}",
+    "pagesConfirm": "Select {n} pages",
+    "modeTitle": "Processing mode",
+    "modeExtract": "Text only",
+    "modeLayout": "Text + layout",
+    "format": "Format",
+    "formatWord": "word"
+  },
+  "quota": {
+    "remaining": "{dUsed}/{dLimit} pages left today · {wUsed}/{wLimit} this week"
   },
   "jobs": {
     "title": "Jobs",

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { loadPdf } from "../lib/pdfjs";
 import { MAX_PAGES, mergeToPdf } from "../hooks/useImageToPdf";
+import { translate, useT } from "../i18n";
 import Button from "./ui/Button";
 
 interface Entry {
@@ -56,6 +57,7 @@ export default function MultiFileUpload({
   }) => Promise<number[] | null>;
 }) {
   const [entries, setEntries] = useState<Entry[]>([]);
+  const { t } = useT();
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const idRef = useRef(0);
@@ -79,7 +81,7 @@ export default function MultiFileUpload({
     for (const f of Array.from(files)) {
       if (IMAGE_TYPES.has(f.type)) {
         if (running + 1 > MAX_PAGES) {
-          toast.error(`Tối đa ${MAX_PAGES} trang mỗi lần gửi.`);
+          toast.error(translate("upload.errMaxPages", { n: MAX_PAGES }));
           continue;
         }
         const id = idRef.current++;
@@ -91,7 +93,7 @@ export default function MultiFileUpload({
         try {
           const doc = await loadPdf(f);
           if (running + doc.numPages > MAX_PAGES) {
-            toast.error(`Tối đa ${MAX_PAGES} trang mỗi lần gửi.`);
+            toast.error(translate("upload.errMaxPages", { n: MAX_PAGES }));
             continue;
           }
           const id = idRef.current++;
@@ -109,10 +111,10 @@ export default function MultiFileUpload({
             },
           ]);
         } catch {
-          toast.error("Không đọc được file PDF.");
+          toast.error(translate("upload.errPdfRead"));
         }
       } else {
-        toast.error("Định dạng file không được hỗ trợ.");
+        toast.error(translate("upload.errUnsupported"));
       }
     }
   };
@@ -150,11 +152,11 @@ export default function MultiFileUpload({
     const filtered = next.filter((n) => n >= 1 && n <= e.numPages!);
     // Chặn deselect-all (P2): luôn ≥1 trang, giữ selection cũ.
     if (filtered.length === 0) {
-      toast.error("Chọn ít nhất 1 trang.");
+      toast.error(translate("upload.errMinPage"));
       return;
     }
     if (total(entriesRef.current) - (e.pages?.length ?? 0) + filtered.length > MAX_PAGES) {
-      toast.error(`Tối đa ${MAX_PAGES} trang mỗi lần gửi.`);
+      toast.error(translate("upload.errMaxPages", { n: MAX_PAGES }));
       return;
     }
     commit(entriesRef.current.map((x) => (x.id === e.id ? { ...x, pages: filtered } : x)));
@@ -190,7 +192,7 @@ export default function MultiFileUpload({
     } catch (err) {
       // pdf-lib/pngjs throw raw strings ("The input is not a PNG file!") — surface luôn.
       const msg = typeof err === "string" ? err : err instanceof Error ? err.message : "";
-      toast.error(msg || "Ghép PDF thất bại.");
+      toast.error(msg || translate("upload.errMerge"));
     } finally {
       setBusy(false);
     }
@@ -206,7 +208,8 @@ export default function MultiFileUpload({
       {/* Cluster cũ: [hint | Gửi] — layout khung không đổi (spec U1). */}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted">
-          {entries.length > 0 && `${entries.length} file · ${total(entries)} trang / ${MAX_PAGES}`}
+          {entries.length > 0 &&
+            t("upload.summary", { files: entries.length, pages: total(entries), max: MAX_PAGES })}
         </p>
         <Button
           testid="muf-submit"
@@ -215,7 +218,7 @@ export default function MultiFileUpload({
           loading={busy}
           onClick={() => void submit()}
         >
-          Gửi
+          {t("upload.send")}
         </Button>
       </div>
       <div
@@ -225,9 +228,9 @@ export default function MultiFileUpload({
         className="rounded-card border-2 border-dashed border-border bg-surface/50 p-4 text-center transition hover:border-accent/50"
       >
         <Button testid="muf-pick" disabled={disabled} onClick={() => inputRef.current?.click()}>
-          Tải file lên
+          {t("upload.pick")}
         </Button>
-        <p className="mt-2 text-sm text-muted">Kéo thả file vào đây hoặc chọn từ máy</p>
+        <p className="mt-2 text-sm text-muted">{t("upload.dropHint")}</p>
         <input
           ref={inputRef}
           data-testid="muf-input"
@@ -257,12 +260,14 @@ export default function MultiFileUpload({
             <div className="min-w-0 flex-1">
               <span className="block truncate">{e.name}</span>
               <span className="block text-xs text-muted">
-                {e.kind === "pdf" ? `${e.pages?.length ?? 0}/${e.numPages} trang` : "1 trang"}
+                {e.kind === "pdf"
+                  ? t("upload.pagesOf", { cur: e.pages?.length ?? 0, total: e.numPages ?? 0 })
+                  : t("upload.onePage")}
               </span>
             </div>
             {e.kind === "image" && onCrop && (
               <Button testid={`muf-crop-${i}`} size="sm" variant="secondary" onClick={() => void crop(e)}>
-                Chọn vùng
+                {t("upload.crop")}
               </Button>
             )}
             {e.kind === "pdf" && onSelectPages && (
@@ -272,11 +277,11 @@ export default function MultiFileUpload({
                 variant="secondary"
                 onClick={() => void pickPages(e)}
               >
-                Chọn số trang
+                {t("upload.selectPages")}
               </Button>
             )}
             <Button testid={`muf-remove-${i}`} size="sm" variant="danger" onClick={() => remove(e.id)}>
-              Xóa
+              {t("common.delete")}
             </Button>
           </li>
         ))}
