@@ -41,6 +41,21 @@ class User(Base):
     # Readers fall back via app.services.quota.limit_of() (legacy NULL rows).
     daily_page_limit: Mapped[int | None] = mapped_column(Integer, default=25)
     weekly_page_limit: Mapped[int | None] = mapped_column(Integer, default=150)
+    # Wave-5 S5: email verify (is_verified=false → gating 403 email_unverified);
+    # *_code_hash = sha256 hex của mã 6 số, TTL 5 phút, single active code/user
+    # (resend/forgot ghi đè). Migration ALTER-only:
+    #   docs/migrations/2026-10-15_email_verify.sql
+    is_verified: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    email_verify_code_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    email_verify_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    password_reset_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    password_reset_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -74,6 +89,33 @@ class PasswordResetToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+class EmailSend(Base):
+    """Wave-5 S5 audit: 1 row / outbound email. Kinds: welcome |
+    verify_code | reset_code. Per-kind limits (5/24h rolling + spacing
+    10'/1h) đọc bảng này — app/services/email_sends.py.
+
+    Hand-SQL migration (dev/test đã apply; create_all tạo trong test volume):
+      CREATE TABLE email_sends (
+        id bigserial PRIMARY KEY,
+        user_id int NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+    """
+
+    __tablename__ = "email_sends"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=text("now()"),
     )
 
 class PageView(Base):
