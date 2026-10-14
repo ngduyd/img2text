@@ -20,6 +20,9 @@ EXCLUDED_STATUSES = ("failed", "cancelled")
 # Fallback khi cột legacy NULL (ALTER-only migration không backfill model)
 DAILY_DEFAULT = 25
 WEEKLY_DEFAULT = 150
+# Wave-5 S1: quota bytes upload 7 ngày rolling — legacy NULL → 202MB
+UPLOAD_BYTE_DEFAULT = 211_812_352
+UPLOAD_WINDOW = timedelta(days=7)
 
 def limit_of(value: int | None, default: int) -> int:
     return default if value is None else value
@@ -63,6 +66,65 @@ async def usage(
 ) -> int:
     return int(await session.scalar(_usage_stmt(user_id, window)))
 
+# --- Wave-5 S1: quota bytes upload 7 ngày rolling ---
+#
+# Window = created_at > now-7d AND upload_bytes>0 (spec: SUM upload_bytes).
+# Refund = transition point set upload_bytes=0 (failed/cancelled) — KHÔNG
+# exclude status ở đây (khác page quota): bytes ghi thật lúc create.
+
+def _bytes_cutoff(now: datetime | None) -> datetime:
+    return (now or datetime.now(timezone.utc)) - UPLOAD_WINDOW
+
+async def bytes_usage(
+    session: AsyncSession, user_id: int, now: datetime | None = None
+) -> int:
+    """SUM(upload_bytes) trong cửa sổ 7 ngày; row refund (0) tự loại."""
+    return int(
+        await session.scalar(
+            select(func.coalesce(func.sum(Job.upload_bytes), 0)).where(
+                Job.user_id == user_id,
+                Job.created_at > _bytes_cutoff(now),
+                Job.upload_bytes > 0,
+            )
+        )
+    )
+
+async def bytes_oldest_expires_at(
+    session: AsyncSession, user_id: int, now: datetime | None = None
+) -> datetime | None:
+    """created_at sớm nhất trong cửa sổ + 7d = thời điểm bytes trôi ra
+    (429 payload oldest_expires_at). Cửa sổ trống → None."""
+    oldest = await session.scalar(
+        select(func.min(Job.created_at)).where(
+            Job.user_id == user_id,
+            Job.created_at > _bytes_cutoff(now),
+            Job.upload_bytes > 0,
+        )
+    )
+    return None if oldest is None else oldest + UPLOAD_WINDOW
+
+async def ensure_bytes_quota(
+    session: AsyncSession, user: User, incoming_bytes: int
+) -> None:
+    """Pre-create gate bytes (spec S1): used + mới > limit → 429 structured
+    {code, used_bytes, limit_bytes, oldest_expires_at} — reject, KHÔNG
+    auto-evict (ruling). Presign chưa có bytes thật → gate tại POST /api/jobs."""
+    limit = limit_of(user.upload_byte_limit, UPLOAD_BYTE_DEFAULT)
+    used = await bytes_usage(session, user.id)
+    if used + incoming_bytes > limit:
+        oldest = await bytes_oldest_expires_at(session, user.id)
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "upload_quota",
+                "used_bytes": used,
+                "limit_bytes": limit,
+                "oldest_expires_at": (
+                    oldest.isoformat() if oldest else None
+                ),
+            },
+        )
+
 async def usage_map(
     session: AsyncSession, user_ids: list[int], window: tuple[datetime, datetime]
 ) -> dict[int, int]:
@@ -100,7 +162,8 @@ async def ensure_quota(
         )
 
 async def quota_me(session: AsyncSession, user: User) -> dict:
-    """GET /api/quota/me — remaining clamped ≥ 0 (đã vượt thì về 0)."""
+    """GET /api/quota/me — remaining clamped ≥ 0 (đã vượt thì về 0).
+    Wave-5 S1: thêm số liệu bytes 7 ngày (web quota badge)."""
     daily = limit_of(user.daily_page_limit, DAILY_DEFAULT)
     weekly = limit_of(user.weekly_page_limit, WEEKLY_DEFAULT)
     daily_used = await usage(session, user.id, daily_window())
@@ -112,4 +175,9 @@ async def quota_me(session: AsyncSession, user: User) -> dict:
         "weekly_used": weekly_used,
         "daily_remaining": max(daily - daily_used, 0),
         "weekly_remaining": max(weekly - weekly_used, 0),
+        # wave-5 S1
+        "upload_used_bytes": await bytes_usage(session, user.id),
+        "upload_limit_bytes": limit_of(
+            user.upload_byte_limit, UPLOAD_BYTE_DEFAULT
+        ),
     }

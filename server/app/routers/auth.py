@@ -123,15 +123,18 @@ class UserOut(BaseModel):
     ocr_enabled: bool
     # S5: gating 403 email_unverified đọc state này (web route guard)
     is_verified: bool
+    # wave-5 S1: settings toggle + first-upload notice state (web đọc state)
+    auto_purge: bool = True
+    purge_notice_seen: bool = False
 
 
 def _user_out(user: User) -> UserOut:
     return UserOut(
-        id=user.id,
-        email=user.email,
-        role=user.role,
-        ocr_enabled=user.ocr_enabled,
+        id=user.id, email=user.email, role=user.role, ocr_enabled=user.ocr_enabled,
         is_verified=user.is_verified,
+        # legacy NULL (ALTER-only) → default theo spec
+        auto_purge=user.auto_purge is not False,
+        purge_notice_seen=user.purge_notice_seen is True,
     )
 
 
@@ -267,6 +270,28 @@ async def login(
 
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)) -> UserOut:
+    return _user_out(user)
+
+
+class MePurgeBody(BaseModel):
+    """wave-5 S1: cả 2 field optional — không gửi = giữ nguyên (patch semantics)."""
+
+    auto_purge: bool | None = None
+    purge_notice_seen: bool | None = None
+
+
+@router.patch("/me", response_model=UserOut)
+async def patch_me(
+    body: MePurgeBody,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> UserOut:
+    """Settings toggle auto-purge + dismiss first-upload notice (modal 1 lần)."""
+    if body.auto_purge is not None:
+        user.auto_purge = body.auto_purge
+    if body.purge_notice_seen is not None:
+        user.purge_notice_seen = body.purge_notice_seen
+    await session.commit()
     return _user_out(user)
 
 

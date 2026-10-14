@@ -56,6 +56,13 @@ class User(Base):
     password_reset_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Wave-5 S1 (spec 2026-10-15): quota bytes upload 7 ngày + purge file gốc.
+    # ALTER-only migration (create_all never ALTERs):
+    #   docs/migrations/2026-10-15_quota_purge.sql
+    # upload_byte_limit nullable legacy → reader fallback limit_of() (202MB).
+    upload_byte_limit: Mapped[int | None] = mapped_column(BigInteger, default=211812352)
+    auto_purge: Mapped[bool | None] = mapped_column(Boolean, default=True)
+    purge_notice_seen: Mapped[bool | None] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -203,6 +210,16 @@ class Job(Base):
     # Readers: run-mutable — không cache qua request.
     rerender_requested: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")
+    )
+    # Wave-5 S1 (spec 2026-10-15): bytes upload thật (refund = 0 khi
+    # failed/cancelled) + dấu file gốc đã purge. ALTER-only migration:
+    #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS upload_bytes bigint NOT NULL DEFAULT 0;
+    #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS storage_purged_at timestamptz NULL;
+    upload_bytes: Mapped[int] = mapped_column(
+        BigInteger, default=0, server_default=text("0"), nullable=False
+    )
+    storage_purged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     # Job status phases (spec 2026-10-09): queued | extracting | rendering |
     # done | failed ("running" eliminated). ALTER-only migration:

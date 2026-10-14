@@ -105,6 +105,49 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
         )
 
     scheduler.add_job(prune_all, trigger="cron", hour=3, minute=0, id="daily-prune")
+
+    async def purge_all() -> None:
+        """wave-5 S1: purge file gốc batch — interval/retention đọc runtime
+        override mỗi tick (pattern reschedule reap-leases); một pass lỗi
+        không giết tick."""
+        from app.services.purge import purge_due_jobs
+
+        try:
+            seconds = max(
+                60,
+                await get_runtime_setting(
+                    app.state.session_factory,
+                    "purge_interval_seconds",
+                    settings.purge_interval_seconds,
+                ),
+            )
+            job = scheduler.get_job("purge-storage")
+            if job is not None and job.trigger.interval_length != seconds:
+                job.reschedule(IntervalTrigger(seconds=seconds))
+                logger.info(
+                    "purge-storage: interval → %ds (runtime override)", seconds
+                )
+            retention = max(
+                1,
+                await get_runtime_setting(
+                    app.state.session_factory,
+                    "purge_retention_days",
+                    settings.purge_retention_days,
+                ),
+            )
+            async with app.state.session_factory() as session:
+                n = await purge_due_jobs(session, app.state.storage, retention)
+            if n:
+                logger.info("purge-storage: purged %d job(s)", n)
+        except Exception:
+            logger.warning("purge-storage pass failed", exc_info=True)
+
+    scheduler.add_job(
+        purge_all,
+        trigger="interval",
+        seconds=settings.purge_interval_seconds,
+        id="purge-storage",
+    )
     app.state.scheduler = scheduler
     if "PYTEST_CURRENT_TEST" not in os.environ:
         scheduler.start()

@@ -18,6 +18,8 @@ from app.services.scheduler import init_scheduler
 
 KEYS = (
     "scheduler_interval_seconds",
+    "purge_interval_seconds",
+    "purge_retention_days",
     "kaggle_min_queue",
     "kaggle_min_gap_seconds",
     "kaggle_mode",

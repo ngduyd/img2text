@@ -23,6 +23,7 @@ class StorageDriver(Protocol):
     async def size(self, key: str) -> int: ...
     async def exists(self, key: str) -> bool: ...
     async def get(self, key: str) -> bytes: ...
+    async def delete_key(self, key: str) -> None: ...
     async def delete_prefix(self, prefix: str) -> None: ...
 
 def _s3_client(endpoint: str, key_id: str, secret: str, region: str):
@@ -137,6 +138,14 @@ class S3Driver:
                 raise
 
         return await asyncio.to_thread(_get)
+
+    async def delete_key(self, key: str) -> None:
+        """Exact-object delete (no prefix semantics): purge xóa
+        exports/{id}/docx mà KHÔNG đụng docx.html/docx-layout (prefix
+        delete would eat them). Missing key = no-op (S3 semantics)."""
+        await asyncio.to_thread(
+            self.client.delete_object, Bucket=self.bucket, Key=key
+        )
 
     async def delete_prefix(self, prefix: str) -> None:
         def _delete() -> None:

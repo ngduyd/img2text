@@ -98,6 +98,9 @@ async def test_quota_me_shape_and_fallback_defaults(db_session, seeded_user):
         "weekly_used": 30,
         "daily_remaining": 0,
         "weekly_remaining": 120,
+        # wave-5 S1: bytes 7 ngày (refund rows = 0 → excluded)
+        "upload_used_bytes": 0,
+        "upload_limit_bytes": 211812352,
     }
 
 # --- T4: HTTP enforce pre-create + GET /api/quota/me ---
@@ -124,6 +127,8 @@ async def test_http_quota_me(auth_client, db_session):
         "daily_limit": 25, "daily_used": 0,
         "weekly_limit": 150, "weekly_used": 0,
         "daily_remaining": 25, "weekly_remaining": 150,
+        # wave-5 S1
+        "upload_used_bytes": 0, "upload_limit_bytes": 211812352,
     }
 
 async def test_http_quota_me_401_anon(client):
