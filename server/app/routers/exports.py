@@ -111,7 +111,7 @@ def _embed_crops_as_data_uris(html: str, tempdir: Path) -> str:
 def _run_pandoc(cmd: list[str], fmt: str, job_id: int, cwd: Path) -> None:
     """Run pandoc; any failure → sanitized 500 (never raw subprocess error)."""
     try:
-        # cwd=tempdir: markdown image paths (crops/{rid}.jpg) resolve here
+        # cwd=tempdir: markdown image paths (crops/{rid}.png|jpg) resolve here
         proc = subprocess.run(
             cmd, capture_output=True, timeout=PANDOC_TIMEOUT_SECONDS, cwd=str(cwd)
         )
