@@ -10,7 +10,7 @@ User ruling: **CD = build docker image + push Docker Hub THÔI** (không deploy,
 | `<dockerhub_user>/img2text-server` | `deploy/Dockerfile` (python 3.11-slim, `pip install server[kaggle]`) | `latest` + `sha-<short>` |
 | `<dockerhub_user>/img2text-web` | **Dockerfile mới** `web/Dockerfile` (build stage `npm ci && npx vite build` → `nginx:alpine` serve `dist`) | `latest` + `sha-<short>` |
 
-## CI (mọi PR + push `main`)
+## CI (mọi PR + push `master`)
 
 - **server**: job postgres:16-alpine service (user/pass `img2text`, db `img2text_test`),
   `pip install -e ".[dev]"`, apply migrations (docs/migrations/*.sql), `pytest -q`.
@@ -18,7 +18,9 @@ User ruling: **CD = build docker image + push Docker Hub THÔI** (không deploy,
 - **web**: `npm ci`, `npx tsc -b --force`, `npx vitest run`, `npx vite build`.
 - Cả 2 job phải pass mới chạy CD job.
 
-## CD (chỉ khi push vào `main`, sau CI pass)
+## CD (chỉ khi push vào `master`, sau CI pass)
+
+**Mỗi commit push lên `master` = 1 version** — build + push Docker Hub.
 
 - Job `docker` (needs: [server, web]):
   - `docker/login-action` với secrets `DOCKERHUB_USERNAME` + `DOCKERHUB_TOKEN`
