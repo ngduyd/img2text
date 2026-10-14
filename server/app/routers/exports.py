@@ -424,22 +424,39 @@ async def patch_content(
 # --- Export generation + download: POST /export, GET /export/{fmt}/download ---
 
 async def _llm_docx_export(
-    job_id: int, job: Job, ir_sink: dict | None = None
+    job_id: int, job: Job, ir_sink: dict | None = None,
+    storage: StorageDriver | None = None,
 ) -> bytes:
     """IR rewrite: result → LLM IR → docx bytes (never caches errors).
 
     Missing result → 409 "Chưa có kết quả OCR."; LLM unreachable/timeout
     → 502 "Không kết nối LLM máy chủ." (raised before storage.put).
     Plan M: jobs.layout_style applied over the IR render (user wins).
+    storage (S1b): figure marker → crop bytes (batch exports/{id}/crops/
+    {rid}.png → on-demand get_or_make_crop); thiếu → placeholder [ảnh].
     """
     result = dict(job.result or {})
     if not result.get("pages"):
         raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
+    crop_loader = None
+    if storage is not None:
+        async def crop_loader(rid: str) -> bytes | None:
+            try:
+                return await storage.get(f"exports/{job_id}/crops/{rid}.png")
+            except KeyError:
+                pass
+            try:
+                key = await get_or_make_crop(job_id, rid, job, result, storage)
+                return await storage.get(key)
+            except (KeyError, HTTPException) as exc:
+                logger.info("docx-layout: crop %s on-demand fail: %s", rid, exc)
+                return None
     try:
         return await build_docx(
             result,
             style_overrides=_job_layout_style(job),
             ir_sink=ir_sink,
+            crop_loader=crop_loader,
         )
     except DocxLLMError as exc:
         logger.warning("docx-layout LLM failure job=%s: %s", job_id, exc)
@@ -492,12 +509,15 @@ async def _llm_md_export(
             status_code=502, detail="Không kết nối LLM máy chủ."
         ) from exc
 
-async def _docx_html_export(job_id: int, storage: StorageDriver) -> bytes | None:
+async def _docx_html_export(
+    job_id: int, job: Job, storage: StorageDriver
+) -> bytes | None:
     """Plan M3: exports/{id}/docx.html → python-docx walker; None if absent
     (caller falls back to the pandoc docx path).
 
-    WS-PIPE: img src tham chiếu crop artifact → load bytes (partial-fail:
-    crop thiếu → img drop trong walker)."""
+    WS-PIPE: img src tham chiếu crop artifact → load bytes; batch miss →
+    on-demand get_or_make_crop (S1a). Partial-fail: crop KeyError → img drop
+    trong walker; HTTPException propagate (R27)."""
     key = f"exports/{job_id}/docx.html"
     if not await storage.exists(key):
         return None
@@ -507,7 +527,13 @@ async def _docx_html_export(job_id: int, storage: StorageDriver) -> bytes | None
         try:
             crops[rid] = await storage.get(f"exports/{job_id}/crops/{rid}.png")
         except KeyError:
-            logger.info("docx export: crop %s chưa ingest — img bị drop", rid)
+            try:  # batch miss → on-demand (S1a), không drop img oan
+                crop_key = await get_or_make_crop(
+                    job_id, rid, job, job.result or {}, storage
+                )
+                crops[rid] = await storage.get(crop_key)
+            except KeyError:
+                logger.info("docx export: crop %s chưa ingest — img bị drop", rid)
     return html_to_docx(html, crops=crops)
 
 async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
@@ -557,7 +583,7 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
     # docx-layout (LLM) — failure → warning (independent of md above)
     docx_ok = False
     try:
-        data = await _llm_docx_export(job.id, job, ir_sink)
+        data = await _llm_docx_export(job.id, job, ir_sink, storage)
         # P2-4: LLM overwrite must not wipe unsnapshotted artifact bytes
         # (trước đây chỉ md-layout snapshot — docx-layout mất bản cũ)
         await snapshot_current_layout(
@@ -598,11 +624,11 @@ async def export_job(
     key = f"exports/{id}/{body.fmt}"
     if not await storage.exists(key):  # cache hit → presign only, no re-generate
         if body.fmt == "docx-layout":
-            data = await _llm_docx_export(id, job)
+            data = await _llm_docx_export(id, job, storage=storage)
         elif body.fmt == "md-layout":
             data = await _llm_md_export(id, job, storage=storage)  # LLM errors → 502, no put
         elif body.fmt == "docx" and (
-            data := await _docx_html_export(id, storage)
+            data := await _docx_html_export(id, job, storage)
         ) is not None:
             pass  # Plan M3: user-edited docx.html wins over pandoc
         else:

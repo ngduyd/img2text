@@ -162,10 +162,8 @@ class TestBuildDocxFromIR:
 
     async def test_build_docx_llm_down_fallback(self, monkeypatch):
         """LLM down → heuristic fallback (no raise)."""
-        fake_llm(
-            monkeypatch,
-            [httpx.ConnectError("refused"), httpx.ConnectError("refused")],
-        )
+        # S2: page attempt + retry + full-fallback = 3×_chat, mỗi retry 1 → 6
+        fake_llm(monkeypatch, [httpx.ConnectError("refused")] * 6)
         data = await build_docx(_ocr_result())  # no raise
         assert data[:2] == b"PK"
 
@@ -306,3 +304,106 @@ async def test_html_only_region_keeps_old_path():
     assert len(doc.tables) == 1
     rows = [[c.text for c in row.cells] for row in doc.tables[0].rows]
     assert rows == [["A", "B"], ["1", "2"]]
+
+
+# --- Lane S Task 2: build_docx figure embed crop (S1b) ---
+
+def _figure_ocr() -> dict:
+    """r0 = image region, r1 = caption text."""
+    return {
+        "pages": [
+            {
+                "index": 0, "width": 800, "height": 600,
+                "regions": [
+                    {"id": "r0", "bbox": [10, 10, 200, 150], "text": "",
+                     "verdict": "image_unextractable", "placeholder": True},
+                    {"id": "r1", "bbox": [10, 160, 300, 190],
+                     "text": "chú thích ảnh", "verdict": "ok",
+                     "placeholder": False},
+                ],
+            }
+        ]
+    }
+
+def _figure_ir() -> dict:
+    ir = _ir_response()
+    ir["pages"][0]["content"] = [
+        {
+            "id": "node_f", "type": "figure", "role": "figure",
+            "text": "", "align": "left", "indent": 0,
+            "source_block_ids": ["r0"], "bbox": [10, 10, 200, 150],
+            "children": [],
+        },
+        {
+            "id": "node_c", "type": "caption", "role": "caption",
+            "text": "chú thích ảnh", "align": "left", "indent": 0,
+            "source_block_ids": ["r1"], "bbox": [10, 160, 300, 190],
+            "children": [],
+        },
+    ]
+    return ir
+
+def _media_names(data: bytes) -> list:
+    import zipfile
+    return [n for n in zipfile.ZipFile(io.BytesIO(data)).namelist()
+            if n.startswith("word/media/")]
+
+async def test_build_docx_figure_embeds_crop(monkeypatch):
+    """figure + crop_loader bytes → word/media/* trong docx zip."""
+    from tests.conftest import PNG_1PX
+    fake_llm(monkeypatch, [
+        FakeResponse(json.dumps(_figure_ir())),
+        FakeResponse('<p>chú thích ảnh</p><img src="crops/r0.png"/>'),
+    ])
+    seen: list = []
+    async def loader(rid):
+        seen.append(rid)
+        return PNG_1PX
+    data = await build_docx(_figure_ocr(), crop_loader=loader)
+    assert seen == ["r0"]
+    assert _media_names(data), "crop chưa được nhúng vào docx"
+
+async def test_build_docx_figure_loader_none_keeps_placeholder(monkeypatch):
+    """crop_loader=None → giữ <p>[ảnh]</p>, không media."""
+    fake_llm(monkeypatch, [
+        FakeResponse(json.dumps(_figure_ir())),
+        FakeResponse('<p>chú thích ảnh</p><img src="crops/r0.png"/>'),
+    ])
+    data = await build_docx(_figure_ocr(), crop_loader=None)
+    doc = Document(io.BytesIO(data))
+    assert "[ảnh]" in [p.text for p in doc.paragraphs]
+    assert not _media_names(data)
+
+async def test_build_docx_figure_loader_failure_keeps_placeholder(monkeypatch):
+    """Loader fail (exception/None) → partial-fail: placeholder."""
+    fake_llm(monkeypatch, [
+        FakeResponse(json.dumps(_figure_ir())),
+        FakeResponse('<p>chú thích ảnh</p><img src="crops/r0.png"/>'),
+    ])
+    async def loader(rid):
+        return None
+    data = await build_docx(_figure_ocr(), crop_loader=loader)
+    doc = Document(io.BytesIO(data))
+    assert "[ảnh]" in [p.text for p in doc.paragraphs]
+    assert not _media_names(data)
+
+async def test_build_docx_figure_unknown_rid_placeholder(monkeypatch):
+    """rid không có trong OCR region → placeholder, loader KHÔNG gọi."""
+    from tests.conftest import PNG_1PX
+    fake_llm(monkeypatch, [
+        FakeResponse(json.dumps(_figure_ir())),
+        FakeResponse('<p>chú thích ảnh</p><img src="crops/zz9.png"/>'),
+    ])
+    seen: list = []
+    async def loader(rid):
+        seen.append(rid)
+        return PNG_1PX
+    data = await build_docx(_figure_ocr(), crop_loader=loader)
+    assert seen == []
+    doc = Document(io.BytesIO(data))
+    assert "[ảnh]" in [p.text for p in doc.paragraphs]
+
+def test_render_docx_prompt_figure_rid():
+    """Prompt: figure node → img crops/{first source_block_id}.png."""
+    assert "source_block_ids" in RENDER_DOCX_PROMPT
+    assert "crops/" in RENDER_DOCX_PROMPT

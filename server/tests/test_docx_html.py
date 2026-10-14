@@ -149,3 +149,64 @@ async def test_export_docx_falls_back_without_docx_html(
     assert r.status_code == 200, r.text
     data = await storage.get(f"exports/{done_job_with_result}/docx")
     assert data[:2] == b"PK"
+
+
+# --- Lane S Task 1: fmt=docx on-demand crop fallback (S1a) ---
+
+async def test_export_docx_on_demand_crop_when_batch_missing(
+    auth_client, done_job_with_result, storage, monkeypatch
+):
+    """Batch crops/{rid}.png missing → get_or_make_crop fallback → img kept
+    in docx (spy: bytes reach html_to_docx)."""
+    from fastapi import HTTPException
+    import app.routers.exports as m
+    from tests.conftest import PNG_1PX
+
+    await storage.delete_prefix(f"exports/{done_job_with_result}/docx")
+    await storage.put(
+        f"exports/{done_job_with_result}/docx.html",
+        b'<p>o</p><img src="crops/r0.png">',
+    )
+    seen: dict = {}
+    real = m.html_to_docx
+    def spy(html, crops=None):
+        seen["crops"] = dict(crops or {})
+        return real(html, crops=crops)
+    async def fake_crop(job_id, rid, job, result, storage_):
+        seen["on_demand"] = rid
+        key = f"exports/{job_id}/crops/{rid}.png"
+        await storage_.put(key, PNG_1PX)
+        return key
+    monkeypatch.setattr(m, "html_to_docx", spy)
+    monkeypatch.setattr(m, "get_or_make_crop", fake_crop)
+
+    r = await auth_client.post(
+        f"/api/jobs/{done_job_with_result}/export", json={"fmt": "docx"}
+    )
+    assert r.status_code == 200, r.text
+    assert seen["on_demand"] == "r0"
+    assert seen["crops"]["r0"] == PNG_1PX
+    data = await storage.get(f"exports/{done_job_with_result}/docx")
+    doc = Document(io.BytesIO(data))
+    assert doc.inline_shapes  # ảnh thực sự nhúng (không drop)
+
+async def test_export_docx_crop_http_exception_propagates(
+    auth_client, done_job_with_result, storage, monkeypatch
+):
+    """R27: chỉ swallow KeyError — HTTPException từ get_or_make_crop propagate."""
+    from fastapi import HTTPException
+    import app.routers.exports as m
+
+    await storage.delete_prefix(f"exports/{done_job_with_result}/docx")
+    await storage.put(
+        f"exports/{done_job_with_result}/docx.html",
+        b'<p>x</p><img src="crops/r0.png">',
+    )
+    async def boom(job_id, rid, job, result, storage_):
+        raise HTTPException(status_code=404, detail="File gốc không tồn tại.")
+    monkeypatch.setattr(m, "get_or_make_crop", boom)
+
+    r = await auth_client.post(
+        f"/api/jobs/{done_job_with_result}/export", json={"fmt": "docx"}
+    )
+    assert r.status_code == 404, r.text

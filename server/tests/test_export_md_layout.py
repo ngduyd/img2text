@@ -161,7 +161,8 @@ async def test_build_md_llm_down_warns_not_raises(monkeypatch, VALID_RESULT_JSON
     caplog.set_level("WARNING", logger="render_md")
     fake_llm(
         monkeypatch,
-        [httpx.ConnectError("refused"), httpx.ConnectError("refused")],
+        # S2: 3×_chat (page + retry + full-fallback), mỗi _chat retry 1 → 6
+        [httpx.ConnectError("refused")] * 6,
     )
     out = await build_md(VALID_RESULT_JSONB)
     assert out
@@ -247,7 +248,8 @@ async def test_export_md_layout_llm_down_falls_back(
     """LLM down → heuristic fallback (no 502, file still written)."""
     fake_llm(
         monkeypatch,
-        [httpx.ConnectError("refused"), httpx.ConnectError("refused")],
+        # S2: 3×_chat (page + retry + full-fallback), mỗi _chat retry 1 → 6
+        [httpx.ConnectError("refused")] * 6,
     )
     r = await auth_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "md-layout"}
@@ -387,7 +389,8 @@ async def test_export_md_layout_fallback_keeps_image_marker(
     job_id = await _seed_done(db_session, adapt_batch_document(doc))
     fake_llm(
         monkeypatch,
-        [httpx.ConnectError("refused"), httpx.ConnectError("refused")],
+        # S2: 3×_chat (page + retry + full-fallback), mỗi _chat retry 1 → 6
+        [httpx.ConnectError("refused")] * 6,
     )
     r = await auth_client.post(
         f"/api/jobs/{job_id}/export", json={"fmt": "md-layout"}
@@ -490,7 +493,8 @@ async def test_export_md_layout_ondemand_crop_embeds_data_uri(
     marker = IMAGE_MARKER.format(region_id=rid)
     fake_llm(
         monkeypatch,
-        [httpx.ConnectError("refused"), httpx.ConnectError("refused")],
+        # S2: 3×_chat (page + retry + full-fallback), mỗi _chat retry 1 → 6
+        [httpx.ConnectError("refused")] * 6,
     )
     r = await auth_client.post(
         f"/api/jobs/{jid}/export", json={"fmt": "md-layout"}
@@ -522,7 +526,8 @@ async def test_export_md_layout_batch_crop_wins_relative_key(
 
     fake_llm(
         monkeypatch,
-        [httpx.ConnectError("refused"), httpx.ConnectError("refused")],
+        # S2: 3×_chat (page + retry + full-fallback), mỗi _chat retry 1 → 6
+        [httpx.ConnectError("refused")] * 6,
     )
     r = await auth_client.post(
         f"/api/jobs/{jid}/export", json={"fmt": "md-layout"}

@@ -26,7 +26,9 @@ import httpx
 from app.core.config import settings
 from app.core.db import SessionLocal
 from app.core.schemas import IMAGE_MARKER
-from app.services.ir import DocumentIR, IR_PROMPT, validate_ir, IRValidationError
+from app.services.ir import (
+    DocumentIR, IRPageError, IR_PROMPT, llm_ir_pages, validate_ir, IRValidationError,
+)
 from app.services.runtime_settings import get_runtime_setting
 
 # marker template prefix ("**[Hình ảnh chưa trích xuất: vùng ") — dùng để
@@ -361,24 +363,12 @@ async def _chat(user_content: str, json_mode: bool = True) -> str:
 
 
 async def llm_ir(result: dict) -> dict:
-    """Call LLM to produce IR JSON from OCR result."""
-    ocr_json = json.dumps(result, ensure_ascii=False)
-    # replace (not format): prompt contains literal {schema} braces
-    content = IR_PROMPT.replace("{ocr_json}", ocr_json)
-    raw = await _chat(content)
-    text = raw.strip()
-    m = _FENCE_RE.match(text)
-    if m:
-        text = m.group(1)
-    start = text.find("{")
-    if start == -1:
-        raise LLMError("IR không chứa JSON object")
+    """Call LLM to produce IR JSON (S2: delegate shared per-page sequential,
+    giữ 2 HTTP clients — _chat của module, 1 shared logic trong services/ir)."""
     try:
-        # raw_decode: lấy object JSON đầu tiên, bỏ phần thừa LLM nối sau
-        obj, _ = json.JSONDecoder().raw_decode(text[start:])
-        return obj
-    except (ValueError, TypeError) as exc:
-        raise LLMError(f"IR không phải JSON: {exc}") from exc
+        return await llm_ir_pages(result, _chat)
+    except IRPageError as exc:
+        raise LLMError(str(exc)) from exc
 
 
 # ---------------------------------------------------------------- render from IR
