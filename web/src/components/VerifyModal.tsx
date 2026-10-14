@@ -8,7 +8,8 @@ import Input from "./ui/Input";
 
 /** S5: TTL 5 phút — server không trả expiry nên client đếm local từ lúc mở modal. */
 const TTL_SECONDS = 300;
-/** Client-side cooldown giữa 2 lần resend (server chỉ limit theo email/24h). */
+/** Client-side cooldown giữa 2 lần resend (server chỉ limit theo email/24h).
+ *  Khởi đầu 0: gating mở modal → user chưa bấm resend → resend bật ngay. */
 const RESEND_COOLDOWN = 30;
 
 function mmss(total: number): string {
@@ -43,7 +44,7 @@ export default function VerifyModal({ email, onVerified, onLogout }: VerifyModal
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [ttl, setTtl] = useState(TTL_SECONDS);
-  const [cooldown, setCooldown] = useState(RESEND_COOLDOWN);
+  const [cooldown, setCooldown] = useState(0);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -115,6 +116,7 @@ export default function VerifyModal({ email, onVerified, onLogout }: VerifyModal
           <Input
             label={t("auth.verify.codeLabel")}
             testid="input-code"
+            autoFocus
             inputMode="numeric"
             maxLength={6}
             autoComplete="one-time-code"

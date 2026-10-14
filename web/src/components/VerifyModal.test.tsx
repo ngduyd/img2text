@@ -45,6 +45,24 @@ test("submit already_verified theo code → onVerified, không hiện lỗi", as
   expect(screen.queryByTestId("error-detail")).toBeNull();
 });
 
+test("cooldown khởi đầu 0 — resend bật ngay khi mount, chỉ chặn sau khi resend thật", () => {
+  render(
+    <MemoryRouter>
+      <VerifyModal />
+    </MemoryRouter>,
+  );
+  expect(screen.getByTestId("btn-resend")).toBeEnabled();
+});
+
+test("autofocus input code khi modal mount", () => {
+  render(
+    <MemoryRouter>
+      <VerifyModal />
+    </MemoryRouter>,
+  );
+  expect(screen.getByTestId("input-code")).toHaveFocus();
+});
+
 test("submit already_verified theo detail (không có code) → onVerified", async () => {
   verifyCode.mockRejectedValue(new ApiError("already_verified"));
   const onVerified = vi.fn();

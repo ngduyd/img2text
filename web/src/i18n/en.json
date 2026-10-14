@@ -108,7 +108,7 @@
       "title": "Sign up",
       "subtitle": "Create an account to get started.",
       "haveAccount": "Already have an account?",
-      "created": "Account created. Please sign in."
+      "created": "Account created. Enter the verification code."
     },
     "forgot": {
       "title": "Forgot password",
