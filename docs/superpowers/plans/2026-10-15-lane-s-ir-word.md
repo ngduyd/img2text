@@ -9,9 +9,10 @@ Rev3: fix plan-review (P0 build_docx params, P1 callers/DI/signature/sweep, P2 r
 - Fix: `_docx_html_export(job_id, job, storage)`; catch `KeyError` only. **Call site duy nhất: `export_job` exports.py:605** (download_export serve cache qua storage.get — KHÔNG gọi → không sửa).
 
 ## Task 2 — S1b: `build_docx` figure embed crop (fmt=docx-layout)
-- **Design** (P0): placeholder hiện tại `<p>[ảnh]</p>` KHÔNG mang rid → đổi IR docx render: figure node → `<img src="crops/{rid}.png">` (rid = image region id, có sẵn từ IR figure marker/source ids); builder parse `<img>` → crop loader → `add_picture(bytes)`.
-- `build_docx(..., crop_loader=None)` param mới; caller `_llm_docx_export` (exports.py:439) wire crop_loader = load `exports/{id}/crops/{rid}.png` → miss → `get_or_make_crop` (on-demand, job/result đã có trong scope) → None.
-- Test đỏ: (a) figure với crop bytes → docx zip có `word/media/*`; (b) crop_loader None/thất bại → giữ `<p>[ảnh]</p>` placeholder (partial-fail); (c) prompt emit `<img src="crops/...">` (assert prompt content).
+- **Design** (P0): placeholder `<p>[ảnh]</p>` không mang rid → đổi IR docx render: figure node → `<img src="crops/{rid}.png">`.
+- **rid chốt** (P1): `rid = figure.source_block_ids[0]` (KHÔNG dùng `node.id` — auto `auto_n*` → loader miss silent); prompt instruct LLM emit `source_block_ids` đúng cho figure; builder validate qua `find_region` — unknown rid → placeholder.
+- **Params/threading** (P1): `build_docx(result, use_llm, style_overrides, ir_sink, crop_loader=None)`; **`_llm_docx_export(job_id, job, ir_sink, storage=None)`** (exports.py:426, KHÔNG phải :439) + thread `storage` từ 2 caller (`export_job` :560, `auto_generate_output` :601 — check call site thật). Closure: load `exports/{id}/crops/{rid}.png` → KeyError → `get_or_make_crop(job_id, rid, job, result, storage)` (exports.py:148) → None.
+- Test đỏ: (a) figure + crop bytes → docx zip có `word/media/*`; (b) crop_loader None/thất bại/unknown rid → giữ `<p>[ảnh]</p>` (partial-fail); (c) prompt emit `source_block_ids` cho figure.
 - Note ceiling: PDF source (R26 `get_or_make_crop` image-only) → placeholder-only, warning.
 
 ## Task 3 — S5: retry-layout render docx (verify)
