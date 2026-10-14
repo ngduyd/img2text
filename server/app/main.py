@@ -19,6 +19,7 @@ from app.services.admin_bootstrap import bootstrap_admin
 from app.services.email_sends import EmailLimitExceeded
 from app.core.config import settings
 from app.core.db import Base, SessionLocal, engine
+from app.core.ratelimit import RateLimitMiddleware
 from app.core.middleware import (
     EmailVerifyGateMiddleware,
     PageViewsMiddleware,
@@ -81,7 +82,10 @@ def create_app() -> FastAPI:
     app.include_router(region_edit.router)
     # wave-5 S6: POST /api/feedback + GET /api/admin/feedbacks
     app.include_router(feedback.router)
-    # Starlette add_middleware inserts at head → last added = outermost
+    # Starlette add_middleware inserts at head → last added = outermost.
+    # Rate limit innermost (thêm trước cùng) → 429 vẫn đi qua CORS/logging
+    # header trước khi về client.
+    app.add_middleware(RateLimitMiddleware)
     app.add_middleware(PageViewsMiddleware)
     app.add_middleware(RequestLogsMiddleware)
     # S5: gate email-verify — innermost OK (403 xẩy ra trước routing deps)
