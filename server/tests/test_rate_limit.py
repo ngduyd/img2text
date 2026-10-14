@@ -41,6 +41,24 @@ async def test_different_ua_allowed(client, limiter_on):
         )
     ).status_code == 401
 
+async def test_distinct_xff_ips_independent_budgets(client, limiter_on):
+    """P1 review: IP dimension — same UA, 2 XFF IPs (rightmost wins per
+    net.client_ip) → independent 1s budgets, không 429 lẫn nhau."""
+    kw = {"json": LOGIN}
+    r1 = await client.post(
+        "/api/auth/login", **kw, headers={"user-agent": "UA-1", "x-forwarded-for": "1.1.1.1"}
+    )
+    assert r1.status_code == 401
+    r2 = await client.post(
+        "/api/auth/login", **kw, headers={"user-agent": "UA-1", "x-forwarded-for": "2.2.2.2"}
+    )
+    assert r2.status_code == 401  # cùng UA, khác IP → không 429
+    # cùng (IP,UA) lagi → 429 (budget đã dùng)
+    r3 = await client.post(
+        "/api/auth/login", **kw, headers={"user-agent": "UA-1", "x-forwarded-for": "1.1.1.1"}
+    )
+    assert r3.status_code == 429
+
 
 async def test_feedback_post_limited(client, limiter_on):
     kw = {"json": {"content": "hi"}, "headers": {"user-agent": "UA-1"}}
