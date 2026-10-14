@@ -160,6 +160,7 @@ export default function AdminStorage() {
               </span>
               <Button
                 testid="storage-prev"
+                aria-label={t("storage.prevPage")}
                 variant="secondary"
                 size="sm"
                 disabled={page <= 1}
@@ -169,6 +170,7 @@ export default function AdminStorage() {
               </Button>
               <Button
                 testid="storage-next"
+                aria-label={t("storage.nextPage")}
                 variant="secondary"
                 size="sm"
                 disabled={page * PAGE_SIZE >= data.total}

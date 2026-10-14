@@ -413,6 +413,8 @@
     "kept": "Kept",
     "autoOff": "auto-off",
     "purgeDue": "Delete expired files",
+    "prevPage": "Previous page",
+    "nextPage": "Next page",
     "confirmTitle": "Delete expired files?",
     "confirmMessage": "Files older than the retention window are deleted from storage. OCR text, layout and versions are kept. This cannot be undone.",
     "purgedToast": "Purged {n} job(s).",
