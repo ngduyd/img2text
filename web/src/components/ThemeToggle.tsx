@@ -1,5 +1,6 @@
 import { Moon, Sun } from "lucide-react";
 import { useState } from "react";
+import { useT } from "../i18n";
 
 export type Theme = "dark" | "light";
 
@@ -14,6 +15,7 @@ export function initTheme(): void {
 }
 
 export default function ThemeToggle() {
+  const { t } = useT();
   const [theme, setTheme] = useState<Theme>(() =>
     document.documentElement.classList.contains("dark") ? "dark" : "light",
   );
@@ -30,8 +32,8 @@ export default function ThemeToggle() {
       type="button"
       data-testid="btn-theme"
       onClick={toggle}
-      aria-label={theme === "dark" ? "Chuyển sang giao diện sáng" : "Chuyển sang giao diện tối"}
-      title={theme === "dark" ? "Giao diện tối" : "Giao diện sáng"}
+      aria-label={theme === "dark" ? t("theme.toLight") : t("theme.toDark")}
+      title={theme === "dark" ? t("theme.dark") : t("theme.light")}
       className="cursor-pointer rounded-md border border-border px-2 py-1 text-sm text-muted hover:bg-surface"
     >
       <span className="inline-flex" aria-hidden="true">

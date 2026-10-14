@@ -168,6 +168,20 @@
     "fmtDocx": "Download .docx",
     "fmtPdf": "Download .pdf"
   },
+  "extraction": {
+    "title": "Text extraction",
+    "backToDetail": "Back to job detail",
+    "needsRender": "Some layouts could not be synced. Rebuild the layout to get the latest version."
+  },
+  "theme": {
+    "toLight": "Switch to light theme",
+    "toDark": "Switch to dark theme",
+    "dark": "Dark theme",
+    "light": "Light theme"
+  },
+  "ir": {
+    "copied": "IR copied"
+  },
   "profile": {
     "title": "Profile",
     "loading": "Loading profile…",

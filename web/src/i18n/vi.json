@@ -168,6 +168,20 @@
     "fmtDocx": "Tải .docx",
     "fmtPdf": "Tải .pdf"
   },
+  "extraction": {
+    "title": "Trích xuất văn bản",
+    "backToDetail": "Về chi tiết công việc",
+    "needsRender": "Một số layout chưa đồng bộ được. Vẽ lại layout để cập nhật bản mới nhất."
+  },
+  "theme": {
+    "toLight": "Chuyển sang giao diện sáng",
+    "toDark": "Chuyển sang giao diện tối",
+    "dark": "Giao diện tối",
+    "light": "Giao diện sáng"
+  },
+  "ir": {
+    "copied": "Đã sao chép IR"
+  },
   "profile": {
     "title": "Hồ sơ",
     "loading": "Đang tải hồ sơ…",
