@@ -157,3 +157,29 @@ async def test_delete_nulls_worker_heartbeat_current_job(
     row = await db_session.get(WorkerHeartbeat, "w-del")
     assert row is not None  # heartbeat row không crash, giữ
     assert row.current_job_id is None  # job gone → không trỏ mồ côi
+
+# --- review P2b: refcount leak — delete đếm cả job đã purge → object mồ côi ---
+
+async def test_delete_last_live_ref_after_purge_removes_object(
+    auth_client, upload, storage, db_session
+):
+    """j1+j2 cùng key; purge j1 (j2 giữ ref) → delete j2 → object PHẢI xóa.
+
+    purge.py đếm ref exclude purged; delete_job phải cùng predicate — nếu
+    đếm cả j1 (đã purge, storage_key vẫn trỏ) → skip delete → orphan object.
+    """
+    a = (await upload(TEST_JPEG, "a.jpg", page_count=1)).json()["id"]
+    b = (await upload(TEST_JPEG, "b.jpg", page_count=1)).json()["id"]
+    db_session.expire_all()
+    key = (await db_session.get(Job, b)).storage_key
+    db_session.expire_all()
+    assert (await db_session.get(Job, a)).storage_key == key
+    # both done → purge hợp lệ
+    for jid in (a, b):
+        job = await db_session.get(Job, jid)
+        job.status = "done"
+    await db_session.commit()
+    assert (await auth_client.post(f"/api/jobs/{a}/purge-storage")).status_code == 204
+    assert await storage.exists(key)  # j2 ref sống → giữ
+    assert (await auth_client.delete(f"/api/jobs/{b}")).status_code == 204
+    assert await storage.exists(key) is False  # ref sống cuối → xóa, không orphan

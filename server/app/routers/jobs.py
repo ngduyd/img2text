@@ -1477,11 +1477,18 @@ async def delete_job(
     if input_key:
         # review r1 P1-1: input content-addressed dùng chung (2 job cùng sha)
         # → chỉ xóa object khi KHÔNG job nào khác còn trỏ storage_key này.
+        # review P2b: exclude job đã purge — cùng predicate purge_binary
+        # (purged row storage_key vẫn trỏ nhưng ref đã "trả" khi purge;
+        # đếm cả nó → skip delete → orphan object).
         others = (
             await session.execute(
                 select(func.count())
                 .select_from(Job)
-                .where(Job.storage_key == input_key, Job.id != id)
+                .where(
+                    Job.storage_key == input_key,
+                    Job.id != id,
+                    Job.storage_purged_at.is_(None),
+                )
             )
         ).scalar_one()
         if others == 0:
