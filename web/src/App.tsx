@@ -11,6 +11,7 @@ import QuotaBadge from "./components/QuotaBadge";
 import LangSwitch from "./components/LangSwitch";
 import Button, { buttonClasses } from "./components/ui/Button";
 import Forgot from "./pages/Forgot";
+import Feedback from "./pages/Feedback";
 import Admin from "./pages/Admin";
 import JobDetail from "./pages/JobDetail";
 import ExtractionPage from "./pages/ExtractionPage";
@@ -326,6 +327,8 @@ export default function App() {
             <Route path="/forgot" element={<Forgot />} />
             <Route path="/reset" element={<Reset />} />
             <Route path="/profile" element={<Profile />} />
+            {/* Lane B2 (wave-5 S6): trang góp ý — link ở footer do Lane B1 thêm. */}
+            <Route path="/feedback" element={<Feedback />} />
             <Route path="/" element={<Landing />} />
             <Route path="/landing" element={<Navigate to="/" replace />} />
             <Route path="/jobs" element={<Jobs />} />
