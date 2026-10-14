@@ -605,6 +605,16 @@ def test_validate_ir_table_exception_no_warning(caplog):
     validate_ir(_col_ir("heading", "table"), ocr)
     assert not any("cross-column" in r.getMessage() for r in caplog.records)
 
+def test_validate_ir_cells_grid_exception_no_warning(caplog):
+    """P2-1: region có `cells` grid (không có <table> text) → cũng exempt."""
+    caplog.set_level("WARNING", logger="app.services.ir")
+    ocr = _col_ocr()
+    ocr["pages"][0]["regions"][1]["cells"] = [
+        [{"text": "a", "rowspan": 1, "colspan": 1, "header": True}]
+    ]
+    validate_ir(_col_ir("heading", "table"), ocr)
+    assert not any("cross-column" in r.getMessage() for r in caplog.records)
+
 def test_validate_ir_same_type_no_warning(caplog):
     caplog.set_level("WARNING", logger="app.services.ir")
     validate_ir(_col_ir("paragraph", "paragraph"), _col_ocr())
