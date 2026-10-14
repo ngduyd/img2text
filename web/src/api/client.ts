@@ -1,4 +1,4 @@
-import type { AdminStatsDay, Job, JobsPage, QuotaPatch, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion, WorkersResponse } from "./types";
+import type { AdminStatsDay, Job, JobsPage, QuotaPatch, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion, WorkersResponse, StorageOverview } from "./types";
 import { loadPdf } from "../lib/pdfjs";
 import { translate } from "../i18n";
 
@@ -363,6 +363,11 @@ export const api = {
   getWorkers: () => request<WorkersResponse>("/api/admin/workers"),
   // Lane K: Kaggle GPU/TPU quota (admin-only, 503 khi thiếu package).
   getKaggleQuota: () => request<KaggleQuota>("/api/admin/kaggle-quota"),
+  // Lane B3 (S4): storage-cleanup page — stats+old jobs paged, purge-due batch
+  adminStorage: (page: number) =>
+    request<StorageOverview>(`/api/admin/storage?page=${page}`),
+  adminStoragePurgeDue: () =>
+    request<{ purged: number }>("/api/admin/storage/purge-due", { method: "POST" }),
   adminLogs: (filters: { status_class?: string; ip?: string; limit?: number }) => {
     const q = new URLSearchParams();
     if (filters.status_class !== undefined) q.set("status_class", filters.status_class);

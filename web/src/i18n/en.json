@@ -275,7 +275,8 @@
       "api": "API",
       "logs": "Logs",
       "stats": "Stats",
-      "settings": "System"
+      "settings": "System",
+    "storage": "Storage"
     },
     "settings": {
       "llmBaseUrl": "LLM endpoint",
@@ -390,6 +391,34 @@
   },
   "quota": {
     "remaining": "{dUsed}/{dLimit} pages left today · {wUsed}/{wLimit} this week"
+  },
+  "storage": {
+    "title": "Storage cleanup",
+    "tableTitle": "Old jobs",
+    "stats": {
+      "totalJobs": "Total jobs",
+      "purgedJobs": "Purged jobs",
+      "dueJobs": "Due for purge",
+      "totalBytes": "Upload bytes",
+      "purgedBytes": "Bytes freed"
+    },
+    "table": {
+      "email": "Email",
+      "filename": "File",
+      "bytes": "Size",
+      "created": "Uploaded",
+      "status": "Status"
+    },
+    "purged": "Purged",
+    "kept": "Kept",
+    "autoOff": "auto-off",
+    "purgeDue": "Delete expired files",
+    "confirmTitle": "Delete expired files?",
+    "confirmMessage": "Files older than the retention window are deleted from storage. OCR text, layout and versions are kept. This cannot be undone.",
+    "purgedToast": "Purged {n} job(s).",
+    "refreshAria": "Refresh storage stats",
+    "pageInfo": "Page {page} · {total} jobs",
+    "empty": "No jobs older than the retention window."
   },
   "landing": {
     "hero": {

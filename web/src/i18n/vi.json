@@ -275,7 +275,8 @@
       "api": "API",
       "logs": "Logs",
       "stats": "Thống kê",
-      "settings": "Hệ thống"
+      "settings": "Hệ thống",
+    "storage": "Dung lượng"
     },
     "settings": {
       "llmBaseUrl": "Địa chỉ LLM",
@@ -390,6 +391,34 @@
   },
   "quota": {
     "remaining": "Còn {dUsed}/{dLimit} trang hôm nay · {wUsed}/{wLimit} trang tuần này"
+  },
+  "storage": {
+    "title": "Dọn dẹp dung lượng",
+    "tableTitle": "Job cũ",
+    "stats": {
+      "totalJobs": "Tổng job",
+      "purgedJobs": "Job đã dọn",
+      "dueJobs": "Đến hạn dọn",
+      "totalBytes": "Byte tải lên",
+      "purgedBytes": "Byte đã giải phóng"
+    },
+    "table": {
+      "email": "Email",
+      "filename": "Tệp",
+      "bytes": "Dung lượng",
+      "created": "Tải lên",
+      "status": "Trạng thái"
+    },
+    "purged": "Đã dọn",
+    "kept": "Giữ",
+    "autoOff": "tự dọn: tắt",
+    "purgeDue": "Dọn file hết hạn",
+    "confirmTitle": "Dọn file hết hạn?",
+    "confirmMessage": "File cũ hơn hạn lưu sẽ bị xóa khỏi storage. Văn bản OCR, layout và các phiên bản vẫn giữ. Không thể hoàn tác.",
+    "purgedToast": "Đã dọn {n} job.",
+    "refreshAria": "Làm mới thống kê dung lượng",
+    "pageInfo": "Trang {page} · {total} job",
+    "empty": "Không có job nào cũ hơn hạn lưu."
   },
   "landing": {
     "hero": {

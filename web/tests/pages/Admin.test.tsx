@@ -282,14 +282,14 @@ it("admin home has no jobs board, no dropzone (absence asserts)", async () => {
   expect(screen.queryByTestId("dropzone")).not.toBeInTheDocument();
 });
 
-it("admin sub-rail renders 6 items; active item has aria-current=page", async () => {
+it("admin sub-rail renders 7 items; active item has aria-current=page", async () => {
   vi.mocked(api.me).mockResolvedValue(adminMe);
   vi.mocked(api.adminStats).mockResolvedValue({ days: [] });
   renderWithRouter(<Admin />, { route: "/admin" });
   await screen.findByTestId("stat-users"); // admin content rendered
   const rail = screen.getByTestId("admin-rail");
-  // V3: one responsive nav (mobile scroll / desktop vertical), 6 items with icons
-  expect(within(rail).getAllByRole("button")).toHaveLength(6);
+  // V3: one responsive nav (mobile scroll / desktop vertical), 7 items with icons (B3 +storage)
+  expect(within(rail).getAllByRole("button")).toHaveLength(7);
   expect(within(rail).getByTestId("tab-overview")).toHaveAttribute("aria-current", "page");
   expect(within(rail).getByTestId("tab-users")).not.toHaveAttribute("aria-current");
 });

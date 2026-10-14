@@ -202,3 +202,28 @@ export interface AdminSettingsPut {
   proofread_llm_model?: string;
   llm_api_key?: string;
 }
+
+// Lane B3 (S4): admin storage-cleanup page
+export interface StorageStats {
+  total_jobs: number;
+  purged_jobs: number;
+  due_jobs: number;
+  total_upload_bytes: number;
+  purged_bytes: number;
+}
+
+export interface StorageJobItem {
+  id: number;
+  email: string;
+  filename: string | null;
+  upload_bytes: number;
+  created_at: string | null;
+  storage_purged_at: string | null;
+  auto_purge: boolean | null;
+}
+
+export interface StorageOverview {
+  stats: StorageStats;
+  items: StorageJobItem[];
+  total: number;
+}

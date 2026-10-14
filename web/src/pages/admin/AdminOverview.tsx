@@ -6,7 +6,7 @@ import Card from "../../components/ui/Card";
 import { useT } from "../../i18n";
 import { last7Days } from "./dateRange";
 
-export type AdminTabId = "overview" | "users" | "api" | "logs" | "stats" | "settings";
+export type AdminTabId = "overview" | "users" | "api" | "logs" | "stats" | "storage" | "settings";
 
 const CARDS = [
   { id: "users", labelKey: "admin.overview.newUsers", sum: (d: AdminStatsDay) => d.users_registered },
