@@ -3,6 +3,7 @@ filter + safe tail. Job retry lives in jobs.py (POST /api/jobs/{id}/retry).
 """
 
 import asyncio
+import logging
 import re
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
@@ -352,7 +353,8 @@ def _kaggle_quota_payload() -> dict:
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Kaggle API error: {exc}")
+        logging.getLogger(__name__).warning("kaggle quota_view failed: %r", exc)
+        raise HTTPException(status_code=502, detail="Kaggle API lỗi, thử lại sau")
 
 @router.get("/kaggle-quota")
 def kaggle_quota(_: User = Depends(_admin_user)) -> dict:

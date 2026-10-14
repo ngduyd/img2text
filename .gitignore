@@ -10,3 +10,4 @@ __pycache__/
 .codegraph
 server/.venv
 server/.tools
+node_modules/

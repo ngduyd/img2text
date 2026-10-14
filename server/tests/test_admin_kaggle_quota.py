@@ -74,6 +74,10 @@ async def test_kaggle_quota_admin_only(auth_client, monkeypatch):
     _install_kaggle(monkeypatch)
     assert (await auth_client.get("/api/admin/kaggle-quota")).status_code == 403
 
+async def test_kaggle_quota_unauth_401(client, monkeypatch):
+    _install_kaggle(monkeypatch)
+    assert (await client.get("/api/admin/kaggle-quota")).status_code == 401
+
 
 async def test_kaggle_quota_missing_package_503(admin_client, monkeypatch):
     for name in ("kaggle", "kaggle.api", "kaggle.api.kaggle_api_extended"):
@@ -89,6 +93,7 @@ async def test_kaggle_quota_api_error_502(admin_client, monkeypatch):
     try:
         r = await admin_client.get("/api/admin/kaggle-quota")
         assert r.status_code == 502
-        assert "quota endpoint down" in r.json()["detail"]
+        # P2: generic detail — không echo raw exc (leak paths/keys); exc đầy đủ ở log
+        assert "quota endpoint down" not in r.json()["detail"]
     finally:
         StubKaggleApi.error = None
