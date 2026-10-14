@@ -362,7 +362,9 @@ class TestGeometryFirstPrompt:
 
 # --- Lane S Task 4: extract_heading_anchors (S3) ---
 
-from app.services.ir import AnchorState, extract_heading_anchors
+from app.services.ir import (
+    IR_PROMPT, IR_PROMPT_PAGE, AnchorState, extract_heading_anchors,
+)
 
 def _page(regions: list, height: int = 1000) -> dict:
     return {"index": 0, "width": 800, "height": height, "regions": regions}
@@ -533,3 +535,77 @@ async def test_render_modules_delegate_shared_ir(monkeypatch):
     monkeypatch.setattr(rd, "llm_ir_pages", fake_pages)
     assert await rm.llm_ir({"pages": []}) is fake_doc
     assert await rd.llm_ir({"pages": []}) is fake_doc
+
+
+# --- Lane S Task 6: prompt rules (S4/S3) + validator warning ---
+
+def test_ir_prompt_page_has_s4_s3_rules():
+    """IR_PROMPT_PAGE: cross-column rule + table exception + header y-band
+    15% + §anchor instruction."""
+    p = IR_PROMPT_PAGE
+    assert "y-band" in p.lower() or "y band" in p.lower()
+    assert "column" in p.lower()
+    assert "table" in p.lower() and "exempt" in p.lower() or "except" in p.lower()
+    assert "15%" in p
+    assert "§" in p  # §anchor instruction
+
+def test_legacy_ir_prompt_unchanged_snapshot():
+    """Legacy IR_PROMPT (degrade path) không đổi — snapshot guard."""
+    assert "produce a Document IR following this schema" in IR_PROMPT
+    assert "COVERAGE: every OCR block id" in IR_PROMPT
+    assert "y0 < 15% page height" in IR_PROMPT
+    # IR_PROMPT_PAGE rules KHÔNG lọt vào legacy prompt (degrade path giữ behavior)
+    assert "y-band" not in IR_PROMPT
+    assert "§" not in IR_PROMPT
+
+def _col_ocr(left_type_text: str = "Cột trái đoạn văn", right_text: str = "Cột phải") -> dict:
+    """2 cột x-disjoint, cùng y-band: r_left + r_right."""
+    return {
+        "pages": [
+            {
+                "index": 0, "width": 800, "height": 600,
+                "regions": [
+                    {"id": "r_left", "bbox": [10, 100, 350, 160],
+                     "text": left_type_text, "verdict": "ok", "placeholder": False},
+                    {"id": "r_right", "bbox": [450, 105, 780, 155],
+                     "text": right_text, "verdict": "ok", "placeholder": False},
+                ],
+            }
+        ]
+    }
+
+def _col_ir(left_type: str, right_type: str) -> dict:
+    return {
+        "document_id": "d", "schema_version": "1.0",
+        "pages": [{
+            "page_id": "p1", "page_number": 1, "header": [], "footer": [],
+            "content": [
+                {"id": "n1", "type": left_type, "role": "body", "text": "a",
+                 "align": "left", "indent": 0, "source_block_ids": ["r_left"],
+                 "bbox": [10, 100, 350, 160], "children": []},
+                {"id": "n2", "type": right_type, "role": "body", "text": "b",
+                 "align": "left", "indent": 0, "source_block_ids": ["r_right"],
+                 "bbox": [450, 105, 780, 155], "children": []},
+            ],
+        }],
+    }
+
+def test_validate_ir_warns_cross_column_type_mismatch(caplog):
+    """Cùng y-band + 2 cột x-disjoint + khác type + không bảng → warning."""
+    caplog.set_level("WARNING", logger="app.services.ir")
+    doc = validate_ir(_col_ir("heading", "paragraph"), _col_ocr())
+    assert doc.pages
+    warns = [r.getMessage() for r in caplog.records]
+    assert any("cross-column" in w for w in warns), warns
+
+def test_validate_ir_table_exception_no_warning(caplog):
+    """Block có <table trong OCR text → ngoại lệ, KHÔNG warn."""
+    caplog.set_level("WARNING", logger="app.services.ir")
+    ocr = _col_ocr(right_text="<table><tr><td>x</td></tr></table>")
+    validate_ir(_col_ir("heading", "table"), ocr)
+    assert not any("cross-column" in r.getMessage() for r in caplog.records)
+
+def test_validate_ir_same_type_no_warning(caplog):
+    caplog.set_level("WARNING", logger="app.services.ir")
+    validate_ir(_col_ir("paragraph", "paragraph"), _col_ocr())
+    assert not any("cross-column" in r.getMessage() for r in caplog.records)

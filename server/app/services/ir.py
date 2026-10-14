@@ -256,6 +256,51 @@ def _check_coverage(ir: DocumentIR, valid_ids: set[str]) -> None:
         raise IRValidationError("Coverage sai — " + "; ".join(parts))
 
 
+def _ocr_regions_by_id(ocr_result: dict) -> dict:
+    return {
+        r["id"]: r
+        for pg in ocr_result.get("pages", [])
+        for r in pg.get("regions", [])
+    }
+
+def _is_table_region(regions: dict, node: NodeIR) -> bool:
+    """S4: lookup source_block_ids → OCR region có <table/cells (render_md pattern)."""
+    for bid in node.source_block_ids:
+        region = regions.get(bid)
+        if region is None:
+            continue
+        text = region.get("text") or ""
+        if region.get("cells") or "<table" in text.lower():
+            return True
+    return False
+
+def _warn_cross_column(ir: DocumentIR, ocr_result: dict) -> None:
+    """S4 warn-only: cùng y-band + 2 cột x-disjoint + khác type + không bảng
+    → warning log (fail đã có heuristic fallback — warning giữ signal)."""
+    regions = _ocr_regions_by_id(ocr_result)
+    for page in ir.pages:
+        nodes = [n for n in page.content if n.bbox is not None]
+        for i, a in enumerate(nodes):
+            for b in nodes[i + 1:]:
+                ha = a.bbox[3] - a.bbox[1]
+                hb = b.bbox[3] - b.bbox[1]
+                tol = max(10, 0.3 * max(ha, hb))
+                if abs(a.bbox[1] - b.bbox[1]) > tol:
+                    continue  # không cùng y-band
+                ax = sorted((a.bbox[0], a.bbox[2]))
+                bx = sorted((b.bbox[0], b.bbox[2]))
+                if not (ax[1] <= bx[0] or bx[1] <= ax[0]):
+                    continue  # x overlap → cùng cột, không phải 2 cột
+                if a.type == b.type:
+                    continue
+                if _is_table_region(regions, a) or _is_table_region(regions, b):
+                    continue  # bảng = ngoại lệ
+                logger.warning(
+                    "cross-column type mismatch page=%s: %s(%s) vs %s(%s) "
+                    "cùng y-band, 2 cột, không bảng",
+                    page.page_number, a.id, a.type, b.id, b.type,
+                )
+
 def validate_ir(ir: dict, ocr_result: dict) -> DocumentIR:
     """Validate IR dict against OCR result → DocumentIR.
 
@@ -299,6 +344,8 @@ def validate_ir(ir: dict, ocr_result: dict) -> DocumentIR:
         _fill_text(page.header, ocr_result)
         _fill_text(page.content, ocr_result)
         _fill_text(page.footer, ocr_result)
+    # S4: warn-only cross-column check (sau _fill_bbox — bbox đã đầy đủ)
+    _warn_cross_column(doc, ocr_result)
     for page in doc.pages:
         _check_source_ids(page.header, valid_ocr_ids)
         _check_source_ids(page.content, valid_ocr_ids)
@@ -397,6 +444,17 @@ IR_PROMPT_PAGE = (
     "bbox), type labels the grouping AFTER, source_block_ids map to THIS page's "
     "OCR block ids, bbox [x1,y1,x2,y2] from OCR, children group related blocks. "
     "Never rewrite OCR text.\n"
+    # S4: cross-column normalize — cùng y-band + 2 cột → ép cùng type/level;
+    # block bảng (OCR text chứa <table hoặc cells grid) = ngoại lệ
+    "- CROSS-COLUMN: blocks sharing the same y-band in 2 side-by-side columns "
+    "MUST get the SAME type and heading level (read left→right); EXCEPTION: "
+    "table blocks (OCR text contains <table or a cells grid) keep type table.\n"
+    # S3: header y-band 15% + §anchor instruction
+    "- Header trang = top 15% y-band WITHOUT a leading sequence number "
+    "(e.g. '1.' / '1)') → role running_header / doc_title, NEVER type heading.\n"
+    "- HEADING ANCHORS: numbered headings ('1.', '1.1)') are §sections — "
+    "assign §labels in document order across pages using the running §context "
+    "below; numbering stays continuous, never restarts per page.\n"
     "Running §context — headings already seen in EARLIER pages (keep continuity, "
     "do NOT restart numbering):\n{running_ctx}\n\n"
     "OCR output of this page:\n{ocr_json}"
