@@ -2,6 +2,7 @@
 gating. DB: img2text_test@5436 — migration docs/migrations/2026-10-15_email_verify.sql."""
 
 from datetime import datetime, timedelta, timezone
+import re
 
 import pytest
 
@@ -112,3 +113,73 @@ async def test_limit_kinds_independent(db_session):
     _seed(db_session, u.id, "welcome", [100, 50, 10, 5, 1])
     await db_session.commit()
     await check_limit(db_session, u.id, "verify_code")  # kind khác → ok
+
+# --- register: welcome + verify-code email, always 201 ---
+
+def _capture():
+    sent = []
+
+    async def fake(to, subject, body):
+        sent.append((to, subject, body))
+
+    return sent, fake
+
+_CODE_RE = re.compile(r"code is:?\s*(\d{6})")
+
+async def test_register_sends_welcome_and_verify_code(client, monkeypatch, db_session):
+    from sqlalchemy import select
+    from app.core.models import EmailSend, User
+    import hashlib
+
+    sent, fake = _capture()
+    monkeypatch.setattr("app.services.mailer.send_email", fake)
+    r = await client.post(
+        "/api/auth/register", json={"email": "new@x.io", "password": "secret123"}
+    )
+    assert r.status_code == 201
+    assert r.json()["is_verified"] is False
+    assert [s[0] for s in sent] == ["new@x.io", "new@x.io"]
+    code = None
+    for _, subject, body in sent:
+        m = _CODE_RE.search(body)
+        if m:
+            code = m.group(1)
+    assert code is not None, f"no 6-digit code in emails: {sent!r}"
+    user = await db_session.scalar(select(User).where(User.email == "new@x.io"))
+    assert user.is_verified is False
+    assert user.email_verify_code_hash == hashlib.sha256(code.encode()).hexdigest()
+    assert user.email_verify_expires_at is not None
+    kinds = (
+        await db_session.execute(
+            select(EmailSend.kind).where(EmailSend.user_id == user.id).order_by(EmailSend.id)
+        )
+    ).scalars().all()
+    assert kinds == ["welcome", "verify_code"]
+
+async def test_register_duplicate_201_no_leak_no_cookie(client, monkeypatch):
+    """S5: luôn 201, không leak tồn tại — không cookie, không email cho
+    email đã đăng ký."""
+    sent, fake = _capture()
+    monkeypatch.setattr("app.services.mailer.send_email", fake)
+    r1 = await client.post(
+        "/api/auth/register", json={"email": "dup@x.io", "password": "secret123"}
+    )
+    assert r1.status_code == 201 and r1.json()["id"] != 0
+    n_first = len(sent)
+    r2 = await client.post(
+        "/api/auth/register", json={"email": "dup@x.io", "password": "secret123"}
+    )
+    assert r2.status_code == 201
+    assert r2.json()["id"] == 0  # decoy — không trả id thật
+    assert "set-cookie" not in r2.headers
+    assert len(sent) == n_first  # không gửi thêm email
+
+async def test_register_smtp_down_still_201(client, monkeypatch):
+    def boom(*a, **kw):
+        raise RuntimeError("smtp down")
+
+    monkeypatch.setattr("app.services.mailer._send_sync", boom)
+    r = await client.post(
+        "/api/auth/register", json={"email": "down@x.io", "password": "secret123"}
+    )
+    assert r.status_code == 201

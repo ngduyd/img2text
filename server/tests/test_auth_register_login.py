@@ -9,10 +9,13 @@ async def test_register_201_and_me(client):
     assert r2.status_code == 200 and r2.json()["email"] == "u@x.io"
 
 
-async def test_register_duplicate_409(client):
-    await client.post("/api/auth/register", json={"email":"d@x.io","password":"secret123"})
-    r = await client.post("/api/auth/register", json={"email":"d@x.io","password":"secret123"})
-    assert r.status_code == 409
+async def test_register_duplicate_201_no_leak(client):
+    """S5: register luôn 201 — email trùng trả body decoy (id=0), không cookie."""
+    r1 = await client.post("/api/auth/register", json={"email":"d@x.io","password":"secret123"})
+    assert r1.status_code == 201 and r1.json()["id"] != 0
+    r2 = await client.post("/api/auth/register", json={"email":"d@x.io","password":"secret123"})
+    assert r2.status_code == 201 and r2.json()["id"] == 0
+    assert "set-cookie" not in r2.headers
 
 
 async def test_login_wrong_password_401_not_500(client):
@@ -55,4 +58,4 @@ async def test_email_case_insensitive(client):
     dup = await client.post(
         "/api/auth/register", json={"email": "CASE@x.io", "password": "secret123"}
     )
-    assert dup.status_code == 409
+    assert dup.status_code == 201 and dup.json()["id"] == 0  # S5: không leak

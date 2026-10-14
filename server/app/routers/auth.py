@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services import mailer
+from app.services import email_sends, mailer
 from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user
@@ -27,7 +27,9 @@ from app.core.models import PasswordResetToken, RefreshToken, User
 from app.core.security import (
     JWT_ISSUER,
     create_access_token,
+    generate_email_code,
     generate_reset_token,
+    hash_email_code,
     hash_password,
     set_auth_cookies,
     verify_password,
@@ -37,6 +39,8 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _REFRESH_TTL = timedelta(days=30)
 _RESET_TTL = timedelta(hours=1)
+# S5: mã verify/reset 6 số TTL 5 phút (single active code/user, ghi đè)
+_EMAIL_CODE_TTL = timedelta(minutes=5)
 
 
 # Deviation from plan Task 3 interface: refresh minting is a private 3-tuple
@@ -117,11 +121,17 @@ class UserOut(BaseModel):
     email: str
     role: str
     ocr_enabled: bool
+    # S5: gating 403 email_unverified đọc state này (web route guard)
+    is_verified: bool
 
 
 def _user_out(user: User) -> UserOut:
     return UserOut(
-        id=user.id, email=user.email, role=user.role, ocr_enabled=user.ocr_enabled
+        id=user.id,
+        email=user.email,
+        role=user.role,
+        ocr_enabled=user.ocr_enabled,
+        is_verified=user.is_verified,
     )
 
 
@@ -129,15 +139,48 @@ def _user_out(user: User) -> UserOut:
 async def register(
     creds: Credentials,
     response: Response,
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     _: None = Depends(rate_limit_auth),
 ) -> UserOut:
+    """S5: luôn 201, không leak tồn tại — email đã đăng ký → body decoy
+    (id=0), KHÔNG cookie, KHÔNG email (chống email-bomb tài khoản thật).
+
+    User mới: is_verified=false → send welcome + verify-code email (mã 6 số
+    TTL 5p, hash lưu DB). User vừa tạo → 2 kind đều là lần #1 trong window,
+    quota không thể vượt — bỏ check, record rồi commit chung."""
     existing = await session.scalar(select(User).where(User.email == creds.email))
     if existing is not None:
-        raise HTTPException(status_code=409, detail="email already registered")
+        return UserOut(
+            id=0, email=creds.email, role="user", ocr_enabled=False, is_verified=False
+        )
     user = User(email=creds.email, password_hash=hash_password(creds.password))
     session.add(user)
+    await session.commit()  # id ổn định cho email_sends + code hash
+    code = generate_email_code()
+    user.email_verify_code_hash = hash_email_code(code)
+    user.email_verify_expires_at = datetime.now(timezone.utc) + _EMAIL_CODE_TTL
+    email_sends.record(session, user.id, "welcome")
+    email_sends.record(session, user.id, "verify_code")
     await session.commit()
+    background_tasks.add_task(
+        mailer.send_email,
+        user.email,
+        "Welcome to img2text",
+        "Welcome to img2text.\n\n"
+        "Your account is created. Use the 6-digit code we just emailed you "
+        "to verify your email — until then only login, register and "
+        "password-reset endpoints work.\n\n"
+        "If you did not create this account, ignore this email.\n",
+    )
+    background_tasks.add_task(
+        mailer.send_email,
+        user.email,
+        "Verify your email",
+        f"Your email verification code is: {code}\n\n"
+        "It expires in 5 minutes. If you did not request this, "
+        "ignore this email.\n",
+    )
     token = create_access_token(sub=str(user.id), role=user.role)
     set_auth_cookies(response, access=token)
     return _user_out(user)
