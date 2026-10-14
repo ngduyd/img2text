@@ -54,6 +54,8 @@ export default function JobDetail() {
   const [editing, setEditing] = useState(false);
   /** U2: nút Edit text dời ra heading row section Text (controlled xuống TextSection). */
   const [editingText, setEditingText] = useState(false);
+  /** U3: section Layout collapsible — default mở, chevron rotate-180. */
+  const [layoutOpen, setLayoutOpen] = useState(true);
   /** Lane I Task 6: dropdown "Tải xuống" ở header (gộp 4 định dạng text). */
   const [downloadOpen, setDownloadOpen] = useState(false);
   /** U7: bỏ switch MD/Word — fmt fixed init theo job.output_format. */
@@ -89,6 +91,7 @@ export default function JobDetail() {
     setConfirmDelete(false);
     setEditing(false);
     setEditingText(false);
+    setLayoutOpen(true);
     setDownloadOpen(false);
     setRetryingLayout(false);
     setConfirmRetry(false);
@@ -457,18 +460,36 @@ export default function JobDetail() {
                 <h2 id="section-layout-title" className="text-lg font-semibold tracking-tight">
                   Layout
                 </h2>
-                {/* U8: Edit panel dời vào heading row — GIỮ behavior (disabled/aria-pressed/scroll). */}
-                <Button
-                  testid="btn-edit-doc"
-                  variant="secondary"
-                  aria-pressed={editing}
-                  disabled={job.status !== "done"}
-                  onClick={toggleEdit}
-                >
-                  <PenLine className="h-4 w-4" aria-hidden="true" />
-                  {editing ? t("jd.editing") : t("jd.edit")}
-                </Button>
+                {/* U3: chevron toggle — heading → edit → chevron; aria-controls vào wrap panel. */}
+                <div className="flex items-center gap-1">
+                  <Button
+                    testid="btn-edit-doc"
+                    variant="secondary"
+                    aria-pressed={editing}
+                    disabled={job.status !== "done"}
+                    onClick={toggleEdit}
+                  >
+                    <PenLine className="h-4 w-4" aria-hidden="true" />
+                    {editing ? t("jd.editing") : t("jd.edit")}
+                  </Button>
+                  <Button
+                    testid="btn-toggle-layout"
+                    variant="ghost"
+                    aria-expanded={layoutOpen}
+                    aria-controls="layout-panel-wrap"
+                    aria-label={t("jd.layoutToggleAria")}
+                    onClick={() => setLayoutOpen((v) => !v)}
+                  >
+                    <ChevronDown
+                      className={`h-4 w-4 text-muted transition duration-150 ease-out ${layoutOpen ? "rotate-180" : ""}`}
+                      aria-hidden="true"
+                    />
+                  </Button>
+                </div>
               </div>
+              <div id="layout-panel-wrap">
+              {layoutOpen && (
+                <>
               {editing ? (
                 <UnifiedEditor
                   jobId={id!}
@@ -485,6 +506,9 @@ export default function JobDetail() {
               <p data-testid="result-stats" className="text-sm text-muted">
                 {t("jd.stats", { pages: job.page_count, gpu: result.gpu_seconds, model: result.model_version })}
               </p>
+                </>
+              )}
+              </div>
               {/* WS-UI item 13: ExportBar 2 nhóm DƯỚI preview cột trái (không còn trong rail). */}
               <Card testid="panel-export">
                 <ExportBar jobId={id!} />

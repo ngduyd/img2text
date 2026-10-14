@@ -379,6 +379,36 @@ it("U7: no fmt-md-layout/fmt-docx-layout/preview-mode-md/preview-mode-word in DO
   expect(await screen.findByTestId("preview-word")).toBeInTheDocument();
 });
 
+/** U3: section Layout collapsible — btn-toggle-layout, default mở, chevron rotate, aria-expanded/controls. */
+it("U3: layout collapsible toggles aria-expanded via btn-toggle-layout (default open)", async () => {
+  mockJob(DONE_JOB);
+  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await screen.findByTestId("section-layout");
+  const btn = screen.getByTestId("btn-toggle-layout");
+  expect(btn).toHaveAttribute("aria-expanded", "true");
+  expect(btn).toHaveAttribute("aria-controls", "layout-panel-wrap");
+  // Default mở: preview + stats + export render.
+  expect(screen.getByTestId("layout-preview")).toBeInTheDocument();
+  const chevron = btn.querySelector("svg")!;
+  expect(chevron.getAttribute("class")).toContain("rotate-180");
+  // GIỮ scroll region Layout hiện tại (preview container).
+  const preview = screen.getByTestId("preview-md");
+  expect(preview.className).toContain("max-h-[75vh]");
+  const user = userEvent.setup();
+  await user.click(btn);
+  expect(btn).toHaveAttribute("aria-expanded", "false");
+  expect(chevron.getAttribute("class")).not.toContain("rotate-180");
+  expect(screen.queryByTestId("layout-preview")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("result-stats")).not.toBeInTheDocument();
+  // Header row giữ nguyên heading → edit → chevron.
+  const layoutSection = screen.getByTestId("section-layout");
+  const layoutHeading = layoutSection.querySelector("h2")!;
+  const row = layoutHeading.parentElement!;
+  expect(row.firstElementChild).toBe(layoutHeading);
+  expect(row).toContainElement(screen.getByTestId("btn-edit-doc"));
+  expect(row).toContainElement(btn);
+});
+
 /** U2+U8: nút Edit vào heading row — Text: heading → edit (không chevron); Layout: heading → edit. */
 it("U2+U8: edit buttons live in heading rows (Text no chevron; Layout heading→edit)", async () => {
   mockJob(DONE_JOB);
@@ -394,9 +424,10 @@ it("U2+U8: edit buttons live in heading rows (Text no chevron; Layout heading→
   expect(textRow.querySelector("svg")).toBeNull();
   const layoutSection = await screen.findByTestId("section-layout");
   const editDoc = within(layoutSection).getByTestId("btn-edit-doc");
-  const layoutRow = editDoc.parentElement!;
   const layoutHeading = layoutSection.querySelector("h2")!;
+  const layoutRow = layoutHeading.parentElement!;
   expect(layoutRow.firstElementChild).toBe(layoutHeading);
+  expect(layoutRow).toContainElement(editDoc);
 });
 
 /**

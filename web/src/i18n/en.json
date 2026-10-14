@@ -175,7 +175,9 @@
     "sectionText": "Text",
     "stats": "{pages} pages · GPU {gpu}s · {model}",
     "originalFile": "Original file",
-    "infoTitle": "Info"
+    "infoTitle": "Info",
+    "layoutToggleAria": "Toggle layout panel",
+    "layout": "Layout"
   },
   "info": {
     "createdAt": "Created:",

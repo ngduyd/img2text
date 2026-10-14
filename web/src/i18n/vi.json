@@ -175,7 +175,9 @@
     "sectionText": "Văn bản",
     "stats": "{pages} trang · GPU {gpu}s · {model}",
     "originalFile": "File gốc",
-    "infoTitle": "Thông tin"
+    "infoTitle": "Thông tin",
+    "layoutToggleAria": "Thu gọn/mở panel Layout",
+    "layout": "Layout"
   },
   "info": {
     "createdAt": "Tạo lúc:",
