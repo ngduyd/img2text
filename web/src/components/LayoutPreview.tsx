@@ -89,19 +89,15 @@ export default function LayoutPreview({
     }
   };
 
-  // U1 P0: job đổi → null html TRƯỚC (load() early-return khi state != null → thêm id vào deps không đủ).
+  // U1 P0: job đổi → null html TRƯỚC (load() early-return khi state != null),
+  // rồi load — CÙNG effect để không bao giờ có state null mà không refetch.
   // oxlint-disable-next-line react/set-state-in-effect
   useEffect(() => {
     setMdHtml(null);
     setWordHtml(null);
-  }, [mode, job.id]);
-
-  // Chỉ fetch mode đầu tiên; đổi mode → fetch cache state (mdHtml/wordHtml null check).
-  // oxlint-disable-next-line react/set-state-in-effect
-  useEffect(() => {
     void load(mode);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load theo mode, state check trong load
-  }, [mode]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load theo mode+job.id, state check trong load
+  }, [mode, job.id]);
 
   /** Wave-3 #7 → Lane I Task 4: "Lưu layout" dời sang UnifiedEditor (PATCH layout-content). */
 
