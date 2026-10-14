@@ -52,9 +52,10 @@ async def test_forgot_known_email_202_code_email(client, monkeypatch, db_session
     assert len(code) == 6 and code.isdigit()
     assert "token=" not in body  # S5: bỏ link-token
     user = await db_session.scalar(select(User).where(User.email == "r@x.io"))
-    import hashlib
+    from app.core.security import hash_email_code
 
-    assert user.password_reset_code == hashlib.sha256(code.encode()).hexdigest()
+    # P1-3: hash per-user = sha256(f"{email}:{code}:{app_secret}")
+    assert user.password_reset_code == hash_email_code("r@x.io", code)
     assert user.password_reset_expires_at is not None
     kinds = (
         await db_session.execute(
@@ -72,12 +73,14 @@ async def test_reset_with_code_changes_password(client, monkeypatch):
     await client.post("/api/auth/password/forgot", json={"email": "q@x.io"})
     code = _code_from(sent[-1][2])
     r = await client.post(
-        "/api/auth/password/reset", json={"code": code, "password": "newsecret1"}
+        "/api/auth/password/reset",
+        json={"email": "q@x.io", "code": code, "password": "newsecret1"},
     )
     assert r.status_code == 200
-    # single-use: code đã xóa → reset lại 422
+    # single-use: code đã claim (NULL) → reset lại 422
     r2 = await client.post(
-        "/api/auth/password/reset", json={"code": code, "password": "another99"}
+        "/api/auth/password/reset",
+        json={"email": "q@x.io", "code": code, "password": "another99"},
     )
     assert r2.status_code == 422
     assert (await client.post("/api/auth/refresh")).status_code == 401  # revoked
@@ -91,7 +94,19 @@ async def test_reset_with_code_changes_password(client, monkeypatch):
 async def test_reset_wrong_code_422(client, monkeypatch):
     await _register(client, monkeypatch)
     r = await client.post(
-        "/api/auth/password/reset", json={"code": "000000", "password": "newsecret1"}
+        "/api/auth/password/reset",
+        json={"email": "r@x.io", "code": "000000", "password": "newsecret1"},
+    )
+    assert r.status_code == 422
+
+async def test_reset_wrong_email_422(client, monkeypatch):
+    """P1-3: code của user A + email user B → 422 (lookup per-user)."""
+    sent = await _register(client, monkeypatch)
+    await client.post("/api/auth/password/forgot", json={"email": "r@x.io"})
+    code = _code_from(sent[-1][2])
+    r = await client.post(
+        "/api/auth/password/reset",
+        json={"email": "other@x.io", "code": code, "password": "newsecret1"},
     )
     assert r.status_code == 422
 
@@ -109,7 +124,8 @@ async def test_reset_expired_code_422(client, monkeypatch, db_session):
     )
     await db_session.commit()
     r = await client.post(
-        "/api/auth/password/reset", json={"code": code, "password": "newsecret1"}
+        "/api/auth/password/reset",
+        json={"email": "r@x.io", "code": code, "password": "newsecret1"},
     )
     assert r.status_code == 422
 

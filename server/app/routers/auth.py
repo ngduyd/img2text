@@ -15,6 +15,7 @@ from fastapi import (
     Request,
     Response,
 )
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -157,7 +158,7 @@ async def register(
     session.add(user)
     await session.commit()  # id ổn định cho email_sends + code hash
     code = generate_email_code()
-    user.email_verify_code_hash = hash_email_code(code)
+    user.email_verify_code_hash = hash_email_code(user.email, code)
     user.email_verify_expires_at = datetime.now(timezone.utc) + _EMAIL_CODE_TTL
     email_sends.record(session, user.id, "welcome")
     email_sends.record(session, user.id, "verify_code")
@@ -208,7 +209,7 @@ async def verify_email(
         or user.email_verify_expires_at is None
         or user.email_verify_expires_at <= now
         or not hmac.compare_digest(
-            user.email_verify_code_hash, hash_email_code(body.code)
+            user.email_verify_code_hash, hash_email_code(user.email, body.code)
         )
     ):
         raise HTTPException(status_code=422, detail="invalid or expired code")
@@ -226,10 +227,17 @@ async def verify_resend(
     _: None = Depends(rate_limit_auth),
 ) -> dict:
     """S5: code MỚI ghi đè code cũ (single active/user); qua per-kind
-    email limit — vượt → 429 email_limit (handler ở main.py)."""
+    email limit — vượt → 429 email_limit (handler ở main.py).
+
+    P2 review: đã verified → 400 {code:"already_verified"}, KHÔNG gửi
+    email (không dùng resend làm kênh email-bomb)."""
+    if user.is_verified:
+        return JSONResponse(
+            status_code=400, content={"code": "already_verified"}
+        )
     await email_sends.check_limit(session, user.id, "verify_code")
     code = generate_email_code()
-    user.email_verify_code_hash = hash_email_code(code)
+    user.email_verify_code_hash = hash_email_code(user.email, code)
     user.email_verify_expires_at = datetime.now(timezone.utc) + _EMAIL_CODE_TTL
     email_sends.record(session, user.id, "verify_code")
     await session.commit()
@@ -330,9 +338,10 @@ class ForgotIn(_EmailIn):
     email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-class ResetIn(BaseModel):
-    # S5: mã 6 số — body không có email (spec {code, password}) → lookup
-    # theo hash; rate_limit_auth + TTL 5p chặn brute force
+class ResetIn(_EmailIn):
+    # P1-3 review: body có email — lookup per-user theo email rồi mới
+    # so sánh hash; rate_limit_auth + TTL 5p chặn brute force
+    email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     code: str = Field(pattern=r"^\d{6}$")
     password: str = Field(min_length=8)
 
@@ -355,7 +364,7 @@ async def forgot(
         return {}
     await email_sends.check_limit(session, user.id, "reset_code")
     code = generate_email_code()
-    user.password_reset_code = hash_email_code(code)
+    user.password_reset_code = hash_email_code(user.email, code)
     user.password_reset_expires_at = datetime.now(timezone.utc) + _EMAIL_CODE_TTL
     email_sends.record(session, user.id, "reset_code")
     await session.commit()
@@ -376,29 +385,35 @@ async def reset(
     session: AsyncSession = Depends(get_session),
     _: None = Depends(rate_limit_auth),
 ) -> dict:
-    """S5: {code, password} — lookup theo hash + chưa hết hạn. 0 match →
-    422; >1 match (2 user trùng mã trong cửa sổ 5p) → 422 (không mạo
-    hiểm reset sai account). Đúng → đổi mật khẩu, revoke ALL refresh,
-    xóa code (single-use)."""
+    """S5+P1-3: {email, code, password} — lookup user theo email, so hash
+    per-user (sha256(email:code:secret)) + chưa hết hạn trong MỘT conditional
+    UPDATE ... RETURNING (atomic claim — không check-then-set race).
+    0 match → 422. Đúng → đổi mật khẩu + revoke ALL refresh CÙNG transaction
+    (single commit; code single-use vì đã NULL claim)."""
     now = datetime.now(timezone.utc)
-    candidates = (
-        (
-            await session.execute(
-                select(User).where(
-                    User.password_reset_code == hash_email_code(body.code),
-                    User.password_reset_expires_at > now,
-                )
-            )
+    claim = await session.execute(
+        update(User)
+        .where(
+            User.id
+            == select(User.id)
+            .where(User.email == body.email)
+            .scalar_subquery(),
+            User.password_reset_code == hash_email_code(body.email, body.code),
+            User.password_reset_expires_at > now,
         )
-        .scalars()
-        .all()
+        .values(
+            password_reset_code=None,
+            password_reset_expires_at=None,
+            password_hash=hash_password(body.password),
+        )
+        .returning(User.id),
     )
-    if len(candidates) != 1:
+    user_id = claim.scalar_one_or_none()
+    if user_id is None:
+        await session.rollback()
         raise HTTPException(status_code=422, detail="invalid or expired code")
-    user = candidates[0]
-    user.password_reset_code = None
-    user.password_reset_expires_at = None
-    user.password_hash = hash_password(body.password)
+    await session.execute(
+        delete(RefreshToken).where(RefreshToken.user_id == user_id)
+    )
     await session.commit()
-    await revoke_all_refresh(session, user.id)
     return {}

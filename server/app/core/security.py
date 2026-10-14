@@ -74,11 +74,12 @@ def generate_email_code() -> str:
     """Mã 6 số (000000-999999) cho email verify / password reset (S5)."""
     return f"{secrets.randbelow(1_000_000):06d}"
 
-def hash_email_code(code: str) -> str:
-    """sha256 hex — DB chỉ lưu hash. Không per-user salt: reset {code,
-    password} (không có email) phải lookup được theo hash — bù bằng
-    rate-limit + expiry 5 phút."""
-    return hashlib.sha256(code.encode()).hexdigest()
+def hash_email_code(email: str, code: str) -> str:
+    """sha256 hex per-user — salt = email + app_secret (P1-3 review):
+    hash = sha256(f"{email}:{code}:{settings.app_secret}"). Lookup/reset
+    identify the user by email FIRST, then compare with hmac.compare_digest
+    — DB chỉ lưu hash."""
+    return hashlib.sha256(f"{email}:{code}:{settings.app_secret}".encode()).hexdigest()
 
 
 def set_auth_cookies(response: Response, access: str, refresh: str | None = None) -> None:

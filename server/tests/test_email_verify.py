@@ -147,7 +147,10 @@ async def test_register_sends_welcome_and_verify_code(client, monkeypatch, db_se
     assert code is not None, f"no 6-digit code in emails: {sent!r}"
     user = await db_session.scalar(select(User).where(User.email == "new@x.io"))
     assert user.is_verified is False
-    assert user.email_verify_code_hash == hashlib.sha256(code.encode()).hexdigest()
+    from app.core.security import hash_email_code
+
+    # P1-3: hash per-user = sha256(f"{email}:{code}:{app_secret}")
+    assert user.email_verify_code_hash == hash_email_code("new@x.io", code)
     assert user.email_verify_expires_at is not None
     kinds = (
         await db_session.execute(
@@ -226,9 +229,11 @@ async def test_verify_expired_code_422(client, monkeypatch, db_session):
 
     await _register_with_code(client, monkeypatch)
     code = "123456"
+    from app.core.security import hash_email_code
+
     await db_session.execute(
         update(User).values(
-            email_verify_code_hash=_h.sha256(code.encode()).hexdigest(),
+            email_verify_code_hash=hash_email_code("v@x.io", code),
             email_verify_expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
         )
     )
