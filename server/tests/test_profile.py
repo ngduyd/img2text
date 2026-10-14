@@ -130,4 +130,4 @@ async def test_response_shape_equals_me(auth_client):
     me = await auth_client.get("/api/auth/me")
     assert me.status_code == 200, me.text
     assert r.json() == me.json()
-    assert set(r.json()) == {"id", "email", "role", "ocr_enabled"}
+    assert set(r.json()) == {"id", "email", "role", "ocr_enabled", "is_verified"}

@@ -24,12 +24,11 @@ from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user
 from app.core.limiter import rate_limit_auth
-from app.core.models import PasswordResetToken, RefreshToken, User
+from app.core.models import RefreshToken, User
 from app.core.security import (
     JWT_ISSUER,
     create_access_token,
     generate_email_code,
-    generate_reset_token,
     hash_email_code,
     hash_password,
     set_auth_cookies,
@@ -39,7 +38,6 @@ from app.core.security import (
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 _REFRESH_TTL = timedelta(days=30)
-_RESET_TTL = timedelta(hours=1)
 # S5: mã verify/reset 6 số TTL 5 phút (single active code/user, ghi đè)
 _EMAIL_CODE_TTL = timedelta(minutes=5)
 
@@ -333,7 +331,9 @@ class ForgotIn(_EmailIn):
 
 
 class ResetIn(BaseModel):
-    token: str
+    # S5: mã 6 số — body không có email (spec {code, password}) → lookup
+    # theo hash; rate_limit_auth + TTL 5p chặn brute force
+    code: str = Field(pattern=r"^\d{6}$")
     password: str = Field(min_length=8)
 
 
@@ -344,59 +344,61 @@ async def forgot(
     session: AsyncSession = Depends(get_session),
     _: None = Depends(rate_limit_auth),
 ) -> dict:
-    """Always 202 {} — identical body for known/unknown email (no user
-    enumeration). SMTP is enqueued via BackgroundTasks AFTER the token
-    commit: the handler never awaits the mail server, so a slow SMTP cannot
-    create a timing oracle. (Real timing parity is a Plan G manual e2e item —
-    ruling R8 forbids a wall-clock assertion here: httpx ASGITransport awaits
-    background tasks within the app call.) send_email swallows SMTP failures
-    itself, so a mail outage never turns this into a 500."""
+    """Luôn 202 {} cho email không tồn tại (không enumeration). Known →
+    mã 6 số TTL 5p (hash lưu users.password_reset_code; single active code
+    — ghi đè), qua per-kind email limit — check TRƯỚC enqueue; vượt →
+    429 email_limit (leak tồn tại chấp nhận để chặn spam).
+
+    SMTP enqueue SAU commit; mailer tự swallow lỗi → không 500."""
     user = await session.scalar(select(User).where(User.email == body.email))
-    if user is not None:
-        raw = generate_reset_token()
-        session.add(
-            PasswordResetToken(
-                user_id=user.id,
-                token_hash=hashlib.sha256(raw.encode()).hexdigest(),
-                expires_at=datetime.now(timezone.utc) + _RESET_TTL,
-            )
-        )
-        await session.commit()
-        background_tasks.add_task(
-            mailer.send_email,
-            user.email,
-            "Reset your password",
-            f"Reset your password: {settings.base_url}/reset?token={raw}\n"
-            "If you did not request this, ignore this email.",
-        )
+    if user is None:
+        return {}
+    await email_sends.check_limit(session, user.id, "reset_code")
+    code = generate_email_code()
+    user.password_reset_code = hash_email_code(code)
+    user.password_reset_expires_at = datetime.now(timezone.utc) + _EMAIL_CODE_TTL
+    email_sends.record(session, user.id, "reset_code")
+    await session.commit()
+    background_tasks.add_task(
+        mailer.send_email,
+        user.email,
+        "Reset your password",
+        f"Your password reset code is: {code}\n\n"
+        "It expires in 5 minutes. If you did not request this, "
+        "ignore this email.\n",
+    )
     return {}
 
 
 @router.post("/password/reset")
 async def reset(
-    body: ResetIn, session: AsyncSession = Depends(get_session)
+    body: ResetIn,
+    session: AsyncSession = Depends(get_session),
+    _: None = Depends(rate_limit_auth),
 ) -> dict:
-    """Consume reset token (single-use), rehash password, revoke ALL refresh
-    tokens. Invalid/expired/used token → 422."""
-    token_hash = hashlib.sha256(body.token.encode()).hexdigest()
+    """S5: {code, password} — lookup theo hash + chưa hết hạn. 0 match →
+    422; >1 match (2 user trùng mã trong cửa sổ 5p) → 422 (không mạo
+    hiểm reset sai account). Đúng → đổi mật khẩu, revoke ALL refresh,
+    xóa code (single-use)."""
     now = datetime.now(timezone.utc)
-    # atomic single-use claim: WHERE used_at IS NULL AND not expired —
-    # concurrent resets with same token → one winner, rest get rowcount 0
-    claim = await session.execute(
-        update(PasswordResetToken)
-        .where(
-            PasswordResetToken.token_hash == token_hash,
-            PasswordResetToken.used_at.is_(None),
-            PasswordResetToken.expires_at > now,
+    candidates = (
+        (
+            await session.execute(
+                select(User).where(
+                    User.password_reset_code == hash_email_code(body.code),
+                    User.password_reset_expires_at > now,
+                )
+            )
         )
-        .values(used_at=now)
+        .scalars()
+        .all()
     )
-    if claim.rowcount != 1:
-        raise HTTPException(status_code=422, detail="invalid or expired token")
-    row = await session.scalar(
-        select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash)
-    )
-    user = await session.get(User, row.user_id)
+    if len(candidates) != 1:
+        raise HTTPException(status_code=422, detail="invalid or expired code")
+    user = candidates[0]
+    user.password_reset_code = None
+    user.password_reset_expires_at = None
     user.password_hash = hash_password(body.password)
+    await session.commit()
     await revoke_all_refresh(session, user.id)
     return {}

@@ -9,7 +9,6 @@ import warnings
 from datetime import datetime, timedelta, timezone
 import secrets
 import warnings
-from secrets import token_urlsafe
 
 import bcrypt
 import jwt
@@ -70,12 +69,6 @@ def create_access_token(sub: str, role: str) -> str:
 def _cookie_secure() -> bool:
     return str(settings.base_url).startswith("https")
 
-
-def generate_reset_token() -> str:
-    """Raw password-reset token. Route and tests share this generator (ruling
-    R2); DB stores sha256(token) only — tests regex the raw token out of the
-    captured email body."""
-    return token_urlsafe(32)
 
 def generate_email_code() -> str:
     """Mã 6 số (000000-999999) cho email verify / password reset (S5)."""

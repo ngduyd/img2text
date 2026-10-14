@@ -76,20 +76,9 @@ class RefreshToken(Base):
     )
 
 
-class PasswordResetToken(Base):
-    """Single-use password-reset token; DB stores sha256(raw) only (ruling R2)."""
-
-    __tablename__ = "password_reset_tokens"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), index=True
-    )
-    token_hash: Mapped[str] = mapped_column(String, unique=True, index=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    used_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+# S5 wave-5: PasswordResetToken (token-link) bỏ — forgot/reset dùng mã
+# 6 số hash trên users (password_reset_code/_expires_at); migration
+# 2026-10-15_email_verify.sql DROP TABLE password_reset_tokens.
 
 class EmailSend(Base):
     """Wave-5 S5 audit: 1 row / outbound email. Kinds: welcome |
