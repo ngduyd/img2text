@@ -50,11 +50,11 @@ it("auto-fetches blob on mount and renders image", async () => {
 it("pdf renders unsandboxed iframe (blob viewer) with a11y title + blob new-tab link", async () => {
   vi.mocked(api.downloadJobFile).mockResolvedValue(new Blob(["pdf"]));
   renderPanel("pdf");
-  const frame = await screen.findByTitle("File gốc");
+  const frame = await screen.findByTitle("Original file");
   expect(frame).toHaveAttribute("src", "blob:http://test/5");
   // Wave-3: sandbox="" chặn browser PDF viewer (blob URL same-origin = an toàn) → bỏ attr.
   expect(frame).not.toHaveAttribute("sandbox");
-  const link = screen.getByRole("link", { name: "Mở tab mới" });
+  const link = screen.getByRole("link", { name: "Open in new tab" });
   expect(link).toHaveAttribute("href", "blob:http://test/5");
   expect(link).toHaveAttribute("target", "_blank");
 });
@@ -78,7 +78,7 @@ it("shows ApiError detail on fetch failure", async () => {
   vi.mocked(api.downloadJobFile).mockRejectedValue(new ApiError("Không có file."));
   renderPanel("image");
   expect(await screen.findByTestId("original-error")).toHaveTextContent("Không có file.");
-  expect(screen.queryByAltText("File gốc")).toBeNull();
+  expect(screen.queryByAltText("Original file")).toBeNull();
 });
 
 it("btn-download-original uses viewer blob + anchor click + revoke", async () => {

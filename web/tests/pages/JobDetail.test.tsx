@@ -149,7 +149,7 @@ it("queued shows waiting message and polls", async () => {
   // Task 2: header badge duplicates status text — scope to InfoPanel's status badge.
   // Lane I Task 2: InfoPanel = collapsible default closed → mở trước.
   await userEvent.click(await screen.findByTestId("btn-toggle-info"));
-  expect(await screen.findByTestId("status-5")).toHaveTextContent("Đang lập lịch");
+  expect(await screen.findByTestId("status-5")).toHaveTextContent("Queued");
   // Back link points at the /jobs list route (root is public landing now).
   expect(screen.getByTestId("link-back-jobs")).toHaveAttribute("href", "/jobs");
   expect(pollSpyCalled()).toBe(true);
@@ -168,14 +168,14 @@ it("failed shows retry button and calls api", async () => {
   vi.mocked(api.retryJob).mockResolvedValue(undefined);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await userEvent.click(await screen.findByTestId("btn-toggle-info"));
-  expect(await screen.findByTestId("status-5")).toHaveTextContent("Xử lý thất bại");
+  expect(await screen.findByTestId("status-5")).toHaveTextContent("Processing failed");
   const invalidate = vi.spyOn(lastQueryClient!, "invalidateQueries");
   const user = userEvent.setup();
   await user.click(screen.getByTestId("btn-retry-job"));
   expect(api.retryJob).toHaveBeenCalledWith("5");
   // R59: retry success toasts plan copy + refetches detail + list.
   await waitFor(() =>
-    expect(toast.success).toHaveBeenCalledWith("Đã lên lịch chạy lại"),
+    expect(toast.success).toHaveBeenCalledWith("Retry scheduled"),
   );
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["job", "5"] });
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
@@ -186,7 +186,7 @@ it("retry failure shows retry-error with server detail", async () => {
   vi.mocked(api.retryJob).mockRejectedValue(new ApiError("Forbidden."));
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await userEvent.click(await screen.findByTestId("btn-toggle-info"));
-  expect(await screen.findByTestId("status-5")).toHaveTextContent("Xử lý thất bại");
+  expect(await screen.findByTestId("status-5")).toHaveTextContent("Processing failed");
   const user = userEvent.setup();
   await user.click(screen.getByTestId("btn-retry-job"));
   expect(await screen.findByTestId("retry-error")).toHaveTextContent("Forbidden.");
@@ -204,7 +204,7 @@ it.each(["queued", "extracting", "rendering"] as const)(
     const user = userEvent.setup();
     await user.click(screen.getByTestId("btn-cancel-job"));
     expect(api.cancelJob).toHaveBeenCalledWith("5");
-    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Đã hủy job"));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Job cancelled"));
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["job", "5"] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["jobs"] });
   },
@@ -269,7 +269,7 @@ it("done renders 3 panels: original + result + info with status badge", async ()
   expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
   expect(screen.getByTestId("panel-result")).toBeInTheDocument();
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
-  expect(screen.getByTestId("status-5")).toHaveTextContent("Hoàn tất");
+  expect(screen.getByTestId("status-5")).toHaveTextContent("Done");
 });
 
 /** WS-UI item 13: Stats line DƯỚI preview (result-stats bật lại); job-meta/output badge vẫn gỡ. */
@@ -295,7 +295,7 @@ it("not done shows status-only panels, ResultPanel hidden until done", async () 
   expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
   expect(screen.queryByTestId("panel-result")).toBeNull();
-  expect(screen.getByTestId("status-5")).toHaveTextContent("Đang lập lịch");
+  expect(screen.getByTestId("status-5")).toHaveTextContent("Queued");
   // JD2: chưa có markdown → Edit (inline) vô hiệu, không có dead click
   expect(screen.getByTestId("btn-edit-doc")).toBeDisabled();
   expect(screen.queryByTestId("detail-reading")).toBeNull();
@@ -308,7 +308,7 @@ it("header: back link, title, badge, actions in one row (adjust-only)", async ()
   expect(await screen.findByTestId("link-back-jobs")).toHaveAttribute("href", "/jobs");
   // name scope: preview MDEditor inline (M5) cũng render heading từ md artifact
   expect(
-    screen.getByRole("heading", { level: 1, name: "Chi tiết công việc #5" }),
+    screen.getByRole("heading", { level: 1, name: "Job detail #5" }),
   ).toBeInTheDocument();
   // JD2: output badge moved to rail meta; header keeps status badge
   expect(screen.getByTestId("job-header")).toContainElement(
@@ -323,13 +323,13 @@ it("btn-edit-doc toggles editor: preview → editor → preview, no navigation",
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   const user = userEvent.setup();
   const btn = await screen.findByTestId("btn-edit-doc");
-  expect(btn).toHaveTextContent("Chỉnh sửa");
+  expect(btn).toHaveTextContent("Edit");
   // Default = XEM TRƯỚC read-only (spec WS-UI section Layout).
   expect(screen.getByTestId("layout-preview")).toBeInTheDocument();
   await user.click(btn);
   expect(mockNavigate).not.toHaveBeenCalled();
   expect(btn).toHaveAttribute("aria-pressed", "true");
-  expect(btn).toHaveTextContent("Đang sửa");
+  expect(btn).toHaveTextContent("Editing");
   const editor = await screen.findByTestId("md-editor");
   expect(editor.querySelector("textarea")).toHaveFocus();
   expect(scrollIntoViewMock).toHaveBeenCalledTimes(1);
@@ -381,7 +381,7 @@ it("layout fmt switch: click docx-layout → exportJob docx-layout + toast + cro
     expect(api.exportJob).toHaveBeenCalledWith("5", "docx-layout"),
   );
   await waitFor(() =>
-    expect(toast.success).toHaveBeenCalledWith("Đã đổi định dạng layout."),
+    expect(toast.success).toHaveBeenCalledWith("Layout format changed."),
   );
   expect(screen.getByTestId("fmt-docx-layout")).toHaveAttribute("aria-pressed", "true");
 });
@@ -443,7 +443,7 @@ it("btn-retry-layout: confirm → retryLayout + toast; cancel → no call", asyn
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   const user = userEvent.setup();
   const btn = await screen.findByTestId("btn-retry-layout");
-  expect(btn).toHaveTextContent("Vẽ lại layout");
+  expect(btn).toHaveTextContent("Rebuild layout");
   // Hủy → không gọi.
   await user.click(btn);
   expect(screen.getByTestId("confirm-dialog")).toBeInTheDocument();
@@ -454,7 +454,7 @@ it("btn-retry-layout: confirm → retryLayout + toast; cancel → no call", asyn
   await user.click(screen.getByTestId("confirm-accept"));
   expect(api.retryLayout).toHaveBeenCalledWith("5");
   await waitFor(() =>
-    expect(toast.success).toHaveBeenCalledWith("Đã tạo lại layout."),
+    expect(toast.success).toHaveBeenCalledWith("Layout rebuilt."),
   );
   expect(await screen.findByTestId("btn-retry-layout")).not.toHaveAttribute("aria-busy");
 });
@@ -540,7 +540,7 @@ it("2 section h2 'Văn bản' + 'Layout', không còn tab buttons", async () => 
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("section-text");
   await screen.findByTestId("section-layout");
-  expect(screen.getByRole("heading", { level: 2, name: "Văn bản" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { level: 2, name: "Text" })).toBeInTheDocument();
   expect(screen.getByRole("heading", { level: 2, name: "Layout" })).toBeInTheDocument();
   expect(screen.queryAllByRole("tab")).toHaveLength(0);
   expect(screen.queryByRole("tablist")).toBeNull();
@@ -588,12 +588,12 @@ it("stale_layouts non-empty: stale-badge shows, resync calls api + toast + inval
   mockJob({ ...DONE_JOB, stale_layouts: ["md"] });
   vi.mocked(api.retryLayout).mockResolvedValue({ md: true, docx: true });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  expect(await screen.findByTestId("stale-badge")).toHaveTextContent("Cần đồng bộ");
+  expect(await screen.findByTestId("stale-badge")).toHaveTextContent("Needs sync");
   const invalidate = vi.spyOn(lastQueryClient!, "invalidateQueries");
   const user = userEvent.setup();
   await user.click(screen.getByTestId("btn-resync-layout"));
   expect(api.retryLayout).toHaveBeenCalledWith("5");
-  await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Đã đồng bộ layout"));
+  await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Layout synced"));
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["job", "5"] });
 });
 
@@ -640,12 +640,12 @@ it("btn-version-history lists versions: v{version} + kind + time + Hiện tại 
   const current = screen.getByTestId("version-row-text-3");
   expect(current).toHaveTextContent("v3");
   expect(current).toHaveTextContent("text");
-  expect(within(current).getByText("Hiện tại")).toBeInTheDocument();
+  expect(within(current).getByText("Current")).toBeInTheDocument();
   const old = screen.getByTestId("version-row-md-layout-2");
   expect(old).toHaveTextContent("v2");
   expect(old).toHaveTextContent("md-layout");
   // P2: max trong kind cũng "Hiện tại" (md-layout v2 là current của kind md-layout).
-  expect(within(old).getByText("Hiện tại")).toBeInTheDocument();
+  expect(within(old).getByText("Current")).toBeInTheDocument();
 });
 
 it("btn-version-restore-{kind}-{version} calls api.restoreVersion + toast + invalidate job & versions", async () => {
@@ -660,7 +660,7 @@ it("btn-version-restore-{kind}-{version} calls api.restoreVersion + toast + inva
   // vid = DocumentVersion.id (server: session.get(DocumentVersion, vid)).
   expect(api.restoreVersion).toHaveBeenCalledWith("5", 10);
   await waitFor(() =>
-    expect(toast.success).toHaveBeenCalledWith("Đã khôi phục bản cũ"),
+    expect(toast.success).toHaveBeenCalledWith("Version restored"),
   );
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["job", "5"] });
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["versions", "5"] });
@@ -680,8 +680,8 @@ it("versions same number across kinds: unique testids, each kind's max row badge
   await userEvent.setup().click(await screen.findByTestId("btn-version-history"));
   const textRow = await screen.findByTestId("version-row-text-1");
   const mdRow = screen.getByTestId("version-row-md-layout-1");
-  expect(within(textRow).getByText("Hiện tại")).toBeInTheDocument();
-  expect(within(mdRow).getByText("Hiện tại")).toBeInTheDocument();
+  expect(within(textRow).getByText("Current")).toBeInTheDocument();
+  expect(within(mdRow).getByText("Current")).toBeInTheDocument();
   expect(screen.getByTestId("btn-version-restore-text-1")).toBeInTheDocument();
   expect(screen.getByTestId("btn-version-restore-md-layout-1")).toBeInTheDocument();
 });
@@ -699,9 +699,9 @@ it("md kind: only max md version row badges Hiện tại (region-edit snapshot)"
   });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await userEvent.setup().click(await screen.findByTestId("btn-version-history"));
-  expect(within(await screen.findByTestId("version-row-md-2")).getByText("Hiện tại")).toBeInTheDocument();
-  expect(within(screen.getByTestId("version-row-md-1")).queryByText("Hiện tại")).not.toBeInTheDocument();
-  expect(within(screen.getByTestId("version-row-text-3")).getByText("Hiện tại")).toBeInTheDocument();
+  expect(within(await screen.findByTestId("version-row-md-2")).getByText("Current")).toBeInTheDocument();
+  expect(within(screen.getByTestId("version-row-md-1")).queryByText("Current")).not.toBeInTheDocument();
+  expect(within(screen.getByTestId("version-row-text-3")).getByText("Current")).toBeInTheDocument();
 });
 
 /** P1: panel không nuốt loading/error — skeleton lúc fetch, role=alert khi fail. */
@@ -720,7 +720,7 @@ it("versions fetch failure shows role=alert error line", async () => {
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await userEvent.setup().click(await screen.findByTestId("btn-version-history"));
   const panel = await screen.findByTestId("version-history");
-  expect(within(panel).getByRole("alert")).toHaveTextContent("Không tải được lịch sử");
+  expect(within(panel).getByRole("alert")).toHaveTextContent("Could not load the history");
 });
 
 /** P2 a11y: Escape đóng panel (button đã có aria-expanded + aria-controls. */

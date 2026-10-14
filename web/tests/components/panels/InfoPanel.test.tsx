@@ -35,12 +35,12 @@ const DONE_JOB: Job = {
 it("renders status badge + vi-VN dates, page count, gpu + model", () => {
   renderPanel(DONE_JOB);
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
-  expect(screen.getByTestId("status-5")).toHaveTextContent("Hoàn tất");
+  expect(screen.getByTestId("status-5")).toHaveTextContent("Done");
   // vi-VN date (env ICU: "2/1/2026") on all three timestamps.
   expect(screen.getAllByText(/\/2026/)).toHaveLength(3);
-  expect(screen.getByText("Số trang:")).toBeInTheDocument();
+  expect(screen.getByText("Pages:")).toBeInTheDocument();
   expect(screen.getByText("3")).toBeInTheDocument();
-  expect(screen.getByText(/GPU \(giây\):/)).toBeInTheDocument();
+  expect(screen.getByText("GPU (seconds):")).toBeInTheDocument();
   expect(screen.getByText(/12[.,]5/)).toBeInTheDocument();
   expect(screen.getByText("Model:")).toBeInTheDocument();
   expect(screen.getByText("m1")).toBeInTheDocument();
@@ -56,7 +56,7 @@ it("queued job without result omits gpu/model/finished", () => {
   };
   renderPanel(job);
   const panel = screen.getByTestId("panel-info");
-  expect(within(panel).getByTestId("status-5")).toHaveTextContent("Đang lập lịch");
+  expect(within(panel).getByTestId("status-5")).toHaveTextContent("Queued");
   expect(within(panel).queryByText(/GPU/)).toBeNull();
   expect(within(panel).queryByText("m1")).toBeNull();
   expect(within(panel).getAllByText(/\/2026/)).toHaveLength(1);

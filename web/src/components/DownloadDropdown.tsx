@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import { mapApiError } from "../lib/errors";
+import { useT } from "../i18n";
 import Button from "./ui/Button";
 
 /**
@@ -11,10 +12,10 @@ import Button from "./ui/Button";
  * ExportBar. R51: testids export-md/export-html/export-docx/export-pdf giữ.
  */
 const TEXT_FORMATS = [
-  { fmt: "md", testid: "export-md", label: "Tải .md" },
-  { fmt: "html", testid: "export-html", label: "Tải .html" },
-  { fmt: "docx", testid: "export-docx", label: "Tải .docx" },
-  { fmt: "pdf", testid: "export-pdf", label: "Tải .pdf" },
+  { fmt: "md", testid: "export-md", labelKey: "export.fmtMd" },
+  { fmt: "html", testid: "export-html", labelKey: "export.fmtHtml" },
+  { fmt: "docx", testid: "export-docx", labelKey: "export.fmtDocx" },
+  { fmt: "pdf", testid: "export-pdf", labelKey: "export.fmtPdf" },
 ] as const;
 
 export default function DownloadDropdown({
@@ -26,12 +27,13 @@ export default function DownloadDropdown({
   open: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useT();
   const download = async (fmt: (typeof TEXT_FORMATS)[number]["fmt"]) => {
     try {
       const { url } = await api.exportJob(jobId, fmt);
       const w = window.open("", "_blank");
       if (w) w.location = url;
-      toast.success("Đã tạo bản xuất.");
+      toast.success(t("export.created"));
     } catch (err) {
       // R59: lỗi download hiển thị toast (header không có inline error slot).
       toast.error(err instanceof ApiError ? err.detail : mapApiError(err));
@@ -58,7 +60,7 @@ export default function DownloadDropdown({
         onClick={onToggle}
       >
         <Download className="h-4 w-4" aria-hidden="true" />
-        Tải xuống
+        {t("jd.download")}
       </Button>
       <div
         id="download-formats"
@@ -66,7 +68,7 @@ export default function DownloadDropdown({
         hidden={!open}
         className="absolute right-0 z-20 mt-1 flex w-48 flex-col gap-1 rounded-md border border-border bg-surface p-2 shadow-card"
       >
-        {TEXT_FORMATS.map(({ fmt, testid, label }) => (
+        {TEXT_FORMATS.map(({ fmt, testid, labelKey }) => (
           <Button
             key={fmt}
             testid={testid}
@@ -78,7 +80,7 @@ export default function DownloadDropdown({
               if (open) onToggle();
             }}
           >
-            {label}
+            {t(labelKey)}
           </Button>
         ))}
       </div>

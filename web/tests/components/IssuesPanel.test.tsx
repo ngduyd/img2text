@@ -47,8 +47,8 @@ it("renders only non-ok issues with vietnamese labels", async () => {
   expect(await screen.findByTestId("issue-p1r0")).toBeInTheDocument();
   expect(screen.getByTestId("issue-p1r1")).toBeInTheDocument();
   expect(screen.queryByTestId("issue-p1r2")).toBeNull();
-  expect(screen.getByTestId("issue-p1r0")).toHaveTextContent("Hình ảnh chưa trích xuất");
-  expect(screen.getByTestId("issue-p1r1")).toHaveTextContent("Không trích xuất được văn bản");
+  expect(screen.getByTestId("issue-p1r0")).toHaveTextContent("Image not extractable");
+  expect(screen.getByTestId("issue-p1r1")).toHaveTextContent("Text not extractable");
 });
 
 it("shows crop image only when bbox present", async () => {
