@@ -356,3 +356,67 @@ class TestGeometryFirstPrompt:
         assert "hanging indent" in prompt        # list
         assert "first block of a band = heading" in prompt
         assert "image blocks = figure nodes" in prompt
+
+
+# --- Lane S Task 4: extract_heading_anchors (S3) ---
+
+from app.services.ir import AnchorState, extract_heading_anchors
+
+def _page(regions: list, height: int = 1000) -> dict:
+    return {"index": 0, "width": 800, "height": height, "regions": regions}
+
+def _blk(rid: str, text: str, y0: int) -> dict:
+    return {"id": rid, "bbox": [10, y0, 300, y0 + 30], "text": text,
+            "verdict": "ok", "placeholder": False}
+
+def _headings(anns: list) -> list:
+    return [a for a in anns if a["type"] == "heading"]
+
+def test_heading_anchor_positive_matrix():
+    texts = ["1. Benefit", "1) Foo", "1.1.1 Sub", "   2.2 Indent"]
+    regions = [_blk(f"r{i}", t, 100 + i * 50) for i, t in enumerate(texts)]
+    anns, _ = extract_heading_anchors([_page(regions)])
+    ids = {a["block_id"] for a in _headings(anns)}
+    assert ids == {"r0", "r1", "r2", "r3"}, anns
+
+def test_heading_anchor_negative_matrix():
+    # 4-digit năm, không có [.)]+space, không đầu block
+    texts = ["2024. Năm", "Câu 1:", "Bài 2", "abc 1. x", "1)Foo"]
+    regions = [_blk(f"r{i}", t, 100 + i * 50) for i, t in enumerate(texts)]
+    anns, _ = extract_heading_anchors([_page(regions)])
+    assert _headings(anns) == [], anns
+
+def test_heading_anchor_level_from_numbering():
+    regions = [_blk("r0", "1. A", 100), _blk("r1", "1.1.1 Deep", 200)]
+    anns, _ = extract_heading_anchors([_page(regions)])
+    by_id = {a["block_id"]: a for a in _headings(anns)}
+    assert by_id["r0"]["level"] == 1
+    assert by_id["r1"]["level"] == 3
+
+def test_heading_anchor_sequence_continuous_across_pages():
+    """State carry: §numbering liên tục xuyên trang, KHÔNG reset."""
+    p1 = _page([_blk("r0", "1. Mục một", 100), _blk("r1", "1.1 Gốc con", 300)])
+    p2 = _page([_blk("r2", "2. Mục hai", 100), _blk("r3", "1) Mục ba", 300)])
+    p2["index"] = 1
+    anns1, st = extract_heading_anchors([p1], None)
+    anns2, st = extract_heading_anchors([p2], st)
+    labels = [a["label"] for a in _headings(anns1 + anns2)]
+    assert labels == ["§1", "§1.1", "§2", "§3"], labels
+
+def test_heading_anchor_header_yband_15pct_excluded():
+    """Top 15% y-band + không số → header/doc_title, KHÔNG tham gia §index."""
+    regions = [
+        _blk("t0", "TRƯỜNG THCS ABC", 20),      # y=20 < 150 = 15%*1000
+        _blk("t1", "Kỳ thi học kỳ I", 60),
+        _blk("r0", "1. Benefit", 400),
+    ]
+    anns, _ = extract_heading_anchors([_page(regions)])
+    types = {a["block_id"]: a["type"] for a in anns}
+    assert types["t0"] == "doc_title"
+    assert types["t1"] == "header"
+    assert types["r0"] == "heading"
+    assert all("label" not in a for a in anns if a["block_id"].startswith("t"))
+    # y-band 15%: block dưới 150px vẫn là heading bình thường
+    low = [_blk("r9", "2. Dưới", 200)]
+    anns2, _ = extract_heading_anchors([_page(low)])
+    assert [a["type"] for a in anns2] == ["heading"]

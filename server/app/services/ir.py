@@ -8,6 +8,8 @@ source_block_ids map back to OCR block IDs for traceability.
 from __future__ import annotations
 
 import logging
+import re
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Literal
 
@@ -310,3 +312,70 @@ def validate_ir(ir: dict, ocr_result: dict) -> DocumentIR:
             raise IRValidationError(f"page_number phải >= 1: {page.page_number}")
 
     return doc
+
+
+# --- S3: heading anchors ≠ header trang (Lane S Task 4) ---
+
+@dataclass
+class AnchorState:
+    """Doc-level §counter + open-section stack — carry xuyên trang."""
+    counter: int = 0
+    stack: list = field(default_factory=list)
+    # child index theo parent path — sibling đếm liên tục, không reset trang
+    child_counts: dict = field(default_factory=dict)
+
+# đầu block: "1.", "1)", "1.1.1" (số cuối block) ...; whitespace bắt buộc sau
+# separator — "1)Foo" negative; "2024." bắt 4-digit year guard phía dưới
+_HEADING_ANCHOR_RE = re.compile(r"^\s*(\d+(?:\.\d+)*)(?:[.)]\s|\s|$)")
+
+def _anchor_label(state: AnchorState, level: int) -> str:
+    """Cấp k = depth k trong stack; không nhảy cấp; numbering liên tục."""
+    if level == 1:
+        state.counter += 1
+        state.stack = [state.counter]
+    else:
+        level = min(level, len(state.stack) + 1)  # clamp nhảy cóc cấp
+        key = tuple(state.stack[: level - 1])
+        n = state.child_counts.get(key, 0) + 1
+        state.child_counts[key] = n
+        state.stack = state.stack[: level - 1] + [n]
+    return "§" + ".".join(str(n) for n in state.stack)
+
+def extract_heading_anchors(
+    pages: list[dict], state: AnchorState | None = None
+) -> tuple[list[dict], AnchorState]:
+    """OCR pages → heading annotations + state.
+
+    Positive: "1. Benefit", "1) Foo" (whitespace sau [.)] bắt buộc), "1.1.1",
+    "   2.2 Indent". Negative: "2024. Năm" (4-digit guard), "Câu 1:",
+    "Bài 2", "abc 1. x" (regex anchored đầu block).
+    Header y-band 15% top + không số → type header/doc_title, không tham
+    gia §index. Số thứ tự document-level (counter carry xuyên trang).
+    """
+    state = state or AnchorState()
+    out: list[dict] = []
+    for pi, pg in enumerate(pages):
+        h = float(pg.get("height") or 0)
+        regions = sorted(
+            pg.get("regions", []), key=lambda r: (r.get("bbox") or [0, 0])[1]
+        )
+        for ri, region in enumerate(regions):
+            text = region.get("text") or ""
+            m = _HEADING_ANCHOR_RE.match(text)
+            num = m.group(1) if m else ""
+            is_year = bool(num) and "." not in num and len(num) == 4
+            y0 = (region.get("bbox") or [0, 0])[1]
+            if m and not is_year:
+                level = num.count(".") + 1
+                out.append({
+                    "block_id": region["id"],
+                    "type": "heading",
+                    "label": _anchor_label(state, level),
+                    "level": level,
+                })
+            elif h and y0 < 0.15 * h:
+                out.append({
+                    "block_id": region["id"],
+                    "type": "doc_title" if (pi == 0 and ri == 0) else "header",
+                })
+    return out, state
