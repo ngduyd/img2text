@@ -7,6 +7,7 @@ import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../api/client";
 import { mapApiError } from "../lib/errors";
+import { ageDays, sumKeptBytes } from "../lib/storage";
 import { translate, useT } from "../i18n";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
@@ -16,11 +17,6 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import { Stat, fmtBytes } from "./admin/AdminStorage";
 
 type ConfirmState = { kind: "one"; id: number } | { kind: "due" } | null;
-
-/** Tuổi job theo ngày (floor, không âm). */
-function ageDays(iso: string): number {
-  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000));
-}
 
 export default function Storage() {
   const { t } = useT();
@@ -54,7 +50,7 @@ export default function Storage() {
   const items = data?.items ?? [];
   const kept = items.filter((j) => !j.storage_purged_at);
   const purgedCount = items.length - kept.length;
-  const keptBytes = kept.reduce((sum, j) => sum + (j.upload_bytes || 0), 0);
+  const keptBytes = sumKeptBytes(kept);
 
   return (
     <div className="flex flex-col gap-4">
