@@ -7,9 +7,12 @@ import logging
 import re
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+from time import perf_counter
 
+import httpx
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from httpx import AsyncClient
 from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
 from sqlalchemy import Date, Float, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +24,7 @@ from app.core.models import Job, PageView, RequestLog, Setting, User, WorkerHear
 from app.services.purge import purge_due_jobs, purge_retention_days
 from app.services.runtime_settings import (
     RUNTIME_SETTING_KEYS,
+    get_runtime_setting,
     get_runtime_setting_entry,
 )
 from app.services.storage import StorageDriver, get_storage
@@ -496,6 +500,15 @@ _SETTING_FLOORS: dict[str, tuple[int, str]] = {
     "kaggle_min_gap_seconds": (
         60, "kaggle_min_gap_seconds phải từ 60 giây trở lên.",
     ),
+    # Lane CFG: floors (smtp_port ceiling 65535 checked separately below)
+    "smtp_port": (1, "smtp_port phải trong khoảng 1–65535."),
+    "max_pages": (1, "max_pages phải từ 1 trở lên."),
+    "upload_byte_limit": (
+        1_048_576, "upload_byte_limit phải từ 1MB trở lên.",
+    ),
+    # P2b: quota floors ≥0 (âm = giá trị vô nghĩa, không được silent accept)
+    "daily_page_limit": (0, "daily_page_limit phải từ 0 trở lên."),
+    "weekly_page_limit": (0, "weekly_page_limit phải từ 0 trở lên."),
 }
 
 class RuntimeSettingsPut(BaseModel):
@@ -511,9 +524,22 @@ class RuntimeSettingsPut(BaseModel):
     kaggle_mode: str | None = None
     llm_base_url: str | None = None
     llm_model: str | None = None
+    ir_llm_model: str | None = None
     proofread_llm_model: str | None = None
     llm_api_key: str | None = None
     llm_timeout: int | None = None
+    smtp_host: str | None = None
+    smtp_port: int | None = None
+    smtp_user: str | None = None
+    smtp_pass: str | None = None
+    smtp_from: str | None = None
+    max_pages: int | None = None
+    daily_page_limit: int | None = None
+    weekly_page_limit: int | None = None
+    upload_byte_limit: int | None = None
+
+# Write-only keys: masked in responses, empty PUT = keep existing value.
+_WRITE_ONLY_KEYS = ("llm_api_key", "smtp_pass")
 
 def _mask_api_key(value) -> str | None:
     """WS-ADMIN write-only: "sk-…last4" (or "***" short), empty → null.
@@ -530,6 +556,7 @@ async def _runtime_settings(session_factory) -> dict:
         for key in RUNTIME_SETTING_KEYS
     }
     out["llm_api_key"]["value"] = _mask_api_key(out["llm_api_key"]["value"])
+    out["smtp_pass"]["value"] = _mask_api_key(out["smtp_pass"]["value"])
     return out
 
 def _reschedule_reap(app, seconds: int) -> bool:
@@ -578,6 +605,11 @@ async def put_settings(
             status_code=422,
             detail="llm_timeout phải trong khoảng 120–600 giây.",
         )
+    if body.smtp_port is not None and body.smtp_port > 65535:
+        raise HTTPException(
+            status_code=422,
+            detail="smtp_port phải trong khoảng 1–65535.",
+        )
     for key in _SETTING_FLOORS:
         value = getattr(body, key)
         if value is None:
@@ -590,14 +622,21 @@ async def put_settings(
     for key in (
         "llm_base_url",
         "llm_model",
+        "ir_llm_model",
         "proofread_llm_model",
         "llm_api_key",
         "llm_timeout",
+        "smtp_host",
+        "smtp_user",
+        "smtp_pass",
+        "smtp_from",
+        # numeric, no floor — str() upsert matches the llm_timeout precedent
+        # (daily/weekly_page_limit chuyển sang _SETTING_FLOORS — P2b)
     ):
         value = getattr(body, key)
         # Lane C: write-only key — form để trống = giữ nguyên (không echo nên
         # client không thể phân biệt "chưa set" vs "muốn xóa").
-        if value is None or (key == "llm_api_key" and not value):
+        if value is None or (key in _WRITE_ONLY_KEYS and not value):
             continue
         row = await session.get(Setting, key)
         if row is None:
@@ -608,3 +647,80 @@ async def put_settings(
     if body.scheduler_interval_seconds is not None:
         _reschedule_reap(request.app, body.scheduler_interval_seconds)
     return await _runtime_settings(request.app.state.session_factory)
+
+@router.delete("/settings/{key}")
+async def delete_setting(
+    key: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    _: User = Depends(_admin_user),
+) -> dict:
+    """Lane CFG reset: xóa Setting row → key lại đọc env default (source
+    "env"). Chỉ key runtime — 404 với key lạ (typo không được silent no-op)."""
+    if key not in RUNTIME_SETTING_KEYS:
+        raise HTTPException(status_code=404, detail=f"unknown setting: {key}")
+    row = await session.get(Setting, key)
+    if row is not None:
+        await session.delete(row)
+        await session.commit()
+    if key == "scheduler_interval_seconds":
+        _reschedule_reap(request.app, settings.scheduler_interval_seconds)
+    return await _runtime_settings(request.app.state.session_factory)
+
+class LlmTestModelBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: str
+    base_url: str | None = None
+
+@router.post("/llm/test-model")
+async def llm_test_model(
+    body: LlmTestModelBody,
+    request: Request,
+    _: User = Depends(_admin_user),
+) -> dict:
+    """Lane CFG: probe model sống/chết — 1 prompt \"ping\" (max_tokens 5),
+    timeout 15s, KHÔNG persist. base_url: body override, else runtime
+    setting. Trả {ok, latency_ms, model, error} — ok luôn trong response 200
+    (lỗi LLM nằm ở `error`, client không cần phân biệt status)."""
+    session_factory = request.app.state.session_factory
+    base_url = body.base_url or await get_runtime_setting(
+        session_factory, "llm_base_url", settings.llm_base_url
+    )
+    api_key = await get_runtime_setting(session_factory, "llm_api_key")
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    url = base_url.rstrip("/") + "/chat/completions"
+    payload = {
+        "model": body.model,
+        "messages": [{"role": "user", "content": "ping"}],
+        "max_tokens": 5,
+    }
+    started = perf_counter()
+    try:
+        async with AsyncClient(timeout=15) as client:
+            resp = await client.post(url, json=payload, headers=headers, timeout=15)
+    except httpx.TimeoutException:
+        return {
+            "ok": False,
+            "latency_ms": int((perf_counter() - started) * 1000),
+            "model": body.model,
+            "error": "timeout sau 15s",
+        }
+    except Exception as exc:
+        # P1 contract: 1 nhánh catch-all (httpx.HTTPError, InvalidURL từ base_url
+        # hỏng, …) → 200 {ok:false, error}; client không cần phân biệt status.
+        return {
+            "ok": False,
+            "latency_ms": int((perf_counter() - started) * 1000),
+            "model": body.model,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    latency_ms = int((perf_counter() - started) * 1000)
+    if resp.status_code != 200:
+        return {
+            "ok": False,
+            "latency_ms": latency_ms,
+            "model": body.model,
+            "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
+        }
+    return {"ok": True, "latency_ms": latency_ms, "model": body.model, "error": None}

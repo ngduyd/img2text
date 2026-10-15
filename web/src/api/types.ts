@@ -202,12 +202,32 @@ export interface AdminSettingEntry {
 export type AdminSettings = Record<string, AdminSettingEntry>;
 export interface AdminSettingsPut {
   scheduler_interval_seconds?: number;
+  purge_interval_seconds?: number;
+  purge_retention_days?: number;
   kaggle_min_queue?: number;
   kaggle_min_gap_seconds?: number;
   llm_base_url?: string;
   llm_model?: string;
+  ir_llm_model?: string;
   proofread_llm_model?: string;
   llm_api_key?: string;
+  llm_timeout?: number;
+  smtp_host?: string;
+  smtp_port?: number;
+  smtp_user?: string;
+  smtp_pass?: string;
+  smtp_from?: string;
+  max_pages?: number;
+  daily_page_limit?: number;
+  weekly_page_limit?: number;
+  upload_byte_limit?: number;
+}
+/** Lane CFG: POST /api/admin/llm/test-model — probe model sống/chết. */
+export interface LlmTestResult {
+  ok: boolean;
+  latency_ms: number;
+  model: string;
+  error: string | null;
 }
 /** Lane B2 (wave-5 S6): GET /api/admin/feedbacks row. */
 export interface FeedbackItem {
