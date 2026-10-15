@@ -4,7 +4,7 @@ Rulings embedded: R58 CORS regex origins incl. VSCode port-forward hosts;
 R58a scheduler_interval_seconds floor 5s (no busy-loop).
 """
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -15,12 +15,15 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+asyncpg://img2text:img2text@localhost:5433/img2text_test"
     )
-    app_secret: str = "dev-secret-change-me"
+    # P0 spec 2026-10-15: no insecure default. Empty on construct; non-prod
+    # fills dev placeholder (validator below), prod stays empty → lifespan
+    # raises RuntimeError (fail-fast: empty, dev default, or <32 chars).
+    app_secret: str = ""
     base_url: str = "http://localhost:8000"
     admin_email: str = ""
     admin_password: str = ""
     log_path: str = "logs/img2text.log"
-    runner_key: str = "dev-runner-key"
+    runner_key: str = ""
     smtp_host: str = "localhost"
     smtp_port: int = 25
     smtp_user: str = ""
@@ -82,8 +85,10 @@ class Settings(BaseSettings):
     # worker kernel polling the backend (needs public BASE_URL + Secrets).
     kaggle_mode: str = "batch"
     # Plan D2: LLM layout plan for the docx-layout export (local
-    # OpenAI-compatible server, e.g. llm.cpp at localhost:20128).
-    llm_base_url: str = "http://localhost:20128/v1"
+    # OpenAI-compatible server, e.g. llm.cpp at localhost:20128). Empty
+    # default (P0 spec 2026-10-15): prod fail-fast when kaggle (LLM) feature
+    # enabled; dev value lives in deploy/.env.dev.
+    llm_base_url: str = ""
     llm_model: str = "oc/muse-spark-1.3-contributor-free"
     # LLM request timeout (seconds)
     llm_timeout: int = Field(
@@ -130,6 +135,17 @@ class Settings(BaseSettings):
         if v not in ("batch", "loop"):
             raise ValueError("kaggle_mode phải là batch hoặc loop")
         return v
+
+    @model_validator(mode="after")
+    def _dev_placeholder_secrets(self) -> "Settings":
+        """Dev/test keep placeholder secrets; prod (env=="prod") keeps whatever
+        was set — empty survives to lifespan fail-fast."""
+        if self.env != "prod":
+            if not self.app_secret:
+                self.app_secret = "dev-secret-change-me"
+            if not self.runner_key:
+                self.runner_key = "dev-runner-key"
+        return self
 
     @field_validator("llm_api_key")
     @classmethod

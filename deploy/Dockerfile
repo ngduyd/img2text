@@ -18,6 +18,8 @@ WORKDIR /app
 COPY server/ /app/server/
 # REFERENCE_DOCX in convert.py resolves <repo-root>/deploy/reference.docx.
 COPY deploy/reference.docx /app/deploy/reference.docx
+# kaggle_stage_src default (deploy/kaggle) must resolve inside the image.
+COPY deploy/kaggle /app/deploy/kaggle
 
 # Plan K2: [kaggle] extra installs the Kaggle API client — the server imports
 # it lazily and orchestration self-disables without it (no hard dependency).
