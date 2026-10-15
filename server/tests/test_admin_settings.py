@@ -342,6 +342,14 @@ async def test_delete_setting_resets_to_env(admin_client, db_session):
     r = await admin_client.delete("/api/admin/settings/kaggle_kernel_ref")
     assert r.status_code == 404
 
+async def test_delete_setting_anon_401(client):
+    r = await client.delete("/api/admin/settings/max_pages")
+    assert r.status_code == 401
+
+async def test_delete_setting_non_admin_403(auth_client):
+    r = await auth_client.delete("/api/admin/settings/max_pages")
+    assert r.status_code == 403
+
 async def test_put_anon_401(client):
     r = await client.put("/api/admin/settings", json={"kaggle_min_queue": 2})
     assert r.status_code == 401
