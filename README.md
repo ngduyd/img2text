@@ -219,6 +219,12 @@ the admin user on first start), R2 keys ([docs/r2-setup.md](docs/r2-setup.md)),
 SMTP (password reset). Keys must match `Settings` fields —
 `server/tests/test_env_parity.py` fails on drift.
 
+> **TLS là external (P0 spec 2026-10-15):** nginx chỉ listen HTTP :80 với
+> security headers (X-Content-Type-Options/X-Frame-Options/Referrer-Policy)
+> + `/healthz`. Terminate TLS (certbot / reverse proxy) nằm TRƯỚC nginx —
+> trỏ proxy tới port 80 của stack này. Compose có healthcheck cho server
+> (urllib `/healthz`) và nginx (wget `/healthz`).
+
 > **Single uvicorn worker by design — in-process rate limits assume it.**
 > Auth endpoints: 10 req/hour/IP; uploads: 20 jobs/day/user when `ocr_enabled`.
 > Do not scale uvicorn workers without moving the limits to Postgres.

@@ -25,6 +25,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # P0 spec 2026-10-15: health probe. python:3.11-slim has no curl/wget —
+    # urllib raises on non-200 (503 from /healthz) → exit 1.
+    healthcheck:
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     # Single uvicorn worker by design — in-process rate limits assume it.
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
@@ -32,6 +41,12 @@ services:
     image: nginx:alpine
     ports:
       - "80:80"
+    # busybox wget in nginx:alpine (P0 spec 2026-10-15)
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ../web/dist:/usr/share/nginx/html:ro
