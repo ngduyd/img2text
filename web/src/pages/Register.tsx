@@ -1,0 +1,59 @@
+import { useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
+import { ApiError, api } from "../api/client";
+import Button from "../components/ui/Button";
+import Input from "../components/ui/Input";
+
+export default function Register() {
+  const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    try {
+      await api.register(email, password);
+      navigate("/login");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : "Đã xảy ra lỗi.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main id="main" className="mx-auto max-w-sm p-6">
+      <h1 className="mb-4 text-xl font-bold">Đăng ký</h1>
+      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+        <Input
+          label="Email"
+          testid="input-email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Email"
+        />
+        <Input
+          label="Mật khẩu"
+          testid="input-password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Mật khẩu"
+        />
+        {error && (
+          <p data-testid="error-detail" className="text-sm text-error">
+            {error}
+          </p>
+        )}
+        <Button testid="btn-register" type="submit" loading={loading}>
+          Đăng ký
+        </Button>
+      </form>
+    </main>
+  );
+}
