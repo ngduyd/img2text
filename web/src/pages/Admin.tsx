@@ -87,19 +87,20 @@ export default function Admin() {
             </div>
           ) : (
             <>
-              {/* Spec #7: card Workers — poll 30s, 403/401 → ẩn. */}
-              <div className="mb-4 flex flex-col gap-4">
-                <AdminWorkers />
-                {/* Lane K: quota GPU/TPU Kaggle — refresh icon (R51 testid). */}
-                <AdminKaggleQuota />
-              </div>
               {tab === "overview" && <AdminOverview onNavigate={setTab} />}
               {tab === "users" && <AdminUsers />}
               {tab === "api" && <AdminApi />}
               {tab === "logs" && <AdminLogs />}
               {tab === "stats" && <AdminStats />}
               {tab === "storage" && <AdminStorage />}
-              {tab === "settings" && <AdminSettings />}
+              {tab === "settings" && (
+                <div className="flex flex-col gap-4">
+                  {/* Spec #7 Workers + Lane K quota GPU — luôn-đồ-nhìn → System tab. */}
+                  <AdminWorkers />
+                  <AdminKaggleQuota />
+                  <AdminSettings />
+                </div>
+              )}
               {tab === "feedbacks" && <AdminFeedbacks />}
             </>
           )}

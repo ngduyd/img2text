@@ -70,6 +70,54 @@ async def test_kaggle_quota_parses_seconds(admin_client, monkeypatch):
     assert tpu["refresh"] == "2026-10-20T00:00:00Z"
 
 
+async def test_kaggle_quota_inner_snake_case_kagglesdk(admin_client, monkeypatch):
+    """kaggle thật: inner ApiAcceleratorQuota chỉ snake_case (top-level có camelCase alias)."""
+    _install_kaggle(monkeypatch)
+    StubKaggleApi.response = SimpleNamespace(
+        gpuQuota=SimpleNamespace(
+            time_used="7664.478.0s", time_reserved="0s", total_time_allowed="21600s",
+            minimum_time_allowed="21600s", has_ever_run=True,
+        ),
+        tpuQuota=SimpleNamespace(
+            time_used="0s", time_reserved="0s", total_time_allowed="72000s",
+            minimum_time_allowed="0s", has_ever_run=False,
+        ),
+        quotaRefreshTime="2026-10-17T00:00:00.000Z",
+    )
+    try:
+        r = await admin_client.get("/api/admin/kaggle-quota")
+        assert r.status_code == 200, r.text
+        gpu = r.json()["gpu"]
+        assert gpu["used_s"] == pytest.approx(7664.478)
+        assert gpu["total_s"] == pytest.approx(21600.0)
+        assert gpu["remaining_s"] == pytest.approx(13935.522)
+    finally:
+        StubKaggleApi.response = QUOTA_RESPONSE
+
+async def test_kaggle_quota_missing_refresh_field_null_not_502(admin_client, monkeypatch):
+    """P2-1: field thiếu CẢ camelCase lẫn snake_case → null (UI hiển thị "—"), không 502."""
+    _install_kaggle(monkeypatch)
+    StubKaggleApi.response = SimpleNamespace(
+        gpuQuota=SimpleNamespace(
+            timeUsed="100s", timeReserved="0s", totalTimeAllowed="21600s",
+            minimumTimeAllowed="3600s", hasEverRun=True,
+        ),
+        tpuQuota=SimpleNamespace(
+            timeUsed="0s", timeReserved="0s", totalTimeAllowed="72000s",
+            minimumTimeAllowed="0s", hasEverRun=False,
+        ),
+        # quotaRefreshTime missing — neither camelCase nor snake_case
+    )
+    try:
+        r = await admin_client.get("/api/admin/kaggle-quota")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["gpu"]["refresh"] is None
+        assert body["tpu"]["refresh"] is None
+        assert body["gpu"]["total_s"] == pytest.approx(21600.0)
+    finally:
+        StubKaggleApi.response = QUOTA_RESPONSE
+
 async def test_kaggle_quota_admin_only(auth_client, monkeypatch):
     _install_kaggle(monkeypatch)
     assert (await auth_client.get("/api/admin/kaggle-quota")).status_code == 403
