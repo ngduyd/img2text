@@ -449,6 +449,7 @@
     "empty": "Không có job nào cũ hơn hạn lưu.",
     "own": {
       "title": "Dung lượng của tôi",
+      "subtitle": "Quản lý file lưu trữ của bạn",
       "tableTitle": "File",
       "stats": {
         "keptFiles": "File còn giữ",
@@ -465,6 +466,7 @@
       },
       "purgeOne": "Xóa file",
       "purgeDue": "Xóa file hết hạn",
+      "retentionHelper": "File cũ hơn {days} ngày sẽ bị xóa",
       "confirmOneTitle": "Xóa file này?",
       "confirmOneMessage": "File gốc và export tái tạo sẽ bị xóa khỏi storage. Văn bản OCR, layout và các phiên bản vẫn giữ. Không thể hoàn tác.",
       "confirmDueTitle": "Xóa file hết hạn?",

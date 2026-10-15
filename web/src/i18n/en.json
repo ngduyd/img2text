@@ -449,6 +449,7 @@
     "empty": "No jobs older than the retention window.",
     "own": {
       "title": "My storage",
+      "subtitle": "Manage your stored files",
       "tableTitle": "Files",
       "stats": {
         "keptFiles": "Files kept",
@@ -465,6 +466,7 @@
       },
       "purgeOne": "Delete file",
       "purgeDue": "Delete expired files",
+      "retentionHelper": "Files older than {days} days will be removed",
       "confirmOneTitle": "Delete this file?",
       "confirmOneMessage": "The original file and its regenerable exports are removed from storage. OCR text, layout and versions are kept. This cannot be undone.",
       "confirmDueTitle": "Delete expired files?",
