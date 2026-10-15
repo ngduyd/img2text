@@ -7,6 +7,7 @@ import pytest
 from app.services.ir import (
     DocumentIR,
     NodeIR,
+    NodeType,
     PageIR,
     IRValidationError,
     validate_ir,
@@ -82,11 +83,36 @@ class TestValidateIR:
         with pytest.raises(IRValidationError, match="unique"):
             validate_ir(ir, _ocr_result())
 
-    def test_invalid_type_rejected(self):
+    def test_invalid_type_sanitized_to_unknown(self, caplog):
+        """Lane IR-NOTE: LLM bịa type lạ ('note', dev job5) → sanitize
+        'unknown' + warning, IR hợp lệ (trước: IRValidationError →
+        heuristic fallback → ir_json NULL)."""
+        caplog.set_level("WARNING", logger="app.services.ir")
         ir = _valid_ir()
-        ir["pages"][0]["content"][0]["type"] = "invalid_type"
-        with pytest.raises(IRValidationError, match="type"):
-            validate_ir(ir, _ocr_result())
+        ir["pages"][0]["content"][0]["type"] = "note"
+        result = validate_ir(ir, _ocr_result())
+        assert result.pages[0].content[0].type == "unknown"
+        assert any("note" in r.getMessage() for r in caplog.records)
+
+    def test_non_dict_input_raises_validation_error(self):
+        """P2 (QA): guard non-dict — raise IRValidationError (caller catch → fallback),
+        không AttributeError bypass fallback."""
+        with pytest.raises(IRValidationError, match="không phải object"):
+            validate_ir("not-a-dict", _ocr_result())
+
+    def test_invalid_type_sanitized_in_children(self, caplog):
+        """1 node sai type ở children không kill document — sanitize recursive."""
+        caplog.set_level("WARNING", logger="app.services.ir")
+        ir = _valid_ir()
+        ir["pages"][0]["content"][0]["source_block_ids"] = []  # coverage: r1 do child dùng
+        ir["pages"][0]["content"][0]["children"] = [
+            {"id": "node_c", "type": "text", "role": "body", "text": "x",
+             "align": "left", "indent": 0, "source_block_ids": ["r1"],
+             "bbox": [5, 6, 70, 80], "children": []}
+        ]
+        result = validate_ir(ir, _ocr_result())
+        assert result.pages[0].content[0].children[0].type == "unknown"
+        assert any("text" in r.getMessage() for r in caplog.records)
 
     def test_source_block_ids_must_exist(self):
         ir = _valid_ir()
@@ -557,6 +583,19 @@ def test_legacy_ir_prompt_unchanged_snapshot():
     # IR_PROMPT_PAGE rules KHÔNG lọt vào legacy prompt (degrade path giữ behavior)
     assert "y-band" not in IR_PROMPT
     assert "§" not in IR_PROMPT
+
+def test_prompt_closed_type_set_matches_enum():
+    """Lane IR-NOTE: cả IR_PROMPT lẫn IR_PROMPT_PAGE ép closed set —
+    list type trong prompt khớp enum NodeType 1-1 (không thiếu/không thừa)."""
+    import re
+    enum_types = {t.value for t in NodeType}
+    for prompt in (IR_PROMPT, IR_PROMPT_PAGE):
+        assert "MUST be exactly one of" in prompt
+        assert "NEVER invent new types" in prompt
+        listed = prompt.split("MUST be exactly one of: ", 1)[1].split(".", 1)[0]
+        assert set(re.findall(r"[a-z_]+", listed)) == enum_types, listed
+    # negative examples có mặt — LLM hay bịa 'note' (bug dev job5)
+    assert "'note'" in IR_PROMPT and "'note'" in IR_PROMPT_PAGE
 
 def _col_ocr(left_type_text: str = "Cột trái đoạn văn", right_text: str = "Cột phải") -> dict:
     """2 cột x-disjoint, cùng y-band: r_left + r_right."""

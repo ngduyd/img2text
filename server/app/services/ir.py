@@ -43,6 +43,8 @@ IR_PROMPT = (
     "- content: everything else\n"
     "- type: MUST be exactly one of: heading, paragraph, list, poem, table, figure, caption, "
     "formula, quote, footnote, page_number, form_field, separator, unknown. "
+    "CLOSED SET — NEVER invent new types (e.g. 'note', 'text', 'title'). "
+    "A block matching none of these → type='unknown'. "
     "Role words (citation, passage, line, instruction, ...) belong in role, NEVER in type.\n"
     "- role: document_title, section_heading, running_header, running_footer, question, answer, "
     "passage, line, citation, instruction, prompt, form_field, ...\n"
@@ -301,11 +303,39 @@ def _warn_cross_column(ir: DocumentIR, ocr_result: dict) -> None:
                     page.page_number, a.id, a.type, b.id, b.type,
                 )
 
+def _sanitize_ir_types(ir: dict) -> dict:
+    """IR-NOTE: LLM thỉnh thoảng bịa type ngoài enum (VD 'note' — dev job5) →
+    pydantic reject kill cả document → heuristic fallback → ir_json NULL.
+    Sanitize guard: type lạ → 'unknown' + warning per-node, 1 node sai không kill document."""
+    if not isinstance(ir, dict):
+        # P2: guard non-dict — bypass caller không catch được → raise đúng lỗi type
+        raise IRValidationError(f"IR không phải object: {type(ir).__name__}")
+    valid = {t.value for t in NodeType}
+
+    def walk(nodes: list) -> None:
+        for n in nodes:
+            if not isinstance(n, dict):
+                continue
+            if n.get("type") not in valid:
+                logger.warning("IR type lạ %r → unknown (node %s)", n.get("type"), n.get("id"))
+                n["type"] = "unknown"
+            walk(n.get("children") or [])
+
+    for page in ir.get("pages") or []:
+        if not isinstance(page, dict):
+            continue
+        for section in ("header", "content", "footer"):
+            walk(page.get(section) or [])
+    return ir
+
 def validate_ir(ir: dict, ocr_result: dict) -> DocumentIR:
     """Validate IR dict against OCR result → DocumentIR.
 
-    Raises IRValidationError on any violation.
+    Raises IRValidationError on structural/source-id violations; unknown node
+    types are sanitized to 'unknown' (warning) instead of raising — 1 node
+    lạ không kill document (IR-NOTE).
     """
+    ir = _sanitize_ir_types(ir)
     try:
         doc = DocumentIR.model_validate(ir)
     except Exception as exc:
@@ -446,6 +476,12 @@ IR_PROMPT_PAGE = (
     "Never rewrite OCR text.\n"
     # S4: cross-column normalize — cùng y-band + 2 cột → ép cùng type/level;
     # block bảng (OCR text chứa <table hoặc cells grid) = ngoại lệ
+    # IR-NOTE (bug job5): LLM bịa type='note' → enum reject → ir_json NULL.
+    # Ép closed set 1-1 với NodeType (test assert), unknown khi không khớp.
+    "- type: MUST be exactly one of: heading, paragraph, list, poem, table, figure, caption, "
+    "formula, quote, footnote, page_number, form_field, separator, unknown. "
+    "CLOSED SET — NEVER invent new types (e.g. 'note', 'text', 'title'). "
+    "A block matching none of these → type='unknown'.\n"
     "- CROSS-COLUMN: blocks sharing the same y-band in 2 side-by-side columns "
     "MUST get the SAME type and heading level (read left→right); EXCEPTION: "
     "table blocks (OCR text contains <table or a cells grid) keep type table.\n"
