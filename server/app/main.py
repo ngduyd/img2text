@@ -30,8 +30,28 @@ from app.services.scheduler import init_scheduler
 from app.services.storage import build_storage
 
 
+def _validate_prod_secrets() -> None:
+    """P0 spec 2026-10-15: prod boots only with real secrets (single gate
+    at startup; dev/test skip)."""
+    if settings.env != "prod":
+        return
+    if (
+        not settings.app_secret
+        or settings.app_secret == "dev-secret-change-me"
+        or len(settings.app_secret) < 32
+    ):
+        raise RuntimeError(
+            "prod requires app_secret: set APP_SECRET (32+ chars, not dev default)"
+        )
+    if not settings.runner_key or settings.runner_key == "dev-runner-key":
+        raise RuntimeError(
+            "prod requires runner_key: set RUNNER_KEY (not dev default)"
+        )
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # P0 fail-fast: reject bad prod secrets BEFORE touching the DB.
+    _validate_prod_secrets()
     # optional dep: HEIC/HEIF decode cho pipeline; thiếu → warning, heic
     # upload sẽ fail ở rasterize thay vì fail boot.
     try:
