@@ -29,7 +29,7 @@ export function fmtBytes(n: number): string {
   return `${Math.round(v * 10) / 10} ${units[i]}`;
 }
 
-function Stat({ label, value, testid }: { label: string; value: string; testid: string }) {
+export function Stat({ label, value, testid }: { label: string; value: string; testid: string }) {
   return (
     <div className="flex flex-col gap-0.5">
       <span data-testid={testid} className="text-lg font-semibold tabular-nums">

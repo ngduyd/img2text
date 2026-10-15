@@ -153,6 +153,10 @@ export interface JobListItem {
   finished_at?: string | null;
   /** Contract steer: server thêm serializer — search/toast theo tên file. */
   filename?: string;
+  /** Lane M1/ST: quota bytes + badge "file gốc đã dọn" (server list luôn trả;
+   * optional vì test fixtures/Job[] cũ không set — client coi falsy = giữ). */
+  upload_bytes?: number;
+  storage_purged_at?: string | null;
 }
 
 /** Phase 4: GET /api/jobs paginated envelope (page/page_size có từ Phase 4). */

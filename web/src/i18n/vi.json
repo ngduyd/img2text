@@ -31,7 +31,8 @@
     "menu": "Menu",
     "skip": "Bỏ qua điều hướng",
     "ariaMain": "Điều hướng chính",
-    "features": "Tính năng"
+    "features": "Tính năng",
+    "storage": "Dung lượng"
   },
   "status": {
     "queued": "Đang lập lịch",
@@ -445,7 +446,34 @@
     "purgedToast": "Đã dọn {n} job.",
     "refreshAria": "Làm mới thống kê dung lượng",
     "pageInfo": "Trang {page} · {total} job",
-    "empty": "Không có job nào cũ hơn hạn lưu."
+    "empty": "Không có job nào cũ hơn hạn lưu.",
+    "own": {
+      "title": "Dung lượng của tôi",
+      "tableTitle": "File",
+      "stats": {
+        "keptFiles": "File còn giữ",
+        "purgedFiles": "File đã dọn",
+        "keptBytes": "Dung lượng còn lưu"
+      },
+      "table": {
+        "filename": "File",
+        "created": "Ngày tạo",
+        "age": "Tuổi",
+        "size": "Dung lượng",
+        "status": "Trạng thái",
+        "actions": "Thao tác"
+      },
+      "purgeOne": "Xóa file",
+      "purgeDue": "Xóa file hết hạn",
+      "confirmOneTitle": "Xóa file này?",
+      "confirmOneMessage": "File gốc và export tái tạo sẽ bị xóa khỏi storage. Văn bản OCR, layout và các phiên bản vẫn giữ. Không thể hoàn tác.",
+      "confirmDueTitle": "Xóa file hết hạn?",
+      "confirmDueMessage": "File cũ hơn hạn lưu sẽ bị xóa khỏi storage. Văn bản OCR, layout và các phiên bản vẫn giữ. Không thể hoàn tác.",
+      "purgedOneToast": "Đã xóa file.",
+      "purgedDueToast": "Đã xóa {n} file.",
+      "ageDays": "{n} ngày",
+      "empty": "Chưa có job nào."
+    }
   },
   "landing": {
     "hero": {

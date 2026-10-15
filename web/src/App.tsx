@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { Briefcase, IdCard, LogOut, Menu, ShieldCheck, Sparkles } from "lucide-react";
+import { Briefcase, HardDrive, IdCard, LogOut, Menu, ShieldCheck, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Toaster, toast } from "sonner";
@@ -18,6 +18,7 @@ import Admin from "./pages/Admin";
 import JobDetail from "./pages/JobDetail";
 import ExtractionPage from "./pages/ExtractionPage";
 import Jobs from "./pages/Jobs";
+import Storage from "./pages/Storage";
 import Features from "./pages/Features";
 import Landing from "./pages/Landing";
 import Signin from "./pages/Signin";
@@ -202,6 +203,7 @@ function AppNav() {
   const isAdmin = me?.role === "admin";
   const jobsActive = pathname === "/jobs";
   const featuresActive = pathname === "/features";
+  const storageActive = pathname === "/storage";
   const adminActive = pathname.startsWith("/admin");
 
   return (
@@ -237,6 +239,15 @@ function AppNav() {
             onClick={() => setMenuOpen(false)}
           >
             {t("nav.features")}
+          </NavAnchor>
+          <NavAnchor
+            to="/storage"
+            testid="nav-link-storage"
+            icon={HardDrive}
+            active={storageActive}
+            onClick={() => setMenuOpen(false)}
+          >
+            {t("nav.storage")}
           </NavAnchor>
           {isAdmin && (
             <NavAnchor
@@ -292,6 +303,15 @@ function AppNav() {
               onClick={() => setMenuOpen(false)}
             >
               {t("nav.features")}
+            </NavAnchor>
+            <NavAnchor
+              to="/storage"
+              testid="nav-link-storage"
+              icon={HardDrive}
+              active={storageActive}
+              onClick={() => setMenuOpen(false)}
+            >
+              {t("nav.storage")}
             </NavAnchor>
             {isAdmin && (
               <NavAnchor
@@ -364,6 +384,7 @@ export default function App() {
             <Route path="/admin" element={<Admin />} />
             {/* Lane B1: trang "In the feature" — bản kế tiếp (Organizations). */}
             <Route path="/features" element={<Features />} />
+            <Route path="/storage" element={<Storage />} />
           </Routes>
           {/* Global footer: mọi trang, dưới Routes (App không dùng Outlet). */}
           <SiteFooter />
