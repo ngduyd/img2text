@@ -343,6 +343,7 @@
       "weeklyLimit": "Giới hạn trang/tuần (mặc định)",
       "weeklyLimitHelp": "Giới hạn hiệu lực lấy từ cột per-user của user (để trống → mặc định 150). Row Setting này chưa được quota đọc.",
       "nonNegative": "Giá trị phải ≥ 0.",
+      "unset": "(chưa đặt)",
       "uploadByteLimit": "Giới hạn dung lượng upload (MB)",
       "uploadByteLimitHelp": "Dung lượng upload tối đa, nhập/hiển thị theo MB (lưu dạng byte); tối thiểu 1 MB.",
       "uploadByteLimitFloor": "upload_byte_limit phải từ 1MB trở lên.",

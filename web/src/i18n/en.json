@@ -343,6 +343,7 @@
       "weeklyLimit": "Default weekly page limit",
       "weeklyLimitHelp": "Effective limit = the user's per-user column (empty → default 150). This Setting row is not read by quota enforcement yet.",
       "nonNegative": "Value must be 0 or greater.",
+      "unset": "(not set)",
       "uploadByteLimit": "Upload size limit (MB)",
       "uploadByteLimitHelp": "Max upload size, shown and entered in MB (stored as bytes); minimum 1 MB.",
       "uploadByteLimitFloor": "upload_byte_limit must be at least 1MB.",

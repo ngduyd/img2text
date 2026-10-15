@@ -113,7 +113,7 @@ const SECTIONS: { id: SectionId; titleKey: string }[] = [
 /** Giá trị hiển thị trong helper/current (MB đổi về MB, secret → mask). */
 function displayValue(f: FieldDef, cur: AdminSettingEntry | undefined): string {
   const v = cur?.value;
-  if (v == null || v === "") return "(unset)";
+  if (v == null || v === "") return translate("admin.settings.unset");
   if (f.unitMb) return `${Math.round(Number(v) / MB)} MB`;
   return String(v);
 }

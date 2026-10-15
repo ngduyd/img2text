@@ -183,3 +183,13 @@ test("floor client-side: max_pages 0 → ô lỗi, không PUT", async () => {
   expect(await screen.findByRole("alert")).toBeTruthy();
   expect(putAdminSettings).not.toHaveBeenCalled();
 });
+
+test("P2a: giá trị rỗng hiển thị i18n admin.settings.unset", async () => {
+  getAdminSettings.mockResolvedValue(settings());
+  renderPage();
+  await screen.findByTestId("form-settings");
+  // smtp_user = "" → displayValue → chuỗi i18n (en), không hardcode "(unset)"
+  expect(screen.getByTestId("input-smtp-user-helper")).toHaveTextContent(
+    "Current: (not set) (env).",
+  );
+});
