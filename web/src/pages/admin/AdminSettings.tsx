@@ -204,15 +204,22 @@ export default function AdminSettings() {
     }
   }
 
-  /** Test model: 1 prompt "ping" qua server → badge Sống/Chết + latency. */
+  /** Test model: 1 prompt "ping" qua server → badge Sống/Chết + latency.
+   * P2f: gửi kèm base_url đang nhập trong form — probe đúng URL admin sửa
+   * (chưa lưu vẫn test được, không phải lưu trước). */
   async function runTest(f: FieldDef) {
     const form = formRef.current;
     if (!form) return;
-    const model = String(new FormData(form).get(f.key) ?? "").trim();
+    const fd = new FormData(form);
+    const model = String(fd.get(f.key) ?? "").trim();
     if (!model) return;
+    const baseUrl = String(fd.get("llm_base_url") ?? "").trim();
     setTesting((s) => ({ ...s, [f.key]: true }));
     try {
-      const res = await api.testLlmModel({ model });
+      const res = await api.testLlmModel({
+        model,
+        ...(baseUrl ? { base_url: baseUrl } : {}),
+      });
       setResults((s) => ({ ...s, [f.key]: res }));
     } catch (err) {
       setResults((s) => ({

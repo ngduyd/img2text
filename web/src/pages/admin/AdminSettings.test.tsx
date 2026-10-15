@@ -144,7 +144,11 @@ test("Test model: ok → badge Sống + latency; fail → badge Chết", async (
   await screen.findByTestId("form-settings");
   fireEvent.click(screen.getByTestId("test-ir-llm-model"));
   await waitFor(() => expect(testLlmModel).toHaveBeenCalledTimes(1));
-  expect(testLlmModel).toHaveBeenCalledWith({ model: "ir-1" });
+  // P2f: gửi kèm base_url đang nhập trong form (test đúng URL admin sửa)
+  expect(testLlmModel).toHaveBeenCalledWith({
+    model: "ir-1",
+    base_url: "http://localhost:20128/v1",
+  });
   await waitFor(() =>
     expect(screen.getByTestId("test-result-ir-llm-model")).toHaveTextContent(
       "Alive · 123 ms",
