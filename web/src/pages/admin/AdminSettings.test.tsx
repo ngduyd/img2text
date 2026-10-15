@@ -184,6 +184,25 @@ test("floor client-side: max_pages 0 → ô lỗi, không PUT", async () => {
   expect(putAdminSettings).not.toHaveBeenCalled();
 });
 
+test("P2g: MB hiển thị 1 chữ số thập phân, save round-trip không ghi đè", async () => {
+  // 1572864 B = 1.5 MB — Math.round (2 MB) sẽ làm MẤT 0.5 MB khi save lại
+  getAdminSettings.mockResolvedValue({
+    ...settings(),
+    upload_byte_limit: { value: 1572864, source: DB },
+  });
+  putAdminSettings.mockResolvedValue(settings());
+  renderPage();
+  await screen.findByTestId("form-settings");
+  expect(screen.getByTestId("input-upload-byte-limit")).toHaveValue(1.5);
+  expect(screen.getByTestId("input-upload-byte-limit-helper")).toHaveTextContent(
+    "Current: 1.5 MB (db).",
+  );
+  // round-trip: save không làm tròn xuống 1 MB hay lên 2 MB
+  fireEvent.click(screen.getByTestId("btn-save-limits"));
+  await waitFor(() => expect(putAdminSettings).toHaveBeenCalledTimes(1));
+  expect(putAdminSettings.mock.calls[0][0].upload_byte_limit).toBe(1572864);
+});
+
 test("P2a: giá trị rỗng hiển thị i18n admin.settings.unset", async () => {
   getAdminSettings.mockResolvedValue(settings());
   renderPage();

@@ -110,11 +110,15 @@ const SECTIONS: { id: SectionId; titleKey: string }[] = [
   { id: "smtp", titleKey: "admin.settings.sectionSmtp" },
 ];
 
+/** MB → số thập phân 1 chữ số (1.5 MB) — làm tròn 2 chữ số sẽ MẤT 0.5 MB
+ * khi save lại (round-trip ghi đè giá trị thật). */
+const mb1 = (bytes: number) => Math.round((bytes / MB) * 10) / 10;
+
 /** Giá trị hiển thị trong helper/current (MB đổi về MB, secret → mask). */
 function displayValue(f: FieldDef, cur: AdminSettingEntry | undefined): string {
   const v = cur?.value;
   if (v == null || v === "") return translate("admin.settings.unset");
-  if (f.unitMb) return `${Math.round(Number(v) / MB)} MB`;
+  if (f.unitMb) return `${mb1(Number(v))} MB`;
   return String(v);
 }
 
@@ -123,7 +127,7 @@ function defaultValueOf(f: FieldDef, cur: AdminSettingEntry | undefined): string
   if (f.secret) return "";
   const v = cur?.value;
   if (v == null) return "";
-  if (f.unitMb) return String(Math.round(Number(v) / MB));
+  if (f.unitMb) return String(mb1(Number(v)));
   return String(v);
 }
 
@@ -171,17 +175,19 @@ export default function AdminSettings() {
         if (raw) out[f.key] = raw;
         continue;
       }
-      if (!/^-?\d+$/.test(raw)) {
+      const valid = f.unitMb ? /^-?\d+(\.\d+)?$/.test(raw) : /^-?\d+$/.test(raw);
+      if (!valid) {
         next[f.key] = t("admin.settings.intRequired");
         continue;
       }
-      const n = Number.parseInt(raw, 10);
+      const n = f.unitMb ? Number.parseFloat(raw) : Number.parseInt(raw, 10);
       if (f.floor !== undefined && n < f.floor) {
         next[f.key] = t(f.floorMessageKey!);
       } else if (f.ceiling !== undefined && n > f.ceiling) {
         next[f.key] = t(f.ceilingMessageKey!);
       } else {
-        out[f.key] = f.unitMb ? n * MB : n;
+        // unitMb: nhân lại MB → bytes, làm tròn (1 lẻ → bytes nguyên)
+        out[f.key] = f.unitMb ? Math.round(n * MB) : n;
       }
     }
     setErrors((prev) => {
