@@ -465,7 +465,7 @@
         "actions": "Actions"
       },
       "purgeOne": "Delete file",
-      "purgeDue": "Delete expired files",
+      "purgeDue": "Delete {n} file(s)",
       "retentionHelper": "Files older than {days} days will be removed",
       "confirmOneTitle": "Delete this file?",
       "confirmOneMessage": "The original file and its regenerable exports are removed from storage. OCR text, layout and versions are kept. This cannot be undone.",
