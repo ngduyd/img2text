@@ -24,13 +24,17 @@ type ConfirmState = { kind: "one"; id: number } | { kind: "due" } | null;
  * đổi purge predicate. ponytail: đọc từ API khi backend export field). */
 const RETENTION_DAYS = 7;
 
+/** Page size bảng /storage — mirror AdminStorage (server cap 100). */
+const PAGE_SIZE = 20;
+
 export default function Storage() {
   const { t } = useT();
   const qc = useQueryClient();
   const [confirm, setConfirm] = useState<ConfirmState>(null);
+  const [page, setPage] = useState(1);
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ["my-storage"],
-    queryFn: () => api.listJobs(1, 100),
+    queryKey: ["my-storage", page],
+    queryFn: () => api.listJobs(page, PAGE_SIZE),
   });
 
   const purgeOne = useMutation({
@@ -247,6 +251,34 @@ export default function Storage() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+            {/* AC10/P0-2: pagination — mirror AdminStorage prev/next. */}
+            {data && items.length > 0 && (
+              <div className="mt-3 flex items-center justify-end gap-2 text-sm">
+                <span className="text-muted">
+                  {t("storage.pageInfo", { page, total: data.total })}
+                </span>
+                <Button
+                  testid="storage-own-prev"
+                  aria-label={t("storage.prevPage")}
+                  variant="secondary"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => p - 1)}
+                >
+                  ‹
+                </Button>
+                <Button
+                  testid="storage-own-next"
+                  aria-label={t("storage.nextPage")}
+                  variant="secondary"
+                  size="sm"
+                  disabled={page * PAGE_SIZE >= data.total}
+                  onClick={() => setPage((p) => p + 1)}
+                >
+                  ›
+                </Button>
               </div>
             )}
           </section>

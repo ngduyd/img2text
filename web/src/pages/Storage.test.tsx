@@ -179,6 +179,19 @@ test("loading: skeleton khớp layout table — 6 cột × 4 hàng (AC13)", asyn
   expect(screen.getByTestId("storage-own-loading")).toBeTruthy();
 });
 
+test("pagination: next → listJobs(2, 20), prev disable ở page 1 (AC10)", async () => {
+  listJobs.mockResolvedValue({ ...PAGE, total: 41 });
+  renderPage();
+  await screen.findByTestId("storage-own-next");
+  expect((screen.getByTestId("storage-own-prev") as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByTestId("storage-own-next"));
+  await waitFor(() => expect(listJobs).toHaveBeenCalledWith(2, 20));
+  await screen.findByTestId("storage-own-prev"); // page 2 load xong → bar quay lại
+  expect((screen.getByTestId("storage-own-prev") as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(screen.getByTestId("storage-own-prev"));
+  await waitFor(() => expect(listJobs).toHaveBeenCalledWith(1, 20));
+});
+
 test("bulk purge: confirm → api.purgeMyStorageDue + toast {n}", async () => {
   listJobs.mockResolvedValue(PAGE);
   purgeMyStorageDue.mockResolvedValue({ purged: 3 });
