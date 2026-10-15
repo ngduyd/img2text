@@ -84,7 +84,6 @@ function renderPanel(result: ResultBody = RESULT): ReturnType<typeof render> {
         job={JOB}
         result={result}
         editing={false}
-        onEditingChange={() => {}}
       />
     </QueryClientProvider>
   );
