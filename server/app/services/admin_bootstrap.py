@@ -8,6 +8,7 @@ bootstrap admin is created with ocr_enabled=True unconditionally.
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.models import User
 from app.core.security import hash_password
 
@@ -15,6 +16,9 @@ from app.core.security import hash_password
 async def bootstrap_admin(session: AsyncSession, email: str, password: str) -> None:
     """Create role='admin' user; no-op when email/password empty or user
     exists."""
+    # P0 spec 2026-10-15: prod must not boot without an admin identity.
+    if settings.env == "prod" and (not email or not password):
+        raise RuntimeError("prod requires ADMIN_EMAIL and ADMIN_PASSWORD")
     if not email or not password:
         return
     existing = await session.scalar(select(User).where(User.email == email))

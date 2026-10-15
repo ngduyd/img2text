@@ -5,6 +5,7 @@ import pytest
 
 from app.core.config import settings
 from app.main import app, lifespan
+from app.services.admin_bootstrap import bootstrap_admin
 
 
 async def test_prod_fails_on_default_app_secret(monkeypatch):
@@ -39,3 +40,13 @@ async def test_dev_allows_defaults(monkeypatch):
     # should not raise
     async with lifespan(app):
         pass
+
+async def test_prod_fails_on_empty_admin_creds(monkeypatch, db_session):
+    monkeypatch.setattr(settings, "env", "prod")
+    monkeypatch.setattr(settings, "admin_email", "")
+    monkeypatch.setattr(settings, "admin_password", "")
+    with pytest.raises(RuntimeError, match="ADMIN_EMAIL"):
+        await bootstrap_admin(db_session, "", "")
+
+async def test_dev_allows_empty_admin_creds(db_session):
+    await bootstrap_admin(db_session, "", "")  # no-op, no raise
