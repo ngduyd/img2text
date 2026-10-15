@@ -13,14 +13,12 @@ export default function ResultPanel({
   job,
   result,
   editing,
-  onEditingChange,
   hostRef,
 }: {
   jobId: string;
   job: Job;
   result: ResultBody;
   editing: boolean;
-  onEditingChange: (editing: boolean) => void;
   hostRef?: RefObject<HTMLElement | null>;
 }) {
   const markdown = result.edited_markdown ?? result.markdown;
@@ -31,7 +29,6 @@ export default function ResultPanel({
         job={job}
         markdown={markdown}
         editing={editing}
-        onEditingChange={onEditingChange}
         hostRef={hostRef}
       />
       <IssuesPanel

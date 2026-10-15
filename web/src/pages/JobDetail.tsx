@@ -496,7 +496,6 @@ export default function JobDetail() {
                   job={job}
                   markdown={result.edited_markdown ?? result.markdown}
                   editing={editing}
-                  onEditingChange={setEditing}
                   hostRef={editorHostRef}
                 />
               ) : (
