@@ -12,8 +12,20 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.models import Job, User
+from app.core.config import settings
+from app.core.models import Job, Setting, User
 from app.services.storage import StorageDriver
+
+async def purge_retention_days(session: AsyncSession) -> int:
+    """purge_retention_days: Setting override (mirror scheduler tick) else env.
+Lane ST: dùng chung cho admin storage tab + user purge-storage-due."""
+    row = await session.get(Setting, "purge_retention_days")
+    if row is None:
+        return settings.purge_retention_days
+    try:
+        return max(1, int(row.value))
+    except (TypeError, ValueError):
+        return settings.purge_retention_days
 
 
 async def purge_binary(
@@ -48,10 +60,12 @@ async def purge_due_jobs(
     storage: StorageDriver,
     retention_days: int,
     limit: int = 200,
+    user_id: int | None = None,
 ) -> int:
     """Batch: done + cũ hơn retention + auto_purge + chưa purge → purge.
     limit = mỗi tick (batch nhỏ, tick kế tiếp quét tiếp — ponytail:
-    upgrade sang cursor pagination khi user có >limit job đến hạn)."""
+    upgrade sang cursor pagination khi user có >limit job đến hạn).
+    user_id (Lane ST): scope về 1 user — user tự dọn storage của mình."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
     rows = (
         (
@@ -64,6 +78,7 @@ async def purge_due_jobs(
                     Job.storage_purged_at.is_(None),
                     # NULL legacy = không chắc chắn → không purge (an toàn)
                     User.auto_purge.is_(True),
+                    *([Job.user_id == user_id] if user_id is not None else []),
                 )
                 .order_by(Job.id)
                 .limit(limit)

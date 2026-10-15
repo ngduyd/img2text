@@ -35,7 +35,7 @@ from app.services.doc_versions import (
     snapshot_current_layout,
 )
 from app.services.job_results import _schedule_auto_output, store_worker_result
-from app.services.purge import purge_binary
+from app.services.purge import purge_binary, purge_due_jobs, purge_retention_days
 from app.services.quota import ensure_bytes_quota, ensure_quota, quota_me
 from app.services.layout_sync import (
     DOCX_HTML_KEY,
@@ -430,6 +430,20 @@ async def purge_storage(
     return Response(status_code=204)
 
 # --- Owner reads: GET /api/jobs, /{id}, /{id}/file ---
+
+@router.post("/api/jobs/purge-storage-due")
+async def purge_my_storage_due(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> dict:
+    """Lane ST: user tự dọn file storage (KHÔNG admin) — batch CỦA user này,
+    cùng predicate admin/scheduler (done + cũ hơn retention + auto_purge +
+    chưa purge); retention đọc runtime setting. {purged: n}."""
+    n = await purge_due_jobs(
+        session, storage, await purge_retention_days(session), user_id=user.id
+    )
+    return {"purged": n}
 
 async def _job_or_403(
     session: AsyncSession, job_id: int, user: User
