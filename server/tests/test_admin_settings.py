@@ -209,6 +209,19 @@ async def test_put_smtp_pass_write_only_mask(admin_client, db_session):
     r = await admin_client.put("/api/admin/settings", json={"smtp_pass": ""})
     assert r.json()["smtp_pass"]["value"] == "sec…-123"
 
+async def test_put_quota_limit_floors_422(admin_client):
+    """P2b: daily/weekly_page_limit floor ≥0 server-side (khớp list floor)."""
+    for key in ("daily_page_limit", "weekly_page_limit"):
+        r = await admin_client.put("/api/admin/settings", json={key: -5})
+        assert r.status_code == 422
+        assert r.json()["detail"] == f"{key} phải từ 0 trở lên."
+    # 0 hợp lệ (vượt floor)
+    r = await admin_client.put(
+        "/api/admin/settings", json={"daily_page_limit": 0}
+    )
+    assert r.status_code == 200
+    assert r.json()["daily_page_limit"] == {"value": 0, "source": "db"}
+
 async def test_put_quota_and_ir_and_smtp_string_keys(admin_client):
     r = await admin_client.put(
         "/api/admin/settings",

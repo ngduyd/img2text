@@ -494,6 +494,9 @@ _SETTING_FLOORS: dict[str, tuple[int, str]] = {
     "upload_byte_limit": (
         1_048_576, "upload_byte_limit phải từ 1MB trở lên.",
     ),
+    # P2b: quota floors ≥0 (âm = giá trị vô nghĩa, không được silent accept)
+    "daily_page_limit": (0, "daily_page_limit phải từ 0 trở lên."),
+    "weekly_page_limit": (0, "weekly_page_limit phải từ 0 trở lên."),
 }
 
 class RuntimeSettingsPut(BaseModel):
@@ -616,8 +619,7 @@ async def put_settings(
         "smtp_pass",
         "smtp_from",
         # numeric, no floor — str() upsert matches the llm_timeout precedent
-        "daily_page_limit",
-        "weekly_page_limit",
+        # (daily/weekly_page_limit chuyển sang _SETTING_FLOORS — P2b)
     ):
         value = getattr(body, key)
         # Lane C: write-only key — form để trống = giữ nguyên (không echo nên
