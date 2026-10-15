@@ -5,7 +5,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: img2text
-      POSTGRES_PASSWORD: img2text
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-img2text}
       POSTGRES_DB: img2text
     volumes:
       - pgdata:/var/lib/postgresql/data
