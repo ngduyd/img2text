@@ -30,9 +30,9 @@ from app.services.scheduler import init_scheduler
 from app.services.storage import build_storage
 
 
-def _validate_prod_secrets() -> None:
-    """P0 spec 2026-10-15: prod boots only with real secrets (single gate
-    at startup; dev/test skip)."""
+def _validate_prod_config() -> None:
+    """P0 spec 2026-10-15: prod boots only with real secrets + LLM endpoint
+    when LLM features are on (single gate at startup; dev/test skip)."""
     if settings.env != "prod":
         return
     if (
@@ -47,11 +47,15 @@ def _validate_prod_secrets() -> None:
         raise RuntimeError(
             "prod requires runner_key: set RUNNER_KEY (not dev default)"
         )
+    # LLM features = kaggle orchestration enabled (spec test; future LLM
+    # feature flags join this check).
+    if settings.kaggle_enabled and not settings.llm_base_url:
+        raise RuntimeError("prod requires LLM_BASE_URL when LLM features enabled")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # P0 fail-fast: reject bad prod secrets BEFORE touching the DB.
-    _validate_prod_secrets()
+    # P0 fail-fast: reject bad prod config BEFORE touching the DB.
+    _validate_prod_config()
     # optional dep: HEIC/HEIF decode cho pipeline; thiếu → warning, heic
     # upload sẽ fail ở rasterize thay vì fail boot.
     try:

@@ -85,8 +85,10 @@ class Settings(BaseSettings):
     # worker kernel polling the backend (needs public BASE_URL + Secrets).
     kaggle_mode: str = "batch"
     # Plan D2: LLM layout plan for the docx-layout export (local
-    # OpenAI-compatible server, e.g. llm.cpp at localhost:20128).
-    llm_base_url: str = "http://localhost:20128/v1"
+    # OpenAI-compatible server, e.g. llm.cpp at localhost:20128). Empty
+    # default (P0 spec 2026-10-15): prod fail-fast when kaggle (LLM) feature
+    # enabled; dev value lives in deploy/.env.dev.
+    llm_base_url: str = ""
     llm_model: str = "oc/muse-spark-1.3-contributor-free"
     # LLM request timeout (seconds)
     llm_timeout: int = Field(

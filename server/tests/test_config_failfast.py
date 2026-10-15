@@ -50,3 +50,22 @@ async def test_prod_fails_on_empty_admin_creds(monkeypatch, db_session):
 
 async def test_dev_allows_empty_admin_creds(db_session):
     await bootstrap_admin(db_session, "", "")  # no-op, no raise
+
+async def test_prod_fails_on_empty_llm_base_url_when_enabled(monkeypatch):
+    monkeypatch.setattr(settings, "env", "prod")
+    monkeypatch.setattr(settings, "app_secret", "x" * 32)
+    monkeypatch.setattr(settings, "runner_key", "y" * 32)
+    monkeypatch.setattr(settings, "llm_base_url", "")
+    monkeypatch.setattr(settings, "kaggle_username", "user")
+    monkeypatch.setattr(settings, "kaggle_key", "key")
+    monkeypatch.setattr(settings, "kaggle_kernel_ref", "user/kernel")
+    with pytest.raises(RuntimeError, match="LLM_BASE_URL"):
+        async with lifespan(app):
+            pass
+
+async def test_dev_allows_empty_llm_base_url(monkeypatch):
+    monkeypatch.setattr(settings, "env", "dev")
+    monkeypatch.setattr(settings, "llm_base_url", "")
+    # should not raise
+    async with lifespan(app):
+        pass
