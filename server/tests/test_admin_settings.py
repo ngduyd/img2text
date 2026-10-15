@@ -290,6 +290,22 @@ async def test_llm_test_model_ok_500_timeout(admin_client, monkeypatch):
     body = r.json()
     assert body["ok"] is False and "timeout" in body["error"].lower()
 
+async def test_llm_test_model_bad_stored_base_url_200_not_ok(admin_client):
+    """P1: stored base_url không parse được (port "abc") → contract 200 với
+    ok=false (fallback except Exception), không 500."""
+    r = await admin_client.put(
+        "/api/admin/settings", json={"llm_base_url": "http://localhost:abc"}
+    )
+    assert r.status_code == 200
+    r = await admin_client.post(
+        "/api/admin/llm/test-model", json={"model": "m1"}
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is False
+    assert body["model"] == "m1"
+    assert body["error"]  # có lý do, không im lặng
+
 async def test_llm_test_model_anon_401(client):
     r = await client.post("/api/admin/llm/test-model", json={"model": "m"})
     assert r.status_code == 401

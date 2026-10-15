@@ -692,7 +692,9 @@ async def llm_test_model(
             "model": body.model,
             "error": "timeout sau 15s",
         }
-    except httpx.HTTPError as exc:
+    except Exception as exc:
+        # P1 contract: 1 nhánh catch-all (httpx.HTTPError, InvalidURL từ base_url
+        # hỏng, …) → 200 {ok:false, error}; client không cần phân biệt status.
         return {
             "ok": False,
             "latency_ms": int((perf_counter() - started) * 1000),
