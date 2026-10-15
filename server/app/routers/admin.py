@@ -484,6 +484,12 @@ _SETTING_FLOORS: dict[str, tuple[int, str]] = {
     "kaggle_min_gap_seconds": (
         60, "kaggle_min_gap_seconds phải từ 60 giây trở lên.",
     ),
+    # Lane CFG: floors (smtp_port ceiling 65535 checked separately below)
+    "smtp_port": (1, "smtp_port phải trong khoảng 1–65535."),
+    "max_pages": (1, "max_pages phải từ 1 trở lên."),
+    "upload_byte_limit": (
+        1_048_576, "upload_byte_limit phải từ 1MB trở lên.",
+    ),
 }
 
 class RuntimeSettingsPut(BaseModel):
@@ -499,9 +505,22 @@ class RuntimeSettingsPut(BaseModel):
     kaggle_mode: str | None = None
     llm_base_url: str | None = None
     llm_model: str | None = None
+    ir_llm_model: str | None = None
     proofread_llm_model: str | None = None
     llm_api_key: str | None = None
     llm_timeout: int | None = None
+    smtp_host: str | None = None
+    smtp_port: int | None = None
+    smtp_user: str | None = None
+    smtp_pass: str | None = None
+    smtp_from: str | None = None
+    max_pages: int | None = None
+    daily_page_limit: int | None = None
+    weekly_page_limit: int | None = None
+    upload_byte_limit: int | None = None
+
+# Write-only keys: masked in responses, empty PUT = keep existing value.
+_WRITE_ONLY_KEYS = ("llm_api_key", "smtp_pass")
 
 def _mask_api_key(value) -> str | None:
     """WS-ADMIN write-only: "sk-…last4" (or "***" short), empty → null.
@@ -518,6 +537,7 @@ async def _runtime_settings(session_factory) -> dict:
         for key in RUNTIME_SETTING_KEYS
     }
     out["llm_api_key"]["value"] = _mask_api_key(out["llm_api_key"]["value"])
+    out["smtp_pass"]["value"] = _mask_api_key(out["smtp_pass"]["value"])
     return out
 
 def _reschedule_reap(app, seconds: int) -> bool:
@@ -566,6 +586,11 @@ async def put_settings(
             status_code=422,
             detail="llm_timeout phải trong khoảng 120–600 giây.",
         )
+    if body.smtp_port is not None and body.smtp_port > 65535:
+        raise HTTPException(
+            status_code=422,
+            detail="smtp_port phải trong khoảng 1–65535.",
+        )
     for key in _SETTING_FLOORS:
         value = getattr(body, key)
         if value is None:
@@ -578,14 +603,22 @@ async def put_settings(
     for key in (
         "llm_base_url",
         "llm_model",
+        "ir_llm_model",
         "proofread_llm_model",
         "llm_api_key",
         "llm_timeout",
+        "smtp_host",
+        "smtp_user",
+        "smtp_pass",
+        "smtp_from",
+        # numeric, no floor — str() upsert matches the llm_timeout precedent
+        "daily_page_limit",
+        "weekly_page_limit",
     ):
         value = getattr(body, key)
         # Lane C: write-only key — form để trống = giữ nguyên (không echo nên
         # client không thể phân biệt "chưa set" vs "muốn xóa").
-        if value is None or (key == "llm_api_key" and not value):
+        if value is None or (key in _WRITE_ONLY_KEYS and not value):
             continue
         row = await session.get(Setting, key)
         if row is None:
@@ -595,4 +628,23 @@ async def put_settings(
     await session.commit()
     if body.scheduler_interval_seconds is not None:
         _reschedule_reap(request.app, body.scheduler_interval_seconds)
+    return await _runtime_settings(request.app.state.session_factory)
+
+@router.delete("/settings/{key}")
+async def delete_setting(
+    key: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    _: User = Depends(_admin_user),
+) -> dict:
+    """Lane CFG reset: xóa Setting row → key lại đọc env default (source
+    "env"). Chỉ key runtime — 404 với key lạ (typo không được silent no-op)."""
+    if key not in RUNTIME_SETTING_KEYS:
+        raise HTTPException(status_code=404, detail=f"unknown setting: {key}")
+    row = await session.get(Setting, key)
+    if row is not None:
+        await session.delete(row)
+        await session.commit()
+    if key == "scheduler_interval_seconds":
+        _reschedule_reap(request.app, settings.scheduler_interval_seconds)
     return await _runtime_settings(request.app.state.session_factory)

@@ -10,10 +10,20 @@ so no to_thread wrapper is needed.
 
 from app.core.config import settings
 from app.core.models import Setting
+from app.services.quota import DAILY_DEFAULT, UPLOAD_BYTE_DEFAULT, WEEKLY_DEFAULT
 
-# Keys served by GET /api/admin/settings (PUT covers the 3 numeric ones —
+# Keys served by GET /api/admin/settings (PUT covers the numeric ones —
 # kaggle_mode is read-only in the API: a mode flip mid-run would half-apply
 # batch/loop state, so changing it needs a restart).
+# Lane CFG: quota keys (daily/weekly/upload) have no pydantic twin — defaults
+# mirror quota.py constants; rows persist but quota still reads per-user
+# columns until its redesign (decision A — documented in the lane report).
+_QUOTA_DEFAULTS = {
+    "daily_page_limit": DAILY_DEFAULT,
+    "weekly_page_limit": WEEKLY_DEFAULT,
+    "upload_byte_limit": UPLOAD_BYTE_DEFAULT,
+}
+
 RUNTIME_SETTING_KEYS = (
     "scheduler_interval_seconds",
     "purge_interval_seconds",
@@ -23,9 +33,19 @@ RUNTIME_SETTING_KEYS = (
     "kaggle_mode",
     "llm_base_url",
     "llm_model",
+    "ir_llm_model",
     "proofread_llm_model",
     "llm_api_key",
     "llm_timeout",
+    "smtp_host",
+    "smtp_port",
+    "smtp_user",
+    "smtp_pass",
+    "smtp_from",
+    "max_pages",
+    "daily_page_limit",
+    "weekly_page_limit",
+    "upload_byte_limit",
 )
 
 def _parse(value: str, default):
@@ -47,12 +67,13 @@ async def _effective(session_factory, key: str, default) -> tuple:
 
 async def get_runtime_setting_entry(session_factory, key: str) -> dict:
     """Effective `{value, source}` for the admin API."""
-    value, source = await _effective(session_factory, key, getattr(settings, key))
+    default = getattr(settings, key, _QUOTA_DEFAULTS.get(key))
+    value, source = await _effective(session_factory, key, default)
     return {"value": value, "source": source}
 
 async def get_runtime_setting(session_factory, key: str, default=None):
     """Effective value: DB Setting override, else the env/pydantic default."""
     if default is None:
-        default = getattr(settings, key)
+        default = getattr(settings, key, _QUOTA_DEFAULTS.get(key))
     value, _source = await _effective(session_factory, key, default)
     return value

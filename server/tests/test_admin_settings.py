@@ -28,7 +28,20 @@ KEYS = (
     "proofread_llm_model",
     "llm_api_key",
     "llm_timeout",
+    "ir_llm_model",
+    "smtp_host",
+    "smtp_port",
+    "smtp_user",
+    "smtp_pass",
+    "smtp_from",
+    "max_pages",
+    "daily_page_limit",
+    "weekly_page_limit",
+    "upload_byte_limit",
 )
+
+# Write-only keys (WS-ADMIN): masked in every response, empty PUT = keep.
+WRITE_ONLY = {"llm_api_key", "smtp_pass"}
 
 # Write-only key masking (WS-ADMIN): "sk-…last4", empty → null.
 def _masked(value) -> str | None:
@@ -44,9 +57,13 @@ async def test_get_settings_shape_default_source_env(admin_client):
     data = r.json()
     assert set(data) == set(KEYS)
     for key in KEYS:
-        # no rows (db_truncate) → env default, source "env"; api key is
-        # write-only → masked (None when the env default is empty)
-        want = _masked(getattr(settings, key)) if key == "llm_api_key" else getattr(settings, key)
+        # no rows (db_truncate) → env default, source "env"; write-only keys
+        # are masked (None when the env default is empty). Quota keys have no
+        # pydantic twin — defaults mirror quota.py constants (Lane CFG decision
+        # A: rows persist, quota redesign wires them later).
+        from app.services.runtime_settings import _QUOTA_DEFAULTS
+        default = getattr(settings, key, _QUOTA_DEFAULTS.get(key))
+        want = _masked(default) if key in WRITE_ONLY else default
         assert data[key] == {"value": want, "source": "env"}
 
 async def test_get_settings_non_admin_403(auth_client):
@@ -148,6 +165,84 @@ async def test_put_llm_api_key_empty_keeps_existing(admin_client, db_session):
     assert r.json()["llm_api_key"]["value"] == "sk-…1234"  # mask giữ nguyên
     row = await db_session.get(Setting, "llm_api_key")
     assert row.value == "sk-secret-abcdef1234"  # full key không bị xóa
+
+# --- Lane CFG: smtp/max_pages/quota keys + floors + write-only smtp_pass ---
+
+async def test_put_smtp_port_bounds_422(admin_client):
+    for bad in (0, 65536):
+        r = await admin_client.put("/api/admin/settings", json={"smtp_port": bad})
+        assert r.status_code == 422
+        assert r.json()["detail"] == "smtp_port phải trong khoảng 1–65535."
+    r = await admin_client.put("/api/admin/settings", json={"smtp_port": 587})
+    assert r.status_code == 200
+    assert r.json()["smtp_port"] == {"value": 587, "source": "db"}
+
+async def test_put_max_pages_and_upload_byte_limit_floors(admin_client):
+    r = await admin_client.put("/api/admin/settings", json={"max_pages": 0})
+    assert r.status_code == 422
+    assert r.json()["detail"] == "max_pages phải từ 1 trở lên."
+    r = await admin_client.put("/api/admin/settings", json={"max_pages": 50})
+    assert r.json()["max_pages"] == {"value": 50, "source": "db"}
+    r = await admin_client.put(
+        "/api/admin/settings", json={"upload_byte_limit": 1_048_575}
+    )
+    assert r.status_code == 422
+    assert r.json()["detail"] == "upload_byte_limit phải từ 1MB trở lên."
+    r = await admin_client.put(
+        "/api/admin/settings", json={"upload_byte_limit": 1_048_576}
+    )
+    assert r.json()["upload_byte_limit"] == {"value": 1048576, "source": "db"}
+
+async def test_put_smtp_pass_write_only_mask(admin_client, db_session):
+    r = await admin_client.put(
+        "/api/admin/settings", json={"smtp_pass": "secret-pass-123"}
+    )
+    assert r.status_code == 200
+    assert r.json()["smtp_pass"] == {"value": "sec…-123", "source": "db"}
+    r = await admin_client.get("/api/admin/settings")
+    assert r.json()["smtp_pass"]["value"] == "sec…-123"
+    assert "secret-pass-123" not in r.text  # full secret never in a response
+    row = await db_session.get(Setting, "smtp_pass")
+    assert row is not None and row.value == "secret-pass-123"
+    # empty PUT = keep (write-only form can't express "clear")
+    r = await admin_client.put("/api/admin/settings", json={"smtp_pass": ""})
+    assert r.json()["smtp_pass"]["value"] == "sec…-123"
+
+async def test_put_quota_and_ir_and_smtp_string_keys(admin_client):
+    r = await admin_client.put(
+        "/api/admin/settings",
+        json={
+            "daily_page_limit": 10,
+            "weekly_page_limit": 50,
+            "ir_llm_model": "oc/new-ir-model",
+            "smtp_host": "smtp.example",
+            "smtp_from": "noreply@example.com",
+            "smtp_user": "bot",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["daily_page_limit"] == {"value": 10, "source": "db"}
+    assert body["weekly_page_limit"] == {"value": 50, "source": "db"}
+    assert body["ir_llm_model"] == {"value": "oc/new-ir-model", "source": "db"}
+    assert body["smtp_host"] == {"value": "smtp.example", "source": "db"}
+    assert body["smtp_from"] == {"value": "noreply@example.com", "source": "db"}
+    assert body["smtp_user"] == {"value": "bot", "source": "db"}
+
+async def test_delete_setting_resets_to_env(admin_client, db_session):
+    """Reset = xóa Setting row → GET trả về env default (source \"env\")."""
+    r = await admin_client.put("/api/admin/settings", json={"max_pages": 42})
+    assert r.json()["max_pages"]["source"] == "db"
+    r = await admin_client.delete("/api/admin/settings/max_pages")
+    assert r.status_code == 200
+    assert r.json()["max_pages"] == {
+        "value": settings.max_pages,
+        "source": "env",
+    }
+    assert await db_session.get(Setting, "max_pages") is None
+    # unknown / not-a-runtime-key → 404 (no silent no-op)
+    r = await admin_client.delete("/api/admin/settings/kaggle_kernel_ref")
+    assert r.status_code == 404
 
 async def test_put_anon_401(client):
     r = await client.put("/api/admin/settings", json={"kaggle_min_queue": 2})
