@@ -34,7 +34,9 @@ beforeEach(() => {
     gpu: { used_s: 100, total_s: 21600, remaining_s: 21500, refresh: null },
     tpu: { used_s: 0, total_s: 72000, remaining_s: 72000, refresh: null },
   });
-  h.getAdminSettings.mockResolvedValue({ kaggle_mode: "gpu" });
+  h.getAdminSettings.mockResolvedValue({
+    kaggle_mode: { value: "gpu", source: "env" },
+  });
 });
 
 function renderAdmin() {
