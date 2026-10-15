@@ -9,13 +9,18 @@ const listJobs = vi.fn();
 const purgeJobStorage = vi.fn();
 const purgeMyStorageDue = vi.fn();
 
-vi.mock("../api/client", () => ({
-  api: {
-    listJobs: (...a: unknown[]) => listJobs(...a),
-    purgeJobStorage: (...a: unknown[]) => purgeJobStorage(...a),
-    purgeMyStorageDue: (...a: unknown[]) => purgeMyStorageDue(...a),
-  },
-}));
+vi.mock("../api/client", async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual, // giữ export ApiError thật (mapApiError instanceof check)
+    api: {
+      ...(actual.api as object),
+      listJobs: (...a: unknown[]) => listJobs(...a),
+      purgeJobStorage: (...a: unknown[]) => purgeJobStorage(...a),
+      purgeMyStorageDue: (...a: unknown[]) => purgeMyStorageDue(...a),
+    },
+  };
+});
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 const PAGE = {
@@ -100,6 +105,17 @@ test("page shell: main#main + h1 + subtitle (AC5, AC7)", async () => {
   expect(screen.getByRole("heading", { level: 1, name: "My storage" })).toBeTruthy();
   expect(screen.getByText("Manage your stored files")).toBeTruthy();
   expect(document.querySelector(".grid.grid-cols-1.sm\\:grid-cols-3")).toBeTruthy(); // AC7
+});
+
+test("error state: composed error + retry refetch (AC11)", async () => {
+  listJobs.mockRejectedValueOnce(new Error("boom")).mockResolvedValue(PAGE);
+  renderPage();
+  const err = await screen.findByTestId("storage-own-error");
+  expect(err.textContent).toContain("boom");
+  expect(screen.queryByTestId("storage-own-card")).toBeNull(); // không skeleton vĩnh viễn
+  fireEvent.click(screen.getByTestId("storage-own-retry"));
+  await screen.findByTestId("storage-own-kept-files"); // refetch → nội dung quay lại
+  expect(listJobs).toHaveBeenCalledTimes(2);
 });
 
 test("bulk purge: confirm → api.purgeMyStorageDue + toast {n}", async () => {
