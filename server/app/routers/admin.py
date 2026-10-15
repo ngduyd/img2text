@@ -331,10 +331,11 @@ def _field(obj, name):
     if isinstance(obj, dict):
         if name in obj:
             return obj[name]
-        return obj[re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()]
+        return obj.get(re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower())
     if hasattr(obj, name):
         return getattr(obj, name)
-    return getattr(obj, re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower())
+    # P2-1: thiếu cả 2 shape → None an toàn (UI hiển thị "—") thay vì 502
+    return getattr(obj, re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower(), None)
 
 def _kaggle_quota_payload() -> dict:
     """KaggleApi.quota_view() → {gpu|tpu: {used_s, total_s, remaining_s, refresh}}.

@@ -94,6 +94,30 @@ async def test_kaggle_quota_inner_snake_case_kagglesdk(admin_client, monkeypatch
     finally:
         StubKaggleApi.response = QUOTA_RESPONSE
 
+async def test_kaggle_quota_missing_refresh_field_null_not_502(admin_client, monkeypatch):
+    """P2-1: field thiếu CẢ camelCase lẫn snake_case → null (UI hiển thị "—"), không 502."""
+    _install_kaggle(monkeypatch)
+    StubKaggleApi.response = SimpleNamespace(
+        gpuQuota=SimpleNamespace(
+            timeUsed="100s", timeReserved="0s", totalTimeAllowed="21600s",
+            minimumTimeAllowed="3600s", hasEverRun=True,
+        ),
+        tpuQuota=SimpleNamespace(
+            timeUsed="0s", timeReserved="0s", totalTimeAllowed="72000s",
+            minimumTimeAllowed="0s", hasEverRun=False,
+        ),
+        # quotaRefreshTime missing — neither camelCase nor snake_case
+    )
+    try:
+        r = await admin_client.get("/api/admin/kaggle-quota")
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["gpu"]["refresh"] is None
+        assert body["tpu"]["refresh"] is None
+        assert body["gpu"]["total_s"] == pytest.approx(21600.0)
+    finally:
+        StubKaggleApi.response = QUOTA_RESPONSE
+
 async def test_kaggle_quota_admin_only(auth_client, monkeypatch):
     _install_kaggle(monkeypatch)
     assert (await auth_client.get("/api/admin/kaggle-quota")).status_code == 403
