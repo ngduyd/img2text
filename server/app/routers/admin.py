@@ -7,9 +7,12 @@ import logging
 import re
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+from time import perf_counter
 
+import httpx
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from httpx import AsyncClient
 from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
 from sqlalchemy import Date, Float, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +24,7 @@ from app.core.models import Job, PageView, RequestLog, Setting, User, WorkerHear
 from app.services.purge import purge_due_jobs, purge_retention_days
 from app.services.runtime_settings import (
     RUNTIME_SETTING_KEYS,
+    get_runtime_setting,
     get_runtime_setting_entry,
 )
 from app.services.storage import StorageDriver, get_storage
@@ -648,3 +652,59 @@ async def delete_setting(
     if key == "scheduler_interval_seconds":
         _reschedule_reap(request.app, settings.scheduler_interval_seconds)
     return await _runtime_settings(request.app.state.session_factory)
+
+class LlmTestModelBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: str
+    base_url: str | None = None
+
+@router.post("/llm/test-model")
+async def llm_test_model(
+    body: LlmTestModelBody,
+    request: Request,
+    _: User = Depends(_admin_user),
+) -> dict:
+    """Lane CFG: probe model sống/chết — 1 prompt \"ping\" (max_tokens 5),
+    timeout 15s, KHÔNG persist. base_url: body override, else runtime
+    setting. Trả {ok, latency_ms, model, error} — ok luôn trong response 200
+    (lỗi LLM nằm ở `error`, client không cần phân biệt status)."""
+    session_factory = request.app.state.session_factory
+    base_url = body.base_url or await get_runtime_setting(
+        session_factory, "llm_base_url", settings.llm_base_url
+    )
+    api_key = await get_runtime_setting(session_factory, "llm_api_key")
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    url = base_url.rstrip("/") + "/chat/completions"
+    payload = {
+        "model": body.model,
+        "messages": [{"role": "user", "content": "ping"}],
+        "max_tokens": 5,
+    }
+    started = perf_counter()
+    try:
+        async with AsyncClient(timeout=15) as client:
+            resp = await client.post(url, json=payload, headers=headers, timeout=15)
+    except httpx.TimeoutException:
+        return {
+            "ok": False,
+            "latency_ms": int((perf_counter() - started) * 1000),
+            "model": body.model,
+            "error": "timeout sau 15s",
+        }
+    except httpx.HTTPError as exc:
+        return {
+            "ok": False,
+            "latency_ms": int((perf_counter() - started) * 1000),
+            "model": body.model,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    latency_ms = int((perf_counter() - started) * 1000)
+    if resp.status_code != 200:
+        return {
+            "ok": False,
+            "latency_ms": latency_ms,
+            "model": body.model,
+            "error": f"HTTP {resp.status_code}: {resp.text[:200]}",
+        }
+    return {"ok": True, "latency_ms": latency_ms, "model": body.model, "error": None}

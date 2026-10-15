@@ -7,6 +7,7 @@ RequestLogsMiddleware row for the PUT (every-request audit, Plan X R6).
 
 from datetime import timedelta
 
+import httpx
 from sqlalchemy import select
 
 from app.core.config import settings
@@ -228,6 +229,74 @@ async def test_put_quota_and_ir_and_smtp_string_keys(admin_client):
     assert body["smtp_host"] == {"value": "smtp.example", "source": "db"}
     assert body["smtp_from"] == {"value": "noreply@example.com", "source": "db"}
     assert body["smtp_user"] == {"value": "bot", "source": "db"}
+
+async def test_llm_test_model_ok_500_timeout(admin_client, monkeypatch):
+    """POST /api/admin/llm/test-model: probe 1 prompt \"ping\" (max_tokens 5),
+    timeout 15s, KHÔNG persist → {ok, latency_ms, model, error}."""
+    from app.routers import admin
+
+    calls: list = []
+
+    class Stub:
+        def __init__(self, status=200, text="", exc=None):
+            self.status_code, self.text, self._exc = status, text, exc
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, **kw):
+            calls.append((url, kw))
+            if self._exc:
+                raise self._exc
+            return self
+
+    # 200 → ok
+    monkeypatch.setattr(admin, "AsyncClient", lambda **kw: Stub(200))
+    r = await admin_client.post(
+        "/api/admin/llm/test-model",
+        json={"model": "m1", "base_url": "http://llm.test/v1"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True and body["error"] is None
+    assert body["model"] == "m1" and isinstance(body["latency_ms"], int)
+    url, kw = calls[-1]
+    assert url == "http://llm.test/v1/chat/completions"
+    assert kw["json"]["max_tokens"] == 5
+    assert kw["json"]["messages"] == [{"role": "user", "content": "ping"}]
+    # timeout param fixed 15s (no persist: Setting rows unchanged)
+    assert kw["timeout"] == 15
+
+    # 500 → not ok + error carries status
+    monkeypatch.setattr(admin, "AsyncClient", lambda **kw: Stub(500, "boom"))
+    r = await admin_client.post(
+        "/api/admin/llm/test-model", json={"model": "m1"}
+    )
+    body = r.json()
+    assert body["ok"] is False and "HTTP 500" in body["error"]
+
+    # timeout → not ok + error
+    monkeypatch.setattr(
+        admin,
+        "AsyncClient",
+        lambda **kw: Stub(exc=httpx.TimeoutException("timed out")),
+    )
+    r = await admin_client.post(
+        "/api/admin/llm/test-model", json={"model": "m1"}
+    )
+    body = r.json()
+    assert body["ok"] is False and "timeout" in body["error"].lower()
+
+async def test_llm_test_model_anon_401(client):
+    r = await client.post("/api/admin/llm/test-model", json={"model": "m"})
+    assert r.status_code == 401
+
+async def test_llm_test_model_non_admin_403(auth_client):
+    r = await auth_client.post("/api/admin/llm/test-model", json={"model": "m"})
+    assert r.status_code == 403
 
 async def test_delete_setting_resets_to_env(admin_client, db_session):
     """Reset = xóa Setting row → GET trả về env default (source \"env\")."""
