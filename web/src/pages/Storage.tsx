@@ -53,135 +53,143 @@ export default function Storage() {
   const keptBytes = sumKeptBytes(kept);
 
   return (
-    <div className="flex flex-col gap-4">
-      <Card title={t("storage.own.title")} testid="storage-own-card">
-        {isLoading || !data ? (
-          <Skeleton testid="storage-own-loading" />
-        ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <Stat
-              testid="storage-own-kept-files"
-              label={t("storage.own.stats.keptFiles")}
-              value={String(kept.length)}
-            />
-            <Stat
-              testid="storage-own-purged-files"
-              label={t("storage.own.stats.purgedFiles")}
-              value={String(purgedCount)}
-            />
-            <Stat
-              testid="storage-own-kept-bytes"
-              label={t("storage.own.stats.keptBytes")}
-              value={fmtBytes(keptBytes)}
-            />
-          </div>
-        )}
-      </Card>
+    <main id="main" className="mx-auto max-w-7xl px-4 py-6">
+      {/* Page header (P0-4): skip-link target + h1 + subtitle. */}
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold tracking-tight">{t("storage.own.title")}</h1>
+        <p className="mt-1 text-sm text-muted">{t("storage.own.subtitle")}</p>
+      </header>
+      <div className="flex flex-col gap-4">
+        <Card testid="storage-own-card">
+          {isLoading || !data ? (
+            <Skeleton testid="storage-own-loading" />
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Stat
+                testid="storage-own-kept-files"
+                label={t("storage.own.stats.keptFiles")}
+                value={String(kept.length)}
+              />
+              <Stat
+                testid="storage-own-purged-files"
+                label={t("storage.own.stats.purgedFiles")}
+                value={String(purgedCount)}
+              />
+              <Stat
+                testid="storage-own-kept-bytes"
+                label={t("storage.own.stats.keptBytes")}
+                value={fmtBytes(keptBytes)}
+              />
+            </div>
+          )}
+        </Card>
 
-      <Card
-        title={t("storage.own.tableTitle")}
-        testid="storage-own-table"
-        actions={
-          <Button
-            testid="storage-own-purge-due"
-            variant="danger"
-            size="sm"
-            className="border border-error/40 bg-error/10"
-            disabled={!data || items.length === 0}
-            loading={purgeDue.isPending}
-            onClick={() => setConfirm({ kind: "due" })}
-          >
-            <Trash2 className="h-4 w-4" aria-hidden="true" />
-            {t("storage.own.purgeDue")}
-          </Button>
-        }
-      >
-        {isLoading || !data ? (
-          <Skeleton testid="storage-own-table-loading" />
-        ) : items.length === 0 ? (
-          <p className="py-4 text-center text-sm text-muted">{t("storage.own.empty")}</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 border-b border-border bg-surface-2 text-left text-xs text-muted">
-                <tr>
-                  <th className="px-2 py-2 font-medium">{t("storage.own.table.filename")}</th>
-                  <th className="px-2 py-2 font-medium">{t("storage.own.table.created")}</th>
-                  <th className="px-2 py-2 font-medium">{t("storage.own.table.age")}</th>
-                  <th className="px-2 py-2 font-medium">{t("storage.own.table.size")}</th>
-                  <th className="px-2 py-2 font-medium">{t("storage.own.table.status")}</th>
-                  <th className="px-2 py-2">
-                    <span className="sr-only">{t("storage.own.table.actions")}</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((j) => (
-                  <tr key={j.id} data-testid={`storage-own-job-${j.id}`} className="border-b border-border">
-                    <td className="max-w-40 truncate px-2 py-2">{j.filename ?? "—"}</td>
-                    <td className="px-2 py-2 font-mono text-xs">
-                      {j.created_at
-                        ? new Date(j.created_at).toLocaleString(translate("i18n.locale"))
-                        : "—"}
-                    </td>
-                    <td className="px-2 py-2 tabular-nums">
-                      {translate("storage.own.ageDays", { n: ageDays(j.created_at) })}
-                    </td>
-                    <td className="px-2 py-2 tabular-nums">{fmtBytes(j.upload_bytes || 0)}</td>
-                    <td className="px-2 py-2">
-                      {j.storage_purged_at ? (
-                        <Badge tone="neutral" testid={`purged-badge-${j.id}`}>
-                          {t("storage.purged")}
-                        </Badge>
-                      ) : (
-                        <Badge tone="success">{t("storage.kept")}</Badge>
-                      )}
-                    </td>
-                    <td className="px-2 py-2 text-right">
-                      {!j.storage_purged_at && (
-                        <Button
-                          testid={`storage-purge-${j.id}`}
-                          variant="danger"
-                          size="sm"
-                          className="border border-error/40 bg-error/10"
-                          loading={purgeOne.isPending && confirm?.kind === "one" && confirm.id === j.id}
-                          onClick={() => setConfirm({ kind: "one", id: j.id })}
-                        >
-                          <Trash2 className="h-4 w-4" aria-hidden="true" />
-                          {t("storage.own.purgeOne")}
-                        </Button>
-                      )}
-                    </td>
+        <Card
+          title={t("storage.own.tableTitle")}
+          testid="storage-own-table"
+          actions={
+            <Button
+              testid="storage-own-purge-due"
+              variant="danger"
+              size="sm"
+              className="border border-error/40 bg-error/10"
+              disabled={!data || items.length === 0}
+              loading={purgeDue.isPending}
+              onClick={() => setConfirm({ kind: "due" })}
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+              {t("storage.own.purgeDue")}
+            </Button>
+          }
+        >
+          {isLoading || !data ? (
+            <Skeleton testid="storage-own-table-loading" />
+          ) : items.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted">{t("storage.own.empty")}</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 border-b border-border bg-surface-2 text-left text-xs text-muted">
+                  <tr>
+                    <th className="px-2 py-2 font-medium">{t("storage.own.table.filename")}</th>
+                    <th className="px-2 py-2 font-medium">{t("storage.own.table.created")}</th>
+                    <th className="px-2 py-2 font-medium">{t("storage.own.table.age")}</th>
+                    <th className="px-2 py-2 font-medium">{t("storage.own.table.size")}</th>
+                    <th className="px-2 py-2 font-medium">{t("storage.own.table.status")}</th>
+                    <th className="px-2 py-2">
+                      <span className="sr-only">{t("storage.own.table.actions")}</span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+                </thead>
+                <tbody>
+                  {items.map((j) => (
+                    <tr key={j.id} data-testid={`storage-own-job-${j.id}`} className="border-b border-border">
+                      <td className="max-w-40 truncate px-2 py-2">{j.filename ?? "—"}</td>
+                      <td className="px-2 py-2 font-mono text-xs">
+                        {j.created_at
+                          ? new Date(j.created_at).toLocaleString(translate("i18n.locale"))
+                          : "—"}
+                      </td>
+                      <td className="px-2 py-2 tabular-nums">
+                        {translate("storage.own.ageDays", { n: ageDays(j.created_at) })}
+                      </td>
+                      <td className="px-2 py-2 tabular-nums">{fmtBytes(j.upload_bytes || 0)}</td>
+                      <td className="px-2 py-2">
+                        {j.storage_purged_at ? (
+                          <Badge tone="neutral" testid={`purged-badge-${j.id}`}>
+                            {t("storage.purged")}
+                          </Badge>
+                        ) : (
+                          <Badge tone="success">{t("storage.kept")}</Badge>
+                        )}
+                      </td>
+                      <td className="px-2 py-2 text-right">
+                        {!j.storage_purged_at && (
+                          <Button
+                            testid={`storage-purge-${j.id}`}
+                            variant="danger"
+                            size="sm"
+                            className="border border-error/40 bg-error/10"
+                            loading={purgeOne.isPending && confirm?.kind === "one" && confirm.id === j.id}
+                            onClick={() => setConfirm({ kind: "one", id: j.id })}
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                            {t("storage.own.purgeOne")}
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
 
-      {confirm && (
-        <ConfirmDialog
-          open
-          title={
-            confirm.kind === "one"
-              ? t("storage.own.confirmOneTitle")
-              : t("storage.own.confirmDueTitle")
-          }
-          message={
-            confirm.kind === "one"
-              ? t("storage.own.confirmOneMessage")
-              : t("storage.own.confirmDueMessage")
-          }
-          confirmLabel={
-            confirm.kind === "one" ? t("storage.own.purgeOne") : t("storage.own.purgeDue")
-          }
-          onConfirm={() =>
-            confirm.kind === "one" ? purgeOne.mutate(confirm.id) : purgeDue.mutate()
-          }
-          onCancel={() => setConfirm(null)}
-        />
-      )}
-    </div>
+        {confirm && (
+          <ConfirmDialog
+            open
+            title={
+              confirm.kind === "one"
+                ? t("storage.own.confirmOneTitle")
+                : t("storage.own.confirmDueTitle")
+            }
+            message={
+              confirm.kind === "one"
+                ? t("storage.own.confirmOneMessage")
+                : t("storage.own.confirmDueMessage")
+            }
+            confirmLabel={
+              confirm.kind === "one" ? t("storage.own.purgeOne") : t("storage.own.purgeDue")
+            }
+            onConfirm={() =>
+              confirm.kind === "one" ? purgeOne.mutate(confirm.id) : purgeDue.mutate()
+            }
+            onCancel={() => setConfirm(null)}
+          />
+        )}
+      </div>
+    </main>
   );
+
 }
