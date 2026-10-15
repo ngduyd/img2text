@@ -28,6 +28,7 @@
     "dompurify": "^3.4.16",
     "lucide-react": "^1.52.0",
     "mammoth": "^1.13.0",
+    "marked": "^18.1.1",
     "motion": "^14.0.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.4.299",
