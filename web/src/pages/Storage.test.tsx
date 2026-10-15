@@ -161,6 +161,16 @@ test("bulk confirm label hiển thị count, không literal {n} (AC15)", async (
   expect(accept.textContent).not.toContain("{n}");
 });
 
+test("empty state composed: icon + title + body + CTA → /jobs (AC12)", async () => {
+  listJobs.mockResolvedValue({ ...PAGE, items: [], total: 0 });
+  renderPage();
+  const empty = await screen.findByTestId("storage-own-empty");
+  expect(empty.querySelector("svg")).toBeTruthy();
+  expect(empty.textContent).toContain("No jobs yet.");
+  const cta = screen.getByRole("link", { name: /create your first job/i });
+  expect(cta.getAttribute("href")).toBe("/jobs");
+});
+
 test("bulk purge: confirm → api.purgeMyStorageDue + toast {n}", async () => {
   listJobs.mockResolvedValue(PAGE);
   purgeMyStorageDue.mockResolvedValue({ purged: 3 });

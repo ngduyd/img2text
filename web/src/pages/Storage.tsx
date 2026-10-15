@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2, TriangleAlert } from "lucide-react";
+import { Inbox, Trash2, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../api/client";
 import { mapApiError } from "../lib/errors";
@@ -138,7 +138,21 @@ export default function Storage() {
             {isLoading || !data ? (
               <Skeleton testid="storage-own-table-loading" />
             ) : items.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted">{t("storage.own.empty")}</p>
+              /* P1-1: composed empty — icon + title + body + CTA (upload ở /jobs). */
+              <div
+                data-testid="storage-own-empty"
+                className="flex flex-col items-center px-2 py-6 text-center"
+              >
+                <Inbox className="h-10 w-10 text-muted" aria-hidden="true" />
+                <p className="mt-3 text-base font-semibold">{t("storage.own.empty")}</p>
+                <p className="mt-1 max-w-sm text-sm text-muted">{t("jobs.emptyBody")}</p>
+                <Link
+                  to="/jobs"
+                  className="mt-4 text-sm font-medium text-accent-text transition duration-150 ease-out hover:underline"
+                >
+                  {t("jobs.emptyCta")}
+                </Link>
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
