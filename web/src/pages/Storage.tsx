@@ -87,7 +87,16 @@ export default function Storage() {
         <div className="flex flex-col gap-4">
           <Card testid="storage-own-card">
             {isLoading || !data ? (
-              <Skeleton testid="storage-own-loading" />
+              /* P1-2: skeleton khớp stat grid (1-col mobile / 3-col ≥640). */
+              <div
+                data-testid="storage-own-loading"
+                aria-hidden="true"
+                className="grid grid-cols-1 gap-4 sm:grid-cols-3"
+              >
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </div>
             ) : (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <Stat
@@ -136,7 +145,19 @@ export default function Storage() {
               </p>
             </div>
             {isLoading || !data ? (
-              <Skeleton testid="storage-own-table-loading" />
+              /* P1-2/AC13: skeleton khớp bảng — 5 cột + actions × 4 hàng. */
+              <div data-testid="storage-own-table-loading" aria-hidden="true" className="space-y-2 py-2">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="grid grid-cols-6 gap-3">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-16" />
+                  </div>
+                ))}
+              </div>
             ) : items.length === 0 ? (
               /* P1-1: composed empty — icon + title + body + CTA (upload ở /jobs). */
               <div
