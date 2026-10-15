@@ -1,4 +1,4 @@
-import type { AdminStatsDay, FeedbackItem, Job, JobsPage, QuotaPatch, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion, WorkersResponse, StorageOverview } from "./types";
+import type { AdminStatsDay, FeedbackItem, Job, JobsPage, QuotaPatch, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LlmTestResult, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion, WorkersResponse, StorageOverview } from "./types";
 import { loadPdf } from "../lib/pdfjs";
 import { translate } from "../i18n";
 
@@ -409,6 +409,15 @@ export const api = {
   getAdminSettings: () => request<AdminSettings>("/api/admin/settings"),
   putAdminSettings: (body: AdminSettingsPut) =>
     request<AdminSettings>("/api/admin/settings", { method: "PUT", body }),
+  // Lane CFG: reset = xóa Setting row → effective value về env (source "env")
+  deleteAdminSetting: (key: string) =>
+    request<AdminSettings>(`/api/admin/settings/${key}`, { method: "DELETE" }),
+  // Lane CFG: probe model sống/chết (1 prompt "ping", không persist)
+  testLlmModel: (body: { model: string; base_url?: string }) =>
+    request<LlmTestResult>("/api/admin/llm/test-model", {
+      method: "POST",
+      body,
+    }),
   // Plan proofread: gợi ý sửa lỗi OCR (client tự replace + save, server chỉ lưu status).
   getSuggestions: (id: number | string) =>
     request<Suggestion[]>(`/api/jobs/${id}/suggestions`),
