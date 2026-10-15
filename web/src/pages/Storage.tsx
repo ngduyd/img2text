@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import { api } from "../api/client";
 import { mapApiError } from "../lib/errors";
 import { ageDays, sumKeptBytes } from "../lib/storage";
-import { translate, useT } from "../i18n";
+import { useT } from "../i18n";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
@@ -40,7 +40,7 @@ export default function Storage() {
   const purgeOne = useMutation({
     mutationFn: (id: number) => api.purgeJobStorage(id),
     onSuccess: () => {
-      toast.success(translate("storage.own.purgedOneToast"));
+      toast.success(t("storage.own.purgedOneToast"));
       qc.invalidateQueries({ queryKey: ["my-storage"] });
     },
     onError: (err) => toast.error(mapApiError(err)),
@@ -50,7 +50,7 @@ export default function Storage() {
   const purgeDue = useMutation({
     mutationFn: api.purgeMyStorageDue,
     onSuccess: ({ purged }) => {
-      toast.success(translate("storage.own.purgedDueToast", { n: purged }));
+      toast.success(t("storage.own.purgedDueToast", { n: purged }));
       qc.invalidateQueries({ queryKey: ["my-storage"] });
     },
     onError: (err) => toast.error(mapApiError(err)),
@@ -214,14 +214,14 @@ export default function Storage() {
                         <td className="px-3 py-2 font-mono text-xs">
                           {j.created_at ? (
                             <time dateTime={j.created_at}>
-                              {new Date(j.created_at).toLocaleString(translate("i18n.locale"))}
+                              {new Date(j.created_at).toLocaleString(t("i18n.locale"))}
                             </time>
                           ) : (
                             "—"
                           )}
                         </td>
                         <td className="px-3 py-2 font-mono tabular-nums">
-                          {translate("storage.own.ageDays", { n: ageDays(j.created_at) })}
+                          {t("storage.own.ageDays", { n: ageDays(j.created_at) })}
                         </td>
                         <td className="px-3 py-2 font-mono tabular-nums">{fmtBytes(j.upload_bytes || 0)}</td>
                         <td className="px-3 py-2">
