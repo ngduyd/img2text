@@ -56,8 +56,14 @@ jobs:
             echo "== $f"
             psql "$PGURL" -v ON_ERROR_STOP=1 -f "$f"
           done
+      - name: Install pandoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc
       - name: pytest
         working-directory: server
+        env:
+          PANDOC_BIN: /usr/bin/pandoc
         run: pytest -q
 
   web:
