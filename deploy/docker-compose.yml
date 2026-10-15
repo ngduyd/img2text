@@ -21,7 +21,7 @@ services:
       dockerfile: deploy/Dockerfile
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://img2text:img2text@postgres:5432/img2text
+      DATABASE_URL: postgresql+asyncpg://img2text:${POSTGRES_PASSWORD:-img2text}@postgres:5432/img2text
     depends_on:
       postgres:
         condition: service_healthy
