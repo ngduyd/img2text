@@ -46,7 +46,7 @@ jobs:
               async with engine.begin() as conn:
                   await conn.run_sync(Base.metadata.create_all)
 
-          asyncio.run(main)
+          asyncio.run(main())
           PY
           PGURL=${DATABASE_URL/postgresql+asyncpg/postgresql}
           for f in ../docs/migrations/*.sql; do
@@ -63,7 +63,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: npm ci
