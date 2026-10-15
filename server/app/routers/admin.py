@@ -18,7 +18,7 @@ from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import get_current_user, require_admin
 from app.core.models import Job, PageView, RequestLog, Setting, User, WorkerHeartbeat
-from app.services.purge import purge_due_jobs
+from app.services.purge import purge_due_jobs, purge_retention_days
 from app.services.runtime_settings import (
     RUNTIME_SETTING_KEYS,
     get_runtime_setting_entry,
@@ -365,16 +365,7 @@ def kaggle_quota(_: User = Depends(_admin_user)) -> dict:
     return _kaggle_quota_payload()
 
 # --- Lane B3 (S4): admin storage-cleanup page ---
-
-async def _purge_retention_days(session: AsyncSession) -> int:
-    """purge_retention_days: Setting override (mirror scheduler tick) else env."""
-    row = await session.get(Setting, "purge_retention_days")
-    if row is None:
-        return settings.purge_retention_days
-    try:
-        return max(1, int(row.value))
-    except (TypeError, ValueError):
-        return settings.purge_retention_days
+# retention helper sống ở app.services.purge (dùng chung với user purge-due).
 
 @router.get("/storage")
 async def admin_storage(
@@ -391,7 +382,7 @@ async def admin_storage(
     page = max(1, page)
     size = min(100, max(1, size))
     cutoff = datetime.now(timezone.utc) - timedelta(
-        days=await _purge_retention_days(session)
+        days=await purge_retention_days(session)
     )
     total_jobs = (await session.scalar(select(func.count()).select_from(Job))) or 0
     purged_jobs = (
@@ -472,7 +463,7 @@ async def admin_storage_purge_due(
 ) -> dict:
     """Lane B3: chạy purge_due_jobs NGAY (cùng retention + batch limit với
     scheduler tick) — {purged: n}. purge_due_jobs tự commit."""
-    n = await purge_due_jobs(session, storage, await _purge_retention_days(session))
+    n = await purge_due_jobs(session, storage, await purge_retention_days(session))
     return {"purged": n}
 
 # --- Plan S: runtime settings (admin live tuning, scheduler/kaggle) ---

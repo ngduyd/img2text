@@ -31,7 +31,8 @@
     "menu": "Menu",
     "skip": "Skip to content",
     "ariaMain": "Main navigation",
-    "features": "Features"
+    "features": "Features",
+    "storage": "Storage"
   },
   "status": {
     "queued": "Queued",
@@ -445,7 +446,34 @@
     "purgedToast": "Purged {n} job(s).",
     "refreshAria": "Refresh storage stats",
     "pageInfo": "Page {page} · {total} jobs",
-    "empty": "No jobs older than the retention window."
+    "empty": "No jobs older than the retention window.",
+    "own": {
+      "title": "My storage",
+      "tableTitle": "Files",
+      "stats": {
+        "keptFiles": "Files kept",
+        "purgedFiles": "Files removed",
+        "keptBytes": "Storage used"
+      },
+      "table": {
+        "filename": "File",
+        "created": "Uploaded",
+        "age": "Age",
+        "size": "Size",
+        "status": "Status",
+        "actions": "Actions"
+      },
+      "purgeOne": "Delete file",
+      "purgeDue": "Delete expired files",
+      "confirmOneTitle": "Delete this file?",
+      "confirmOneMessage": "The original file and its regenerable exports are removed from storage. OCR text, layout and versions are kept. This cannot be undone.",
+      "confirmDueTitle": "Delete expired files?",
+      "confirmDueMessage": "Files older than the retention window are deleted from storage. OCR text, layout and versions are kept. This cannot be undone.",
+      "purgedOneToast": "File deleted.",
+      "purgedDueToast": "Deleted {n} file(s).",
+      "ageDays": "{n} days",
+      "empty": "No jobs yet."
+    }
   },
   "landing": {
     "hero": {

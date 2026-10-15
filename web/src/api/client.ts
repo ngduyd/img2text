@@ -234,6 +234,11 @@ export const api = {
     return request<JobsPage>(`/api/jobs?${q.toString()}`);
   },
   getJob: (id: number | string) => request<Job>(`/api/jobs/${id}`),
+  // Lane ST: user tự dọn file storage — per-job + batch due (auth, không admin).
+  purgeJobStorage: (id: number | string) =>
+    request<unknown>(`/api/jobs/${id}/purge-storage`, { method: "POST" }),
+  purgeMyStorageDue: () =>
+    request<{ purged: number }>("/api/jobs/purge-storage-due", { method: "POST" }),
   // Spec #8: Document IR JSON (404 khi chưa render — UI ẩn nút copy).
   getIr: (id: number | string) => request<Record<string, unknown>>(`/api/jobs/${id}/ir`),
   // R2 presign: sanity-check metadata → presigned PUT URL — browser PUTs
