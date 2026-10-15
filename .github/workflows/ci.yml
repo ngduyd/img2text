@@ -41,6 +41,9 @@ jobs:
           python - <<'PY'
           import asyncio
           from app.core.db import Base, engine
+          from app.core import models  # noqa: F401 — register tables vào Base.metadata
+
+          assert Base.metadata.tables, "no tables registered on Base.metadata"
 
           async def main():
               async with engine.begin() as conn:
