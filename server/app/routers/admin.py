@@ -322,8 +322,19 @@ def _seconds(value) -> float:
     return float(m.group())
 
 def _field(obj, name):
-    """Response kaggle 2.2.4: attr (proto/dataclass) hoặc dict — cả hai."""
-    return obj[name] if isinstance(obj, dict) else getattr(obj, name)
+    """Response kaggle 2.2.4: attr (proto/dataclass) hoặc dict — cả hai.
+
+    kagglesdk: top-level (ApiGetAcceleratorQuotaStatisticsResponse) alias cả
+    camelCase+snake_case; inner ApiAcceleratorQuota chỉ snake_case (timeUsed
+    AttributeError → 502). dict JSON thì camelCase.
+    """
+    if isinstance(obj, dict):
+        if name in obj:
+            return obj[name]
+        return obj[re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()]
+    if hasattr(obj, name):
+        return getattr(obj, name)
+    return getattr(obj, re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower())
 
 def _kaggle_quota_payload() -> dict:
     """KaggleApi.quota_view() → {gpu|tpu: {used_s, total_s, remaining_s, refresh}}.
