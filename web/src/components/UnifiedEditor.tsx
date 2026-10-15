@@ -38,14 +38,12 @@ export default function UnifiedEditor({
   job,
   markdown,
   editing,
-  onEditingChange,
   hostRef,
 }: {
   jobId: string;
   job: Job;
   markdown: string;
   editing: boolean;
-  onEditingChange: (editing: boolean) => void;
   hostRef?: RefObject<HTMLElement | null>;
 }) {
   const { t } = useT();
@@ -110,7 +108,7 @@ export default function UnifiedEditor({
    * Derive thay vì setState-in-effect (oxlint set-state-in-effect): editing=true
    * → activeMode md, không cần effect ép mode.
    */
-  const activeMode: Mode = editing ? "md" : mode;
+  const activeMode: Mode = mode;
   const displayError = error?.mode === activeMode ? error.message : null;
   // Loading derived: chưa load xong cho mode hiện tại và không có error đang hiện.
   const loading = !loaded[activeMode] && displayError === null;
@@ -136,8 +134,8 @@ export default function UnifiedEditor({
   const switchMode = (m: Mode) => {
     if (m === activeMode) return;
     setMode(m);
-    // Nguồn md-layout chỉ sửa ở md mode; sang word → đóng source edit.
-    if (m === "word" && editing) onEditingChange(false);
+    // FIX: GIỮ editing khi sang word — WordEditor mount trong editor (trước: đóng
+    // editing → word chỉ còn preview, không có tools/editor).
   };
 
   const saveLayout = async () => {

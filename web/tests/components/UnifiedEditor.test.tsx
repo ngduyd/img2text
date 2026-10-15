@@ -60,12 +60,14 @@ function Harness({
   job,
   markdown = "# Artifact",
   hostRef,
+  initialEditing = false,
 }: {
   job: Job;
   markdown?: string;
   hostRef?: { current: HTMLElement | null };
+  initialEditing?: boolean;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editing] = useState(initialEditing);
   const [client] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
   );
@@ -77,7 +79,6 @@ function Harness({
         markdown={markdown}
         hostRef={hostRef}
         editing={editing}
-        onEditingChange={setEditing}
       />
     </QueryClientProvider>
   );
@@ -141,6 +142,21 @@ it("layout_style đã lưu → client CSS scope preview pane md (contract M1, M5
   expect(css).toContain(".md-pane .w-md-editor-preview");
   expect(css).toContain('font-family: "Arial"');
   expect(css).toContain("text-align: center");
+});
+
+it("BUG FIX: editing=true + bấm switch-mode-word → word editor MỞ (toolbar hiện), editing KHÔNG bị đóng", async () => {
+  // Regression: activeMode = editing ? "md" : mode → editing luôn md, WordEditor
+  // unreachable (user: vào edit layout → word không có tools, không sửa được).
+  const user = userEvent.setup();
+  render(<Harness job={{ ...JOB, layout_cache: { md: true, docx: false } }} initialEditing />);
+  // editing=true → mặc định md
+  await screen.findByTestId("md-editor");
+  await user.click(screen.getByTestId("switch-mode-word"));
+  // word editor mount TRONG editing — không đóng editor
+  await screen.findByTestId("preview-docx-frame");
+  expect(screen.getByTestId("word-toolbar")).toBeInTheDocument();
+  expect(screen.getByTestId("word-tb-align-center")).toBeInTheDocument();
+  expect(screen.queryByTestId("md-editor")).toBeNull();
 });
 
 it("switch mode: word → exportJob docx-layout + Tiptap editor + word tools; md → toolbar path, không word tools", async () => {
