@@ -212,7 +212,7 @@ async def test_auto_gen_snapshots_previous_md_layout(
     async def fake_md(job_id, job, ir_sink=None, storage=None):
         return b"# ban moi"
 
-    async def fake_docx(job_id, job, ir_sink=None):
+    async def fake_docx(job_id, job, ir_sink=None, storage=None):
         return b"docx bytes"
 
     monkeypatch.setattr(exports, "_llm_md_export", fake_md)
@@ -243,7 +243,7 @@ async def test_auto_gen_snapshots_previous_docx_layout(
     async def fake_md(job_id, job, ir_sink=None, storage=None):
         return b"# ban moi"
 
-    async def fake_docx(job_id, job, ir_sink=None):
+    async def fake_docx(job_id, job, ir_sink=None, storage=None):
         return b"docx ban moi"
 
     monkeypatch.setattr(exports, "_llm_md_export", fake_md)
@@ -273,7 +273,7 @@ async def test_auto_gen_overwrites_stale_artifacts(
     async def fake_md(job_id, job, ir_sink=None, storage=None):
         return b"# ban moi"
 
-    async def fake_docx(job_id, job, ir_sink=None):
+    async def fake_docx(job_id, job, ir_sink=None, storage=None):
         return b"docx ban moi"
 
     monkeypatch.setattr(exports, "_llm_md_export", fake_md)
