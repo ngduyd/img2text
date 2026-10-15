@@ -116,6 +116,8 @@ def _cells_md(cells: list[list[dict]]) -> str:
     lines += [fmt(r) for i, r in enumerate(cells) if i != h]
     return "\n".join(lines)
 
+# 0.0 = never spawned; gap check BỎ qua khi falsy — monotonic baseline là
+# boot time, VM mới boot (< min_gap) sẽ luôn "skip" nếu treat 0.0 là mốc.
 _last_spawn = 0.0
 # ceiling: persistent ingest failures for one ref → drop instead of looping
 _INGEST_MAX_FAILURES = 3
@@ -934,7 +936,7 @@ async def _ensure_batch_runs(api, session_factory) -> bool:
     min_gap = await get_runtime_setting(
         session_factory, "kaggle_min_gap_seconds", settings.kaggle_min_gap_seconds
     )
-    if now - _last_spawn < min_gap:
+    if _last_spawn and now - _last_spawn < min_gap:
         logger.info(
             "kaggle batch: last spawn %.0fs ago < gap %ds — skip",
             now - _last_spawn,
@@ -1027,7 +1029,7 @@ async def ensure_worker(session_factory) -> bool:
         min_gap = await get_runtime_setting(
             session_factory, "kaggle_min_gap_seconds", settings.kaggle_min_gap_seconds
         )
-        if now - _last_spawn < min_gap:
+        if _last_spawn and now - _last_spawn < min_gap:
             logger.info(
                 "kaggle: last spawn %.0fs ago < gap %ds — skip",
                 now - _last_spawn,
