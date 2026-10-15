@@ -94,6 +94,12 @@ class TestValidateIR:
         assert result.pages[0].content[0].type == "unknown"
         assert any("note" in r.getMessage() for r in caplog.records)
 
+    def test_non_dict_input_raises_validation_error(self):
+        """P2 (QA): guard non-dict — raise IRValidationError (caller catch → fallback),
+        không AttributeError bypass fallback."""
+        with pytest.raises(IRValidationError, match="không phải object"):
+            validate_ir("not-a-dict", _ocr_result())
+
     def test_invalid_type_sanitized_in_children(self, caplog):
         """1 node sai type ở children không kill document — sanitize recursive."""
         caplog.set_level("WARNING", logger="app.services.ir")

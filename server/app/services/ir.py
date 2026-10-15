@@ -307,6 +307,9 @@ def _sanitize_ir_types(ir: dict) -> dict:
     """IR-NOTE: LLM thỉnh thoảng bịa type ngoài enum (VD 'note' — dev job5) →
     pydantic reject kill cả document → heuristic fallback → ir_json NULL.
     Sanitize guard: type lạ → 'unknown' + warning per-node, 1 node sai không kill document."""
+    if not isinstance(ir, dict):
+        # P2: guard non-dict — bypass caller không catch được → raise đúng lỗi type
+        raise IRValidationError(f"IR không phải object: {type(ir).__name__}")
     valid = {t.value for t in NodeType}
 
     def walk(nodes: list) -> None:
@@ -328,7 +331,9 @@ def _sanitize_ir_types(ir: dict) -> dict:
 def validate_ir(ir: dict, ocr_result: dict) -> DocumentIR:
     """Validate IR dict against OCR result → DocumentIR.
 
-    Raises IRValidationError on any violation.
+    Raises IRValidationError on structural/source-id violations; unknown node
+    types are sanitized to 'unknown' (warning) instead of raising — 1 node
+    lạ không kill document (IR-NOTE).
     """
     ir = _sanitize_ir_types(ir)
     try:
