@@ -319,6 +319,37 @@ async def test_llm_test_model_bad_stored_base_url_200_not_ok(admin_client):
     assert body["model"] == "m1"
     assert body["error"]  # có lý do, không im lặng
 
+async def test_llm_test_model_no_persist_setting_count(admin_client, db_session, monkeypatch):
+    """P2e: probe KHÔNG persist — số row Setting không đổi trước/sau."""
+    from sqlalchemy import func
+
+    from app.routers import admin
+
+    class Stub:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def post(self, url, **kw):
+            raise httpx.ConnectError("refused")
+
+    monkeypatch.setattr(admin, "AsyncClient", lambda **kw: Stub())
+    await admin_client.put("/api/admin/settings", json={"llm_model": "m1"})
+
+    async def _count():
+        return (
+            await db_session.execute(select(func.count()).select_from(Setting))
+        ).scalar_one()
+
+    before = await _count()
+    r = await admin_client.post(
+        "/api/admin/llm/test-model", json={"model": "m1"}
+    )
+    assert r.status_code == 200 and r.json()["ok"] is False
+    assert await _count() == before
+
 async def test_llm_test_model_anon_401(client):
     r = await client.post("/api/admin/llm/test-model", json={"model": "m"})
     assert r.status_code == 401
