@@ -1,7 +1,7 @@
 /** Lane ST: trang /storage — user tự dọn file storage của mình (KHÔNG admin).
  * Cards + bảng lấy từ GET /api/jobs (upload_bytes, storage_purged_at — Lane M1);
  * per-job purge + bulk purge-due đều qua ConfirmDialog (R51) + toast (R59). */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Inbox, Trash2, TriangleAlert } from "lucide-react";
@@ -36,6 +36,10 @@ export default function Storage() {
     queryKey: ["my-storage", page],
     queryFn: () => api.listJobs(page, PAGE_SIZE),
   });
+  // Review P2: page>1 mà trống (purge hết/sửa data) → bar ẩn, kẹt trang — reset về 1.
+  useEffect(() => {
+    if (data && data.items.length === 0 && page > 1) setPage(1);
+  }, [data, page]);
 
   const purgeOne = useMutation({
     mutationFn: (id: number) => api.purgeJobStorage(id),
@@ -239,6 +243,7 @@ export default function Storage() {
                               testid={`storage-purge-${j.id}`}
                               variant="danger"
                               size="sm"
+                              className="min-h-11" // uiux: touch target 44px như bulk CTA
                               loading={purgeOne.isPending && confirm?.kind === "one" && confirm.id === j.id}
                               onClick={() => setConfirm({ kind: "one", id: j.id })}
                             >
