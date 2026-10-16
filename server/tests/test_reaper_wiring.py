@@ -33,7 +33,7 @@ async def test_reap_leases_requeues_expired_and_reclaimable(
     await db_session.commit()
     assert await reap_leases(db_session) == 1
     job = await db_session.get(Job, seed_job)
-    assert job.status == "queued" and job.worker_token is None
+    assert job.status == "queued" and job.worker_token_hash is None
     assert job.started_at is None and job.lease_expires_at is None
     # reclaimable: /next claims the requeued job again
     r = await worker_client.get("/api/jobs/next")

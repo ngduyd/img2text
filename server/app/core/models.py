@@ -1,7 +1,8 @@
 """SQLAlchemy ORM models (Task 2): users, tokens, jobs, analytics, settings.
 
 Spec §4 shapes: Job carries storage_key/file_type/page_count/preprocess/
-result; worker_token plaintext per ruling R11 (hash-at-rest rides Alembic).
+result; worker_token_hash = sha256(plaintext) per ruling R11 (P2 #16
+hash-at-rest, migration 2026-10-16_worker_token_hash.sql).
 """
 
 from datetime import datetime, timezone
@@ -173,8 +174,9 @@ class Setting(Base):
 
 class Job(Base):
     """OCR job (spec §4). user_id FK plain, no cascade (spec §4).
-    ponytail: worker_token stored plaintext per ruling R11 (single-job
-    capability token); hash-at-rest upgrade rides the Alembic pass."""
+    P2 #16: worker_token hash-at-rest (ruling R11 upgraded) — DB chỉ giữ
+    sha256 hex (worker_token_hash); plaintext trả về worker 1 lần khi claim.
+    Migration 2026-10-16_worker_token_hash.sql."""
 
     __tablename__ = "jobs"
     __table_args__ = (
@@ -253,7 +255,7 @@ class Job(Base):
     # IR rewrite: LLM-produced Document IR JSON (nullable, ALTER-only)
     ir_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    worker_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    worker_token_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     lease_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
