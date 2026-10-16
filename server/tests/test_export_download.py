@@ -50,3 +50,85 @@ async def test_download_invalid_fmt_422(auth_client, done_job_with_result):
         f"/api/jobs/{done_job_with_result}/export/xls/download"
     )
     assert r.status_code == 422
+
+# --- #10 (spec 2026-10-15): Range header ---
+
+async def test_download_export_range_header_returns_206(
+    auth_client, done_job_with_result, storage
+):
+    await storage.put(f"exports/{done_job_with_result}/pdf", b"a" * 1000)
+    resp = await auth_client.get(
+        f"/api/jobs/{done_job_with_result}/export/pdf/download",
+        headers={"Range": "bytes=0-99"},
+    )
+    assert resp.status_code == 206
+    assert resp.headers["Content-Range"] == "bytes 0-99/1000"
+    assert len(resp.content) == 100
+
+async def test_download_export_invalid_range_returns_416(
+    auth_client, done_job_with_result, storage
+):
+    await storage.put(f"exports/{done_job_with_result}/pdf", b"a" * 1000)
+    resp = await auth_client.get(
+        f"/api/jobs/{done_job_with_result}/export/pdf/download",
+        headers={"Range": "bytes=2000-3000"},
+    )
+    assert resp.status_code == 416
+    assert resp.headers["Content-Range"] == "bytes */1000"
+    assert resp.json() == {"code": "invalid_range"}
+
+async def test_download_export_unsupported_range_forms_416(
+    auth_client, done_job_with_result, storage
+):
+    """Single bytes=start-end ONLY: suffix / multi / malformed → 416."""
+    await storage.put(f"exports/{done_job_with_result}/pdf", b"a" * 1000)
+    for bad in ("bytes=-500", "bytes=0-1,5-6", "bytes=abc", "bytes=0-"):
+        resp = await auth_client.get(
+            f"/api/jobs/{done_job_with_result}/export/pdf/download",
+            headers={"Range": bad},
+        )
+        assert resp.status_code == 416, (bad, resp.status_code)
+
+async def test_download_export_without_range_stays_200(
+    auth_client, done_job_with_result, storage
+):
+    await storage.put(f"exports/{done_job_with_result}/pdf", b"a" * 1000)
+    resp = await auth_client.get(
+        f"/api/jobs/{done_job_with_result}/export/pdf/download"
+    )
+    assert resp.status_code == 200
+    assert len(resp.content) == 1000
+    # QA-3: 200 advertise range support (client resume được)
+    assert resp.headers["Accept-Ranges"] == "bytes"
+
+# --- QA-1: get_range KeyError (purge race) → 404, không 500 ---
+
+async def test_download_export_range_deleted_midway_404(
+    auth_client, done_job_with_result, storage, monkeypatch
+):
+    await storage.put(f"exports/{done_job_with_result}/pdf", b"a" * 1000)
+
+    async def gone(key, start, end):
+        raise KeyError(key)
+
+    # object còn lúc size() (test put), mất lúc get_range — như purge race
+    monkeypatch.setattr(storage, "get_range", gone)
+    resp = await auth_client.get(
+        f"/api/jobs/{done_job_with_result}/export/pdf/download",
+        headers={"Range": "bytes=0-99"},
+    )
+    assert resp.status_code == 404
+
+# --- QA-2: Range rác → 416 VẪN mang Content-Range: bytes */{size} ---
+
+async def test_download_export_malformed_range_416_with_content_range(
+    auth_client, done_job_with_result, storage
+):
+    await storage.put(f"exports/{done_job_with_result}/pdf", b"a" * 1000)
+    resp = await auth_client.get(
+        f"/api/jobs/{done_job_with_result}/export/pdf/download",
+        headers={"Range": "bytes=abc"},
+    )
+    assert resp.status_code == 416
+    assert resp.headers["Content-Range"] == "bytes */1000"
+    assert resp.json() == {"code": "invalid_range"}

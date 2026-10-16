@@ -135,3 +135,13 @@ async def test_response_shape_equals_me(auth_client):
         # wave-5 S1
         "auto_purge", "purge_notice_seen",
     }
+
+# --- #11 (spec 2026-10-15): bcrypt 72-byte cap — change password boundary ---
+
+async def test_profile_password_change_rejects_over_72_bytes(auth_client):
+    r = await auth_client.patch(
+        "/api/auth/profile",
+        json={"current_password": "secret123", "new_password": "x" * 73},
+    )
+    assert r.status_code == 400
+    assert r.json() == {"code": "password_too_long", "max_bytes": 72}

@@ -82,8 +82,9 @@ class EmailVerifyGateMiddleware:
     → bypass tự nhiên); exempt match strip trailing slash.
 
     settings.env == "test" → skip (toàn bộ suite cũ không vỡ; test gating
-    bật lại bằng monkeypatch). Lookup fail → log + passthrough (downstream
-    500/401 — gate không nuốt lỗi DB)."""
+    bật lại bằng monkeypatch). Lookup fail → 503 {code:"service_unavailable"}
+    (#9: DB down KHÔNG được passthrough — gate không bỏ qua verify cho
+    unverified user chỉ vì DB lỗi)."""
 
     EXEMPT = frozenset(
         {
@@ -121,7 +122,12 @@ class EmailVerifyGateMiddleware:
                 async with scope["app"].state.session_factory() as session:
                     user = await session.get(User, user_id)
             except Exception:
+                # #9: fail-closed — DB lỗi → 503, KHÔNG passthrough
                 logger.exception("email gate: user lookup failed")
+                await JSONResponse(
+                    status_code=503, content={"code": "service_unavailable"}
+                )(scope, receive, send)
+                return
             if user is not None and not user.is_verified and user.role != "admin":
                 await JSONResponse(
                     status_code=403, content={"code": "email_unverified"}

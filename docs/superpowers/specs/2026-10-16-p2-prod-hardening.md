@@ -3,6 +3,12 @@
 **Date:** 2026-10-16
 **Goal:** Remediate 5 P2 findings from deploy-readiness audit. Each finding maps to a concrete task with test criteria. P0 (8/8) + P1 (7/7) already done.
 
+## Non-Goals
+
+- No changes to P0/P1 items.
+- No new endpoints beyond session revoke.
+- No schema change beyond worker_token_hash column.
+
 ## Background
 
 Deploy-readiness audit (20 findings): P0=8 done, P1=7 done, P2=5 open. This spec covers the 5 P2 items deferred from P1. All tasks are code changes except migration SQL (#16) and test gating (#20).
@@ -15,7 +21,7 @@ Deploy-readiness audit (20 findings): P0=8 done, P1=7 done, P2=5 open. This spec
 
 **Files:**
 - `server/app/core/models.py` — `Job.worker_token` (line 256)
-- `server/app/routers/jobs.py` — `_issue_worker_token` (lines 542-554)
+- `server/app/routers/jobs.py` — token logic inline trong `next_job` (jobs.py ~539-554); refactor extract helper `_issue_worker_token` minimal
 - `docs/migrations/2026-10-16_worker_token_hash.sql` — new migration
 
 **Spec:**

@@ -27,13 +27,29 @@ _SKIP = pytest.mark.skipif(
 
 def test_dockerfile_has_dejavu_fonts_and_fontconfig():
     """Dockerfile server: fonts-dejavu (extra bold/italic) + fontconfig —
-    chặn image 'mở được nhưng rớt dấu' (spec 2026-10-14 #9). Chạy mọi env."""
+    chặn image 'mở được nhưng rớt dấu' (spec 2026-10-14 #9). Chạy mọi env.
+    #14 (spec 2026-10-15): + Noto CJK/Serif CJK — glyph CJK + dấu tiếng Việt,
+    khớp PDF_FONT_CSS (Noto đầu stack)."""
     src = (Path(__file__).parents[2] / "deploy" / "Dockerfile").read_text(
         encoding="utf-8"
     )
     assert "fonts-dejavu-extra" in src
     assert "fonts-dejavu-core" in src  # review r1 P1-3: extra thiếu Sans regular
     assert "fontconfig" in src
+    assert "fonts-noto-cjk" in src
+    assert "fonts-noto-serif-cjk" in src
+
+def test_pdf_font_css_uses_noto_first():
+    """#14 (spec 2026-10-15): CSS của _render_pdf dùng PDF_FONT_CSS và
+    'Noto Sans CJK' đứng TRƯỚC 'DejaVu Sans' (Noto trước, DejaVu fallback)."""
+    import inspect
+
+    from app.routers.exports import PDF_FONT_CSS, _render_pdf
+
+    assert "PDF_FONT_CSS" in inspect.getsource(_render_pdf)  # wiring thật
+    assert PDF_FONT_CSS.index("Noto Sans CJK") < PDF_FONT_CSS.index(
+        "DejaVu Sans"
+    )
 
 @pytest_asyncio.fixture
 async def done_vietnamese_job(auth_client, db_session, storage) -> int:
@@ -89,4 +105,7 @@ async def test_pdf_vietnamese_embeds_font(
             fo = ref.get_object()
             basefonts.add(str(fo.get("/BaseFont") or ""))
     assert basefonts, "/Font dict rỗng — file mở được nhưng rớt dấu font"
-    assert any("DejaVu" in b for b in basefonts), basefonts
+    # #14: Noto Sans CJK đứng đầu stack (image có fonts-noto-cjk) — embed
+    # Noto; env thiếu Noto → DejaVu fallback. Cả hai phủ dấu tiếng Việt;
+    # assertion chặn 'font lạ/không cover VN', không khóa một family cụ thể.
+    assert any("Noto" in b or "DejaVu" in b for b in basefonts), basefonts

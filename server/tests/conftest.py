@@ -29,6 +29,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.admin_bootstrap import bootstrap_admin
+from app.services import mailer
 from app.core.config import settings
 from app.core.db import Base, SessionLocal, engine
 from app.main import create_app
@@ -55,6 +56,17 @@ def env(monkeypatch):
     def _set(value: str) -> None:
         monkeypatch.setattr(settings, "env", value)
     return _set
+# #9 (spec 2026-10-15): send_email TRẢ VỀ lỗi thay vì nuốt → suite phải
+# hermetic: capture _send_sync thật (smtp-down tests dùng), no-op nó (mặc
+# định = "gửi thành công") — test lỗi tự boom/restore tường minh.
+_REAL_SEND_SYNC = mailer._send_sync
+
+@pytest.fixture(autouse=True)
+def _smtp_offline(monkeypatch):
+    def _offline(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(mailer, "_send_sync", _offline)
 
 # Test payloads shared by tests (moved from the removed test_upload.py).
 def _jpeg_bytes() -> bytes:

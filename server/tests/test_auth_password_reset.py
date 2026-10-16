@@ -7,6 +7,9 @@ tests extract mã bằng regex rồi POST /api/auth/password/reset {code, passwo
 import re
 from datetime import datetime, timedelta, timezone
 
+from app.core.models import User
+from app.core.security import hash_password
+
 _CODE_RE = re.compile(r"code is:?\s*(\d{6})")
 
 def _capture():
@@ -14,6 +17,7 @@ def _capture():
 
     async def fake(to, subject, body):
         sent.append((to, subject, body))
+        return (True, None)  # mailer contract #9: (ok, error)
 
     return sent, fake
 
@@ -145,11 +149,19 @@ async def test_forgot_over_email_limit_429(client, monkeypatch, db_session):
     assert body["code"] == "email_limit" and body["retry_after_seconds"] >= 1
     assert len(sent) == n  # check TRƯỚC enqueue — không gửi
 
-async def test_forgot_smtp_failure_still_202(client, monkeypatch):
+async def test_forgot_smtp_failure_returns_503(client, db_session, monkeypatch):
+    """#9: known email + SMTP down → 503 email_unavailable (không nuốt lỗi).
+    Unknown email vẫn 202 (test_forgot_unknown_email_202_no_send) — không
+    gửi nên không có lỗi để surface.
+
+    Seed user trực tiếp (không qua _register): _capture fake nuốt seam
+    _send_sync → boom không tới được send_email thật."""
     def boom(*args, **kwargs):
         raise RuntimeError("smtp down")
 
+    db_session.add(User(email="f@x.io", password_hash=hash_password("secret123")))
+    await db_session.commit()
     monkeypatch.setattr("app.services.mailer._send_sync", boom)
-    await _register(client, monkeypatch, email="f@x.io")
     r = await client.post("/api/auth/password/forgot", json={"email": "f@x.io"})
-    assert r.status_code == 202
+    assert r.status_code == 503
+    assert r.json() == {"code": "email_unavailable", "retry_after_seconds": 300}

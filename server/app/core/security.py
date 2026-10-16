@@ -18,11 +18,25 @@ from app.core.config import settings
 from app.core.deps import ACCESS_COOKIE, REFRESH_COOKIE
 
 _BCRYPT_ROUNDS = 12
+# #11: bcrypt truncates tại 72 byte — cap phải sống cạnh rounds (một chỗ cho
+# mọi consumer; API boundary đọc cùng constant)
+BCRYPT_MAX_BYTES = 72
 JWT_ISSUER = "img2text"
 _ACCESS_TTL = timedelta(minutes=15)
 
 
+def password_too_long(p: str) -> bool:
+    """#11 (spec 2026-10-15): bcrypt CẮT input ở 72 byte — hai password khác
+    nhau cùng tiền tố 72B hash giống nhau. UTF-8 byte count, không đếm ký tự.
+    Dùng ở hash_password (ValueError) + API boundary (400 flat)."""
+    return len(p.encode("utf-8")) > BCRYPT_MAX_BYTES
+
 def hash_password(p: str) -> str:
+    if password_too_long(p):
+        raise ValueError(
+            f"password too long: {len(p.encode('utf-8'))} bytes "
+            f"> bcrypt cap {BCRYPT_MAX_BYTES}"
+        )
     return bcrypt.hashpw(
         p.encode(), bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)
     ).decode()

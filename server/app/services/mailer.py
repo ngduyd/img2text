@@ -1,8 +1,8 @@
 """SMTP email delivery (Task 5).
 
 Sync smtplib run via anyio.to_thread so the event loop never blocks on SMTP.
-SMTP failures are logged and swallowed: a down mail server must not turn
-password-forgot into a 500.
+#9 (spec 2026-10-15): failures are NOT swallowed — send_email returns
+(ok, error) and callers (auth routes) decide the HTTP response.
 """
 
 import logging
@@ -47,8 +47,12 @@ def _send_sync(to: str, subject: str, body: str) -> None:
         conn.send_message(msg)
 
 
-async def send_email(to: str, subject: str, body: str) -> None:
+async def send_email(to: str, subject: str, body: str) -> tuple[bool, str | None]:
+    """(True, None) on delivery; (False, error) on SMTP failure — never raises
+    (#9: a down mail server surfaces to the caller, not a swallowed log)."""
     try:
         await anyio.to_thread.run_sync(_send_sync, to, subject, body)
-    except Exception:
+    except Exception as exc:
         logger.exception("SMTP send failed (to=%s subject=%r)", to, subject)
+        return False, str(exc) or type(exc).__name__
+    return True, None
