@@ -700,7 +700,12 @@ async def download_export(
             # serve-time: relative crops/{f} → presigned 24h FRESH (URL không hết hạn)
             md = await embed_crop_urls(data.decode("utf-8"), id, storage)
             data = md.encode("utf-8")
-        return Response(content=data, media_type=EXPORT_CONTENT_TYPES[fmt])
+        # QA-3: advertise range support để client biết resume được
+        return Response(
+            content=data,
+            media_type=EXPORT_CONTENT_TYPES[fmt],
+            headers={"Accept-Ranges": "bytes"},
+        )
     m = _RANGE_RE.fullmatch(rng)
     if m is None or int(m.group(2)) < int(m.group(1)):
         # QA-2: Range rác/malformed → vẫn 416 có Content-Range */size

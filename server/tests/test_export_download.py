@@ -98,6 +98,8 @@ async def test_download_export_without_range_stays_200(
     )
     assert resp.status_code == 200
     assert len(resp.content) == 1000
+    # QA-3: 200 advertise range support (client resume được)
+    assert resp.headers["Accept-Ranges"] == "bytes"
 
 # --- QA-1: get_range KeyError (purge race) → 404, không 500 ---
 
