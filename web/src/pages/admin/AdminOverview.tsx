@@ -3,6 +3,7 @@ import { api } from "../../api/client";
 import type { AdminStatsDay } from "../../api/types";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
+import { Stat } from "../../components/ui/Stat";
 import { useT } from "../../i18n";
 import { last7Days } from "./dateRange";
 
@@ -38,8 +39,7 @@ export default function AdminOverview({ onNavigate }: { onNavigate: (tab: AdminT
       <div className="mb-4 grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(11rem,1fr))]">
         {CARDS.map((c) => (
           <Card key={c.id} testid={`stat-${c.id}`}>
-            <p className="text-sm text-muted">{t(c.labelKey)}</p>
-            <p className="text-2xl font-bold">{days.reduce((s, d) => s + c.sum(d), 0)}</p>
+            <Stat label={t(c.labelKey)} value={String(days.reduce((s, d) => s + c.sum(d), 0))} />
           </Card>
         ))}
       </div>

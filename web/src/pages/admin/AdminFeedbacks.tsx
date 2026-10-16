@@ -56,20 +56,22 @@ export default function AdminFeedbacks() {
           ))}
         </ul>
       )}
-      <Pagination
-        page={page}
-        totalPages={pages}
-        onChange={setPage}
-        prevTestid="fb-prev"
-        nextTestid="fb-next"
-        prevLabel={t("jobs.prev")}
-        nextLabel={t("jobs.next")}
-        info={
-          <span className="text-sm text-muted">
-            {t("admin.feedbacks.page", { page, pages })}
-          </span>
-        }
-      />
+      {data && data.total > PAGE_SIZE && (
+        <Pagination
+          page={page}
+          totalPages={pages}
+          onChange={setPage}
+          prevTestid="fb-prev"
+          nextTestid="fb-next"
+          prevLabel={t("jobs.prev")}
+          nextLabel={t("jobs.next")}
+          info={
+            <span className="text-sm text-muted">
+              {t("admin.feedbacks.page", { page, pages })}
+            </span>
+          }
+        />
+      )}
     </Card>
   );
 }

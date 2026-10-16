@@ -95,7 +95,7 @@ export default function AdminStorage() {
           <>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="sticky top-0 border-b border-border bg-surface-2 text-left text-xs text-muted">
+                <thead className="border-b border-border bg-surface-2 text-left text-xs text-muted">
                   <tr>
                     <th scope="col" className="sticky top-0 z-10 border-b border-border bg-surface-2 px-2 py-2 font-medium text-muted">#</th>
                     <th scope="col" className="sticky top-0 z-10 border-b border-border bg-surface-2 px-2 py-2 font-medium text-muted">{t("storage.table.email")}</th>

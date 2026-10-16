@@ -38,9 +38,20 @@ export default function Profile() {
     return (
       <PageShell>
         <div data-testid="profile-loading" className="flex flex-col gap-4">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-10 w-full" />
           <Skeleton className="h-8 w-40" />
+          <div className="rounded-card border border-border bg-surface p-6">
+            <Skeleton className="h-4 w-1/3" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-2/3" />
+          </div>
+          <div className="rounded-card border border-border bg-surface p-6">
+            <Skeleton className="h-4 w-1/3" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+          <div className="rounded-card border border-border bg-surface p-6">
+            <Skeleton className="h-4 w-1/3" />
+            <Skeleton className="h-10 w-full" />
+          </div>
         </div>
       </PageShell>
     );
@@ -116,14 +127,14 @@ export default function Profile() {
                 {me.id}
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-muted">{t("profile.joined")}</span>
-              {me.created_at && (
+            {me.created_at && (
+              <div className="flex items-center gap-2">
+                <span className="text-muted">{t("profile.joined")}</span>
                 <time dateTime={me.created_at} className="text-sm">
                   {new Date(me.created_at).toLocaleDateString(t("i18n.locale"))}
                 </time>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </Card>
 
