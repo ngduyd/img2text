@@ -98,3 +98,21 @@ async def test_download_export_without_range_stays_200(
     )
     assert resp.status_code == 200
     assert len(resp.content) == 1000
+
+# --- QA-1: get_range KeyError (purge race) → 404, không 500 ---
+
+async def test_download_export_range_deleted_midway_404(
+    auth_client, done_job_with_result, storage, monkeypatch
+):
+    await storage.put(f"exports/{done_job_with_result}/pdf", b"a" * 1000)
+
+    async def gone(key, start, end):
+        raise KeyError(key)
+
+    # object còn lúc size() (test put), mất lúc get_range — như purge race
+    monkeypatch.setattr(storage, "get_range", gone)
+    resp = await auth_client.get(
+        f"/api/jobs/{done_job_with_result}/export/pdf/download",
+        headers={"Range": "bytes=0-99"},
+    )
+    assert resp.status_code == 404

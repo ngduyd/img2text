@@ -725,6 +725,10 @@ async def download_export(
             chunk = await storage.get_range(key, start, end)
         except ValueError:
             return _range_416(size)
+        except KeyError:
+            # QA-1: purge race — object mất giữa size() và get_range → 404
+            # (md-layout nhánh trên đã catch; nhánh này giờ giống)
+            raise HTTPException(status_code=404, detail="Chưa xuất file.")
         total = size
     return Response(
         content=chunk,
