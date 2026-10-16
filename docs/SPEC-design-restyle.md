@@ -119,7 +119,9 @@ chỉ còn import trong chính 13 files trên mới xóa. Sau xóa `npx tsc --no
 - File xóa chốt §3 C5 (13 files). Lệnh verify như trên.
 
 ## 5. Test impact
-- `Storage.test.tsx`: 1 dòng max-w vỡ có chủ ý (E3); các assert pagination/skeleton/empty/testids không được vỡ.
+- `src/pages/Storage.test.tsx` (co-located trong src/pages, không phải tests/): 1 dòng max-w vỡ có chủ ý (E3); các assert pagination/skeleton/empty/testids không được vỡ.
+- `tests/components/LayoutPreview.test.tsx` (round-1 deviation, hợp lệ): assert đổi theo C2 docStyle — "Inter"→"system-ui", "#2563eb"→"var(--accent-text)", +2 assert mới `--accent-text` dark/light. Strengthened, không weaken.
+- `src/pages/admin/AdminStorage.test.tsx` (round-1 deviation, hợp lệ): import path `fmtBytes` → `../../components/ui/Stat` (C1 move, zero assertion impact).
 - `Jobs.test.tsx`: `empty-state` assert Colab line (:240-242) — EmptyState `extra` phải giữ nguyên text.
 - `Features.test.tsx`: giữ `features-page` (:21) qua PageShell testid.
 - `Landing.test.tsx`: giữ testids `landing*` — file dùng `getByTestId("landing")`, KHÔNG assert tag → div→main không vỡ.
