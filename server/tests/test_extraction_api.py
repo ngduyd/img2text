@@ -677,3 +677,46 @@ async def test_post_extraction_rendering_flag_only_skips_sync(
     assert r.status_code == 200, r.text
     assert calls == []  # RED: read-modify-write trên artifact đang render
     assert r.json()["requires_rerender"] is True  # flag-only — render pass sau vẽ lại
+
+async def test_retry_layout_replaces_stale_docx_html(
+    auth_client, app, done_job_with_result, db_session, monkeypatch
+):
+    """Bấm 'Vẽ lại layout' → bản copy docx.html cũ KHÔNG được át render mới:
+    snapshot sang versions (không mất dữ liệu) rồi xoá — docx view rơi về
+    docx-layout render vừa tạo."""
+    from app.routers import exports
+
+    jid = done_job_with_result
+    st = app.state.storage
+    await st.put(f"exports/{jid}/docx.html", b"<p>ban cu - de hoa</p>")
+
+    async def fake_md(job_id, job, ir_sink=None, storage=None):
+        return b"# ban moi"
+
+    async def fake_docx(job_id, job, ir_sink=None, storage=None):
+        return b"docx ban moi"
+
+    monkeypatch.setattr(exports, "_llm_md_export", fake_md)
+    monkeypatch.setattr(exports, "_llm_docx_export", fake_docx)
+    r = await auth_client.post(f"/api/jobs/{jid}/retry-layout")
+    assert r.status_code == 200, r.text
+    # docx.html cũ bị xoá → không còn bản copy át render
+    assert not await st.exists(f"exports/{jid}/docx.html")
+    # render mới có mặt
+    assert await st.get(f"exports/{jid}/md-layout") == b"# ban moi"
+    assert await st.get(f"exports/{jid}/docx-layout") == b"docx ban moi"
+    # bản cũ vẫn còn trong version history (kind docx-layout snapshot)
+    versions = (
+        await auth_client.get(f"/api/jobs/{jid}/versions?kind=docx-layout")
+    ).json()["items"]
+    assert versions, "docx.html cũ phải được snapshot sang version history"
+    from app.core.models import DocumentVersion
+    from sqlalchemy import select
+
+    rows = (
+        await db_session.execute(
+            select(DocumentVersion).where(DocumentVersion.job_id == jid)
+        )
+    ).scalars().all()
+    saved = [await st.get(r.storage_key) for r in rows]
+    assert b"<p>ban cu - de hoa</p>" in saved

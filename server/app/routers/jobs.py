@@ -801,6 +801,16 @@ async def retry_layout(
     generates). Returns which layouts exist after the attempt.
     """
     job = await _job_or_403(session, id, user)
+    # User bấm 'Vẽ lại layout' = yêu cầu render MỚI có chủ đích → bản copy
+    # docx.html (user-saved, sống mãi theo design auto-gen) không được ắt
+    # render mới: snapshot sang version history (không mất dữ liệu) rồi xoá.
+    from app.services.doc_versions import snapshot_current_layout
+    from app.services.layout_sync import DOCX_HTML_KEY
+
+    await snapshot_current_layout(
+        storage, None, id, "docx-layout", job.text_version
+    )
+    await storage.delete_prefix(DOCX_HTML_KEY.format(job_id=id))
     # lazy import: exports → jobs (cycle if eager)
     from app.routers.exports import auto_generate_output
     await auto_generate_output(job, storage)
