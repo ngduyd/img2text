@@ -104,7 +104,7 @@ test("page shell: main#main + h1 + subtitle (AC5, AC7)", async () => {
   await screen.findByTestId("storage-own-kept-files");
   const main = document.querySelector("main#main");
   expect(main).toBeTruthy();
-  expect(main!.className).toContain("max-w-7xl");
+  expect(main!.className).toContain("max-w-6xl");
   expect(screen.getByRole("heading", { level: 1, name: "My storage" })).toBeTruthy();
   expect(screen.getByText("Manage your stored files")).toBeTruthy();
   expect(document.querySelector(".grid.grid-cols-1.sm\\:grid-cols-3")).toBeTruthy(); // AC7
