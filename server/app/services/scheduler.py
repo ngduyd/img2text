@@ -175,7 +175,9 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
         try:
             trigger = CronTrigger.from_crontab(cron)
             job = scheduler.get_job("backup-db")
-            if job is not None and job.trigger != trigger:
+            # QA-4: CronTrigger 3.x KHÔNG có __eq__ → `!=` là identity so sánh,
+            # luôn True → reschedule vô nghĩa mỗi tick. So sánh bằng str().
+            if job is not None and str(job.trigger) != str(trigger):
                 job.reschedule(trigger)
                 logger.info("backup-db: cron → %s (runtime override)", cron)
         except Exception:

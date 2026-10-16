@@ -72,3 +72,41 @@ def test_backup_database_raises_on_pg_dump_failure(tmp_path, monkeypatch):
         backup_database(output_dir=tmp_path / "backups")
     # dump hỏng không để lại file
     assert list((tmp_path / "backups").glob("*.sql.gz")) == []
+
+# --- QA-4: str-compare trigger — không reschedule khi cron không đổi ---
+
+async def test_backup_db_reschedules_only_on_real_cron_change(app, monkeypatch):
+    """QA-4: CronTrigger 3.x không có __eq__ → code cũ (`trigger != trigger`)
+    reschedule MỌI tick. Cùng cron 2 tick → 0 lần; Setting đổi cron → đúng 1."""
+    # không đụng pg_dump thật trong tick test
+    monkeypatch.setattr(
+        "app.core.db.backup_database", lambda **kw: Path("/tmp/unused.sql.gz")
+    )
+    from apscheduler.job import Job as APSJob
+
+    from app.core.models import Setting
+    from app.services.scheduler import init_scheduler
+
+    scheduler = init_scheduler(app)
+    job = scheduler.get_job("backup-db")
+    assert job is not None
+
+    calls: list[str] = []
+    orig_reschedule = APSJob.reschedule
+
+    def spy(self, trigger, **kw):
+        calls.append(str(trigger))
+        return orig_reschedule(self, trigger, **kw)
+
+    monkeypatch.setattr(APSJob, "reschedule", spy)
+
+    await job.func()  # tick 1: cron runtime = default = add_job trigger
+    await job.func()  # tick 2: vẫn cùng cron
+    assert calls == []  # bug cũ: 2 lần (identity comparison luôn khác)
+
+    async with app.state.session_factory() as session:
+        session.add(Setting(key="backup_cron", value="0 5 * * *"))
+        await session.commit()
+    await job.func()
+    assert len(calls) == 1
+    assert "hour='5'" in str(job.trigger)
