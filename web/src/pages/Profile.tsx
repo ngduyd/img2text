@@ -9,6 +9,9 @@ import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import Input from "../components/ui/Input";
+import PageHeader from "../components/PageHeader";
+import PageShell from "../components/PageShell";
+import Skeleton from "../components/ui/Skeleton";
 import { useT } from "../i18n";
 
 /** Profile for both roles (Task 3). PATCH /api/auth/profile via api.updateProfile. */
@@ -33,11 +36,9 @@ export default function Profile() {
   if (!me) {
     // Loading state instead of blank page while [me] resolves (ui-ux-dev checklist).
     return (
-      <main id="main" className="mx-auto max-w-md p-4 sm:p-6">
-        <p data-testid="profile-loading" className="text-sm text-muted">
-          {t("profile.loading")}
-        </p>
-      </main>
+      <PageShell>
+        <Skeleton testid="profile-loading" className="h-6 w-40" />
+      </PageShell>
     );
   }
 
@@ -86,12 +87,8 @@ export default function Profile() {
   }
 
   return (
-    <main id="main" className="mx-auto max-w-md p-4 sm:p-6">
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold tracking-tight">{t("profile.title")}</h1>
-        {/* Spec S2: switch VI/EN ở Settings. */}
-        <LangSwitch testid="lang-switch-settings" />
-      </div>
+    <PageShell>
+      <PageHeader title={t("profile.title")} actions={<LangSwitch testid="lang-switch-settings" />} />
       <div className="flex flex-col gap-4">
         <Card title={t("profile.infoTitle")} testid="card-profile-info">
           <div className="flex flex-col gap-2 text-sm">
@@ -115,7 +112,14 @@ export default function Profile() {
                 {me.id}
               </span>
             </div>
-            <p className="text-muted">{t("profile.joined")}</p>
+            <div className="flex items-center gap-2">
+              <span className="text-muted">{t("profile.joined")}</span>
+              {me.created_at && (
+                <time dateTime={me.created_at} className="text-sm">
+                  {new Date(me.created_at).toLocaleDateString(t("i18n.locale"))}
+                </time>
+              )}
+            </div>
           </div>
         </Card>
 
@@ -199,6 +203,6 @@ export default function Profile() {
           </form>
         </Card>
       </div>
-    </main>
+    </PageShell>
   );
 }

@@ -16,6 +16,7 @@ import DownloadDropdown from "../components/DownloadDropdown";
 import InfoPanel from "../components/panels/InfoPanel";
 import OriginalFilePanel from "../components/panels/OriginalFilePanel";
 import LayoutPreview from "../components/LayoutPreview";
+import PageShell from "../components/PageShell";
 import TextSection from "../components/TextSection";
 import UnifiedEditor from "../components/UnifiedEditor";
 import Badge from "../components/ui/Badge";
@@ -133,7 +134,7 @@ export default function JobDetail() {
   if (!job) {
     // Loading → Skeleton (DESIGN.md §4); never a blank page (ui-ux-dev checklist).
     return (
-      <main id="main" className="mx-auto max-w-3xl p-4 sm:p-6">
+      <PageShell>
         {isPending ? (
           <div data-testid="job-loading" className="flex flex-col gap-4">
             <Skeleton className="h-8 w-2/3" />
@@ -165,7 +166,7 @@ export default function JobDetail() {
             </div>
           </div>
         )}
-      </main>
+      </PageShell>
     );
   }
 
@@ -178,7 +179,7 @@ export default function JobDetail() {
   const regions = (job.result?.pages ?? []).flatMap((p) => p.regions);
 
   return (
-    <main id="main" className="mx-auto max-w-[1400px] p-4 sm:p-6">
+    <PageShell width="wide">
       {/* Header 3-4 dòng mobile — sticky che viewport đọc doc dài; chỉ sticky ≥lg (dưới AppNav h-16). */}
       <header
         data-testid="job-header"
@@ -207,6 +208,7 @@ export default function JobDetail() {
               </Badge>
               <Button
                 testid="btn-resync-layout"
+                className="min-h-11"
                 variant="secondary"
                 onClick={async () => {
                   try {
@@ -225,6 +227,7 @@ export default function JobDetail() {
           {job.status === "failed" && (
             <Button
               testid="btn-retry-job"
+              className="min-h-11"
               onClick={async () => {
                 setRetryError(null);
                 try {
@@ -246,6 +249,7 @@ export default function JobDetail() {
           {PENDING_STATUSES.includes(job.status) && (
             <Button
               testid="btn-cancel-job"
+              className="min-h-11"
               variant="secondary"
               onClick={async () => {
                 try {
@@ -265,6 +269,7 @@ export default function JobDetail() {
           {job.status === "done" && result && (
             <Button
               testid="btn-retry-layout"
+              className="min-h-11"
               variant="secondary"
               loading={retryingLayout}
               onClick={() => setConfirmRetry(true)}
@@ -281,6 +286,7 @@ export default function JobDetail() {
           {/* P0-C: lịch sử version + khôi phục (API listVersions/restoreVersion sẵn). */}
           <Button
             testid="btn-version-history"
+            className="min-h-11"
             variant="secondary"
             aria-expanded={showHistory}
             aria-controls="version-history"
@@ -291,6 +297,7 @@ export default function JobDetail() {
           {/* Spec #1: Xóa job — destructive, confirm dialog → DELETE → về list. */}
           <Button
             testid="btn-delete-job"
+            className="min-h-11"
             variant="danger"
             onClick={() => setConfirmDelete(true)}
           >
@@ -561,6 +568,6 @@ export default function JobDetail() {
           </section>
         </aside>
       </div>
-    </main>
+    </PageShell>
   );
 }

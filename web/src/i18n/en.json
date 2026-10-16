@@ -113,9 +113,11 @@
     },
     "forgot": {
       "title": "Forgot password",
+      "subtitle": "Enter your email and we'll send you a reset link.",
       "sent": "Check your email.",
       "submit": "Send reset email",
-      "enterCode": "Enter the code and new password"
+      "enterCode": "Enter the code and new password",
+      "backToSignin": "Back to sign in"
     },
     "verify": {
       "title": "Verify your email",
@@ -133,12 +135,14 @@
     },
     "reset": {
       "title": "Reset password",
+      "subtitle": "Enter the code from your email and choose a new password.",
       "email": "Email",
       "code": "Verification code",
       "newPassword": "New password",
       "repeatPassword": "Repeat new password",
       "mismatch": "Passwords do not match.",
-      "submit": "Reset password"
+      "submit": "Reset password",
+      "backToSignin": "Back to sign in"
     }
   },
   "jd": {

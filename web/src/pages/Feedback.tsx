@@ -4,6 +4,9 @@ import { api } from "../api/client";
 import { mapApiError } from "../lib/errors";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
+import PageHeader from "../components/PageHeader";
+import PageShell from "../components/PageShell";
+import Textarea from "../components/ui/Textarea";
 import { useT } from "../i18n";
 
 const MAX = 2000;
@@ -33,22 +36,20 @@ export default function Feedback() {
   }
 
   return (
-    <main id="main" className="mx-auto max-w-md p-4 sm:p-6">
-      <Card title={t("feedback.title")} testid="card-feedback">
+    <PageShell>
+      <PageHeader title={t("feedback.title")} />
+      <Card testid="card-feedback">
         <form onSubmit={submit} className="flex flex-col gap-3">
-          <label className="flex flex-col gap-1 text-sm" htmlFor="feedback-content">
-            <span className="text-muted">{t("feedback.label")}</span>
-            <textarea
-              id="feedback-content"
-              data-testid="feedback-content"
-              rows={6}
-              value={content}
-              maxLength={MAX + 1}
-              placeholder={t("feedback.placeholder")}
-              onChange={(e) => setContent(e.target.value)}
-              className="rounded-sm border border-border bg-surface px-3 py-2 text-text placeholder:text-muted"
-            />
-          </label>
+          <Textarea
+            label={t("feedback.label")}
+            testid="feedback-content"
+            id="feedback-content"
+            rows={6}
+            value={content}
+            maxLength={MAX + 1}
+            placeholder={t("feedback.placeholder")}
+            onChange={(e) => setContent(e.target.value)}
+          />
           <span
             data-testid="feedback-count"
             className={`text-xs ${over ? "text-error" : "text-muted"}`}
@@ -62,6 +63,6 @@ export default function Feedback() {
           </div>
         </form>
       </Card>
-    </main>
+    </PageShell>
   );
 }
