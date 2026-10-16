@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import Literal
 
 import bleach
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from PIL import Image
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +37,16 @@ from app.services.html_to_docx import html_to_docx, CROP_SRC_RE
 from app.services.storage import StorageDriver, get_storage
 
 logger = logging.getLogger(__name__)
+
+# #10: single-range CHỈ bytes=start-end (cả hai đầu); suffix/multi/open-end
+# → 416 (spec: supporting single-range only)
+_RANGE_RE = re.compile(r"bytes=(\d+)-(\d+)")
+
+def _range_416(size: int | None) -> JSONResponse:
+    headers = {"Content-Range": f"bytes */{size}"} if size is not None else None
+    return JSONResponse(
+        status_code=416, content={"code": "invalid_range"}, headers=headers
+    )
 
 EXPORT_PRESIGN_EXPIRES_SECONDS = 86400
 # GET download Content-Type per fmt (Task 5 brief, verbatim)
@@ -656,6 +667,7 @@ async def download_export(
     id: int,
     fmt: Literal["md", "html", "docx", "pdf", "docx-layout", "md-layout",
                   "docx.html"],
+    request: Request,
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
     storage: StorageDriver = Depends(get_storage),
@@ -664,19 +676,60 @@ async def download_export(
 
     fmt is a Literal path segment — no user path reaches storage keys.
     Cache miss → 404: client must POST /export first to generate.
-    """
+    #10: Range header → 206 Partial Content (single bytes=start-end; suffix/
+    multi/malformed/out-of-bounds → 416) — resume download không cần kéo
+    lại toàn file."""
     job = await _job_or_403(session, id, user)
     if job.status != "done":
         raise HTTPException(status_code=409, detail="job not done")
-    try:
-        data = await storage.get(f"exports/{id}/{fmt}")
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Chưa xuất file.")
+    key = f"exports/{id}/{fmt}"
+    rng = request.headers.get("range")
+    if rng is None:
+        try:
+            data = await storage.get(key)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Chưa xuất file.")
+        if fmt == "md-layout":
+            # serve-time: relative crops/{f} → presigned 24h FRESH (URL không hết hạn)
+            md = await embed_crop_urls(data.decode("utf-8"), id, storage)
+            data = md.encode("utf-8")
+        return Response(content=data, media_type=EXPORT_CONTENT_TYPES[fmt])
+    m = _RANGE_RE.fullmatch(rng)
+    if m is None or int(m.group(2)) < int(m.group(1)):
+        return _range_416(None)
+    start, end = int(m.group(1)), int(m.group(2))
     if fmt == "md-layout":
-        # serve-time: relative crops/{f} → presigned 24h FRESH (URL không hết hạn)
-        md = await embed_crop_urls(data.decode("utf-8"), id, storage)
-        data = md.encode("utf-8")
-    return Response(content=data, media_type=EXPORT_CONTENT_TYPES[fmt])
+        # serve-time re-encode (crop URL embed) → range tính trên representation CUỐI
+        try:
+            full = await storage.get(key)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Chưa xuất file.")
+        md = await embed_crop_urls(full.decode("utf-8"), id, storage)
+        final = md.encode("utf-8")
+        if start >= len(final):
+            return _range_416(len(final))
+        chunk = final[start:end + 1]
+        total = len(final)
+    else:
+        try:
+            size = await storage.size(key)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Chưa xuất file.")
+        if start >= size:
+            return _range_416(size)
+        try:
+            chunk = await storage.get_range(key, start, end)
+        except ValueError:
+            return _range_416(size)
+        total = size
+    return Response(
+        content=chunk,
+        status_code=206,
+        media_type=EXPORT_CONTENT_TYPES[fmt],
+        headers={
+            "Content-Range": f"bytes {start}-{start + len(chunk) - 1}/{total}"
+        },
+    )
 
 # --- Region crops: GET /api/jobs/{id}/regions/{rid}/crop ---
 
