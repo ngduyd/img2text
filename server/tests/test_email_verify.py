@@ -114,13 +114,14 @@ async def test_limit_kinds_independent(db_session):
     await db_session.commit()
     await check_limit(db_session, u.id, "verify_code")  # kind khác → ok
 
-# --- register: welcome + verify-code email, always 201 ---
+# --- register: welcome + verify-code email; SMTP down → 503 (#9) ---
 
 def _capture():
     sent = []
 
     async def fake(to, subject, body):
         sent.append((to, subject, body))
+        return (True, None)  # mailer contract #9: (ok, error)
 
     return sent, fake
 
@@ -177,7 +178,9 @@ async def test_register_duplicate_identical_body(client, monkeypatch):
     assert "set-cookie" not in r2.headers
     assert len(sent) == n_first  # không gửi thêm email
 
-async def test_register_smtp_down_still_201(client, monkeypatch):
+async def test_register_smtp_down_returns_503(client, monkeypatch):
+    """#9: SMTP failure surfaces — register không còn 201 im lặng khi mail
+    server chết (user đã commit → resend/verify dùng lại được)."""
     def boom(*a, **kw):
         raise RuntimeError("smtp down")
 
@@ -185,7 +188,13 @@ async def test_register_smtp_down_still_201(client, monkeypatch):
     r = await client.post(
         "/api/auth/register", json={"email": "down@x.io", "password": "secret123"}
     )
-    assert r.status_code == 201
+    assert r.status_code == 503
+    assert r.json() == {"code": "email_unavailable", "retry_after_seconds": 300}
+    # user đã commit TRƯỚC khi gửi → duplicate register vẫn 201 (body cũ)
+    dup = await client.post(
+        "/api/auth/register", json={"email": "down@x.io", "password": "secret123"}
+    )
+    assert dup.status_code == 201 and dup.json() == {"status": "ok"}
 
 # --- POST /api/auth/verify + /verify/resend ---
 
