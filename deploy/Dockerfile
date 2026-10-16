@@ -6,6 +6,7 @@ ARG PANDOC_VERSION=3.10.2
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl poppler-utils libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libfontconfig1 \
         fontconfig fonts-dejavu-core fonts-dejavu-extra \
+        fonts-noto-cjk fonts-noto-serif-cjk \
         postgresql-client \
     && curl -fsSL -o /tmp/pandoc.tar.gz \
         "https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-linux-amd64.tar.gz" \

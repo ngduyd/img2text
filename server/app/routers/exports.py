@@ -38,6 +38,13 @@ from app.services.storage import StorageDriver, get_storage
 
 logger = logging.getLogger(__name__)
 
+# #14 (spec 2026-10-15): Noto Sans CJK ĐẦU stack — CJK glyph + dấu tiếng
+# Việt (Dockerfile: fonts-noto-cjk); DejaVu Sans fallback quen thuộc
+# (fonts-dejavu) cho env thiếu Noto. _render_pdf là đường PDF DUY NHẤT
+# (render_md không render PDF) — test: tests/test_export_pdf_font.py.
+# user stylesheet thắng CSS mặc định của pandoc.
+PDF_FONT_CSS = "body { font-family: 'Noto Sans CJK', 'DejaVu Sans', serif; }"
+
 # #10: single-range CHỈ bytes=start-end (cả hai đầu); suffix/multi/open-end
 # → 416 (spec: supporting single-range only)
 _RANGE_RE = re.compile(r"bytes=(\d+)-(\d+)")
@@ -300,10 +307,7 @@ def _render_pdf(html: str, base_url: str) -> bytes:
     """bleach-cleaned html → pdf via weasyprint (import inside: heavy, in thread)."""
     from weasyprint import CSS, HTML  # deferred import: CPU-heavy, runs in to_thread
 
-    # #9 (spec 2026-10-14): font-family explicit — DejaVu (Dockerfile:
-    # fonts-dejavu-extra + fontconfig) phủ dấu tiếng Việt; fallback serif
-    # (user stylesheet thắng CSS mặc định của pandoc — var theo image host).
-    font_css = CSS(string="body { font-family: 'DejaVu Sans', serif; }")
+    font_css = CSS(string=PDF_FONT_CSS)
     return HTML(string=html, base_url=base_url).write_pdf(
         stylesheets=[font_css]
     )
