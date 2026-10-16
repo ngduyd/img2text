@@ -9,6 +9,7 @@ import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import Input from "../../components/ui/Input";
+import Skeleton from "../../components/ui/Skeleton";
 
 /** Lane CFG — "Hệ thống": TOÀN BỘ cấu hình động chia 5 section (LLM / Kaggle
  * GPU / Scheduler / Giới hạn / SMTP). Mỗi ô: label + help + nguồn badge
@@ -240,9 +241,7 @@ export default function AdminSettings() {
   if (isLoading || !data) {
     return (
       <Card title={t("admin.tab.settings")} testid="card-settings">
-        <div data-testid="settings-loading" aria-busy="true" className="p-4 text-sm text-muted">
-          {t("common.loading")}
-        </div>
+        <Skeleton testid="settings-loading" />
       </Card>
     );
   }

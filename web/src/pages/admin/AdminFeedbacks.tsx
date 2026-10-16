@@ -5,6 +5,7 @@ import { api } from "../../api/client";
 import { translate, useT } from "../../i18n";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
+import Skeleton from "../../components/ui/Skeleton";
 
 const PAGE_SIZE = 20;
 
@@ -32,9 +33,7 @@ export default function AdminFeedbacks() {
       }
     >
       {isLoading ? (
-        <div data-testid="fb-loading" className="p-4 text-center text-sm text-muted">
-          {t("common.loading")}
-        </div>
+        <Skeleton testid="fb-loading" />
       ) : items.length === 0 ? (
         <div
           data-testid="fb-empty"

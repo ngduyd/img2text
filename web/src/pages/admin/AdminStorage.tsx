@@ -3,7 +3,7 @@
  * Density mirror AdminUsers (sticky thead, divider rows, mono IDs). */
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, Trash2 } from "lucide-react";
+import { Inbox, RefreshCw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../../api/client";
 import { mapApiError } from "../../lib/errors";
@@ -14,6 +14,8 @@ import Card from "../../components/ui/Card";
 import Skeleton from "../../components/ui/Skeleton";
 import { Stat, fmtBytes } from "../../components/ui/Stat";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import EmptyState from "../../components/ui/EmptyState";
+import Pagination from "../../components/ui/Pagination";
 
 const PAGE_SIZE = 20;
 
@@ -88,19 +90,19 @@ export default function AdminStorage() {
         {isLoading || !data ? (
           <Skeleton testid="storage-table-loading" />
         ) : data.items.length === 0 ? (
-          <p className="py-4 text-center text-sm text-muted">{t("storage.empty")}</p>
+          <EmptyState icon={Inbox} body={t("storage.empty")} />
         ) : (
           <>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 border-b border-border bg-surface-2 text-left text-xs text-muted">
                   <tr>
-                    <th className="px-2 py-2 font-medium">#</th>
-                    <th className="px-2 py-2 font-medium">{t("storage.table.email")}</th>
-                    <th className="px-2 py-2 font-medium">{t("storage.table.filename")}</th>
-                    <th className="px-2 py-2 font-medium">{t("storage.table.bytes")}</th>
-                    <th className="px-2 py-2 font-medium">{t("storage.table.created")}</th>
-                    <th className="px-2 py-2 font-medium">{t("storage.table.status")}</th>
+                    <th scope="col" className="px-2 py-2 font-medium">#</th>
+                    <th scope="col" className="px-2 py-2 font-medium">{t("storage.table.email")}</th>
+                    <th scope="col" className="px-2 py-2 font-medium">{t("storage.table.filename")}</th>
+                    <th scope="col" className="px-2 py-2 font-medium">{t("storage.table.bytes")}</th>
+                    <th scope="col" className="px-2 py-2 font-medium">{t("storage.table.created")}</th>
+                    <th scope="col" className="px-2 py-2 font-medium">{t("storage.table.status")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -130,31 +132,16 @@ export default function AdminStorage() {
                 </tbody>
               </table>
             </div>
-            <div className="mt-3 flex items-center justify-end gap-2 text-sm">
-              <span className="text-muted">
-                {t("storage.pageInfo", { page, total: data.total })}
-              </span>
-              <Button
-                testid="storage-prev"
-                aria-label={t("storage.prevPage")}
-                variant="secondary"
-                size="sm"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                ‹
-              </Button>
-              <Button
-                testid="storage-next"
-                aria-label={t("storage.nextPage")}
-                variant="secondary"
-                size="sm"
-                disabled={page * PAGE_SIZE >= data.total}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                ›
-              </Button>
-            </div>
+            <Pagination
+              page={page}
+              totalPages={Math.max(1, Math.ceil(data.total / PAGE_SIZE))}
+              onChange={setPage}
+              prevTestid="storage-prev"
+              nextTestid="storage-next"
+              prevLabel={t("storage.prevPage")}
+              nextLabel={t("storage.nextPage")}
+              info={<span className="text-muted">{t("storage.pageInfo", { page, total: data.total })}</span>}
+            />
           </>
         )}
       </Card>
