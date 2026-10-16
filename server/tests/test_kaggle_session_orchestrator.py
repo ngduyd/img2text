@@ -7,10 +7,10 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import event, select, update
 
 from app.core.config import settings
-from app.core.db import SessionLocal
+from app.core.db import SessionLocal, engine
 from app.core.models import Job, User, WorkerSession
 from app.core.security import hash_worker_token
 from app.services import kaggle_orchestrator as orch
@@ -208,6 +208,32 @@ async def test_close_session_with_live_job_sets_null(db_session):
     assert job is not None
     assert job.session_id is None
     assert await db_session.get(WorkerSession, sid) is None
+
+async def test_close_session_emits_explicit_session_id_null(db_session):
+    """F1: _close_session null jobs.session_id bằng UPDATE TƯỜNG MINH — không
+    phụ thuộc FK ON DELETE SET NULL (FK tắt → job treo session_id cũ).
+    Kiểm bằng SQL emit (không mutate DDL chung)."""
+    api = FakeApi()
+    await orch._spawn_session(api, SessionLocal, key="k-explicit")
+    sid = await _live_session_id(db_session)
+    job_id = await _seed_job(db_session, "extracting", session_id=sid)
+    stmts: list[str] = []
+
+    def _capture(conn, cursor, statement, params, context, executemany):
+        stmts.append(statement)
+
+    event.listen(engine.sync_engine, "before_cursor_execute", _capture)
+    try:
+        await orch._close_session(SessionLocal, sid)
+    finally:
+        event.remove(engine.sync_engine, "before_cursor_execute", _capture)
+    assert any(
+        s.lstrip().upper().startswith("UPDATE JOBS") and "session_id" in s.lower()
+        for s in stmts
+    ), stmts
+
+    db_session.expire_all()
+    assert (await db_session.get(Job, job_id)).session_id is None
 
 async def test_restart_adopts_live_session(db_session, monkeypatch):
     """AC9: restart — extracting job + session row + kernel active → adopt,

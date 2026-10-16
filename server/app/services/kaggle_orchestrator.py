@@ -351,10 +351,12 @@ async def _spawn_session(
     return True
 
 async def _close_session(session_factory, session_id: int) -> list[int]:
-    """AC3/AC9: DELETE worker_sessions row NGAY (hash mất) — FK ON DELETE
-    SET NULL tự null jobs.session_id (AC3a: job không mất). Trả về các job
-    extracting của session (đã thu trước khi delete) để caller revert/fail
-    (guard session_id IS NULL — sau FK đều pass)."""
+    """AC3/AC9: DELETE worker_sessions row NGAY (hash mất). Null
+    jobs.session_id TƯỜNG MINH trước delete (AC3a: job không mất) — không
+    dựa FK ON DELETE SET NULL: _cleanup_dead_session gọi sau đó
+    _revert_job_queued/_fail_job_extracting có guard session_id IS NULL, FK
+    tắt → job treo. Trả về các job extracting của session (đã thu trước khi
+    delete) để caller revert/fail."""
     _sessions.pop(session_id, None)
     async with session_factory() as session:
         claimed = (
@@ -365,8 +367,11 @@ async def _close_session(session_factory, session_id: int) -> list[int]:
                 )
             )
         ).scalars().all()
-        # DELETE NGAY (AC3/AC9: hash-at-rest không sống sót sau close) —
-        # FK ON DELETE SET NULL tự null jobs.session_id (AC3a).
+        # AC3a: null tường minh (FK chỉ là lưới an toàn).
+        await session.execute(
+            update(Job).where(Job.session_id == session_id).values(session_id=None)
+        )
+        # DELETE NGAY (AC3/AC9: hash-at-rest không sống sót sau close).
         await session.execute(
             delete(WorkerSession).where(WorkerSession.id == session_id)
         )
