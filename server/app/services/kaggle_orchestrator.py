@@ -34,6 +34,7 @@ in jobs.kaggle_ref (spec 2026-10-09) so _ensure_batch_runs re-adopts an
 import asyncio
 import json
 import logging
+import secrets
 import shutil
 import tempfile
 import time
@@ -41,13 +42,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from pydantic import ValidationError
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.config import settings
-from app.core.models import Job, WorkerHeartbeat
+from app.core.models import Job, WorkerHeartbeat, WorkerSession
 from app.core.schemas import IMAGE_MARKER, ResultBody
+from app.core.security import hash_worker_token
 from app.services.job_results import store_batch_result
+from app.services.kaggle_quota import quota_remaining_seconds
 from app.services.runtime_settings import get_runtime_setting
 
 logger = logging.getLogger(__name__)
@@ -258,31 +261,241 @@ async def _count_queued(session_factory) -> int:
         return int(result.scalar_one())
 
 async def _touch_batch_heartbeat(
-    session_factory, current_job_id: int | None = None
+    session_factory, current_job_id: int | None = None,
+    worker_id: str = "kaggle-batch",
 ) -> None:
-    """wave-2 #7: orchestrator marker — upsert row worker_id="kaggle-batch"
-    kind="kaggle-batch" khi spawn + mỗi poll status. Telemetry only: lỗi
-    DB không được phá spawn/poll (warning + bỏ qua)."""
+    """wave-2 #7: orchestrator marker — upsert row worker_id=kind (batch:
+    "kaggle-batch"; session worker T6: "kaggle-session") khi spawn + mỗi poll
+    status. Telemetry only: lỗi DB không được phá spawn/poll (warning + bỏ qua)."""
     try:
         async with session_factory() as session:
             now = datetime.now(timezone.utc)
             await session.execute(
                 pg_insert(WorkerHeartbeat)
                 .values(
-                    worker_id="kaggle-batch", kind="kaggle-batch",
+                    worker_id=worker_id, kind=worker_id,
                     last_seen=now, current_job_id=current_job_id,
                 )
                 .on_conflict_do_update(
                     index_elements=[WorkerHeartbeat.worker_id],
-                    set_={"kind": "kaggle-batch", "last_seen": now,
+                    set_={"kind": worker_id, "last_seen": now,
                           "current_job_id": current_job_id},
                 )
             )
             await session.commit()
     except Exception:
-        logger.warning("kaggle batch: heartbeat upsert lỗi", exc_info=True)
+        logger.warning("kaggle %s: heartbeat upsert lỗi", worker_id, exc_info=True)
 
 # --- Plan K5: batch mode (kaggle_mode="batch") ---
+
+# --- Spec session worker (2026-10-16 T6): mode "session" ---
+# 1 kernel session active duy nhất; live index {session_id: {id, ref,
+# spawned_at}} — DB worker_sessions là bản durable (restart adopt).
+_sessions: dict[int, dict] = {}
+
+async def _spawn_session(
+    api, session_factory, *, key: str | None = None
+) -> bool:
+    """Stage + push session kernel (AC3): key random → script chèn lúc push
+    (__SESSION_KEY__); kernel-metadata KHÔNG chứa key; DB upsert hash-at-rest.
+    Claim đầu tiên sẽ gán job.session_id qua next_job (T4) — KHÔNG update
+    extracting ở spawn (khác batch path)."""
+    global _last_spawn
+    owner = settings.kaggle_username
+    key = key or secrets.token_urlsafe(32)
+    key_hash = hash_worker_token(key)
+    src = _stage_src()
+    build = Path(tempfile.mkdtemp(prefix="kaggle-img2text-session-"))
+    try:
+        for name in ("img2text_session.py", "img2text_batch.py"):
+            shutil.copyfile(src / "kernel" / name, build / name)
+        script_path = build / "img2text_session.py"
+        script_path.write_text(
+            script_path.read_text(encoding="utf-8").replace(
+                "__SESSION_KEY__", key
+            ),
+            encoding="utf-8",
+        )
+        meta = _sub_owner(
+            json.loads(
+                (src / "kernel" / "kernel-session-metadata.json").read_text(
+                    encoding="utf-8"
+                )
+            ),
+            owner,
+        )
+        meta["machine_shape"] = settings.kaggle_accelerator
+        meta["accelerator"] = settings.kaggle_accelerator
+        (build / "kernel-metadata.json").write_text(
+            json.dumps(meta, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        ref = await asyncio.to_thread(api.kernels_push, str(build))
+        now = datetime.now(timezone.utc)
+        async with session_factory() as session:
+            row = WorkerSession(kernel_ref=str(ref), key_hash=key_hash)
+            session.add(row)
+            await session.commit()
+            await session.refresh(row)
+            session_id = row.id
+    finally:
+        shutil.rmtree(build, ignore_errors=True)
+    _last_spawn = time.monotonic()
+    _sessions[session_id] = {
+        "id": session_id,
+        "ref": str(ref),
+        "spawned_at": now,
+    }
+    await _touch_batch_heartbeat(session_factory, worker_id="kaggle-session")
+    logger.info("kaggle session: pushed kernel %s (session %s)", ref, session_id)
+    return True
+
+async def _close_session(session_factory, session_id: int) -> list[int]:
+    """AC3/AC9: DELETE worker_sessions row NGAY (hash mất) — FK ON DELETE
+    SET NULL tự null jobs.session_id (AC3a: job không mất). Trả về các job
+    extracting của session (đã thu trước khi delete) để caller revert/fail
+    (guard session_id IS NULL — sau FK đều pass)."""
+    _sessions.pop(session_id, None)
+    async with session_factory() as session:
+        claimed = (
+            await session.execute(
+                select(Job.id).where(
+                    Job.status == "extracting",
+                    Job.session_id == session_id,
+                )
+            )
+        ).scalars().all()
+        # DELETE NGAY (AC3/AC9: hash-at-rest không sống sót sau close) —
+        # FK ON DELETE SET NULL tự null jobs.session_id (AC3a).
+        await session.execute(
+            delete(WorkerSession).where(WorkerSession.id == session_id)
+        )
+        await session.commit()
+    logger.info(
+        "kaggle session: closed session %s (claimed jobs %s)",
+        session_id, list(claimed),
+    )
+    return list(claimed)
+
+async def _poll_session(api, session_factory, entry: dict) -> str:
+    """One poll (AC9): active → 'active'; complete → graceful 'closed';
+    failed/error/cancelled/timeout → 'failed' (AC10 caller fail jobs);
+    age > kaggle_session_max_age_s → 'expired' (caller revert + respawn)."""
+    session_id = entry["id"]
+    await _touch_batch_heartbeat(
+        session_factory, worker_id="kaggle-session"
+    )
+    status = _norm_status(await asyncio.to_thread(api.kernels_status, entry["ref"]))
+    age_s = (
+        datetime.now(timezone.utc) - entry["spawned_at"]
+    ).total_seconds()
+    if age_s > settings.kaggle_session_max_age_s:
+        logger.warning(
+            "kaggle session %s older than max_age=%ds — close + respawn",
+            session_id, settings.kaggle_session_max_age_s,
+        )
+        return "expired"
+    if status in _ACTIVE_STATUSES:
+        return "active"
+    if status in _FAILED_STATUSES:
+        return "failed"
+    return "closed"  # complete (graceful — queue đã rỗng lúc exit)
+
+async def _ensure_sessions(api, session_factory) -> bool:
+    """Session tick (AC1/AC5/AC6/AC9): adopt DB live sessions sau restart →
+    poll từng session → close/revert/fail dọn dẹp → quota gate → spawn 1
+    session mới khi queue cần. True = spawned."""
+    global _last_spawn
+    tracked = list(_sessions.values())  # poll snapshot (adopt không re-poll)
+    # adopt (AC9): DB live sessions chưa có trong map (restart / spawn crash)
+    async with session_factory() as session:
+        rows = (
+            await session.execute(
+                select(WorkerSession).where(WorkerSession.closed_at.is_(None))
+            )
+        ).scalars().all()
+    for row in rows:
+        if row.id in _sessions:
+            continue
+        entry = {
+            "id": row.id,
+            "ref": row.kernel_ref,
+            "spawned_at": row.spawned_at,
+        }
+        outcome = await _poll_session(api, session_factory, entry)
+        if outcome == "active":
+            _sessions[row.id] = entry
+            logger.info(
+                "kaggle session: adopt session %s ref %s (restart recovery)",
+                row.id, row.kernel_ref,
+            )
+        else:
+            await _cleanup_dead_session(
+                session_factory, row.id, fail_jobs=(outcome == "failed"),
+                why=f"restart poll {outcome}",
+            )
+    for entry in tracked:
+        outcome = await _poll_session(api, session_factory, entry)
+        if outcome == "active":
+            continue
+        await _cleanup_dead_session(
+            session_factory, entry["id"],
+            fail_jobs=(outcome == "failed"), why=outcome,
+        )
+    if _sessions:  # 1 session active tuyệt đối (shared input slug rationale)
+        return False
+    queued = await _count_queued(session_factory)
+    min_queue = await get_runtime_setting(
+        session_factory, "kaggle_min_queue", settings.kaggle_min_queue
+    )
+    if queued < min_queue:
+        return False
+    now = time.monotonic()
+    min_gap = await get_runtime_setting(
+        session_factory, "kaggle_min_gap_seconds", settings.kaggle_min_gap_seconds
+    )
+    if _last_spawn and now - _last_spawn < min_gap:
+        logger.info(
+            "kaggle session: last spawn %.0fs ago < gap %ds — skip",
+            now - _last_spawn, min_gap,
+        )
+        return False
+    # AC6: quota gate trước dispatch — dưới ngưỡng → không spawn + flag
+    # quota_low (claim response báo worker exit 0, AC5).
+    global _quota_low
+    min_quota = await get_runtime_setting(
+        session_factory, "kaggle_session_min_quota_s",
+        settings.kaggle_session_min_quota_s,
+    )
+    remaining = await asyncio.to_thread(quota_remaining_seconds, api)
+    _quota_low = remaining is None or remaining < min_quota
+    if _quota_low:
+        logger.warning(
+            "kaggle session: quota còn %s < %ds — skip spawn (quota_low)",
+            f"{remaining:.0f}s" if remaining is not None else "?", min_quota,
+        )
+        return False
+    try:
+        return await _spawn_session(api, session_factory)
+    except Exception:
+        _last_spawn = time.monotonic()  # anti-hammer on persistent errors
+        logger.warning("kaggle session: spawn failed", exc_info=True)
+        return False
+
+async def _cleanup_dead_session(
+    session_factory, session_id: int, *, fail_jobs: bool, why: str
+) -> None:
+    """Kernel dead (AC10) → fail từng job extracting; graceful/expired →
+    revert về queued. Cả 2: session row xóa (FK nulls session_id) — không
+    để job treo trỏ session đã xóa (AC3b)."""
+    claimed = await _close_session(session_factory, session_id)
+    for job_id in claimed:
+        if fail_jobs:
+            await _fail_job_extracting(
+                session_factory, job_id, f"Kaggle session {why}"
+            )
+        else:
+            await _revert_job_queued(session_factory, job_id, why)
 
 def _get_storage():
     """Storage driver for staging uploads (seam: tests inject the moto driver)."""
@@ -673,8 +886,8 @@ async def _revert_job_queued(session_factory, job_id: int, why: str) -> None:
     queued with the lease cleared so the gap-guarded respawn picks it up
     next round (reaper must not also touch it).
 
-    Rider guard: worker_token_hash IS NULL — an extracting job claimed by an
-    HTTP worker (claim raced the failure) is left alone, not clobbered."""
+    Rider guards: worker_token_hash IS NULL (HTTP worker claim không bị
+    clobber) + session_id IS NULL (session worker claim — spec T4)."""
     async with session_factory() as session:
         result = await session.execute(
             update(Job)
@@ -682,6 +895,7 @@ async def _revert_job_queued(session_factory, job_id: int, why: str) -> None:
                 Job.id == job_id,
                 Job.status == "extracting",
                 Job.worker_token_hash.is_(None),
+                Job.session_id.is_(None),
             )
             .values(status="queued", lease_expires_at=None)
         )
@@ -689,12 +903,11 @@ async def _revert_job_queued(session_factory, job_id: int, why: str) -> None:
         reverted = result.rowcount > 0
     if not reverted:
         logger.warning(
-            "kaggle batch: job %s revert skipped — claimed or not extracting "
-            "(%s)",
+            "kaggle: job %s revert skipped — claimed or not extracting (%s)",
             job_id, why,
         )
         return
-    logger.info("kaggle batch: job %s reverted to queued (%s)", job_id, why)
+    logger.info("kaggle: job %s reverted to queued (%s)", job_id, why)
 
 async def _ingest_batch_result(session_factory, job_id: int, out_dir: Path) -> None:
     """{job_id}_result.json (the run's pulled output dir) → spec §4
@@ -785,7 +998,8 @@ async def _fail_job_extracting(session_factory, job_id: int, error: str) -> None
     """job → failed at step "extracting" with the given error (spec
     2026-10-09: terminal kernel failure / unusable output — the owner
     retries explicitly via POST /api/jobs/{id}/retry; no silent respawn).
-    Rider guard kept: a worker-claimed job is not clobbered."""
+    Rider guard kept: a worker-claimed job (HTTP hoặc session) is not
+    clobbered."""
     async with session_factory() as session:
         result = await session.execute(
             update(Job)
@@ -793,6 +1007,7 @@ async def _fail_job_extracting(session_factory, job_id: int, error: str) -> None
                 Job.id == job_id,
                 Job.status == "extracting",
                 Job.worker_token_hash.is_(None),
+                Job.session_id.is_(None),
             )
             .values(
                 status="failed",
@@ -1012,8 +1227,11 @@ async def ensure_worker(session_factory) -> bool:
         mode = await get_runtime_setting(
             session_factory, "kaggle_mode", settings.kaggle_mode
         )
+        if mode == "session":
+            # Spec session worker (2026-10-16 T6): 1 kernel session loop
+            return await _ensure_sessions(api, session_factory)
         if mode != "loop":
-            # Plan K5 default (batch): drive the standalone script kernel per job
+            # Plan K5 (batch): drive the standalone script kernel per job
             return await _ensure_batch_runs(api, session_factory)
         ref = settings.kaggle_kernel_ref.strip()
         resp = await asyncio.to_thread(api.kernels_status, ref)

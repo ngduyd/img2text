@@ -12,6 +12,7 @@ import logging
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -595,6 +596,11 @@ async def _next_session_job(
     job.started_at = now
     job.lease_expires_at = now + timedelta(seconds=settings.kaggle_timeout)
     job.session_id = sid
+    # T7 kernel cần input (spec bước 2: download + verify sha256) + spec
+    # preprocess — claim response là nguồn duy nhất (không route đọc khác).
+    file_url = await storage.presign_get(
+        job.storage_key, settings.input_url_expires
+    )
     result_url = await storage.presign_put(
         f"jobs/{job.id}/_result.json", PRESIGN_EXPIRES_SECONDS
     )
@@ -606,6 +612,11 @@ async def _next_session_job(
         "job_id": job.id,
         "session_key": key,  # echo — server hash-at-rest, không giữ plaintext
         "session_id": sid,
+        "file_url": file_url,
+        "sha256": Path(job.storage_key).stem,  # content-addressed uploads/{sha}.{ext}
+        "file_type": job.file_type,
+        "page_count": job.page_count,
+        "preprocess": json.loads(job.preprocess) if job.preprocess else None,
         "result_upload_url": result_url,
         "crop_upload_urls": crop_urls,
         "server_flags": {"quota_low": session_quota_low()},

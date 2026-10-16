@@ -90,6 +90,12 @@ class Settings(BaseSettings):
     # run (env KAGGLE_BATCH_MAX_JOBS; extra jobs wait for the next tick).
     # 0 hoặc -1 = unlimited — gom hết queued trong một run.
     kaggle_batch_max_jobs: int = 20
+    # Spec session worker (2026-10-16, T6/AC6): quota gate trước dispatch —
+    # GPU quota còn lại < ngưỡng → skip spawn + claim server_flags.quota_low.
+    kaggle_session_min_quota_s: int = 7200
+    # Session budget: tuổi session > ngưỡng → close + respawn (exit 0
+    # trước ~9h limit Kaggle — kernel tự stop sớm hơn qua SESSION_MAX_AGE_S).
+    kaggle_session_max_age_s: int = 30600
     # P2-5: unified page cap — MỘT config cho presign/create (server);
     # default = kernel hard cap (deploy/kaggle MAX_PDF_PAGES=100). Web upload
     # UI cap (25) thuộc lane web — server chỉ expose config này.
