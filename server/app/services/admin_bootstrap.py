@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.models import RequestLog, User
-from app.core.security import hash_password, verify_password
+from app.core.security import hash_password, password_too_long, verify_password
 
 _AUDIT_PATH = "/internal/admin-bootstrap"
 
@@ -44,6 +44,14 @@ async def bootstrap_admin(session: AsyncSession, email: str, password: str) -> N
         raise RuntimeError("prod requires ADMIN_EMAIL and ADMIN_PASSWORD")
     if not email or not password:
         return
+    # QA-5: ADMIN_PASSWORD >72 byte — bcrypt cap; hash_password sẽ nổ ValueError
+    # thô (traceback boot không readable) → fail-fast RuntimeError ĐỌC ĐƯỢC,
+    # TRƯỚC mọi nhánh hash (create lẫn prod update-password).
+    if password_too_long(password):
+        raise RuntimeError(
+            f"ADMIN_PASSWORD quá dài ({len(password.encode('utf-8'))} byte >72), "
+            "fail-fast"
+        )
     existing = await session.scalar(select(User).where(User.email == email))
     if existing is not None:
         if settings.env == "prod":

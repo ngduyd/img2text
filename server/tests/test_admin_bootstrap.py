@@ -90,3 +90,12 @@ async def test_non_prod_existing_admin_ignores_new_password(db_session):
     await bootstrap_admin(db_session, "np@test.com", "other-pass-2")
     await db_session.refresh(u)
     assert u.password_hash == before
+
+# --- QA-5: ADMIN_PASSWORD >72 byte → RuntimeError readable, fail-fast ---
+
+async def test_bootstrap_rejects_admin_password_over_72_bytes(db_session):
+    with pytest.raises(RuntimeError, match="ADMIN_PASSWORD quá dài"):
+        await bootstrap_admin(db_session, "longpw@test.com", "x" * 73)
+    # fail-fast TRƯỚC khi hash → không user nào được tạo dở dang
+    u = await db_session.scalar(select(User).where(User.email == "longpw@test.com"))
+    assert u is None
