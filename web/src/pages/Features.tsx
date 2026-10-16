@@ -1,6 +1,9 @@
 import { Boxes, HardDrive, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Link } from "react-router-dom";
+import PageShell from "../components/PageShell";
 import Badge from "../components/ui/Badge";
+import { buttonClasses } from "../components/ui/Button";
 import { useT } from "../i18n";
 
 /**
@@ -17,7 +20,7 @@ const CARDS: { testid: string; icon: LucideIcon; title: string; desc: string }[]
 export default function Features() {
   const { t } = useT();
   return (
-    <main id="main" data-testid="features-page" className="mx-auto max-w-5xl px-4 py-12 md:py-16">
+    <PageShell width="wide" testid="features-page">
       {/* Hero: left-aligned (editorial), one accent via badge. Fits first viewport. */}
       <section data-testid="features-hero" className="max-w-2xl">
         <div className="flex items-center gap-3">
@@ -30,12 +33,12 @@ export default function Features() {
       </section>
 
       {/* 3 cards: mobile 1-col / desktop 3-col grid, radius-card, hairline border. */}
-      <ul className="mt-10 grid grid-cols-1 gap-6 md:mt-12 md:grid-cols-3">
-        {CARDS.map(({ testid, icon: Icon, title, desc }) => (
+      <ul className="mt-10 grid grid-cols-1 gap-6 md:mt-12 md:grid-cols-2">
+        {CARDS.map(({ testid, icon: Icon, title, desc }, i) => (
           <li
             key={testid}
             data-testid={testid}
-            className="rounded-card border border-border bg-surface p-6"
+            className={`rounded-card border border-border bg-surface p-6 ${i === 2 ? "md:col-span-2" : ""}`}
           >
             <div className="flex items-center gap-3">
               <Icon className="h-5 w-5 text-accent-text" aria-hidden="true" />
@@ -45,6 +48,11 @@ export default function Features() {
           </li>
         ))}
       </ul>
-    </main>
+      <div className="mt-10 text-center">
+        <Link to="/jobs" className={buttonClasses("primary", "md")}>
+          {t("landing.cta")}
+        </Link>
+      </div>
+    </PageShell>
   );
 }

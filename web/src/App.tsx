@@ -213,7 +213,7 @@ function AppNav() {
       className="sticky top-0 z-20 border-b border-border bg-bg/80 backdrop-blur"
     >
       {/* Single-line bar: ~56px mobile / 64px desktop (DESIGN.md §7). */}
-      <div className="mx-auto flex h-14 max-w-5xl items-center gap-1 px-4 md:h-16">
+      <div className="mx-auto flex h-14 max-w-6xl items-center gap-1 px-4 md:h-16">
         <Link
           to="/"
           data-testid="nav-brand"

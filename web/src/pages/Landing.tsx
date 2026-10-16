@@ -144,7 +144,7 @@ export default function Landing() {
   const reduce = useReducedMotion();
   const { t } = useT();
   return (
-    <div data-testid="landing" className="mx-auto max-w-6xl px-4 pb-0">
+    <main id="main" data-testid="landing" className="mx-auto max-w-6xl px-4 pb-0">
       {/* Hero: split, clamp typography, motion entry. */}
       <section
         data-testid="landing-hero"
@@ -170,7 +170,7 @@ export default function Landing() {
             </a>
           </div>
         </motion.div>
-        <Reveal delay={0.15}>
+        <Reveal>
           <Shot
             src="/screenshots/landing-hero.png"
             alt={t("landing.hero.alt")}
@@ -187,7 +187,6 @@ export default function Landing() {
             <Reveal
               as="li"
               key={step.labelKey}
-              delay={i * 0.06}
               className="flex items-baseline gap-6 py-6"
             >
               <span aria-hidden="true" className="text-3xl font-bold text-muted">
@@ -206,10 +205,9 @@ export default function Landing() {
       <section data-testid="landing-features" className="py-16 md:py-24">
         <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("landing.featuresTitle")}</h2>
         <div className="mt-8 grid gap-4 md:grid-cols-3">
-          {FEATURES.map((f, i) => (
+          {FEATURES.map((f) => (
             <Reveal
               key={f.titleKey}
-              delay={(i % 3) * 0.06}
               className={`rounded-card border border-border bg-surface p-5 ${f.className ?? ""}`}
             >
               <div data-testid="feature-cell">
@@ -249,8 +247,8 @@ export default function Landing() {
       <section data-testid="landing-gallery" className="py-16 md:py-24">
         <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("landing.galleryTitle")}</h2>
         <div className="mt-8 grid gap-6 sm:grid-cols-2">
-          {GALLERY.map((shot, i) => (
-            <Reveal key={shot.src} delay={(i % 2) * 0.06}>
+          {GALLERY.map((shot) => (
+            <Reveal key={shot.src}>
               <Shot src={shot.src} alt={t(shot.altKey)} caption={t(shot.captionKey)} />
             </Reveal>
           ))}
@@ -271,6 +269,6 @@ export default function Landing() {
         </Reveal>
       </section>
 
-    </div>
+    </main>
   );
 }
