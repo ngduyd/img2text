@@ -510,7 +510,7 @@ export default function TextSection({
       )}
       {/* WS-UI Task 6: confirm modal queue (useDialogA11y — Escape/ref focus). */}
       {rerenderModal && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-overlay p-4">
           <div
             ref={rerenderPanelRef}
             tabIndex={-1}

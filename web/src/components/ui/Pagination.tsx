@@ -26,8 +26,8 @@ interface PaginationProps {
   info?: ReactNode;
   navTestid?: string;
   ariaLabel?: string;
-  prevLabel?: string;
-  nextLabel?: string;
+  prevLabel: string;
+  nextLabel: string;
   prevAriaLabel?: string;
   nextAriaLabel?: string;
 }
@@ -43,8 +43,8 @@ export default function Pagination({
   info,
   navTestid,
   ariaLabel,
-  prevLabel = "‹",
-  nextLabel = "›",
+  prevLabel,
+  nextLabel,
   prevAriaLabel,
   nextAriaLabel,
 }: PaginationProps) {

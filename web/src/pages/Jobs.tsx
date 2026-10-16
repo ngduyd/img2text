@@ -138,26 +138,11 @@ export default function Jobs() {
         title={t("jobs.title")}
         subtitle={t("jobs.subtitle")}
         actions={
-          <dl className="flex gap-4">
-            <div className="text-right">
-              <dt className="sr-only">{t("jobs.stats.total")}</dt>
-              <dd>
-                <Stat testid="stats-total" label={t("jobs.stats.total")} value={String(jobs?.total ?? items.length)} />
-              </dd>
-            </div>
-            <div className="text-right">
-              <dt className="sr-only">{t("jobs.stats.pending")}</dt>
-              <dd>
-                <Stat testid="stats-pending" label={t("jobs.stats.pending")} value={String(pending)} valueClassName="text-warning" />
-              </dd>
-            </div>
-            <div className="text-right">
-              <dt className="sr-only">{t("jobs.stats.done")}</dt>
-              <dd>
-                <Stat testid="stats-done" label={t("jobs.stats.done")} value={String(done)} valueClassName="text-success" />
-              </dd>
-            </div>
-          </dl>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Stat testid="stats-total" label={t("jobs.stats.total")} value={String(jobs?.total ?? items.length)} />
+            <Stat testid="stats-pending" label={t("jobs.stats.pending")} value={String(pending)} valueClassName="text-warning" />
+            <Stat testid="stats-done" label={t("jobs.stats.done")} value={String(done)} valueClassName="text-success" />
+          </div>
         }
       />
 

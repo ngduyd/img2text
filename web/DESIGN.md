@@ -33,6 +33,7 @@ Dark (`:root`) — Light (`html:not(.dark)`):
 - **Warning** (`--warning`): `#d29922` / `#9a6700` — caution badges, warnings
 - **Error** (`--error`): `#f85149` / `#cf222e` — failed states, error borders/text, danger buttons
 - **Shadow Card** (`--shadow-card`) — tinted elevation, canvas-hue matched: `0 1px 2px rgba(1,4,9,0.6)` dark / soft double-layer light
+- **Overlay** (--overlay) — modal/dialog scrim: rgba(1,4,9,.5) dark / rgba(31,35,40,.5) light
 - **Focus Ring** (`--focus-ring`) — accent hue, 2px outline, 2px offset (global `:focus-visible`)
 
 Rules: single accent (blue `#58a6ff` family, saturation ≤80%); semantic tokens

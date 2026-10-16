@@ -28,7 +28,7 @@ export default function ConfirmDialog({
   return (
     <div
       data-testid="confirm-dialog"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
     >
       <div
         ref={panelRef}
