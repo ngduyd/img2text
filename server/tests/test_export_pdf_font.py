@@ -37,7 +37,9 @@ def test_dockerfile_has_dejavu_fonts_and_fontconfig():
     assert "fonts-dejavu-core" in src  # review r1 P1-3: extra thiếu Sans regular
     assert "fontconfig" in src
     assert "fonts-noto-cjk" in src
-    assert "fonts-noto-serif-cjk" in src
+    # fonts-noto-serif-cjk KHÔNG tồn tại trên Debian trixie — bỏ khỏi
+    # image (CSS chỉ cần Noto Sans CJK); assert chặn re-add package chết.
+    assert "fonts-noto-serif-cjk" not in src
 
 def test_pdf_font_css_uses_noto_first():
     """#14 (spec 2026-10-15): CSS của _render_pdf dùng PDF_FONT_CSS và
