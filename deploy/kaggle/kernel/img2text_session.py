@@ -341,7 +341,7 @@ def run_job(base: str, key: str, claim: dict) -> str:
         if out is None:
             return "cancelled"
         doc, crops = out
-        if _status(base, key, job_id).get("status") == "cancelled":
+        if not _cancel_check(base, key, job_id):
             return "cancelled"  # cancel cuối OCR → giữ partial, không upload
         payload = adapt_document(doc)
         payload["gpu_seconds"] = round(time.time() - t0, 2)

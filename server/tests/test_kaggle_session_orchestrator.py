@@ -227,10 +227,21 @@ async def test_close_session_emits_explicit_session_id_null(db_session):
         await orch._close_session(SessionLocal, sid)
     finally:
         event.remove(engine.sync_engine, "before_cursor_execute", _capture)
-    assert any(
-        s.lstrip().upper().startswith("UPDATE JOBS") and "session_id" in s.lower()
-        for s in stmts
-    ), stmts
+    upd = next(
+        (i for i, s in enumerate(stmts)
+         if s.lstrip().upper().startswith("UPDATE JOBS")
+         and "session_id" in s.lower()),
+        None,
+    )
+    dele = next(
+        (i for i, s in enumerate(stmts)
+         if s.lstrip().upper().startswith("DELETE FROM WORKER_SESSIONS")),
+        None,
+    )
+    assert upd is not None, stmts
+    assert dele is not None, stmts
+    # session_id null PHẢI chạy TRƯỚC DELETE (FK tắt → job không bị treo).
+    assert upd < dele, stmts
 
     db_session.expire_all()
     assert (await db_session.get(Job, job_id)).session_id is None

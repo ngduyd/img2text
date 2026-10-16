@@ -188,6 +188,18 @@ def test_cancel_check_429_treated_not_cancelled(monkeypatch):
     monkeypatch.setattr(sess, "_status", fake_status_429)
     assert sess._cancel_check("http://base", "k", 7) is True
 
+@pytest.mark.parametrize("code", [401, 403])
+def test_cancel_check_auth_error_reraises(monkeypatch, code):
+    """401/403 (auth sai/key hết hạn) KHÔNG được nuốt — phải raise để run_loop
+    thoát FATAL, KHÔNG fail SAI job qua fail-post."""
+    def fake_status_auth(base, key, job_id):
+        raise urllib.error.HTTPError(
+            "http://base", code, "denied", {}, None
+        )
+    monkeypatch.setattr(sess, "_status", fake_status_auth)
+    with pytest.raises(urllib.error.HTTPError):
+        sess._cancel_check("http://base", "k", 7)
+
 def test_cancel_check_timeout_treated_not_cancelled(monkeypatch):
     """Timeout lúc poll status → coi như chưa cancel, KHÔNG raise."""
     def fake_status_timeout(base, key, job_id):
@@ -219,6 +231,31 @@ def test_claim_429_backoff_then_success(monkeypatch):
     assert sess.run_loop("http://base", "k") == sess.EXIT_GRACEFUL
     assert calls["n"] == 2  # 1× 429 → retry → empty
     assert len(sleeps) == 1  # đã backoff đúng 1 lần
+
+def test_run_job_final_status_429_not_failed(monkeypatch):
+    """F3: final status check sau OCR gặp 429 (transient) → coi như chưa
+    cancel, KHÔNG raise → job vẫn done (KHÔNG fail SAI qua fail-post)."""
+    posted: list[str] = []
+
+    def fake_http(method, url, key, payload=None, timeout=60):
+        posted.append(url)
+        if url.endswith("/status"):
+            raise urllib.error.HTTPError(
+                url, 429, "Too Many Requests", {}, None
+            )
+        return {}
+
+    monkeypatch.setattr(sess, "_http_json", fake_http)
+    monkeypatch.setattr(sess, "_put_bytes", lambda *a, **kw: None)
+    monkeypatch.setattr(sess.kb, "fetch_input", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        sess, "process_job_session",
+        lambda job_id, path, pre, cancel_check:
+            (json.loads(json.dumps(DOC_FIXTURE)), {}),
+    )
+
+    assert sess.run_job("http://base", "k", _claim(11)) == "done"
+    assert not any(u.endswith("/fail") for u in posted)
 
 def test_claim_429_capped_then_fatal(monkeypatch):
     """429 LIÊN TỤC → retry CÓ CAP (số lần + sleep tối đa) rồi EXIT_FATAL —
