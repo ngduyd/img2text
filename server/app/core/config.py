@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     admin_email: str = ""
     admin_password: str = ""
     log_path: str = "logs/img2text.log"
+    # #15 (spec 2026-10-15): RotatingFileHandler bounds — host/VM deploy;
+    # container log ra stdout (Docker xoay, logrotate.d chỉ cho host).
+    log_max_bytes: int = 10_000_000
+    log_backup_count: int = 7
     runner_key: str = ""
     smtp_host: str = "localhost"
     smtp_port: int = 25

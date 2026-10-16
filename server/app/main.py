@@ -7,9 +7,11 @@ app.state.session_factory (set here). Routers mount order: auth, profile
 """
 
 import logging
+import logging.handlers
 import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -80,7 +82,35 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await engine.dispose()
 
 
+def _configure_file_logging() -> None:
+    """#15 (spec 2026-10-15): root logger → RotatingFileHandler
+    (settings.log_max_bytes / log_backup_count). Handler gắn tag
+    `_img2text_rotating` → create_app() lặp (tests) THAY handler cũ, không
+    xếp chồng. Formatter text đơn giản — JSON formatter thêm khi log shipper
+    cần (ponytail: middleware đã ghi request log có cấu trúc vào DB)."""
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        if getattr(handler, "_img2text_rotating", False):
+            root.removeHandler(handler)
+            handler.close()
+    path = Path(settings.log_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.handlers.RotatingFileHandler(
+        path,
+        maxBytes=settings.log_max_bytes,
+        backupCount=settings.log_backup_count,
+    )
+    handler._img2text_rotating = True  # type: ignore[attr-defined]
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    )
+    root.addHandler(handler)
+    # root default WARNING sẽ nuốt INFO — hạ xuống INFO (DEBUG hiện có giữ)
+    if root.level == logging.NOTSET or root.level > logging.INFO:
+        root.setLevel(logging.INFO)
+
 def create_app() -> FastAPI:
+    _configure_file_logging()
     app = FastAPI(lifespan=lifespan)
     app.state.settings = settings
     # S5: 429 flat body {code:"email_limit", retry_after_seconds} (không bọc detail)
