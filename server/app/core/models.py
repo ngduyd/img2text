@@ -12,6 +12,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -256,6 +257,17 @@ class Job(Base):
     ir_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     worker_token_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Spec kaggle session worker (2026-10-16, T2): session-scope claim —
+    # worker_token_hash giữ nguyên cho HTTP Colab path; session mode gán
+    # session_id (worker_token_hash NULL). FK ON DELETE SET NULL (AC3a):
+    # close session DELETE hash row → job.session_id tự NULL, job không mất.
+    # ALTER-only migration (create_all never ALTERs):
+    #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS session_id BIGINT
+    #     REFERENCES worker_sessions(id) ON DELETE SET NULL;
+    session_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("worker_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     lease_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -373,3 +385,29 @@ class WorkerHeartbeat(Base):
     kind: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     current_job_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+class WorkerSession(Base):
+    """Kaggle session loop worker (spec 2026-10-16 T2): 1 row / kernel
+    session. key_hash = sha256(session_key) — hash-at-rest (P2 #16 pattern);
+    plaintext key trả về worker 1 lần khi claim. closed_at NULL = live —
+    close session DELETE row NGAY (AC3/AC9); jobs.session_id FK SET NULL.
+    Migration: docs/migrations/2026-10-16_worker_sessions.sql (T1)."""
+
+    __tablename__ = "worker_sessions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    kernel_ref: Mapped[str] = mapped_column(Text)
+    key_hash: Mapped[str] = mapped_column(Text)
+    spawned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=text("now()"),
+        nullable=False,
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    gpu_seconds_reported: Mapped[float] = mapped_column(
+        Float, default=0.0, server_default=text("0"), nullable=False
+    )
