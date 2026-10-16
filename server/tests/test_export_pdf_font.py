@@ -41,7 +41,7 @@ def test_dockerfile_has_dejavu_fonts_and_fontconfig():
 
 def test_pdf_font_css_uses_noto_first():
     """#14 (spec 2026-10-15): CSS của _render_pdf dùng PDF_FONT_CSS và
-    'Noto Sans CJK' đứng TRƯỚC 'DejaVu Sans' (Noto primeiro, DejaVu fallback)."""
+    'Noto Sans CJK' đứng TRƯỚC 'DejaVu Sans' (Noto trước, DejaVu fallback)."""
     import inspect
 
     from app.routers.exports import PDF_FONT_CSS, _render_pdf
