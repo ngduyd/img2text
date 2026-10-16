@@ -25,3 +25,10 @@ async def test_logout_revokes(client):
     await _register_login(client)
     assert (await client.post("/api/auth/logout")).status_code == 200
     assert (await client.post("/api/auth/refresh")).status_code == 401
+
+async def test_revoke_sessions_deletes_refresh_tokens(client):
+    """P2 #17: POST /api/auth/session/revoke xoá toàn bộ refresh token (204)."""
+    await _register_login(client)
+    assert (await client.post("/api/auth/refresh")).status_code == 200  # có refresh hợp lệ
+    assert (await client.post("/api/auth/session/revoke")).status_code == 204
+    assert (await client.post("/api/auth/refresh")).status_code == 401  # đã bị revoke

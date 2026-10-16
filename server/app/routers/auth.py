@@ -354,6 +354,16 @@ async def logout(
     response.delete_cookie(REFRESH_COOKIE, path="/")
     return {}
 
+@router.post("/session/revoke", status_code=204)
+async def revoke_sessions(
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+) -> None:
+    """P2 #17 (spec 2026-10-16): user tự thu hồi MỌI refresh token của mình
+    (mất thiết bị → kill family ngay, không chờ TTL 30 ngày). Access JWT
+    stateless tự hết hạn ≤15 phút. 204 no body."""
+    await revoke_all_refresh(session, user.id)
+
 
 class ForgotIn(_EmailIn):
     email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
