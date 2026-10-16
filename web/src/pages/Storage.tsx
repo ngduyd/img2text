@@ -70,7 +70,7 @@ export default function Storage() {
   const keptBytes = sumKeptBytes(kept);
 
   return (
-    <PageShell wide>
+    <PageShell width="wide">
       <PageHeader title={t("storage.own.title")} subtitle={t("storage.own.subtitle")} />
       {isError ? (
         /* P0-1: composed error + retry — thay toàn bộ body, hết skeleton vĩnh viễn. */
