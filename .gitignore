@@ -8,6 +8,8 @@ __pycache__/
 .venvs/
 *.jpg
 .codegraph
+# #15: RotatingFileHandler viết server/logs/ (settings.log_path) khi test
+logs/
 server/.venv
 server/.tools
 node_modules/

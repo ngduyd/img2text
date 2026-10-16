@@ -7,14 +7,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import jwt
-from fastapi import (
-    APIRouter,
-    BackgroundTasks,
-    Depends,
-    HTTPException,
-    Request,
-    Response,
-)
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, update
@@ -32,6 +25,7 @@ from app.core.security import (
     generate_email_code,
     hash_email_code,
     hash_password,
+    password_too_long,
     set_auth_cookies,
     verify_password,
 )
@@ -41,6 +35,14 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 _REFRESH_TTL = timedelta(days=30)
 # S5: mã verify/reset 6 số TTL 5 phút (single active code/user, ghi đè)
 _EMAIL_CODE_TTL = timedelta(minutes=5)
+
+def _email_unavailable() -> JSONResponse:
+    """#9: SMTP down → 503 (khác 429 email_limit = rate limit) — client
+    retry sau; body flat như EmailLimitExceeded handler."""
+    return JSONResponse(
+        status_code=503,
+        content={"code": "email_unavailable", "retry_after_seconds": 300},
+    )
 
 
 # Deviation from plan Task 3 interface: refresh minting is a private 3-tuple
@@ -141,7 +143,6 @@ def _user_out(user: User) -> UserOut:
 @router.post("/register", status_code=201)
 async def register(
     creds: Credentials,
-    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     _: None = Depends(rate_limit_auth),
 ) -> dict:
@@ -151,7 +152,16 @@ async def register(
     → send welcome + verify-code email (mã 6 số TTL 5p, hash lưu DB).
 
     User vừa tạo → 2 kind đều là lần #1 trong window, quota không thể
-    vượt — bỏ check, record rồi commit chung."""
+    vượt — bỏ check, record rồi commit chung.
+
+    #9: gửi INLINE (không background) — SMTP down → 503 email_unavailable
+    thay vì 201 im lặng; user đã commit nên duplicate register vẫn 201.
+    #11: password >72 byte → 400 password_too_long TRƯỚC khi hash."""
+    if password_too_long(creds.password):
+        return JSONResponse(
+            status_code=400,
+            content={"code": "password_too_long", "max_bytes": 72},
+        )
     existing = await session.scalar(select(User).where(User.email == creds.email))
     if existing is not None:
         return {"status": "ok"}
@@ -164,8 +174,7 @@ async def register(
     email_sends.record(session, user.id, "welcome")
     email_sends.record(session, user.id, "verify_code")
     await session.commit()
-    background_tasks.add_task(
-        mailer.send_email,
+    ok, _err = await mailer.send_email(
         user.email,
         "Welcome to img2text",
         "Welcome to img2text.\n\n"
@@ -174,12 +183,15 @@ async def register(
         "password-reset endpoints work.\n\n"
         "If you did not create this account, ignore this email.\n",
     )
-    background_tasks.add_task(
-        mailer.send_email,
+    if not ok:
+        return _email_unavailable()
+    ok, _err = await mailer.send_email(
         user.email,
         "Verify your email",
         _verify_email_body(code),
     )
+    if not ok:
+        return _email_unavailable()
     return {"status": "ok"}
 
 def _verify_email_body(code: str) -> str:
@@ -220,7 +232,6 @@ async def verify_email(
 
 @router.post("/verify/resend", status_code=202)
 async def verify_resend(
-    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
     _: None = Depends(rate_limit_auth),
@@ -229,7 +240,9 @@ async def verify_resend(
     email limit — vượt → 429 email_limit (handler ở main.py).
 
     P2 review: đã verified → 400 {code:"already_verified"}, KHÔNG gửi
-    email (không dùng resend làm kênh email-bomb)."""
+    email (không dùng resend làm kênh email-bomb).
+
+    #9: gửi inline — SMTP down → 503 email_unavailable (khác 429 limit)."""
     if user.is_verified:
         return JSONResponse(
             status_code=400, content={"code": "already_verified"}
@@ -240,9 +253,11 @@ async def verify_resend(
     user.email_verify_expires_at = datetime.now(timezone.utc) + _EMAIL_CODE_TTL
     email_sends.record(session, user.id, "verify_code")
     await session.commit()
-    background_tasks.add_task(
-        mailer.send_email, user.email, "Verify your email", _verify_email_body(code)
+    ok, _err = await mailer.send_email(
+        user.email, "Verify your email", _verify_email_body(code)
     )
+    if not ok:
+        return _email_unavailable()
     return {}
 
 
@@ -370,7 +385,6 @@ class ResetIn(_EmailIn):
 @router.post("/password/forgot", status_code=202)
 async def forgot(
     body: ForgotIn,
-    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     _: None = Depends(rate_limit_auth),
 ) -> dict:
@@ -379,7 +393,8 @@ async def forgot(
     — ghi đè), qua per-kind email limit — check TRƯỚC enqueue; vượt →
     429 email_limit (leak tồn tại chấp nhận để chặn spam).
 
-    SMTP enqueue SAU commit; mailer tự swallow lỗi → không 500."""
+    #9: known + SMTP down → 503 email_unavailable (không nuốt lỗi);
+    unknown vẫn 202 — không gửi nên không có lỗi để surface."""
     user = await session.scalar(select(User).where(User.email == body.email))
     if user is None:
         return {}
@@ -389,14 +404,15 @@ async def forgot(
     user.password_reset_expires_at = datetime.now(timezone.utc) + _EMAIL_CODE_TTL
     email_sends.record(session, user.id, "reset_code")
     await session.commit()
-    background_tasks.add_task(
-        mailer.send_email,
+    ok, _err = await mailer.send_email(
         user.email,
         "Reset your password",
         f"Your password reset code is: {code}\n\n"
         "It expires in 5 minutes. If you did not request this, "
         "ignore this email.\n",
     )
+    if not ok:
+        return _email_unavailable()
     return {}
 
 
@@ -410,7 +426,14 @@ async def reset(
     per-user (sha256(email:code:secret)) + chưa hết hạn trong MỘT conditional
     UPDATE ... RETURNING (atomic claim — không check-then-set race).
     0 match → 422. Đúng → đổi mật khẩu + revoke ALL refresh CÙNG transaction
-    (single commit; code single-use vì đã NULL claim)."""
+    (single commit; code single-use vì đã NULL claim).
+
+    #11: password >72 byte → 400 TRƯỚC code claim (spec: đủ code vẫn 400)."""
+    if password_too_long(body.password):
+        return JSONResponse(
+            status_code=400,
+            content={"code": "password_too_long", "max_bytes": 72},
+        )
     now = datetime.now(timezone.utc)
     claim = await session.execute(
         update(User)

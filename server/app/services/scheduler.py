@@ -8,10 +8,12 @@ jobs are claimed by workers polling GET /api/jobs/next, the sweep loop only
 requeues expired leases.
 """
 
+import asyncio
 import logging
 import os
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI
 
@@ -147,6 +149,51 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
         trigger="interval",
         seconds=settings.purge_interval_seconds,
         id="purge-storage",
+    )
+
+    async def backup_db() -> None:
+        """#12: daily pg_dump — cron/retention đọc runtime override mỗi tick
+        (pattern reschedule reap-leases); pg_dump chạy to_thread (block I/O)
+        và một pass lỗi không giết tick."""
+        from app.core.db import backup_database
+
+        cron = settings.backup_cron
+        retention: int | None = None
+        try:
+            cron = await get_runtime_setting(
+                app.state.session_factory, "backup_cron", settings.backup_cron
+            )
+            retention = int(
+                await get_runtime_setting(
+                    app.state.session_factory,
+                    "backup_retention_days",
+                    settings.backup_retention_days,
+                )
+            )
+        except Exception:
+            logger.warning("backup-db: runtime settings read failed", exc_info=True)
+        try:
+            trigger = CronTrigger.from_crontab(cron)
+            job = scheduler.get_job("backup-db")
+            # QA-4: CronTrigger 3.x KHÔNG có __eq__ → `!=` là identity so sánh,
+            # luôn True → reschedule vô nghĩa mỗi tick. So sánh bằng str().
+            if job is not None and str(job.trigger) != str(trigger):
+                job.reschedule(trigger)
+                logger.info("backup-db: cron → %s (runtime override)", cron)
+        except Exception:
+            logger.warning("backup-db: invalid backup_cron %r", cron, exc_info=True)
+        try:
+            dest = await asyncio.to_thread(backup_database, retention_days=retention)
+            logger.info("backup-db: wrote %s", dest)
+        except Exception:
+            logger.warning("backup-db pass failed", exc_info=True)
+
+    # Cron sai ở env → from_crontab nổ TẠI ĐÂY = fail-fast boot (misconfig
+    # phải ồn ào, không âm thầm không backup bao giờ).
+    scheduler.add_job(
+        backup_db,
+        trigger=CronTrigger.from_crontab(settings.backup_cron),
+        id="backup-db",
     )
     app.state.scheduler = scheduler
     if "PYTEST_CURRENT_TEST" not in os.environ:

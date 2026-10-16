@@ -23,6 +23,7 @@ class StorageDriver(Protocol):
     async def size(self, key: str) -> int: ...
     async def exists(self, key: str) -> bool: ...
     async def get(self, key: str) -> bytes: ...
+    async def get_range(self, key: str, start: int, end: int) -> bytes: ...
     async def delete_key(self, key: str) -> None: ...
     async def delete_prefix(self, prefix: str) -> None: ...
 
@@ -135,6 +136,31 @@ class S3Driver:
                 # ruling R24: missing key raises KeyError so callers can 404
                 if e.response["Error"]["Code"] in ("NoSuchKey", "404"):
                     raise KeyError(key) from e
+                raise
+
+        return await asyncio.to_thread(_get)
+
+    async def get_range(self, key: str, start: int, end: int) -> bytes:
+        """#10: S3 Range GET, bytes=start-end inclusive. Start beyond object
+        size → InvalidRange → ValueError("range…") để caller map 416 (khác
+        KeyError → 404); end vượt size: S3 clamp về byte cuối."""
+        if start < 0 or end < start:
+            raise ValueError(f"invalid range {start}-{end}: end < start or start < 0")
+
+        def _get() -> bytes:
+            try:
+                resp = self.client.get_object(
+                    Bucket=self.bucket, Key=key, Range=f"bytes={start}-{end}"
+                )
+                return resp["Body"].read()
+            except ClientError as e:
+                code = e.response["Error"]["Code"]
+                if code in ("NoSuchKey", "404"):
+                    raise KeyError(key) from e
+                if code == "InvalidRange":
+                    raise ValueError(
+                        f"range {start}-{end} not satisfiable"
+                    ) from e
                 raise
 
         return await asyncio.to_thread(_get)

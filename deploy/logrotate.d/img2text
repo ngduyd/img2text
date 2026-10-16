@@ -1,0 +1,13 @@
+# #15 (spec 2026-10-15): log rotation cho host/VM deploy — container log ra
+# stdout (Docker json-file driver tự xoay); file NÀY chỉ áp dụng khi chạy
+# uvicorn trên host với settings.log_path (đổi path nếu deploy root khác).
+/opt/img2text/logs/img2text.log {
+    daily
+    rotate 30
+    maxage 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 appuser appuser
+}
