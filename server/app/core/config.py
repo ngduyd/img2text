@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     # Wave-5 S1: purge file gốc — interval tick (floor 60s) + retention 7d.
     purge_interval_seconds: int = 3600
     purge_retention_days: int = 7
+    # P2 #19 (spec 2026-10-16): presigned URL expiry windows — crop artifact
+    # 1h (serve-time re-presign mỗi lần, không cache); input_url 15 phút
+    # (kernel fetch ngay sau spawn tick). Window ngắn = giảm stale-link
+    # trong artifact + giảm exposure URL presigned.
+    crop_presign_expires: int = 3600
+    input_url_expires: int = 900
     # Plan K2: Kaggle worker orchestration (backend auto-spawn kernel run).
     # Enabled iff username + (key OR api_token) + kernel_ref all set — feature
     # self-disables and the server never imports the kaggle package otherwise.

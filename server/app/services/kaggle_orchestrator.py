@@ -55,8 +55,8 @@ logger = logging.getLogger(__name__)
 DATASET_SLUG = "img2text-worker-files"
 INPUT_SLUG = "img2text-input"  # batch input dataset (run_one.py K4, shared slug)
 # F3 (spec 2026-10-10): manifest input_url presigned GET window — kernel
-# downloads right after the spawn tick, so 1h is generous headroom.
-INPUT_URL_EXPIRES_SECONDS = 3600
+# downloads right after the spawn tick. P2 #19: 3600 → settings.input_url_expires
+# (default 900s/15 phút) — fetch ngay nên window ngắn, giảm URL exposure.
 # kernel statuses meaning "run in progress" (case-insensitive match)
 _ACTIVE_STATUSES = frozenset({"running", "pending", "queued"})
 # batch statuses meaning "terminal" (normalized lowercase). P2: literal
@@ -559,7 +559,7 @@ async def _spawn_batch_run(api, session_factory, jobs: list[Job]) -> bool:
                 {
                     "job_id": job.id,
                     "input_url": await storage.presign_get(
-                        job.storage_key, INPUT_URL_EXPIRES_SECONDS
+                        job.storage_key, settings.input_url_expires
                     ),
                     "filename": f"{job.id}__{Path(job.storage_key).name}",
                     # content-addressed key uploads/{sha256}.{ext} → the hash
