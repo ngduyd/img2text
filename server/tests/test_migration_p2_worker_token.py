@@ -92,6 +92,10 @@ async def test_migration_backfills_and_drops_plaintext_column(client, db_session
         text("SELECT t::text FROM jobs t WHERE user_id = :u"), {"u": user_id}
     )
     assert PLAINTEXT not in row_text
+    # Đóng read txn NGAY — txn còn mở trên db_session giữ S lock trên jobs,
+    # DDL re-run (DROP COLUMN, ACCESS EXCLUSIVE) chờ vô hạn → hang (tester
+    # repro: idle-in-transaction 7809 blocking migration 7811).
+    await db_session.commit()
 
     # Idempotent: re-run lần 2 không lỗi, hash giữ nguyên.
     await _apply_migration()
