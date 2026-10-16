@@ -294,3 +294,8 @@ async def test_gap_guard_blocks_second_spawn(kaggle_env, seed_job):
     assert await orch.ensure_worker(SessionLocal) is True
     assert await orch.ensure_worker(SessionLocal) is False
     assert len(_pushed()) == 1
+
+def test_input_url_expiry_reduced():
+    """P2 #19 (spec 2026-10-16): manifest input_url window 3600 → 900s, configurable."""
+    from app.core.config import settings
+    assert settings.input_url_expires == 900

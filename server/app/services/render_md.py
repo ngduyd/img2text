@@ -581,7 +581,8 @@ async def generate_ir(result: dict) -> dict | None:
 
 
 # ---------------------------------------------------------------- crop embed (WS-PIPE)
-CROP_PRESIGN_EXPIRES = 86400
+# P2 #19: window đọc settings (default 3600 — 1h; serve-time re-presign
+# mỗi lần nên window ngắn không làm chết link artifact).
 # P1-R6: budget data-URI embed mỗi md artifact (base64 bytes) — doc nhiều ảnh
 # không được phình artifact vô hạn; vượt → giữ marker.
 MAX_DATA_URI_BYTES = 2 * 1024 * 1024
@@ -632,12 +633,12 @@ async def embed_crop_keys(
 _CROP_REL_RE = re.compile(r"!\[vùng ([^\]]+)\]\(crops/([^\)]+)\)")
 
 async def embed_crop_urls(markdown: str, job_id: int, storage) -> str:
-    """SERVE-time (download md-layout): relative `crops/{f}` → presigned 24h
+    """SERVE-time (download md-layout): relative `crops/{f}` → presigned 1h
     FRESH mỗi lần serve — URL trong artifact không bao giờ cache."""
     for m in _CROP_REL_RE.finditer(markdown):
         rid, fname = m.group(1), m.group(2)
         url = await storage.presign_get(
-            f"exports/{job_id}/crops/{fname}", CROP_PRESIGN_EXPIRES
+            f"exports/{job_id}/crops/{fname}", settings.crop_presign_expires
         )
         markdown = markdown.replace(m.group(0), f"![vùng {rid}]({url})")
     return markdown

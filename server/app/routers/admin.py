@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import get_current_user, require_admin
 from app.core.models import Job, PageView, RequestLog, Setting, User, WorkerHeartbeat
+from app.routers.auth import revoke_all_refresh
 from app.services.purge import purge_due_jobs, purge_retention_days
 from app.services.runtime_settings import (
     RUNTIME_SETTING_KEYS,
@@ -38,6 +39,8 @@ from app.services.quota import (
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+logger = logging.getLogger(__name__)
 
 def _admin_user(user: User = Depends(get_current_user)) -> User:
     return require_admin(user)
@@ -169,6 +172,23 @@ async def patch_user(
     user.ocr_enabled = body.ocr_enabled
     await session.commit()
     return _user_json(user)
+
+@router.post("/users/{user_id}/revoke-sessions", status_code=204)
+async def admin_revoke_sessions(
+    user_id: int,
+    session: AsyncSession = Depends(get_session),
+    admin: User = Depends(_admin_user),
+) -> None:
+    """P2 #17 (spec 2026-10-16): admin thu hồi MỌI refresh token của target
+    user (compromised account → kill family ngay). 204 no body; audit =
+    logger line (ai thu hồi, target nào) + RequestLog middleware row."""
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    await revoke_all_refresh(session, user_id)
+    logger.info(
+        "audit: admin %s revoked all sessions for user %s", admin.id, user_id
+    )
 
 async def get_usd_per_gpu_hour(session: AsyncSession) -> float:
     """Setting key usd_per_gpu_hour as float; 0.0 on missing/bad parse."""

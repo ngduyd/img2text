@@ -22,7 +22,7 @@ _STALE_RENDERING = timedelta(minutes=5)
 async def reap_leases(session) -> int:
     """Requeue expired-lease extracting jobs; returns rows requeued.
 
-    Covers both claim paths: HTTP-claimed (worker_token set) and batch
+    Covers both claim paths: HTTP-claimed (worker_token_hash set) and batch
     (kaggle_ref set); a queued job never carries a lease, untouched.
     """
     result = await session.execute(
@@ -33,7 +33,7 @@ async def reap_leases(session) -> int:
         )
         .values(
             status="queued",
-            worker_token=None,
+            worker_token_hash=None,
             lease_expires_at=None,
             started_at=None,
         )

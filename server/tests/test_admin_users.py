@@ -131,3 +131,18 @@ async def test_patch_quota_404_unknown(admin_client, seeded_users_5):
         json={"daily_page_limit": 5, "weekly_page_limit": 50},
     )
     assert r.status_code == 404
+
+async def test_admin_revoke_sessions(admin_client, app):
+    """P2 #17: admin revoke sessions của target user → 204 + refresh token chết."""
+    c = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
+    r = await c.post(
+        "/api/auth/register", json={"email": "revoke-target@x.io", "password": "secret123"}
+    )
+    assert r.status_code == 201, r.text
+    r = await c.post("/api/auth/login", json={"email": "revoke-target@x.io", "password": "secret123"})
+    assert r.status_code == 200, r.text
+    uid = r.json()["id"]
+    assert (await c.post("/api/auth/refresh")).status_code == 200  # refresh hợp lệ
+    r2 = await admin_client.post(f"/api/admin/users/{uid}/revoke-sessions")
+    assert r2.status_code == 204
+    assert (await c.post("/api/auth/refresh")).status_code == 401  # đã bị revoke

@@ -150,6 +150,21 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
         seconds=settings.purge_interval_seconds,
         id="purge-storage",
     )
+    async def flush_logs() -> None:
+        """P2 #18: drain request_logs buffer (bulk insert) mỗi 30s."""
+        from app.core.middleware import flush_request_logs
+
+        try:
+            n = await flush_request_logs(app)
+        except Exception:  # one failing pass must not kill the job
+            logger.warning("flush-request-logs failed", exc_info=True)
+            return
+        if n:
+            logger.info("flush-request-logs: %d row(s)", n)
+
+    scheduler.add_job(
+        flush_logs, trigger="interval", seconds=30, id="flush-request-logs"
+    )
 
     async def backup_db() -> None:
         """#12: daily pg_dump — cron/retention đọc runtime override mỗi tick

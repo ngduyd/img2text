@@ -40,6 +40,22 @@ from app.services.storage import S3Driver
 # toàn bộ suite cũ giữ nguyên; test gating bật lại bằng monkeypatch.
 settings.env = "test"
 
+# P2 #20 (spec 2026-10-16): test gating — prod_only marker skip khi
+# settings.env != "prod" (collection time, trước fixture).
+def pytest_collection_modifyitems(config, items):
+    if settings.env == "prod":
+        return
+    skip_prod = pytest.mark.skip(reason="prod_only: cần settings.env == 'prod'")
+    for item in items:
+        if item.get_closest_marker("prod_only") is not None:
+            item.add_marker(skip_prod)
+
+@pytest.fixture
+def env(monkeypatch):
+    """Override settings.env theo test (gating / middleware pattern)."""
+    def _set(value: str) -> None:
+        monkeypatch.setattr(settings, "env", value)
+    return _set
 # #9 (spec 2026-10-15): send_email TRẢ VỀ lỗi thay vì nuốt → suite phải
 # hermetic: capture _send_sync thật (smtp-down tests dùng), no-op nó (mặc
 # định = "gửi thành công") — test lỗi tự boom/restore tường minh.

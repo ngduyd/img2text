@@ -42,6 +42,11 @@ def hash_password(p: str) -> str:
     ).decode()
 
 
+def hash_worker_token(token: str) -> str:
+    """P2 #16: worker_token hash-at-rest — DB chỉ chứa sha256 hex;
+    plaintext trả về worker đúng 1 lần khi claim (next_job)."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
 def verify_password(p: str, h: str) -> bool:
     try:
         return bcrypt.checkpw(p.encode(), h.encode())

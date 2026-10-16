@@ -412,3 +412,8 @@ async def test_render_empty_response_falls_back(monkeypatch):
     ])
     out = await build_md(_ocr_result())
     assert "chú thích" in out  # heuristic content
+
+def test_crop_presign_expiry_reduced():
+    """P2 #19 (spec 2026-10-16): crop presign window 24h → 1h, configurable qua settings."""
+    from app.core.config import settings
+    assert settings.crop_presign_expires == 3600

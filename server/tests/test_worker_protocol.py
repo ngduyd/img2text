@@ -55,7 +55,7 @@ async def test_result_done(worker_client, db_session, seed_job, VALID_RESULT_JSO
     await drain_auto_output()
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
-    assert job.status == "done" and job.result["model_version"] and job.worker_token is None
+    assert job.status == "done" and job.result["model_version"] and job.worker_token_hash is None
 
 async def test_result_409_when_not_running(worker_client, db_session, seed_job, VALID_RESULT_JSONB):
     claim = await worker_client.get("/api/jobs/next"); tok = claim.json()["worker_token"]
@@ -91,3 +91,22 @@ async def test_heartbeat_lease_expired_409(worker_client, db_session, seed_job):
     r = await worker_client.post(f"/api/jobs/{seed_job}/heartbeat",
                                  headers={"Authorization": f"Bearer {tok}"})
     assert r.status_code == 409
+
+async def test_worker_auth_accepts_valid_token(worker_client, seed_job):
+    """P2 #16: heartbeat với token claim hợp lệ → 200 (hash so khớp)."""
+    claim = await worker_client.get("/api/jobs/next")
+    tok = claim.json()["worker_token"]
+    r = await worker_client.post(
+        f"/api/jobs/{seed_job}/heartbeat",
+        headers={"Authorization": f"Bearer {tok}"},
+    )
+    assert r.status_code == 200
+
+async def test_worker_auth_rejects_invalid_token(worker_client, seed_job):
+    """P2 #16: sai token → 401 (hash không khớp)."""
+    await worker_client.get("/api/jobs/next")
+    r = await worker_client.post(
+        f"/api/jobs/{seed_job}/heartbeat",
+        headers={"Authorization": "Bearer wrong-token"},
+    )
+    assert r.status_code == 401

@@ -1,13 +1,24 @@
-"""#11 (spec 2026-10-15): bcrypt cap 72 byte — hash_password ValueError.
+"""#11 + P2 #16 — bcrypt cap 72 byte; worker_token hashed at rest.
 
-Bcrypt truncate im lặng → hai password khác nhau cùng tiền tố 72B mở khoá
-được nhau; cap phải chặn ở nguồn (unit) + API boundary (test_auth/test_profile).
+Bcrypt truncate im lặng → cap ở nguồn (unit) + API boundary; worker_token
+lưu sha256 hex (claim comparison = hmac.compare_digest ở jobs gates).
 """
+
+import hashlib
 
 import pytest
 
-from app.core.security import BCRYPT_MAX_BYTES, hash_password, password_too_long, verify_password
+from app.core.security import (
+    BCRYPT_MAX_BYTES,
+    hash_password,
+    hash_worker_token,
+    password_too_long,
+    verify_password,
+)
 
+def test_worker_token_hash_matches():
+    token = "test-token-123"
+    assert hash_worker_token(token) == hashlib.sha256(token.encode()).hexdigest()
 
 def test_hash_password_rejects_over_72_bytes():
     long_pw = "x" * 73

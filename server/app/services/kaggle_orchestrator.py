@@ -55,8 +55,8 @@ logger = logging.getLogger(__name__)
 DATASET_SLUG = "img2text-worker-files"
 INPUT_SLUG = "img2text-input"  # batch input dataset (run_one.py K4, shared slug)
 # F3 (spec 2026-10-10): manifest input_url presigned GET window — kernel
-# downloads right after the spawn tick, so 1h is generous headroom.
-INPUT_URL_EXPIRES_SECONDS = 3600
+# downloads right after the spawn tick. P2 #19: 3600 → settings.input_url_expires
+# (default 900s/15 phút) — fetch ngay nên window ngắn, giảm URL exposure.
 # kernel statuses meaning "run in progress" (case-insensitive match)
 _ACTIVE_STATUSES = frozenset({"running", "pending", "queued"})
 # batch statuses meaning "terminal" (normalized lowercase). P2: literal
@@ -559,7 +559,7 @@ async def _spawn_batch_run(api, session_factory, jobs: list[Job]) -> bool:
                 {
                     "job_id": job.id,
                     "input_url": await storage.presign_get(
-                        job.storage_key, INPUT_URL_EXPIRES_SECONDS
+                        job.storage_key, settings.input_url_expires
                     ),
                     "filename": f"{job.id}__{Path(job.storage_key).name}",
                     # content-addressed key uploads/{sha256}.{ext} → the hash
@@ -664,7 +664,7 @@ async def _revert_job_queued(session_factory, job_id: int, why: str) -> None:
     queued with the lease cleared so the gap-guarded respawn picks it up
     next round (reaper must not also touch it).
 
-    Rider guard: worker_token IS NULL — an extracting job claimed by an
+    Rider guard: worker_token_hash IS NULL — an extracting job claimed by an
     HTTP worker (claim raced the failure) is left alone, not clobbered."""
     async with session_factory() as session:
         result = await session.execute(
@@ -672,7 +672,7 @@ async def _revert_job_queued(session_factory, job_id: int, why: str) -> None:
             .where(
                 Job.id == job_id,
                 Job.status == "extracting",
-                Job.worker_token.is_(None),
+                Job.worker_token_hash.is_(None),
             )
             .values(status="queued", lease_expires_at=None)
         )
@@ -783,7 +783,7 @@ async def _fail_job_extracting(session_factory, job_id: int, error: str) -> None
             .where(
                 Job.id == job_id,
                 Job.status == "extracting",
-                Job.worker_token.is_(None),
+                Job.worker_token_hash.is_(None),
             )
             .values(
                 status="failed",
@@ -882,7 +882,7 @@ async def _ensure_batch_runs(api, session_factory) -> bool:
     global _last_spawn
     # Restart recovery (spec 2026-10-09): an "extracting" job with a
     # persisted ref whose run is no longer tracked (server restart) is
-    # re-adopted → poll resumes → ingest runs. worker_token IS NULL keeps
+    # re-adopted → poll resumes → ingest runs. worker_token_hash IS NULL keeps
     # HTTP-claimed jobs (stale ref) out of the map.
     async with session_factory() as session:
         orphans = (
@@ -891,7 +891,7 @@ async def _ensure_batch_runs(api, session_factory) -> bool:
                 .where(
                     Job.status == "extracting",
                     Job.kaggle_ref.isnot(None),
-                    Job.worker_token.is_(None),
+                    Job.worker_token_hash.is_(None),
                 )
                 .order_by(Job.id)
             )

@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.models import Job
 from app.core.schemas import ResultBody
+from app.core.security import hash_worker_token
 from app.services.storage import StorageDriver
 
 logger = logging.getLogger(__name__)
@@ -186,7 +187,7 @@ async def _store(
                 # result (batch + loop cùng qua đây) — SUM quota phản ánh
                 # ngay job đầu, chống khai láo khi create.
                 page_count=len(body.pages),
-                worker_token=None,
+                worker_token_hash=None,
                 lease_expires_at=None,
             )
         )
@@ -223,7 +224,9 @@ async def store_worker_result(
         body,
         Job.status == "extracting",
         Job.lease_expires_at > now,
-        Job.worker_token == token,
+        # P2 #16: hash-at-rest — so khớp sha256(token) với hash đã lưu
+        # (gate /result validate token trước khi vào đây)
+        Job.worker_token_hash == hash_worker_token(token),
         now=now,
         storage=storage,
     )
@@ -242,7 +245,7 @@ async def store_batch_result(
 
     Batch spawn marks the job extracting (D1), so the old queued-only guard
     would reject the normal path; extracting is accepted only while the spawn
-    lease is still valid. queued/extracting jobs never carry a worker_token;
+    lease is still valid. queued/extracting jobs never carry a worker_token_hash;
     a worker claim or an expired lease (reaper's turn) flips rowcount to 0
     (caller logs and drops the run)."""
     return await _store(
@@ -250,10 +253,10 @@ async def store_batch_result(
         job_id,
         body,
         or_(
-            and_(Job.status == "queued", Job.worker_token.is_(None)),
+            and_(Job.status == "queued", Job.worker_token_hash.is_(None)),
             and_(
                 Job.status == "extracting",
-                Job.worker_token.is_(None),
+                Job.worker_token_hash.is_(None),
                 Job.lease_expires_at > now,
             ),
         ),

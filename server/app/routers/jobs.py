@@ -23,9 +23,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import get_current_user, get_runner_key, require_ocr
-from app.core.limiter import DailyCounter
+from app.core.limiter import DailyCounter, rate_limit_upload
 from app.core.models import DocumentVersion, Job, OcrSuggestion, User, WorkerHeartbeat
 from app.core.schemas import PreprocessIn, ResultBody
+from app.core.security import hash_worker_token
 from app.services import proofread
 from app.services.doc_versions import (
     latest_version,
@@ -292,6 +293,7 @@ async def create_job(
     request: Request,
     body: JobCreateBody,
     user: User = Depends(_ocr_user),
+    _: None = Depends(rate_limit_upload),  # P2 #20: 30/giờ per user
     storage: StorageDriver = Depends(get_storage),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -543,7 +545,7 @@ async def next_job(
     job.status = "extracting"
     job.started_at = now
     job.lease_expires_at = now + timedelta(minutes=LEASE_MINUTES)
-    job.worker_token = token
+    job.worker_token_hash = hash_worker_token(token)  # P2 #16: hash-at-rest
     # presign BEFORE commit: storage_key is known pre-commit; a presign
     # failure must leave the job queued, not extracting with an
     # undiscoverable worker_token (fix round 1).
@@ -767,7 +769,7 @@ async def retry_job(
             .values(
                 status="queued",
                 error=None,
-                worker_token=None,
+                worker_token_hash=None,
                 lease_expires_at=None,
                 started_at=None,
                 finished_at=None,
@@ -1335,8 +1337,8 @@ async def _worker_job_or_401(
     if (
         token is None
         or not token.isascii()  # compare_digest TypeError → 500 on non-ascii
-        or job.worker_token is None
-        or not hmac.compare_digest(token, job.worker_token)
+        or job.worker_token_hash is None
+        or not hmac.compare_digest(hash_worker_token(token), job.worker_token_hash)
     ):  # capability-token check (ruling R11)
         raise HTTPException(status_code=401, detail="bad worker token")
     return job
@@ -1355,8 +1357,8 @@ async def heartbeat_job(
     if (
         token is None
         or not token.isascii()  # compare_digest TypeError → 500 on non-ascii
-        or job.worker_token is None
-        or not hmac.compare_digest(token, job.worker_token)
+        or job.worker_token_hash is None
+        or not hmac.compare_digest(hash_worker_token(token), job.worker_token_hash)
     ):  # capability-token check stays first (ruling R11)
         raise HTTPException(status_code=401, detail="bad worker token")
     # Ruling R17 (atomic heartbeat): token-first gate, then ONE conditional
@@ -1373,7 +1375,7 @@ async def heartbeat_job(
                 Job.id == id,
                 Job.status == "extracting",
                 Job.lease_expires_at > now,
-                Job.worker_token == token,
+                Job.worker_token_hash == hash_worker_token(token),
             )
             .values(lease_expires_at=new_lease)
         )
@@ -1412,8 +1414,8 @@ async def submit_result(
     if (
         token is None
         or not token.isascii()  # compare_digest TypeError → 500 on non-ascii
-        or job.worker_token is None
-        or not hmac.compare_digest(token, job.worker_token)
+        or job.worker_token_hash is None
+        or not hmac.compare_digest(hash_worker_token(token), job.worker_token_hash)
     ):
         raise HTTPException(status_code=401, detail="bad worker token")
     # Atomic transition (ruling R16/R17): ONE conditional UPDATE re-checks the
@@ -1448,14 +1450,14 @@ async def fail_job(
                 Job.id == id,
                 Job.status == "extracting",
                 Job.lease_expires_at > now,
-                Job.worker_token == token,
+                Job.worker_token_hash == hash_worker_token(token),
             )
             .values(
                 status="failed",
                 failed_step="extracting",
                 error=body.error[:ERROR_MAX_CHARS],
                 finished_at=now,
-                worker_token=None,
+                worker_token_hash=None,
                 lease_expires_at=None,
                 # wave-5 S1 refund: failed → hoàn bytes (không tính cửa sổ 7d)
                 upload_bytes=0,

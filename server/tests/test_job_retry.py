@@ -69,7 +69,7 @@ async def test_retry_failed_requeues(auth_client, failed_job, db_session):
     job = await db_session.get(Job, failed_job)
     assert job.status == "queued" and job.error is None
     assert job.failed_step is None  # retry target cleared with the requeue
-    assert job.worker_token is None and job.lease_expires_at is None
+    assert job.worker_token_hash is None and job.lease_expires_at is None
     assert job.started_at is None and job.finished_at is None
 
 async def test_retry_done_409(auth_client, done_job_with_result):

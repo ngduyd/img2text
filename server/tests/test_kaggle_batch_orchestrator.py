@@ -277,7 +277,7 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
     job = await db_session.get(Job, seed_job)
     assert job.status == "extracting" and job.started_at is not None
     assert job.kaggle_ref == "testuser/img2text-batch"
-    assert job.lease_expires_at is not None and job.worker_token is None
+    assert job.lease_expires_at is not None and job.worker_token_hash is None
     # one layout OK → the auto-output completion rule ends at done
     async def _md_ok(*args, **kwargs):
         return "# layout md"
@@ -293,7 +293,7 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
     assert job.status == "done" and job.finished_at is not None
-    assert job.worker_token is None and job.lease_expires_at is None
+    assert job.worker_token_hash is None and job.lease_expires_at is None
     res = job.result
     assert res["model_version"] == orch.BATCH_MODEL_VERSION
     assert res["gpu_seconds"] == 0.0
@@ -410,7 +410,7 @@ async def test_batch_spawn_marks_job_extracting_with_kaggle_ref(
     job = await db_session.get(Job, seed_job)
     assert job.status == "extracting"
     assert job.kaggle_ref == "testuser/img2text-batch"
-    assert job.started_at is not None and job.worker_token is None
+    assert job.started_at is not None and job.worker_token_hash is None
     expected = datetime.now(timezone.utc) + timedelta(
         seconds=settings.kaggle_timeout
     )
@@ -796,16 +796,16 @@ async def _extra_queued_job(auth_client, storage, tag: str = "seed2") -> int:
 async def test_revert_skips_worker_claimed_extracting_job(
     kaggle_batch_env, api, storage_env, seed_job, db_session
 ):
-    """Rider: revert guard (status=extracting AND worker_token IS NULL) — a
+    """Rider: revert guard (status=extracting AND worker_token_hash IS NULL) — a
     job claimed by an HTTP worker is NOT clobbered back to queued."""
     assert await orch.ensure_worker(SessionLocal) is True  # job → extracting
     job = await db_session.get(Job, seed_job)
-    job.worker_token = "claimed-tok"
+    job.worker_token_hash = "claimed-tok"
     await db_session.commit()
     await orch._revert_job_queued(SessionLocal, seed_job, "kernel failed")
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
-    assert job.status == "extracting" and job.worker_token == "claimed-tok"
+    assert job.status == "extracting" and job.worker_token_hash == "claimed-tok"
     assert job.lease_expires_at is not None  # lease untouched too
 
 async def test_spawn_rowcount_zero_warns_and_skips_tracking(
@@ -817,7 +817,7 @@ async def test_spawn_rowcount_zero_warns_and_skips_tracking(
     await db_session.execute(
         update(Job)
         .where(Job.id == seed_job)
-        .values(status="extracting", worker_token="claimed-tok")
+        .values(status="extracting", worker_token_hash="claimed-tok")
     )
     await db_session.commit()  # claimed by an "HTTP worker" before spawn
     with caplog.at_level("WARNING", logger=orch.logger.name):
@@ -827,7 +827,7 @@ async def test_spawn_rowcount_zero_warns_and_skips_tracking(
     assert len(_pushes(api)) == 1  # push happened, tracking skipped
     db_session.expire_all()
     job = await db_session.get(Job, seed_job)
-    assert job.status == "extracting" and job.worker_token == "claimed-tok"
+    assert job.status == "extracting" and job.worker_token_hash == "claimed-tok"
 
 async def test_batch_single_active_run_blocks_new_spawn(
     kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session, monkeypatch
@@ -976,7 +976,7 @@ async def test_store_batch_result_guard_cases(
 
     # extracting + token set → worker-claimed: reject, nothing written
     job.status = "extracting"
-    job.worker_token = "claimed-tok"
+    job.worker_token_hash = "claimed-tok"
     job.lease_expires_at = now + timedelta(seconds=60)
     await db_session.commit()
     assert await store_batch_result(db_session, seed_job, body, now=now) is False
@@ -984,7 +984,7 @@ async def test_store_batch_result_guard_cases(
     assert job.status == "extracting" and job.result is None
 
     # extracting + lease expired → reject (reaper owns it now)
-    job.worker_token = None
+    job.worker_token_hash = None
     job.lease_expires_at = now - timedelta(seconds=1)
     await db_session.commit()
     assert await store_batch_result(db_session, seed_job, body, now=now) is False

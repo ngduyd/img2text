@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     # Wave-5 S1: purge file gốc — interval tick (floor 60s) + retention 7d.
     purge_interval_seconds: int = 3600
     purge_retention_days: int = 7
+    # P2 #19 (spec 2026-10-16): presigned URL expiry windows — crop artifact
+    # 1h (serve-time re-presign mỗi lần, không cache); input_url 15 phút
+    # (kernel fetch ngay sau spawn tick). Window ngắn = giảm stale-link
+    # trong artifact + giảm exposure URL presigned.
+    crop_presign_expires: int = 3600
+    input_url_expires: int = 900
     # #12 (spec 2026-10-15): daily pg_dump — cron expr (APScheduler
     # from_crontab: "min hour dom mon dow"); override qua Setting row
     # backup_cron / backup_retention_days (runtime_settings, không qua

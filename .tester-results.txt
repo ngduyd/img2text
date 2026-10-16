@@ -1,0 +1,45 @@
+=== G1 exit=124 ===
+.### test_migration_p2_worker_token
+### test_migration_p2_worker_token exit=4
+ERROR: usage: python -m pytest [options] [file_or_dir] [file_or_dir] [...]
+python -m pytest: error: unrecognized arguments: --timeout=45 --timeout-method=thread
+  inifile: /mnt/data/hermes-workspace/my-project/img2text/.worktrees/lane-p2-hardening/server/pytest.ini
+  rootdir: /mnt/data/hermes-workspace/my-project/img2text/.worktrees/lane-p2-hardening/server
+
+### test_security
+### test_security exit=4
+ERROR: usage: python -m pytest [options] [file_or_dir] [file_or_dir] [...]
+python -m pytest: error: unrecognized arguments: --timeout=45 --timeout-method=thread
+  inifile: /mnt/data/hermes-workspace/my-project/img2text/.worktrees/lane-p2-hardening/server/pytest.ini
+  rootdir: /mnt/data/hermes-workspace/my-project/img2text/.worktrees/lane-p2-hardening/server
+
+### test_migration_p2_worker_token
+### test_migration_p2_worker_token exit=124
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /mnt/data/hermes-workspace/my-project/img2text/.worktrees/lane-p2-hardening/server/.venv/bin/python
+rootdir: /mnt/data/hermes-workspace/my-project/img2text/.worktrees/lane-p2-hardening/server
+configfile: pytest.ini
+plugins: asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=session
+collecting ... collected 2 items
+
+server/tests/test_migration_p2_worker_token.py::test_migration_checksum_unchanged PASSED [ 50%]
+server/tests/test_migration_p2_worker_token.py::test_migration_backfills_and_drops_plaintext_column 
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! KeyboardInterrupt !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+/usr/lib/python3.12/asyncio/runners.py:123: KeyboardInterrupt
+(to show a full traceback on KeyboardInterrupt use --full-trace)
+========================= 1 passed in 96.18s (0:01:36) =========================
+### test_security
+### test_security exit=0
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.1.1, pluggy-1.6.0 -- /mnt/data/hermes-workspace/my-project/img2text/.worktrees/lane-p2-hardening/server/.venv/bin/python
+rootdir: /mnt/data/hermes-workspace/my-project/img2text/.worktrees/lane-p2-hardening/server
+configfile: pytest.ini
+plugins: asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=session, asyncio_default_test_loop_scope=session
+collecting ... collected 1 item
+
+server/tests/test_security.py::test_worker_token_hash_matches PASSED     [100%]
+
+============================== 1 passed in 2.43s ===============================
