@@ -67,14 +67,15 @@ export default function AdminApi() {
         {t("admin.api.intro")}
       </p>
       <Card testid="api-activity-table">
+        <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left text-sm">
           <thead>
-            <tr className="border-b border-border text-muted">
-              <th className="px-3 py-2">Path</th>
-              <th className="px-3 py-2">{t("admin.api.total")}</th>
-              <th className="px-3 py-2">2xx</th>
-              <th className="px-3 py-2">4xx</th>
-              <th className="px-3 py-2">5xx</th>
+            <tr>
+              <th scope="col" className="sticky top-0 z-10 border-b border-border bg-surface-2 px-3 py-2 font-medium text-muted">Path</th>
+              <th scope="col" className="sticky top-0 z-10 border-b border-border bg-surface-2 px-3 py-2 font-medium text-muted">{t("admin.api.total")}</th>
+              <th scope="col" className="sticky top-0 z-10 border-b border-border bg-surface-2 px-3 py-2 font-medium text-muted">2xx</th>
+              <th scope="col" className="sticky top-0 z-10 border-b border-border bg-surface-2 px-3 py-2 font-medium text-muted">4xx</th>
+              <th scope="col" className="sticky top-0 z-10 border-b border-border bg-surface-2 px-3 py-2 font-medium text-muted">5xx</th>
             </tr>
           </thead>
           <tbody>
@@ -85,14 +86,15 @@ export default function AdminApi() {
                 className="border-b border-border/40"
               >
                 <td className="px-3 py-2">{r.path}</td>
-                <td className="px-3 py-2">{r.total}</td>
-                <td className="px-3 py-2">{r["2xx"]}</td>
-                <td className="px-3 py-2">{r["4xx"]}</td>
-                <td className="px-3 py-2">{r["5xx"]}</td>
+                <td className="px-3 py-2 font-mono tabular-nums">{r.total}</td>
+                <td className="px-3 py-2 font-mono tabular-nums">{r["2xx"]}</td>
+                <td className="px-3 py-2 font-mono tabular-nums">{r["4xx"]}</td>
+                <td className="px-3 py-2 font-mono tabular-nums">{r["5xx"]}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       </Card>
     </div>
   );

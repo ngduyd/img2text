@@ -23,6 +23,8 @@
   --focus-ring: var(--accent);
   /* Tinted card shadow — matches canvas hue, no neon, no outer glow. */
   --shadow-card: 0 1px 2px rgba(1, 4, 9, 0.6);
+  /* Modal/dialog scrim — canvas-hue matched like shadow-card. */
+  --overlay: rgba(1, 4, 9, 0.5);
   /* Semantic aliases — lazy naming (existing --muted/--accent-text keep working). */
   --text-muted: var(--muted);
   /* Label text on --accent fill (≥4.5:1, gated by tokens.test.ts). */
@@ -42,5 +44,6 @@ html:not(.dark) {
   --warning: #9a6700;
   --error: #cf222e;
   --shadow-card: 0 1px 2px rgba(31, 35, 40, 0.08), 0 1px 3px rgba(31, 35, 40, 0.06);
+  --overlay: rgba(31, 35, 40, 0.5);
   --accent-contrast: #ffffff;
 }

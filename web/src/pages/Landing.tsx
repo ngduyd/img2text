@@ -4,31 +4,25 @@ import Badge from "../components/ui/Badge";
 import { buttonClasses } from "../components/ui/Button";
 import { useT } from "../i18n";
 
-/** Client leaf (Vite SPA, no RSC): one reveal helper reused by all sections. */
+/** Client leaf (Vite SPA, no RSC): one reveal helper for the hero image. */
 function Reveal({
   children,
   className,
-  delay = 0,
-  as = "div",
 }: {
   children: React.ReactNode;
   className?: string;
-  delay?: number;
-  /** "li" keeps <ol> → <li> semantics valid (P2: no div between list and items). */
-  as?: "div" | "li";
 }) {
   const reduce = useReducedMotion();
-  const MotionTag = as === "li" ? motion.li : motion.div;
   return (
-    <MotionTag
+    <motion.div
       className={className}
       initial={reduce ? false : { opacity: 0, y: 24 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.3 }}
-      transition={{ duration: 0.6, delay, ease: [0.16, 1, 0.3, 1] }}
+      transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
     >
       {children}
-    </MotionTag>
+    </motion.div>
   );
 }
 
@@ -144,7 +138,7 @@ export default function Landing() {
   const reduce = useReducedMotion();
   const { t } = useT();
   return (
-    <div data-testid="landing" className="mx-auto max-w-6xl px-4 pb-0">
+    <main id="main" data-testid="landing" className="mx-auto max-w-6xl px-4 pb-0">
       {/* Hero: split, clamp typography, motion entry. */}
       <section
         data-testid="landing-hero"
@@ -170,7 +164,7 @@ export default function Landing() {
             </a>
           </div>
         </motion.div>
-        <Reveal delay={0.15}>
+        <Reveal>
           <Shot
             src="/screenshots/landing-hero.png"
             alt={t("landing.hero.alt")}
@@ -184,12 +178,7 @@ export default function Landing() {
         <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("landing.howTitle")}</h2>
         <ol className="mt-8 divide-y divide-border">
           {HOW_STEPS.map((step, i) => (
-            <Reveal
-              as="li"
-              key={step.labelKey}
-              delay={i * 0.06}
-              className="flex items-baseline gap-6 py-6"
-            >
+            <li key={step.labelKey} className="flex items-baseline gap-6 py-6">
               <span aria-hidden="true" className="text-3xl font-bold text-muted">
                 {i + 1}
               </span>
@@ -197,7 +186,7 @@ export default function Landing() {
                 <h3 className="text-lg font-semibold">{t(step.labelKey)}</h3>
                 <p className="mt-1 max-w-[65ch] text-muted">{t(step.bodyKey)}</p>
               </div>
-            </Reveal>
+            </li>
           ))}
         </ol>
       </section>
@@ -206,17 +195,15 @@ export default function Landing() {
       <section data-testid="landing-features" className="py-16 md:py-24">
         <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("landing.featuresTitle")}</h2>
         <div className="mt-8 grid gap-4 md:grid-cols-3">
-          {FEATURES.map((f, i) => (
-            <Reveal
+          {FEATURES.map((f) => (
+            <div
               key={f.titleKey}
-              delay={(i % 3) * 0.06}
+              data-testid="feature-cell"
               className={`rounded-card border border-border bg-surface p-5 ${f.className ?? ""}`}
             >
-              <div data-testid="feature-cell">
-                <h3 className="text-lg font-semibold">{t(f.titleKey)}</h3>
-                <p className="mt-1 text-muted">{t(f.bodyKey)}</p>
-              </div>
-            </Reveal>
+              <h3 className="text-lg font-semibold">{t(f.titleKey)}</h3>
+              <p className="mt-1 text-muted">{t(f.bodyKey)}</p>
+            </div>
           ))}
         </div>
       </section>
@@ -224,7 +211,7 @@ export default function Landing() {
       {/* Formats strip: nhận vào / xuất ra + Colab. */}
       <section data-testid="landing-formats" className="py-16 md:py-24">
         <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("landing.formatsTitle")}</h2>
-        <Reveal className="mt-8 space-y-4">
+        <div className="mt-8 space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">{t("landing.inputLabel")}</span>
             {INPUT_FORMATS.map((fmt) => (
@@ -242,35 +229,31 @@ export default function Landing() {
             ))}
           </div>
           <p className="text-muted">{t("landing.colab")}</p>
-        </Reveal>
+        </div>
       </section>
 
       {/* Gallery: real screenshots (placeholder-friendly khi anh chua chup). */}
       <section data-testid="landing-gallery" className="py-16 md:py-24">
         <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("landing.galleryTitle")}</h2>
         <div className="mt-8 grid gap-6 sm:grid-cols-2">
-          {GALLERY.map((shot, i) => (
-            <Reveal key={shot.src} delay={(i % 2) * 0.06}>
-              <Shot src={shot.src} alt={t(shot.altKey)} caption={t(shot.captionKey)} />
-            </Reveal>
+          {GALLERY.map((shot) => (
+            <Shot key={shot.src} src={shot.src} alt={t(shot.altKey)} caption={t(shot.captionKey)} />
           ))}
         </div>
       </section>
 
       {/* Final CTA: same label "Bắt đầu" (one signup intent, one label). */}
       <section className="py-16 text-center md:py-24">
-        <Reveal>
-          <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            {t("landing.finalTitle")}
-          </h2>
-          <div className="mt-8">
-            <Link to="/signin" className={buttonClasses("primary", "md")}>
-              {t("landing.cta")}
-            </Link>
-          </div>
-        </Reveal>
+        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
+          {t("landing.finalTitle")}
+        </h2>
+        <div className="mt-8">
+          <Link to="/signin" className={buttonClasses("primary", "md")}>
+            {t("landing.cta")}
+          </Link>
+        </div>
       </section>
 
-    </div>
+    </main>
   );
 }

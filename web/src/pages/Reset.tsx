@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
+import AuthLayout from "../components/AuthLayout";
 import { useT } from "../i18n";
 import { mapApiError } from "../lib/errors";
 import Button from "../components/ui/Button";
@@ -43,8 +44,15 @@ export default function Reset() {
   }
 
   return (
-    <main id="main" className="mx-auto max-w-sm p-6">
-      <h1 className="mb-4 text-xl font-bold">{t("auth.reset.title")}</h1>
+    <AuthLayout
+      title={t("auth.reset.title")}
+      subtitle={t("auth.reset.subtitle")}
+      footer={
+        <Link to="/signin" className="text-accent-text hover:underline">
+          {t("auth.reset.backToSignin")}
+        </Link>
+      }
+    >
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <Input
           label={t("auth.reset.email")}
@@ -97,6 +105,6 @@ export default function Reset() {
           {t("auth.reset.submit")}
         </Button>
       </form>
-    </main>
+    </AuthLayout>
   );
 }

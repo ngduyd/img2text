@@ -9,30 +9,23 @@ import CropDialog from "../components/CropDialog";
 import JobRow from "../components/JobRow";
 import MultiFileUpload from "../components/MultiFileUpload";
 import PageSelectDialog, { type PageSelectEntry } from "../components/PageSelectDialog";
-import QuotaBadge from "../components/QuotaBadge";
 import StatusFilterTabs from "../components/StatusFilterTabs";
 import SubmitModal, { type SubmitFormat } from "../components/SubmitModal";
 import { mapApiError } from "../lib/errors";
 import { useJobDoneToasts } from "../hooks/useJobDoneToasts";
 import type { StatusFilter } from "../components/StatusFilterTabs";
-import Card from "../components/ui/Card";
+import PageShell from "../components/PageShell";
+import PageHeader from "../components/PageHeader";
+import EmptyState from "../components/ui/EmptyState";
+import Pagination, { pageWindow } from "../components/ui/Pagination";
+import Select from "../components/ui/Select";
+import { Stat } from "../components/ui/Stat";
 import Button from "../components/ui/Button";
 import Skeleton from "../components/ui/Skeleton";
 import { PENDING_STATUSES } from "../lib/status";
 import { useT } from "../i18n";
 
-/** Windowed page numbers: luôn 1 + last + ±2 quanh current; gap > 1 → "…". */
-export function pageWindow(current: number, total: number): (number | "…")[] {
-  const nums = new Set<number>([1, total]);
-  for (let n = current - 2; n <= current + 2; n++) if (n >= 1 && n <= total) nums.add(n);
-  const sorted = [...nums].sort((a, b) => a - b);
-  const out: (number | "…")[] = [];
-  sorted.forEach((n, i) => {
-    if (i > 0 && n - sorted[i - 1] > 1) out.push("…");
-    out.push(n);
-  });
-  return out;
-}
+export { pageWindow };
 
 export default function Jobs() {
   const navigate = useNavigate();
@@ -140,41 +133,18 @@ export default function Jobs() {
   };
 
   return (
-    <main id="main" className="mx-auto max-w-3xl p-4 sm:p-6">
-      {/* Asymmetric header: title + subtitle left, stats right (DESIGN.md §5). */}
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t("jobs.title")}</h1>
-          <p className="mt-1 text-sm text-muted">{t("jobs.subtitle")}</p>
-          <QuotaBadge />
-        </div>
-        <dl className="flex gap-4">
-          <div className="text-right">
-            <dt className="text-xs text-muted">{t("jobs.stats.total")}</dt>
-            <dd data-testid="stats-total" className="font-mono text-lg font-semibold leading-tight">
-              {jobs?.total ?? items.length}
-            </dd>
+    <PageShell>
+      <PageHeader
+        title={t("jobs.title")}
+        subtitle={t("jobs.subtitle")}
+        actions={
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Stat testid="stats-total" label={t("jobs.stats.total")} value={String(jobs?.total ?? items.length)} />
+            <Stat testid="stats-pending" label={t("jobs.stats.pending")} value={String(pending)} valueClassName="text-warning" />
+            <Stat testid="stats-done" label={t("jobs.stats.done")} value={String(done)} valueClassName="text-success" />
           </div>
-          <div className="text-right">
-            <dt className="text-xs text-muted">{t("jobs.stats.pending")}</dt>
-            <dd
-              data-testid="stats-pending"
-              className="font-mono text-lg font-semibold leading-tight text-warning"
-            >
-              {pending}
-            </dd>
-          </div>
-          <div className="text-right">
-            <dt className="text-xs text-muted">{t("jobs.stats.done")}</dt>
-            <dd
-              data-testid="stats-done"
-              className="font-mono text-lg font-semibold leading-tight text-success"
-            >
-              {done}
-            </dd>
-          </div>
-        </dl>
-      </header>
+        }
+      />
 
       {/* Toolbar: search + sort + filter tabs — spec #3 (q/sort/status server-side). */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -190,24 +160,21 @@ export default function Jobs() {
                 resetToFirstPage();
               }}
               placeholder={t("jobs.searchPlaceholder")}
-              className="w-full rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-text placeholder:text-muted focus-visible:outline-2 focus-visible:outline-accent"
+              className="h-10 w-full rounded-sm border border-border bg-surface px-3 text-sm text-text placeholder:text-muted focus-visible:outline-2 focus-visible:outline-accent"
             />
           </label>
-          <label className="inline-flex items-center gap-2 text-sm text-muted">
-            <span>{t("jobs.sortLabel")}</span>
-            <select
-              data-testid="jobs-sort"
-              value={sort}
-              onChange={(e) => {
-                setSort(e.target.value as "newest" | "oldest");
-                resetToFirstPage();
-              }}
-              className="cursor-pointer rounded-md border border-border bg-surface px-2 py-1.5 text-sm text-text focus-visible:outline-2 focus-visible:outline-accent"
-            >
-              <option value="newest">{t("jobs.sortNewest")}</option>
-              <option value="oldest">{t("jobs.sortOldest")}</option>
-            </select>
-          </label>
+          <Select
+            label={t("jobs.sortLabel")}
+            testid="jobs-sort"
+            value={sort}
+            onChange={(e) => {
+              setSort(e.target.value as "newest" | "oldest");
+              resetToFirstPage();
+            }}
+          >
+            <option value="newest">{t("jobs.sortNewest")}</option>
+            <option value="oldest">{t("jobs.sortOldest")}</option>
+          </Select>
         </div>
         <StatusFilterTabs
           items={items}
@@ -367,15 +334,14 @@ export default function Jobs() {
           </ul>
         ) : jobs && jobs.total === 0 && !filtering ? (
           /* Composed empty state: icon + title + guidance + CTA hint (DESIGN.md §4). */
-          <Card testid="empty-state">
-            <div className="flex flex-col items-center px-2 py-6 text-center">
-              <Inbox className="h-10 w-10 text-muted" aria-hidden="true" />
-              <h2 className="mt-3 text-base font-semibold">{t("jobs.emptyTitle")}</h2>
-              <p className="mt-1 max-w-sm text-sm text-muted">{t("jobs.emptyBody")}</p>
-              <p className="mt-1 text-sm text-muted">{t("jobs.emptyWorker")}</p>
-              <p className="mt-4 text-sm font-medium text-accent-text">{t("jobs.emptyCta")}</p>
-            </div>
-          </Card>
+          <EmptyState
+            icon={Inbox}
+            title={t("jobs.emptyTitle")}
+            body={t("jobs.emptyBody")}
+            extra={<p className="mt-1 text-sm text-muted">{t("jobs.emptyWorker")}</p>}
+            action={<p className="text-sm font-medium text-accent-text">{t("jobs.emptyCta")}</p>}
+            testid="empty-state"
+          />
         ) : visible.length === 0 ? (
           <div
             data-testid="empty-filter"
@@ -407,48 +373,19 @@ export default function Jobs() {
 
       {/* Phase 4: phân trang server-side — Trước/Sau + số trang (10 job/trang). */}
       {!isLoading && (jobs?.total ?? 0) > pageSize && (
-        <nav
-          data-testid="pagination"
-          aria-label={t("jobs.paginationAria")}
-          className="mt-4 flex flex-wrap items-center justify-center gap-2"
-        >
-          <Button
-            testid="btn-page-prev"
-            size="sm"
-            variant="secondary"
-            disabled={page <= 1}
-            onClick={() => changePage(page - 1)}
-          >
-            {t("jobs.prev")}
-          </Button>
-          {pageWindow(page, totalPages).map((n, i) =>
-            typeof n === "number" ? (
-              <Button
-                key={n}
-                testid={`btn-page-${n}`}
-                size="sm"
-                variant={n === page ? "primary" : "ghost"}
-                aria-current={n === page ? "page" : undefined}
-                onClick={() => changePage(n)}
-              >
-                {n}
-              </Button>
-            ) : (
-              <span key={`gap-${i}`} aria-hidden="true" className="px-1 text-sm text-muted">
-                …
-              </span>
-            ),
-          )}
-          <Button
-            testid="btn-page-next"
-            size="sm"
-            variant="secondary"
-            disabled={page >= totalPages}
-            onClick={() => changePage(page + 1)}
-          >
-            {t("jobs.next")}
-          </Button>
-        </nav>
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          onChange={changePage}
+          prevTestid="btn-page-prev"
+          nextTestid="btn-page-next"
+          pageTestid="btn-page"
+          numbers
+          navTestid="pagination"
+          ariaLabel={t("jobs.paginationAria")}
+          prevLabel={t("jobs.prev")}
+          nextLabel={t("jobs.next")}
+        />
       )}
 
       {/* Phase 4: bulk bar sticky bottom khi có chọn (R59: toast mọi mutation). */}
@@ -473,6 +410,7 @@ export default function Jobs() {
           </div>
         </div>
       )}
-    </main>
+      {selected.size > 0 && <div aria-hidden="true" className="h-16" />}
+    </PageShell>
   );
 }

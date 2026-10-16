@@ -45,11 +45,12 @@ export default function AdminStats() {
             onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
           />
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full border-collapse text-left text-sm">
           <thead>
-            <tr className="border-b border-border text-muted">
+            <tr>
               {HEADERS.map((h) => (
-                <th key={h} className="px-3 py-2">
+                <th key={h} scope="col" className="sticky top-0 z-10 border-b border-border bg-surface-2 px-3 py-2 font-medium text-muted">
                   {t(h)}
                 </th>
               ))}
@@ -58,18 +59,19 @@ export default function AdminStats() {
           <tbody>
             {(data?.days ?? []).map((d) => (
               <tr key={d.date} data-testid={`stats-row-${d.date}`} className="border-b border-border/40">
-                <td className="px-3 py-2">{d.date}</td>
-                <td className="px-3 py-2">{d.users_registered}</td>
-                <td className="px-3 py-2">{d.jobs_submitted}</td>
-                <td className="px-3 py-2">{d.jobs_done}</td>
-                <td className="px-3 py-2">{d.jobs_failed}</td>
-                <td className="px-3 py-2">{d.page_views}</td>
-                <td className="px-3 py-2">{d.gpu_seconds}</td>
-                <td className="px-3 py-2">{d.estimated_cost_usd}</td>
+                <td className="px-3 py-2 font-mono tabular-nums">{d.date}</td>
+                <td className="px-3 py-2 font-mono tabular-nums">{d.users_registered}</td>
+                <td className="px-3 py-2 font-mono tabular-nums">{d.jobs_submitted}</td>
+                <td className="px-3 py-2 font-mono tabular-nums">{d.jobs_done}</td>
+                <td className="px-3 py-2 font-mono tabular-nums">{d.jobs_failed}</td>
+                <td className="px-3 py-2 font-mono tabular-nums">{d.page_views}</td>
+                <td className="px-3 py-2 font-mono tabular-nums">{d.gpu_seconds}</td>
+                <td className="px-3 py-2 font-mono tabular-nums">{d.estimated_cost_usd}</td>
               </tr>
             ))}
           </tbody>
         </table>
+        </div>
       </Card>
     </div>
   );

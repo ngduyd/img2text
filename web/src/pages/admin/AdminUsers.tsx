@@ -9,6 +9,7 @@ import type { User } from "../../api/types";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
+import EmptyState from "../../components/ui/EmptyState";
 import Input from "../../components/ui/Input";
 import Skeleton from "../../components/ui/Skeleton";
 
@@ -94,16 +95,12 @@ export default function AdminUsers() {
           </div>
         </div>
       ) : items.length === 0 ? (
-        <div
-          data-testid="users-empty"
-          className="flex flex-col items-center gap-2 px-4 py-8 text-center"
-        >
-          <Users className="h-8 w-8 text-muted" aria-hidden="true" />
-          <p className="text-base font-semibold">{t("admin.users.emptyTitle")}</p>
-          <p className="text-sm text-muted">
-            {t("admin.users.emptyBody")}
-          </p>
-        </div>
+        <EmptyState
+          icon={Users}
+          title={t("admin.users.emptyTitle")}
+          body={t("admin.users.emptyBody")}
+          testid="users-empty"
+        />
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] border-collapse text-left text-sm">

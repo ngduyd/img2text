@@ -4,6 +4,7 @@ import { api } from "../../api/client";
 import { translate, useT } from "../../i18n";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
+import Skeleton from "../../components/ui/Skeleton";
 
 /** Giây → "6h" / "1h 38m" / "38m" (bỏ phần phút 0). */
 export function fmtDuration(seconds: number): string {
@@ -52,9 +53,7 @@ export default function AdminKaggleQuota() {
       }
     >
       {isPending ? (
-        <p data-testid="kaggle-quota-loading" aria-busy="true" className="text-sm text-muted">
-          {t("admin.kaggle.loading")}
-        </p>
+        <Skeleton testid="kaggle-quota-loading" />
       ) : isError ? (
         // ApiError.detail (503/502 body) — không instanceof (module có thể mock)
         <p data-testid="kaggle-quota-error" role="alert" className="text-sm text-error">

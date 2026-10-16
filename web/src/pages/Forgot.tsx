@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, api } from "../api/client";
+import AuthLayout from "../components/AuthLayout";
 import { useT } from "../i18n";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
@@ -27,8 +28,15 @@ export default function Forgot() {
   }
 
   return (
-    <main id="main" className="mx-auto max-w-sm p-6">
-      <h1 className="mb-4 text-xl font-bold">{t("auth.forgot.title")}</h1>
+    <AuthLayout
+      title={t("auth.forgot.title")}
+      subtitle={t("auth.forgot.subtitle")}
+      footer={
+        <Link to="/signin" className="text-accent-text hover:underline">
+          {t("auth.forgot.backToSignin")}
+        </Link>
+      }
+    >
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <Input
           label="Email"
@@ -39,7 +47,7 @@ export default function Forgot() {
           placeholder="Email"
         />
         {error && (
-          <p data-testid="error-detail" className="text-sm text-error">
+          <p data-testid="error-detail" role="alert" className="text-sm text-error">
             {error}
           </p>
         )}
@@ -63,6 +71,6 @@ export default function Forgot() {
           {t("auth.forgot.submit")}
         </Button>
       </form>
-    </main>
+    </AuthLayout>
   );
 }

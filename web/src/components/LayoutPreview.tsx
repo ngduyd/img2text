@@ -139,7 +139,9 @@ export default function LayoutPreview({
           title={t("preview.wordTitle")}
           sandbox=""
           // docStyle (body rule) + docx.html — srcdoc cùng origin iframe, sandbox off script.
-          srcDoc={`<style>${wordBase}${docStyle}</style>${wordHtml ?? ""}`}
+          // Iframe không inherit tokens trang → inject :root --accent-text (dark + light)
+          // để link color trong docStyle render đúng cả 2 theme (contrast-safe).
+          srcDoc={`<style>:root { --accent-text: #58a6ff; }\n@media (prefers-color-scheme: light) { :root { --accent-text: #0861cf; } }</style><style>${wordBase}${docStyle}</style>${wordHtml ?? ""}`}
           className="h-[75vh] w-full rounded-md border border-border bg-surface"
         />
       )}

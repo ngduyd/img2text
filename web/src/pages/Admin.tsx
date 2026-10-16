@@ -15,6 +15,9 @@ import AdminStats from "./admin/AdminStats";
 import AdminStorage from "./admin/AdminStorage";
 import AdminWorkers from "./admin/AdminWorkers";
 import AdminUsers from "./admin/AdminUsers";
+import PageShell from "../components/PageShell";
+import PageHeader from "../components/PageHeader";
+import Skeleton from "../components/ui/Skeleton";
 
 // Plan V3: desktop ≥md = vertical sub-rail (icon + label); mobile = horizontal scroll pills. Testids tab-* kept (R51).
 const TABS = [
@@ -49,8 +52,8 @@ export default function Admin() {
   if (isError || (me && me.role !== "admin")) return null;
 
   return (
-    <main id="main" className="mx-auto max-w-5xl p-4">
-      <h1 className="mb-4 text-xl font-bold">{t("admin.title")}</h1>
+    <PageShell width="wide">
+      <PageHeader title={t("admin.title")} />
       <div className="flex flex-col gap-4 md:flex-row md:gap-6">
         <nav
           data-testid="admin-rail"
@@ -70,7 +73,7 @@ export default function Admin() {
                 className={[
                   "relative flex h-11 shrink-0 cursor-pointer items-center gap-2 rounded-md px-3 text-sm transition-colors duration-150 ease-out",
                   active
-                    ? "bg-surface-2 font-semibold text-text after:absolute after:inset-y-1.5 after:left-0 after:w-1 after:rounded-full after:bg-accent"
+                    ? "bg-surface-2 font-semibold text-text after:absolute after:inset-y-1.5 after:left-0 after:w-0.5 after:rounded-full after:bg-accent"
                     : "text-muted hover:bg-surface-2 hover:text-text",
                 ].join(" ")}
               >
@@ -82,9 +85,7 @@ export default function Admin() {
         </nav>
         <div className="min-w-0 flex-1">
           {!me ? (
-            <div data-testid="admin-loading" className="p-8 text-center text-muted">
-              {t("common.loading")}
-            </div>
+            <Skeleton testid="admin-loading" className="h-10 w-full" />
           ) : (
             <>
               {tab === "overview" && <AdminOverview onNavigate={setTab} />}
@@ -106,6 +107,6 @@ export default function Admin() {
           )}
         </div>
       </div>
-    </main>
+    </PageShell>
   );
 }

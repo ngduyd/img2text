@@ -143,10 +143,4 @@ it("Gửi → presign → XHR progress → pdf.js count → metadata-only create
   ]);
   // create xong → phase idle: chữ đếm trang biến mất
   await waitFor(() => expect(screen.queryByTestId("upload-counting")).not.toBeInTheDocument());
-  // T6: badge quota trong Jobs header + invalidate sau khi tạo job → refetch
-  expect(screen.getByTestId("quota-remaining")).toHaveTextContent("10/25 pages left today");
-  expect(screen.getByTestId("quota-remaining")).toHaveTextContent("105/150 this week");
-  await waitFor(() =>
-    expect(fetchSpy.mock.calls.filter((c) => String(c[0]) === "/api/quota/me").length).toBeGreaterThan(1),
-  );
 });

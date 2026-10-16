@@ -8,6 +8,8 @@ import type { ExtractionSaveResult } from "../api/types";
 import { mapApiError } from "../lib/errors";
 import { useT } from "../i18n";
 import TextSection from "../components/TextSection";
+import PageShell from "../components/PageShell";
+import PageHeader from "../components/PageHeader";
 import Button from "../components/ui/Button";
 
 /**
@@ -45,23 +47,21 @@ export default function ExtractionPage() {
   };
 
   return (
-    <main id="main" className="mx-auto max-w-4xl p-4 sm:p-6">
-      <header
-        data-testid="extraction-header"
-        className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2"
-      >
-        <Link
-          to={`/jobs/${id}`}
-          data-testid="link-back-job"
-          className="inline-flex items-center gap-1 text-sm text-accent-text transition duration-150 ease-out hover:underline"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          {t("extraction.backToDetail")}
-        </Link>
-        <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
-          {t("extraction.title")} <span className="font-mono">#{id}</span>
-        </h1>
-      </header>
+    <PageShell>
+      <PageHeader
+        testid="extraction-header"
+        title={<>{t("extraction.title")} <span className="font-mono">#{id}</span></>}
+        beforeTitle={
+          <Link
+            to={`/jobs/${id}`}
+            data-testid="link-back-job"
+            className="inline-flex items-center gap-1 text-sm text-accent-text transition duration-150 ease-out hover:underline"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            {t("extraction.backToDetail")}
+          </Link>
+        }
+      />
 
       {needsRender.length > 0 && (
         <div
@@ -95,6 +95,6 @@ export default function ExtractionPage() {
           setNeedsRender(result.needs_render)
         }
       />
-    </main>
+    </PageShell>
   );
 }

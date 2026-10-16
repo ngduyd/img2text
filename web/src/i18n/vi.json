@@ -113,9 +113,11 @@
     },
     "forgot": {
       "title": "Quên mật khẩu",
+      "subtitle": "Nhập email của bạn, chúng tôi sẽ gửi liên kết đặt lại.",
       "sent": "Kiểm tra email của bạn.",
       "submit": "Gửi email đặt lại",
-      "enterCode": "Nhập mã và mật khẩu mới"
+      "enterCode": "Nhập mã và mật khẩu mới",
+      "backToSignin": "Quay lại đăng nhập"
     },
     "verify": {
       "title": "Xác thực email",
@@ -133,12 +135,14 @@
     },
     "reset": {
       "title": "Đặt lại mật khẩu",
+      "subtitle": "Nhập mã từ email và chọn mật khẩu mới.",
       "email": "Email",
       "code": "Mã xác thực",
       "newPassword": "Mật khẩu mới",
       "repeatPassword": "Nhập lại mật khẩu mới",
       "mismatch": "Mật khẩu nhập lại không khớp.",
-      "submit": "Đặt lại mật khẩu"
+      "submit": "Đặt lại mật khẩu",
+      "backToSignin": "Quay lại đăng nhập"
     }
   },
   "jd": {

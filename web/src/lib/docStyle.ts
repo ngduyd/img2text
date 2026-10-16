@@ -2,7 +2,7 @@
 
 import type { LayoutStyle } from "../api/types";
 
-export const FONT_FAMILIES = ["system-ui", "Times New Roman", "Arial", "Georgia", "Courier New"];
+export const FONT_FAMILIES = ["system-ui", "Arial", "Courier New"];
 
 export interface PreviewOpts {
   fontFamily: string;
@@ -62,17 +62,17 @@ export function scopeWordPaneCss(css: string): string {
  * trong UnifiedEditor) + wordCss của DocStyleTools (một builder duy nhất, khớp enum keys server).
  */
 /**
- * Base doc style cho preview styled (spec 2026-10-13 #3): Inter stack, prose
- * max-width 65ch, spacing scale 8/16/24/32, radius 6/8, accent #2563eb.
+ * Base doc style cho preview styled (spec 2026-10-13 #3): system-ui stack, prose
+ * max-width 65ch, spacing scale 8/16/24/32, radius 6/8, accent var(--accent-text).
  * `wrap` = selector scope — md pane dùng `.layout-preview` (contract M1, không
  * leak trang), word iframe dùng `body`. job.layout_style override nối sau.
  */
 export function buildPreviewDocCss(wrap: string): string {
   const rules = [
-    `${wrap} { font-family: Inter, system-ui, sans-serif; font-size: 16px; line-height: 1.6; max-width: 65ch; margin: 0 auto; padding: 24px 32px; }`,
+    `${wrap} { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 16px; line-height: 1.6; max-width: 65ch; margin: 0 auto; padding: 24px 32px; }`,
     `${wrap} h1, ${wrap} h2, ${wrap} h3 { line-height: 1.25; margin: 24px 0 8px; }`,
     `${wrap} p, ${wrap} ul, ${wrap} ol, ${wrap} blockquote { margin: 8px 0 16px; }`,
-    `${wrap} a { color: #2563eb; }`,
+    `${wrap} a { color: var(--accent-text); }`,
     `${wrap} img { max-width: 100%; border-radius: 8px; }`,
     `${wrap} table, ${wrap} th, ${wrap} td { border-radius: 6px; }`,
     `${wrap} pre, ${wrap} code { border-radius: 6px; }`,

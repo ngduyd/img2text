@@ -5,6 +5,7 @@ import { api } from "../../api/client";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
+import EmptyState from "../../components/ui/EmptyState";
 import Input from "../../components/ui/Input";
 import Skeleton from "../../components/ui/Skeleton";
 import { useT } from "../../i18n";
@@ -85,14 +86,12 @@ export default function AdminLogs() {
             </div>
           </div>
         ) : rows.length === 0 ? (
-          <div
-            data-testid="logs-empty"
-            className="flex flex-col items-center gap-2 px-4 py-8 text-center"
-          >
-            <FileText className="h-8 w-8 text-muted" aria-hidden="true" />
-            <p className="text-base font-semibold">{t("admin.logs.emptyTitle")}</p>
-            <p className="text-sm text-muted">{t("admin.logs.emptyBody")}</p>
-          </div>
+          <EmptyState
+            icon={FileText}
+            title={t("admin.logs.emptyTitle")}
+            body={t("admin.logs.emptyBody")}
+            testid="logs-empty"
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] border-collapse text-left text-sm">

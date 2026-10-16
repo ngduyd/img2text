@@ -47,7 +47,14 @@ it("renders info card: email, role badge, ocr badge, id, join note", async () =>
   expect(screen.getByTestId("profile-role")).toHaveTextContent("User");
   expect(screen.getByTestId("badge-ocr-profile")).toHaveTextContent("OCR enabled");
   expect(screen.getByTestId("profile-id")).toHaveTextContent("7");
-  expect(screen.getByText("Joined: updated later")).toBeInTheDocument();
+  // joined row hidden without created_at (no dangling label)
+  expect(screen.queryByText(/Joined|tham gia/)).not.toBeInTheDocument();
+});
+
+it("renders joined row when created_at present", async () => {
+  vi.mocked(api.me).mockResolvedValue({ ...USER, created_at: "2026-01-01T00:00:00Z" });
+  renderWithRouter(<Profile />);
+  expect(await screen.findByText(/Joined|tham gia/)).toBeInTheDocument();
 });
 
 it("password submit calls updateProfile with exact args", async () => {

@@ -72,11 +72,11 @@ it("md mode renders sanitized markdown + scoped docStyle", async () => {
   expect(pane.querySelector("script")).toBeNull();
   expect(pane.querySelector("style")?.textContent).toContain(".layout-preview");
   expect(pane.querySelector("style")?.textContent).toContain("Times New Roman");
-  // Lane B Task 2: base doc style luôn có (Inter stack, prose 65ch, accent) — không khối chữ trần.
+  // Lane B Task 2: base doc style luôn có (system-ui stack, prose 65ch, accent token) — không khối chữ trần.
   const css = pane.querySelector("style")?.textContent ?? "";
-  expect(css).toContain("Inter");
+  expect(css).toContain("system-ui");
   expect(css).toContain("65ch");
-  expect(css).toContain("#2563eb");
+  expect(css).toContain("var(--accent-text)");
 });
 
 /** WS-UI: word → iframe sandbox srcDoc = docStyle + docx.html. */
@@ -93,7 +93,10 @@ it("word mode renders sandboxed iframe with docStyle in srcDoc", async () => {
   expect(src).toContain("font-size: 18px");
   // Lane B Task 2: base doc style trong srcDoc của word pane.
   expect(src).toContain("65ch");
-  expect(src).toContain("#2563eb");
+  expect(src).toContain("var(--accent-text)");
+  // Iframe không inherit tokens → :root --accent-text cả 2 theme (light = #0861cf).
+  expect(src).toContain("--accent-text: #58a6ff");
+  expect(src).toContain("--accent-text: #0861cf");
   expect(api.getDocxHtml).toHaveBeenCalledWith(5);
 });
 
