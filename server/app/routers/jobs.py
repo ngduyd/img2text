@@ -47,7 +47,11 @@ from app.services.doc_versions import (
     seed_current,
     snapshot_current_layout,
 )
-from app.services.job_results import _schedule_auto_output, store_worker_result
+from app.services.job_results import (
+    _schedule_auto_output,
+    store_session_result,
+    store_worker_result,
+)
 from app.services.purge import purge_binary, purge_due_jobs, purge_retention_days
 from app.services.quota import ensure_bytes_quota, ensure_quota, quota_me
 from app.services.layout_sync import (
@@ -60,6 +64,9 @@ from app.services.storage import StorageDriver, get_storage
 
 UPLOAD_DAILY_LIMIT = 20
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+# Spec kaggle session worker T4: region id hợp lệ cho crop presign PUT
+# (claim/status query param crop_rids) — chặn path traversal vào storage key.
+RID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 # Spec 2026-10-10 sanity bound (was 50 on the removed server-side parse):
 # the client counts pages with pdf.js; presign/create check the METADATA.
 # P2-5: cap = settings.max_pages (1 config; default = kernel hard cap 100).
@@ -531,16 +538,96 @@ async def list_jobs(
 
 # --- Worker claim: GET /api/jobs/next (route defined BEFORE /{id}) ---
 
+async def _live_session_id(session: AsyncSession, key: str | None) -> int:
+    """Bearer session key → live session id; mọi lỗi → 401 anti-oracle
+    (pattern get_session_key; double-lookup sau khi dep đã validate)."""
+    if key is None or not key or not key.isascii():
+        raise HTTPException(status_code=401, detail="bad session key")
+    sid = await session.scalar(
+        select(WorkerSession.id).where(
+            WorkerSession.key_hash == hash_worker_token(key),
+            WorkerSession.closed_at.is_(None),
+        )
+    )
+    if sid is None:
+        raise HTTPException(status_code=401, detail="bad session key")
+    return sid
+
+async def _crop_upload_urls(
+    storage: StorageDriver, job_id: int, crop_rids: str | None
+) -> dict[str, str]:
+    """crop_rids CSV → {rid: presign PUT jobs/{id}/crops/{rid}.png}
+    (spec T4: 1 URL theo rid — không wildcard)."""
+    if not crop_rids:
+        return {}
+    urls: dict[str, str] = {}
+    for rid in crop_rids.split(","):
+        rid = rid.strip()
+        if not RID_RE.fullmatch(rid):
+            raise HTTPException(status_code=422, detail="region_id không hợp lệ.")
+        urls[rid] = await storage.presign_put(
+            f"jobs/{job_id}/crops/{rid}.png", PRESIGN_EXPIRES_SECONDS
+        )
+    return urls
+
+async def _next_session_job(
+    session: AsyncSession, storage: StorageDriver, key: str, crop_rids: str | None
+) -> dict | Response:
+    """kaggle_mode=="session" claim (spec 2026-10-16 T4): session-scope —
+    job.session_id = live session, worker_token_hash GIỮ NULL (batch rider
+    guards hoạt động); lease = kaggle_timeout (reaper không requeue mid-run).
+    Response 200 JSON (worker cần body); queue rỗng / không session live →
+    {"empty": true} (worker exit 0 graceful, AC5)."""
+    sid = await _live_session_id(session, key)
+    job = (
+        await session.execute(
+            select(Job)
+            .where(Job.status == "queued")
+            .order_by(Job.id)
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if job is None:
+        return {"empty": True}
+    now = _utcnow()
+    job.status = "extracting"
+    job.started_at = now
+    job.lease_expires_at = now + timedelta(seconds=settings.kaggle_timeout)
+    job.session_id = sid
+    result_url = await storage.presign_put(
+        f"jobs/{job.id}/_result.json", PRESIGN_EXPIRES_SECONDS
+    )
+    crop_urls = await _crop_upload_urls(storage, job.id, crop_rids)
+    await session.commit()
+    from app.services.kaggle_orchestrator import session_quota_low
+
+    return {
+        "job_id": job.id,
+        "session_key": key,  # echo — server hash-at-rest, không giữ plaintext
+        "session_id": sid,
+        "result_upload_url": result_url,
+        "crop_upload_urls": crop_urls,
+        "server_flags": {"quota_low": session_quota_low()},
+    }
+
 @router.get("/api/jobs/next")  # BEFORE /api/jobs/{id}: "next" must not match {id}
 async def next_job(
-    _: str = Depends(get_runner_key),
+    request: Request,
+    crop_rids: str | None = Query(None),
     session: AsyncSession = Depends(get_session),
     storage: StorageDriver = Depends(get_storage),
 ):
     """Claim oldest queued job; race-safe via FOR UPDATE SKIP LOCKED.
 
-    Returns the claim payload, or a bare 204 Response when the queue is
-    empty (Response return bypasses FastAPI response-model handling)."""
+    kaggle_mode=="session" (spec 2026-10-16): Bearer session key, claim
+    scope = job.session_id, response 200 JSON (session_key echo + presign
+    PUT URLs + server_flags). Else legacy Colab path: Bearer runner key,
+    per-job worker_token, bare 204 khi queue rỗng."""
+    if settings.kaggle_mode == "session":
+        key = await get_session_key(request, session)
+        return await _next_session_job(session, storage, key, crop_rids)
+    get_runner_key(request)
     job = (
         await session.execute(
             select(Job)
@@ -1309,12 +1396,20 @@ class WorkerHeartbeatBody(BaseModel):
 @router.post("/api/worker/heartbeat")
 async def worker_heartbeat(
     body: WorkerHeartbeatBody,
-    _: str = Depends(get_runner_key),
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     """spec 2026-10-14 #7: upsert last_seen/current_job_id (1 row/worker_id).
-    Auth = runner key (cùng worker surface với GET /api/jobs/next — loop
-    chưa có per-job token khi bắt đầu heartbeat)."""
+    Auth: runner key (HTTP Colab loop) HOẶC live session key (kaggle session
+    kernel heartbeat, spec session worker T7)."""
+    scheme, _, key = request.headers.get("Authorization", "").partition(" ")
+    ok = (
+        scheme.lower() == "bearer"
+        and key.isascii()
+        and hmac.compare_digest(key, settings.runner_key)
+    )
+    if not ok:
+        await _live_session_id(session, key if scheme.lower() == "bearer" else None)
     worker_id = body.worker_id.strip()
     kind = body.kind.strip() or "loop"
     if not worker_id or len(worker_id) > 100:
@@ -1344,6 +1439,9 @@ async def worker_heartbeat(
 
 class FailBody(BaseModel):
     error: str
+    # Spec kaggle session worker T4 (AC4a): optional — session path ghi vào
+    # worker_sessions.gpu_seconds_reported; HTTP per-job path bỏ qua.
+    gpu_seconds: float = 0.0
 
 
 def _bearer_token(request: Request) -> str | None:
@@ -1367,6 +1465,54 @@ async def _worker_job_or_401(
     ):  # capability-token check (ruling R11)
         raise HTTPException(status_code=401, detail="bad worker token")
     return job
+
+async def _report_gpu_seconds(
+    session: AsyncSession, sid: int, seconds: float
+) -> None:
+    """AC4a writer (spec T4): done/failed payload →
+    worker_sessions.gpu_seconds_reported (assignment — job cuối báo của
+    session, last-writer-wins). Cùng transaction với transition; commit
+    cùng lúc (rollback → không ghi telemetry lệch)."""
+    await session.execute(
+        update(WorkerSession)
+        .where(WorkerSession.id == sid)
+        .values(gpu_seconds_reported=seconds)
+    )
+
+async def _session_result(
+    session: AsyncSession,
+    job: Job,
+    body: ResultBody,
+    token: str | None,
+    now: datetime,
+    storage: StorageDriver,
+) -> dict:
+    """Session-scope /result (spec T4): session key thay per-job token.
+    409-first (R14) giữ; idempotency (AC8): replay khi job đã ở
+    rendering/done/failed CÙNG session → 200 no-op; 409 chỉ khi lease hết/
+    claim khác; gpu_seconds writer trước khi done."""
+    sid = await _live_session_id(session, token)
+    if job.session_id != sid:  # job của session khác → 401 (anti-oracle)
+        raise HTTPException(status_code=401, detail="bad session key")
+    if job.status in {"rendering", "done", "failed"}:
+        return {}  # AC8: done/failed replay → no-op 200
+    if (
+        job.status != "extracting"
+        or job.lease_expires_at is None
+        or job.lease_expires_at <= now
+    ):
+        raise HTTPException(status_code=409, detail="job not runnable")
+    await _report_gpu_seconds(session, sid, body.gpu_seconds)
+    ok = await store_session_result(
+        session, job.id, body, session_id=sid, now=now, storage=storage
+    )
+    if not ok:
+        await session.rollback()  # bỏ telemetry nếu transition mất race
+        await session.refresh(job)
+        if job.session_id == sid and job.status in {"rendering", "done", "failed"}:
+            return {}
+        raise HTTPException(status_code=409, detail="job not runnable")
+    return {}
 
 @router.post("/api/jobs/{id}/heartbeat")
 async def heartbeat_job(
@@ -1423,6 +1569,9 @@ async def submit_result(
     job = await session.get(Job, id)
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
+    if job.session_id is not None:
+        # spec T4: session-scope auth (không per-job token)
+        return await _session_result(session, job, body, token, now, storage)
     # precedence: not runnable → 409 before token check (brief: failed job
     # posts result with cleared token → 409, not 401).
     # Ruling R14 (accepted for MVP): 409-before-401 here leaks job
@@ -1461,6 +1610,47 @@ async def fail_job(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     token = _bearer_token(request)
+    job = await session.get(Job, id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    if job.session_id is not None:
+        # spec T4 session-scope: session key thay per-job token; AC8 replay
+        # failed cùng session → 200 no-op; gpu_seconds writer (AC4a).
+        sid = await _live_session_id(session, token)
+        if job.session_id != sid:
+            raise HTTPException(status_code=401, detail="bad session key")
+        now = _utcnow()
+        if job.status in {"done", "failed"}:
+            return {}  # AC8: fail replay → no-op 200
+        await _report_gpu_seconds(session, sid, body.gpu_seconds)
+        rowcount = (
+            await session.execute(
+                update(Job)
+                .where(
+                    Job.id == id,
+                    Job.status == "extracting",
+                    Job.lease_expires_at > now,
+                    Job.session_id == sid,
+                )
+                .values(
+                    status="failed",
+                    failed_step="extracting",
+                    error=body.error[:ERROR_MAX_CHARS],
+                    finished_at=now,
+                    worker_token_hash=None,
+                    lease_expires_at=None,
+                    upload_bytes=0,
+                )
+            )
+        ).rowcount
+        if rowcount == 0:
+            await session.rollback()
+            await session.refresh(job)
+            if job.session_id == sid and job.status in {"done", "failed"}:
+                return {}
+            raise HTTPException(status_code=409, detail="job not runnable")
+        await session.commit()
+        return {}
     await _worker_job_or_401(session, id, token)  # 401/404 gate before write
     # Atomic transition (ruling R16, same pattern as /result): ONE
     # conditional UPDATE re-checks the claim at commit time; a stale fail
@@ -1497,12 +1687,15 @@ async def fail_job(
 @router.get("/api/jobs/{id}/status")
 async def job_status(
     id: int,
+    crop_rids: str | None = Query(None),
     key: str = Depends(get_session_key),
     session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
 ) -> dict:
     """Session worker poll giữa các trang (spec kaggle session worker T4,
     AC7 cancel check): auth = session key (KHÔNG cookie owner). Job không
-    thuộc session đang auth → 401 cùng detail (anti-oracle giữ)."""
+    thuộc session đang auth → 401 cùng detail (anti-oracle giữ). crop_rids
+    (sau OCR worker biết rid) → presign PUT crop URLs trong response."""
     job = await session.get(Job, id)
     owner = None
     if job is not None and job.session_id is not None:
@@ -1514,7 +1707,10 @@ async def job_status(
         )
     if owner is None or job is None or owner != job.session_id:
         raise HTTPException(status_code=401, detail="bad session key")
-    return {"status": job.status, "error": job.error}
+    resp: dict = {"status": job.status, "error": job.error}
+    if crop_rids:
+        resp["crop_upload_urls"] = await _crop_upload_urls(storage, id, crop_rids)
+    return resp
 
 # --- Delete: DELETE /api/jobs/{id} (spec wave-2 #1 — GDPR xóa job) ----------
 

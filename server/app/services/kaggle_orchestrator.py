@@ -52,6 +52,15 @@ from app.services.runtime_settings import get_runtime_setting
 
 logger = logging.getLogger(__name__)
 
+# Spec session worker T4/T6 seam: claim response server_flags.quota_low —
+# _ensure_sessions tick set khi quota API dưới ngưỡng (AC5/AC6); default
+# False. ponytail: in-process flag — cùng single-worker assumption với
+# _last_spawn.
+_quota_low = False
+
+def session_quota_low() -> bool:
+    return _quota_low
+
 DATASET_SLUG = "img2text-worker-files"
 INPUT_SLUG = "img2text-input"  # batch input dataset (run_one.py K4, shared slug)
 # F3 (spec 2026-10-10): manifest input_url presigned GET window — kernel

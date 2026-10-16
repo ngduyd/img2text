@@ -253,13 +253,43 @@ async def store_batch_result(
         job_id,
         body,
         or_(
-            and_(Job.status == "queued", Job.worker_token_hash.is_(None)),
+            and_(
+                Job.status == "queued",
+                Job.worker_token_hash.is_(None),
+                # spec session worker T4: batch không clobber session claim
+                Job.session_id.is_(None),
+            ),
             and_(
                 Job.status == "extracting",
                 Job.worker_token_hash.is_(None),
+                Job.session_id.is_(None),
                 Job.lease_expires_at > now,
             ),
         ),
+        now=now,
+        storage=storage,
+    )
+
+async def store_session_result(
+    session: AsyncSession,
+    job_id: int,
+    body: ResultBody,
+    *,
+    session_id: int,
+    now: datetime,
+    storage: StorageDriver | None = None,
+) -> bool:
+    """Kaggle session worker (spec 2026-10-16 T4): result stored
+    ("rendering") với session-scope claim re-check — atomic (R16): one
+    conditional UPDATE WHERE extracting + lease active + session_id khớp
+    (khác session / lease hết → rowcount 0 → caller 409/no-op)."""
+    return await _store(
+        session,
+        job_id,
+        body,
+        Job.status == "extracting",
+        Job.lease_expires_at > now,
+        Job.session_id == session_id,
         now=now,
         storage=storage,
     )
