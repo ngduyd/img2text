@@ -13,8 +13,13 @@ from fastapi import HTTPException
 logger = logging.getLogger(__name__)
 
 def _seconds(value) -> float:
-    """'5900.915.0s' (malformed double-dot) → 5900.915 — leading number."""
-    text = str(value).removesuffix("s").strip()
+    """Kaggle quota duration → float giây. Số pass-through; chuỗi "21600.0s"
+    bỏ đuôi "s"; "5900.915.0s" (thừa dấu chấm) → số đầu tiên 5900.915."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if text.endswith("s"):
+        text = text[:-1]
     try:
         return float(text)
     except ValueError:
