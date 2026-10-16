@@ -148,12 +148,21 @@ async def test_done_idempotent_replay(
 ):
     """AC8: POST /result lần 2 cùng body → 200 no-op, result không đổi."""
     monkeypatch.setattr(settings, "kaggle_mode", "session")
+
+    async def _md_ok(*args, **kwargs):
+        return "# layout md"
+
+    monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
     await _seed_session(db_session)
     jid = await _seed_queued_job(db_session)
     await client.get("/api/jobs/next", headers=_auth())
     body = deepcopy(VALID_RESULT_JSONB)
     r1 = await client.post(f"/api/jobs/{jid}/result", json=body, headers=_auth())
     assert r1.status_code == 200, r1.text
+    # drain TRƯỚC replay — fire-and-forget task không được rò sang test sau
+    from app.services.job_results import drain_auto_output
+
+    await drain_auto_output()
     db_session.expire_all()
     first_result = (await db_session.get(Job, jid)).result
     r2 = await client.post(f"/api/jobs/{jid}/result", json=body, headers=_auth())

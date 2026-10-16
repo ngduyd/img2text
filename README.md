@@ -236,10 +236,20 @@ Smoke-check the notebook before each release: [docs/colab-smoke-checklist.md](do
 
 ## Kaggle orchestration (worker tự động)
 
-Server tự điều phối Kaggle worker (Plan K2 + K5), chọn bằng `KAGGLE_MODE`
-(mặc định `batch`):
+Server tự điều phối Kaggle worker (Plan K2 + K5 + session loop), chọn bằng
+`KAGGLE_MODE` (mặc định `session`):
 
-- **`batch` (mặc định, Plan K5)**: scheduler thấy `queued` job → backend tự
+- **`session` (mặc định, spec 2026-10-16)**: 1 kernel session active duy
+  nhất (`img2text_session.py`, import `img2text_batch.py` — bootstrap/
+  per-page resume/SIGALRM dùng chung) tự claim → OCR (model 1×/session) →
+  upload presigned → done → lặp trong ~9h; auth per-session Bearer key
+  (sha256 hash-at-rest trong `worker_sessions`, đóng session → xóa ngay).
+  Server giữ watchdog (`kernels_status` poll), quota gate
+  `KAGGLE_SESSION_MIN_QUOTA_S`, respawn, adopt sau restart. Exit 0 =
+  graceful (queue rỗng/quota_low/budget), exit 90 = session-level fail
+  (venv/import) → respawn.
+
+- **`batch` (deprecated, Plan K5)**: scheduler thấy `queued` job → backend tự
   stage file upload vào dataset `img2text-input` (delete + create — luôn
   chạy trên file mới nhất), push script kernel `img2text_batch.py` (từ
   `deploy/kaggle`), poll status → `kernels_output` → `result.json` → ingest
@@ -259,6 +269,13 @@ Server tự điều phối Kaggle worker (Plan K2 + K5), chọn bằng `KAGGLE_M
 Kernel xử lý theo session rồi thoát (platform cap ~12h); server tái kích
 khi queue còn job.
 
+**T9b/T9c (spec session worker):** `deploy/kaggle/run_one.py` giữ làm
+tool test tay (smoke 1 job — không qua orchestrator). Batch path đã
+ddeprecated: khi `session` mode ổn ≥2 tuần production → task sau xóa
+`_ensure_batch_runs`/`_spawn_batch_run`/`_poll_batch_run` +
+`kaggle_batch_max_jobs`/`INPUT_SLUG` + test K5 tương ứng (checklist —
+không test unit cho việc xóa code).
+
 **Bật env** (deploy/.env hoặc shell — compose dev pass-through, xem
 `deploy/.env.dev.example`):
 
@@ -267,7 +284,7 @@ KAGGLE_USERNAME=<kaggle username>        # OWNER id trong metadata (bắt buộc
 KAGGLE_API_TOKEN=<token>                 # khuyên — kaggle 2.x primary (kaggle.com/settings/api)
 KAGGLE_KEY=<api key>                     # legacy fallback khi không có token
 KAGGLE_KERNEL_REF=<user>/img2text-worker # ref kernel đã tạo 1 lần (bắt buộc mọi mode — feature gate; loop dùng ref này)
-KAGGLE_MODE=batch                        # batch (mặc định) | loop (Plan K2)
+KAGGLE_MODE=session                      # session (mặc định) | batch (deprecated) | loop (Plan K2)
 ```
 
 Không set đủ `KAGGLE_USERNAME` + (`KAGGLE_KEY` **hoặc** `KAGGLE_API_TOKEN`) + `KAGGLE_KERNEL_REF` = feature tự tắt, server **không import** `kaggle`

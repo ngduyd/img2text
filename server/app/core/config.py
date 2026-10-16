@@ -102,10 +102,11 @@ class Settings(BaseSettings):
     max_pages: int = 100
     kaggle_stage_src: str = "deploy/kaggle"
     kaggle_stage_dir: str = "/tmp/img2text-kaggle-kernel"
-    # Plan K5: orchestration mode. "batch" (default) = backend drives the
-    # standalone script kernel (no public URL needed); "loop" = Plan K2
-    # worker kernel polling the backend (needs public BASE_URL + Secrets).
-    kaggle_mode: str = "batch"
+    # Plan K2/K5 orchestration mode (spec session worker 2026-10-16 T9a):
+    # "session" (default) = 1 kernel session claim→OCR→upload→done lặp;
+    # "batch" = Plan K5 deprecated (rollback = flip env — code còn nguyên);
+    # "loop" = Plan K2 notebook worker.
+    kaggle_mode: str = "session"
     # Plan D2: LLM layout plan for the docx-layout export (local
     # OpenAI-compatible server, e.g. llm.cpp at localhost:20128). Empty
     # default (P0 spec 2026-10-15): prod fail-fast when kaggle (LLM) feature
@@ -154,8 +155,8 @@ class Settings(BaseSettings):
     @field_validator("kaggle_mode")
     @classmethod
     def _kaggle_mode_values(cls, v: str) -> str:
-        if v not in ("batch", "loop"):
-            raise ValueError("kaggle_mode phải là batch hoặc loop")
+        if v not in ("batch", "loop", "session"):
+            raise ValueError("kaggle_mode phải là session, batch hoặc loop")
         return v
 
     @model_validator(mode="after")

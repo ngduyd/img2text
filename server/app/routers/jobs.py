@@ -631,11 +631,19 @@ async def next_job(
 ):
     """Claim oldest queued job; race-safe via FOR UPDATE SKIP LOCKED.
 
-    kaggle_mode=="session" (spec 2026-10-16): Bearer session key, claim
+    kaggle_mode=="session" (spec 2026-10-16): Bearer session key → claim
     scope = job.session_id, response 200 JSON (session_key echo + presign
-    PUT URLs + server_flags). Else legacy Colab path: Bearer runner key,
-    per-job worker_token, bare 204 khi queue rỗng."""
-    if settings.kaggle_mode == "session":
+    PUT URLs + server_flags). Runner key (HTTP Colab worker / tools) VẪN
+    nhận legacy path (Non-goal spec: per-job token path giữ nguyên) —
+    2 auth tương thích song song."""
+    auth = request.headers.get("Authorization", "")
+    scheme, _, bearer = auth.partition(" ")
+    is_runner = (
+        scheme.lower() == "bearer"
+        and bearer.isascii()
+        and hmac.compare_digest(bearer, settings.runner_key)
+    )
+    if settings.kaggle_mode == "session" and not is_runner:
         key = await get_session_key(request, session)
         return await _next_session_job(session, storage, key, crop_rids)
     get_runner_key(request)
