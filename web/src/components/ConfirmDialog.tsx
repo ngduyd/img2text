@@ -49,13 +49,7 @@ export default function ConfirmDialog({
           <Button testid="confirm-cancel" variant="secondary" size="sm" onClick={onCancel}>
             {t("common.cancel")}
           </Button>
-          <Button
-            testid="confirm-accept"
-            variant="danger"
-            size="sm"
-            className="border border-error/40 bg-error/10"
-            onClick={onConfirm}
-          >
+          <Button testid="confirm-accept" variant="danger" size="sm" onClick={onConfirm}>
             {confirmLabel ?? t("common.delete")}
           </Button>
         </div>

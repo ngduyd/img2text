@@ -15,7 +15,7 @@ import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import Skeleton from "../components/ui/Skeleton";
 import ConfirmDialog from "../components/ConfirmDialog";
-import { Stat, fmtBytes } from "./admin/AdminStorage";
+import { Stat, fmtBytes } from "../components/ui/Stat";
 
 type ConfirmState = { kind: "one"; id: number } | { kind: "due" } | null;
 

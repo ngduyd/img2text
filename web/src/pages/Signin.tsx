@@ -57,7 +57,9 @@ export default function Login() {
         />
         <div className="flex flex-col gap-1">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted">{t("auth.password")}</span>
+            <label htmlFor="input-password" className="text-sm text-muted">
+              {t("auth.password")}
+            </label>
             <Link to="/forgot" className="text-xs text-accent-text hover:underline">
               {t("auth.signin.forgot")}
             </Link>

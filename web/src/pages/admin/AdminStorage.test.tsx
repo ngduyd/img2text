@@ -3,7 +3,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
-import AdminStorage, { fmtBytes } from "./AdminStorage";
+import AdminStorage from "./AdminStorage";
+import { fmtBytes } from "../../components/ui/Stat";
 
 const storage = vi.fn();
 const purgeDue = vi.fn();

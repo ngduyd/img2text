@@ -39,7 +39,7 @@ export default function Forgot() {
           placeholder="Email"
         />
         {error && (
-          <p data-testid="error-detail" className="text-sm text-error">
+          <p data-testid="error-detail" role="alert" className="text-sm text-error">
             {error}
           </p>
         )}

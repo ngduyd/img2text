@@ -12,33 +12,10 @@ import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import Skeleton from "../../components/ui/Skeleton";
+import { Stat, fmtBytes } from "../../components/ui/Stat";
 import ConfirmDialog from "../../components/ConfirmDialog";
 
 const PAGE_SIZE = 20;
-
-/** bytes → "512 B" / "1.5 KB" / "2 MB" (1 chữ số thập phân, bỏ .0). */
-export function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let v = n;
-  let i = -1;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i += 1;
-  }
-  return `${Math.round(v * 10) / 10} ${units[i]}`;
-}
-
-export function Stat({ label, value, testid }: { label: string; value: string; testid: string }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span data-testid={testid} className="text-lg font-semibold tabular-nums">
-        {value}
-      </span>
-      <span className="text-xs text-muted">{label}</span>
-    </div>
-  );
-}
 
 export default function AdminStorage() {
   const { t } = useT();
@@ -73,7 +50,6 @@ export default function AdminStorage() {
               testid="storage-purge-due"
               variant="danger"
               size="sm"
-              className="border border-error/40 bg-error/10"
               disabled={!s || s.due_jobs === 0}
               loading={purgeDue.isPending}
               onClick={() => setConfirm(true)}
