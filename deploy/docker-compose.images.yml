@@ -5,7 +5,7 @@
 #     (SPA fallback + /api proxy → server:8000 + /healthz + security headers).
 services:
   postgres:
-    image: postgres:16-alpine
+    image: docker.io/library/postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: img2text
@@ -20,7 +20,7 @@ services:
       retries: 15
 
   server:
-    image: ngduyd/img2text-server:v0.1.0
+    image: docker.io/ngduyd/img2text-server:v0.1.0
     restart: unless-stopped
     env_file: .env
     environment:
@@ -30,7 +30,11 @@ services:
         condition: service_healthy
     # python:3.11-slim không có curl — urllib /healthz
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)"
       interval: 30s
       timeout: 5s
       retries: 3
@@ -39,7 +43,7 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
   web:
-    image: ngduyd/img2text-web:v0.1.0
+    image: docker.io/ngduyd/img2text-web:v0.1.0
     restart: unless-stopped
     ports:
       - "18080:80"   # 80 đã có portfolio trên host

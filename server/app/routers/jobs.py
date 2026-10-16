@@ -811,6 +811,9 @@ async def retry_layout(
         storage, None, id, "docx-layout", job.text_version
     )
     await storage.delete_prefix(DOCX_HTML_KEY.format(job_id=id))
+    # review P1: derived export .docx (build từ html cũ) cũng invalidate —
+    # exact key (prefix sẽ ăn docx-layout mới render ở bước sau)
+    await storage.delete_key(f"exports/{id}/docx")
     # lazy import: exports → jobs (cycle if eager)
     from app.routers.exports import auto_generate_output
     await auto_generate_output(job, storage)

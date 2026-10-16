@@ -689,6 +689,9 @@ async def test_retry_layout_replaces_stale_docx_html(
     jid = done_job_with_result
     st = app.state.storage
     await st.put(f"exports/{jid}/docx.html", b"<p>ban cu - de hoa</p>")
+    # derived export (file .docx) cũng phải bị invalidate — không thì download
+    # vẫn trả bytes cũ build từ html cũ (review P1)
+    await st.put(f"exports/{jid}/docx", b"PK-fake-docx-ban-cu")
 
     async def fake_md(job_id, job, ir_sink=None, storage=None):
         return b"# ban moi"
@@ -702,6 +705,8 @@ async def test_retry_layout_replaces_stale_docx_html(
     assert r.status_code == 200, r.text
     # docx.html cũ bị xoá → không còn bản copy át render
     assert not await st.exists(f"exports/{jid}/docx.html")
+    # derived .docx cũ cũng bị xoá (review P1 — cache hit sẽ build lại từ html mới)
+    assert not await st.exists(f"exports/{jid}/docx")
     # render mới có mặt
     assert await st.get(f"exports/{jid}/md-layout") == b"# ban moi"
     assert await st.get(f"exports/{jid}/docx-layout") == b"docx ban moi"
