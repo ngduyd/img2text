@@ -9,8 +9,11 @@ leftmost is client-controlled and forgeable.
 from sqlalchemy import select
 
 from app.core.models import RequestLog, User
+from app.core.middleware import flush_request_logs
 
-async def _health_log(db_session) -> RequestLog:
+async def _health_log(app, db_session) -> RequestLog:
+    """P2 #18: row nằm buffer → flush trước khi đọc (audit trail = DB row)."""
+    await flush_request_logs(app)
     rows = (
         await db_session.execute(
             select(RequestLog).where(RequestLog.path == "/healthz")
@@ -19,7 +22,7 @@ async def _health_log(db_session) -> RequestLog:
     assert rows, "no RequestLog row for /healthz"
     return rows[0]
 
-async def test_audit_captures_ip_and_ua(client, db_session):
+async def test_audit_captures_ip_and_ua(client, app, db_session):
     r = await client.get(
         "/healthz",
         headers={
@@ -29,29 +32,30 @@ async def test_audit_captures_ip_and_ua(client, db_session):
         },
     )
     assert r.status_code == 200
-    row = await _health_log(db_session)
+    row = await _health_log(app, db_session)
     assert row.ip == "198.51.100.7"
     assert row.ua == "TestUA/1.0"
 
-async def test_audit_captures_ua_capped_200(client, db_session):
+async def test_audit_captures_ua_capped_200(client, app, db_session):
     await client.get("/healthz", headers={"user-agent": "U" * 300})
-    row = await _health_log(db_session)
+    row = await _health_log(app, db_session)
     assert row.ua == "U" * 200
 
-async def test_audit_defaults_missing_headers(client, db_session):
+async def test_audit_defaults_missing_headers(client, app, db_session):
     # httpx sends its own UA by default; pop to simulate a header-less request
     client.headers.pop("user-agent", None)
     await client.get("/healthz")
-    row = await _health_log(db_session)
+    row = await _health_log(app, db_session)
     assert row.ip == "127.0.0.1"  # ASGITransport default client host
     assert row.ua == ""
 
-async def test_admin_logs_returns_ip_and_ua(admin_client, db_session):
+async def test_admin_logs_returns_ip_and_ua(admin_client, app, db_session):
     r = await admin_client.get(
         "/healthz",
         headers={"x-forwarded-for": "203.0.113.9", "user-agent": "TestUA/2.0"},
     )
     assert r.status_code == 200
+    await flush_request_logs(app)  # P2 #18: buffer → DB trước khi query admin/logs
     r = await admin_client.get("/api/admin/logs?ip=203.0.113.9")
     assert r.status_code == 200
     items = r.json()["items"]

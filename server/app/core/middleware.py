@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 _STATIC_SUFFIXES = (".js", ".css", ".png", ".svg", ".ico", ".woff2")
 
+# P2 #18: buffer cap — tới ngưỡng flush NGAY trong _write (backpressure
+# thay vì buffer vô hạn khi scheduler die).
+_REQUEST_LOG_FLUSH_AT = 100
+
 
 def _normalized_path(scope: Scope) -> str:
     """Path capped at 512 chars. ASGI scope["path"] never carries the query
@@ -126,7 +130,10 @@ class EmailVerifyGateMiddleware:
         await self.app(scope, receive, send)
 
 class RequestLogsMiddleware(_LoggingMiddleware):
-    """Writes RequestLog for EVERY request after the response."""
+    """P2 #18 (spec 2026-10-16): buffer RequestLog in-memory, KHÔNG ghi row
+    /request — giảm write pressure. Flush tại 3 điểm: scheduler job
+    flush-request-logs (30s), buffer ≥100 row (ngay trong _write), app
+    shutdown (lifespan). prune_request_logs giữ nguyên (daily cleanup)."""
 
     async def _write(self, scope: Scope, status: int) -> None:
         request = Request(scope)
@@ -139,10 +146,32 @@ class RequestLogsMiddleware(_LoggingMiddleware):
             # Plan X R60: UA capped at 200 chars; missing header → "" not None
             ua=request.headers.get("user-agent", "")[:200],
         )
-        session_factory = scope["app"].state.session_factory
-        async with session_factory() as session:
-            session.add(log_row)
+        app = scope["app"]
+        buffer = getattr(app.state, "request_log_buffer", None)
+        if buffer is None:  # lazy per-app instance (pattern upload_limiter)
+            buffer = app.state.request_log_buffer = []
+        buffer.append(log_row)
+        if len(buffer) >= _REQUEST_LOG_FLUSH_AT:
+            await flush_request_logs(app)
+
+async def flush_request_logs(app) -> int:
+    """P2 #18: drain buffer → bulk insert; returns số row đã ghi.
+    Snapshot + clear TRƯỚC khi commit (request đến giữa chừng vẫn buffer
+    bình thường); commit fail → re-buffer (audit row không mất) rồi raise
+    (caller: scheduler job log, middleware outer catch log)."""
+    buffer = getattr(app.state, "request_log_buffer", None)
+    if not buffer:
+        return 0
+    rows = list(buffer)
+    buffer.clear()
+    try:
+        async with app.state.session_factory() as session:
+            session.add_all(rows)
             await session.commit()
+    except Exception:
+        buffer.extend(rows)
+        raise
+    return len(rows)
 
 
 class PageViewsMiddleware(_LoggingMiddleware):

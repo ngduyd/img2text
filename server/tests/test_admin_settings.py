@@ -425,9 +425,11 @@ async def test_put_without_scheduler_registered_still_succeeds(app, admin_client
     assert r.status_code == 200
     assert r.json()["scheduler_interval_seconds"] == {"value": 30, "source": "db"}
 
-async def test_put_writes_audit_request_log(admin_client, db_session):
+async def test_put_writes_audit_request_log(admin_client, app, db_session):
     r = await admin_client.put("/api/admin/settings", json={"kaggle_min_queue": 2})
     assert r.status_code == 200
+    from app.core.middleware import flush_request_logs
+    await flush_request_logs(app)  # P2 #18: buffer → DB trước khi assert audit row
     row = (
         await db_session.execute(
             select(RequestLog).where(RequestLog.path == "/api/admin/settings")

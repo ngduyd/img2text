@@ -8,13 +8,15 @@ from app.core.models import PageView, RequestLog
 from app.core.middleware import prune_request_logs
 
 
-async def test_request_logged(client, db_session):
+async def test_request_logged(client, app, db_session):
     await client.post("/api/auth/register", json={"email": "m@x.io", "password": "secret123"})
+    from app.core.middleware import flush_request_logs
+    await flush_request_logs(app)  # P2 #18: buffer → DB trước khi assert
     rows = (await db_session.execute(select(RequestLog))).scalars().all()
     assert any(r.path == "/api/auth/register" and r.status == 201 for r in rows)
 
 
-async def test_request_log_resolves_authenticated_user(client, db_session):
+async def test_request_log_resolves_authenticated_user(client, app, db_session):
     email, password = "auth@x.io", "secret123"
     r = await client.post("/api/auth/register", json={"email": email, "password": password})
     assert r.status_code == 201
@@ -23,6 +25,8 @@ async def test_request_log_resolves_authenticated_user(client, db_session):
     user_id = r.json()["id"]
     r = await client.get("/api/auth/me")
     assert r.status_code == 200
+    from app.core.middleware import flush_request_logs
+    await flush_request_logs(app)  # P2 #18: buffer → DB trước khi assert
     rows = (await db_session.execute(
         select(RequestLog).where(RequestLog.path == "/api/auth/me")
     )).scalars().all()
@@ -45,3 +49,24 @@ async def test_prune_deletes_only_old(db_session):
     await db_session.flush()
     n = await prune_request_logs(db_session)
     assert n == 1
+
+async def test_request_logs_buffered_not_written_immediately(client, db_session):
+    """P2 #18: row nằm in-memory buffer, CHƯA ghi DB cho tới khi flush."""
+    from sqlalchemy import func
+
+    initial = await db_session.scalar(select(func.count()).select_from(RequestLog))
+    await client.get("/healthz")
+    after = await db_session.scalar(select(func.count()).select_from(RequestLog))
+    assert after == initial  # vẫn buffered
+
+async def test_flush_job_writes_buffered_logs(client, app, db_session):
+    """P2 #18: flush_request_logs (scheduler job, 30s) bulk-insert buffer."""
+    from sqlalchemy import func
+
+    await client.get("/healthz")
+    await client.get("/healthz")
+    from app.core.middleware import flush_request_logs
+
+    assert await flush_request_logs(app) >= 2
+    n = await db_session.scalar(select(func.count()).select_from(RequestLog))
+    assert n >= 2

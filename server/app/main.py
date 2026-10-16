@@ -24,6 +24,7 @@ from app.core.middleware import (
     EmailVerifyGateMiddleware,
     PageViewsMiddleware,
     RequestLogsMiddleware,
+    flush_request_logs,
 )
 from app.routers import admin, auth, exports, feedback, health, jobs, profile, region_edit
 from app.services.scheduler import init_scheduler
@@ -77,6 +78,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     scheduler = getattr(app.state, "scheduler", None)
     if scheduler is not None and scheduler.running:
         scheduler.shutdown(wait=False)
+    # P2 #18: drain request_logs buffer trước khi dispose — audit row không
+    # mất khi shutdown giữa chừng.
+    try:
+        await flush_request_logs(app)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "shutdown flush request_logs failed", exc_info=True
+        )
     await engine.dispose()
 
 
