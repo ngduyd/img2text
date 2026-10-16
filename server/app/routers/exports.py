@@ -49,10 +49,13 @@ PDF_FONT_CSS = "body { font-family: 'Noto Sans CJK', 'DejaVu Sans', serif; }"
 # → 416 (spec: supporting single-range only)
 _RANGE_RE = re.compile(r"bytes=(\d+)-(\d+)")
 
-def _range_416(size: int | None) -> JSONResponse:
-    headers = {"Content-Range": f"bytes */{size}"} if size is not None else None
+def _range_416(size: int) -> JSONResponse:
+    """416 + Content-Range: bytes */size (RFC 9110 §14.4) — caller lookup
+    size TRƯỚC (QA-2: kể cả Range rác cũng mang được size)."""
     return JSONResponse(
-        status_code=416, content={"code": "invalid_range"}, headers=headers
+        status_code=416,
+        content={"code": "invalid_range"},
+        headers={"Content-Range": f"bytes */{size}"},
     )
 
 EXPORT_PRESIGN_EXPIRES_SECONDS = 86400
@@ -700,7 +703,14 @@ async def download_export(
         return Response(content=data, media_type=EXPORT_CONTENT_TYPES[fmt])
     m = _RANGE_RE.fullmatch(rng)
     if m is None or int(m.group(2)) < int(m.group(1)):
-        return _range_416(None)
+        # QA-2: Range rác/malformed → vẫn 416 có Content-Range */size
+        # (md-layout: size của representation lưu — header rác không đáng
+        # 1 lần transform toàn file)
+        try:
+            size = await storage.size(key)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Chưa xuất file.")
+        return _range_416(size)
     start, end = int(m.group(1)), int(m.group(2))
     if fmt == "md-layout":
         # serve-time re-encode (crop URL embed) → range tính trên representation CUỐI

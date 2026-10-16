@@ -116,3 +116,17 @@ async def test_download_export_range_deleted_midway_404(
         headers={"Range": "bytes=0-99"},
     )
     assert resp.status_code == 404
+
+# --- QA-2: Range rác → 416 VẪN mang Content-Range: bytes */{size} ---
+
+async def test_download_export_malformed_range_416_with_content_range(
+    auth_client, done_job_with_result, storage
+):
+    await storage.put(f"exports/{done_job_with_result}/pdf", b"a" * 1000)
+    resp = await auth_client.get(
+        f"/api/jobs/{done_job_with_result}/export/pdf/download",
+        headers={"Range": "bytes=abc"},
+    )
+    assert resp.status_code == 416
+    assert resp.headers["Content-Range"] == "bytes */1000"
+    assert resp.json() == {"code": "invalid_range"}
