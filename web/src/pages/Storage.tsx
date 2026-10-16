@@ -15,6 +15,9 @@ import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
 import Skeleton from "../components/ui/Skeleton";
 import ConfirmDialog from "../components/ConfirmDialog";
+import PageShell from "../components/PageShell";
+import PageHeader from "../components/PageHeader";
+import EmptyState from "../components/ui/EmptyState";
 import { Stat, fmtBytes } from "../components/ui/Stat";
 
 type ConfirmState = { kind: "one"; id: number } | { kind: "due" } | null;
@@ -67,12 +70,8 @@ export default function Storage() {
   const keptBytes = sumKeptBytes(kept);
 
   return (
-    <main id="main" className="mx-auto max-w-7xl px-4 py-6">
-      {/* Page header (P0-4): skip-link target + h1 + subtitle. */}
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">{t("storage.own.title")}</h1>
-        <p className="mt-1 text-sm text-muted">{t("storage.own.subtitle")}</p>
-      </header>
+    <PageShell wide>
+      <PageHeader title={t("storage.own.title")} subtitle={t("storage.own.subtitle")} />
       {isError ? (
         /* P0-1: composed error + retry — thay toàn bộ body, hết skeleton vĩnh viễn. */
         <div data-testid="storage-own-error" className="flex items-start gap-3 rounded-card border border-border bg-surface p-4 shadow-card">
@@ -168,20 +167,20 @@ export default function Storage() {
               </div>
             ) : items.length === 0 ? (
               /* P1-1: composed empty — icon + title + body + CTA (upload ở /jobs). */
-              <div
-                data-testid="storage-own-empty"
-                className="flex flex-col items-center px-2 py-6 text-center"
-              >
-                <Inbox className="h-10 w-10 text-muted" aria-hidden="true" />
-                <p className="mt-3 text-base font-semibold">{t("storage.own.empty")}</p>
-                <p className="mt-1 max-w-sm text-sm text-muted">{t("jobs.emptyBody")}</p>
-                <Link
-                  to="/jobs"
-                  className="mt-4 text-sm font-medium text-accent-text transition duration-150 ease-out hover:underline"
-                >
-                  {t("jobs.emptyCta")}
-                </Link>
-              </div>
+              <EmptyState
+                icon={Inbox}
+                title={t("storage.own.empty")}
+                body={t("jobs.emptyBody")}
+                action={
+                  <Link
+                    to="/jobs"
+                    className="text-sm font-medium text-accent-text transition duration-150 ease-out hover:underline"
+                  >
+                    {t("jobs.emptyCta")}
+                  </Link>
+                }
+                testid="storage-own-empty"
+              />
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -272,7 +271,7 @@ export default function Storage() {
                   disabled={page <= 1}
                   onClick={() => setPage((p) => p - 1)}
                 >
-                  ‹
+                  {t("storage.prevPage")}
                 </Button>
                 <Button
                   testid="storage-own-next"
@@ -282,7 +281,7 @@ export default function Storage() {
                   disabled={page * PAGE_SIZE >= data.total}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  ›
+                  {t("storage.nextPage")}
                 </Button>
               </div>
             )}
@@ -314,6 +313,6 @@ export default function Storage() {
           )}
         </div>
       )}
-    </main>
+    </PageShell>
   );
 }
