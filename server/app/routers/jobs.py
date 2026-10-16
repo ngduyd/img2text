@@ -22,9 +22,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.db import get_session
-from app.core.deps import get_current_user, get_runner_key, require_ocr
+from app.core.deps import (
+    get_current_user,
+    get_runner_key,
+    get_session_key,
+    require_ocr,
+)
 from app.core.limiter import DailyCounter, rate_limit_upload
-from app.core.models import DocumentVersion, Job, OcrSuggestion, User, WorkerHeartbeat
+from app.core.models import (
+    DocumentVersion,
+    Job,
+    OcrSuggestion,
+    User,
+    WorkerHeartbeat,
+    WorkerSession,
+)
 from app.core.schemas import PreprocessIn, ResultBody
 from app.core.security import hash_worker_token
 from app.services import proofread
@@ -1481,6 +1493,28 @@ async def fail_job(
         raise HTTPException(status_code=409, detail="job not runnable")
     await session.commit()
     return {}
+
+@router.get("/api/jobs/{id}/status")
+async def job_status(
+    id: int,
+    key: str = Depends(get_session_key),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Session worker poll giữa các trang (spec kaggle session worker T4,
+    AC7 cancel check): auth = session key (KHÔNG cookie owner). Job không
+    thuộc session đang auth → 401 cùng detail (anti-oracle giữ)."""
+    job = await session.get(Job, id)
+    owner = None
+    if job is not None and job.session_id is not None:
+        owner = await session.scalar(
+            select(WorkerSession.id).where(
+                WorkerSession.key_hash == hash_worker_token(key),
+                WorkerSession.closed_at.is_(None),
+            )
+        )
+    if owner is None or job is None or owner != job.session_id:
+        raise HTTPException(status_code=401, detail="bad session key")
+    return {"status": job.status, "error": job.error}
 
 # --- Delete: DELETE /api/jobs/{id} (spec wave-2 #1 — GDPR xóa job) ----------
 
