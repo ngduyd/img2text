@@ -255,3 +255,38 @@ async def test_heartbeat_accepts_session_key(client, db_session, monkeypatch):
         headers=_auth(),
     )
     assert r.status_code == 200, r.text
+
+
+def _rids(n: int) -> str:
+    return ",".join(f"r{i}" for i in range(n))
+
+
+async def test_claim_crop_rids_over_cap_422(client, db_session, monkeypatch):
+    """P1: >200 crop_rids → 422 (chặn presign flood), detail Tiếng Việt."""
+    monkeypatch.setattr(settings, "kaggle_mode", "session")
+    await _seed_session(db_session)
+    await _seed_queued_job(db_session)
+    r = await client.get(f"/api/jobs/next?crop_rids={_rids(201)}", headers=_auth())
+    assert r.status_code == 422, r.text
+    assert "tối đa 200" in r.json()["detail"]
+
+async def test_claim_crop_rids_at_cap_200(client, db_session, monkeypatch):
+    monkeypatch.setattr(settings, "kaggle_mode", "session")
+    await _seed_session(db_session)
+    await _seed_queued_job(db_session)
+    r = await client.get(f"/api/jobs/next?crop_rids={_rids(200)}", headers=_auth())
+    assert r.status_code == 200, r.text
+    assert len(r.json()["crop_upload_urls"]) == 200
+
+async def test_status_route_crop_rids_over_cap_422(client, db_session, monkeypatch):
+    """Cùng helper → route /status cũng 422 khi >200 (không chỉ claim)."""
+    monkeypatch.setattr(settings, "kaggle_mode", "session")
+    await _seed_session(db_session)
+    jid = await _seed_queued_job(db_session)
+    claim = await client.get("/api/jobs/next", headers=_auth())
+    assert claim.status_code == 200, claim.text
+    r = await client.get(
+        f"/api/jobs/{jid}/status?crop_rids={_rids(201)}", headers=_auth()
+    )
+    assert r.status_code == 422, r.text
+    assert "tối đa 200" in r.json()["detail"]

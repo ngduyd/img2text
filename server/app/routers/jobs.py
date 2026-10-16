@@ -68,6 +68,8 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 # Spec kaggle session worker T4: region id hợp lệ cho crop presign PUT
 # (claim/status query param crop_rids) — chặn path traversal vào storage key.
 RID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# P1: cap crop_rids mỗi request — chặn presign flood (1 presign/rid).
+MAX_CROP_RIDS = 200
 # Spec 2026-10-10 sanity bound (was 50 on the removed server-side parse):
 # the client counts pages with pdf.js; presign/create check the METADATA.
 # P2-5: cap = settings.max_pages (1 config; default = kernel hard cap 100).
@@ -561,9 +563,14 @@ async def _crop_upload_urls(
     (spec T4: 1 URL theo rid — không wildcard)."""
     if not crop_rids:
         return {}
+    rids = [rid.strip() for rid in crop_rids.split(",")]
+    if len(rids) > MAX_CROP_RIDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Quá nhiều region_id (tối đa {MAX_CROP_RIDS}).",
+        )
     urls: dict[str, str] = {}
-    for rid in crop_rids.split(","):
-        rid = rid.strip()
+    for rid in rids:
         if not RID_RE.fullmatch(rid):
             raise HTTPException(status_code=422, detail="region_id không hợp lệ.")
         urls[rid] = await storage.presign_put(
