@@ -1,0 +1,15 @@
+# img2text UI only — host SPA tĩnh, không backend.
+#   docker compose -f deploy/docker-compose.ui.yml up -d
+# SPA gọi API theo relative /api/ → không có server thì login/upload sẽ
+# báo lỗi network — chỉ host UI/demo giao diện.
+services:
+  web:
+    image: ngduyd/img2text-web:v0.1.0
+    restart: unless-stopped
+    ports:
+      - "17853:80"   # 80 đã có portfolio trên host
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

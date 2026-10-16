@@ -27,7 +27,7 @@ class _FakeStorage:
         return key in self.keys
 
     async def presign_get(self, key: str, expires: int) -> str:
-        assert key in self.keys and expires == 86400
+        assert key in self.keys and expires == 3600  # P2 #19: crop presign 1h
         return f"https://cdn.example/{key}?sig=abc"
 
 
