@@ -41,6 +41,11 @@ SESSION_KEY = SESSION_KEY_PLACEHOLDER
 SESSION_MAX_AGE_S = float(os.environ.get("SESSION_MAX_AGE_S") or 30600)
 BUDGET_EXIT_MARGIN_S = 1800.0
 HEARTBEAT_INTERVAL_S = 300.0
+# Claim 429 (rate-limiter transient): retry CÓ CAP rồi mới EXIT_FATAL — không
+# treo kernel vĩnh viễn khi limiter nghẽn kéo dài.
+CLAIM_MAX_RETRIES = int(os.environ.get("SESSION_CLAIM_MAX_RETRIES") or 5)
+CLAIM_BACKOFF_BASE_S = 2.0
+CLAIM_BACKOFF_MAX_S = 60.0
 
 EXIT_GRACEFUL = 0
 EXIT_FATAL = 1
@@ -84,6 +89,22 @@ def _heartbeat(base: str, key: str) -> None:
 
 def _status(base: str, key: str, job_id: int) -> dict:
     return _http_json("GET", f"{base}/api/jobs/{job_id}/status", key)
+
+def _cancel_check(base: str, key: str, job_id: int) -> bool:
+    """True = chưa cancel (tiếp tục OCR). 429/timeout lúc poll status là
+    transient (limiter nghẽn) → coi như chưa cancel, KHÔNG raise — tránh fail
+    SAI job. Lỗi HTTP khác (401/403/...) vẫn raise như cũ."""
+    try:
+        return _status(base, key, job_id).get("status") != "cancelled"
+    except urllib.error.HTTPError as exc:
+        if exc.code != 429:
+            raise
+        err = exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        err = exc
+    print(f"[session] cancel_check job {job_id} transient ({err}) "
+          "— coi như chưa cancel", flush=True)
+    return True
 
 
 # ===========================================================================
@@ -315,8 +336,7 @@ def run_job(base: str, key: str, claim: dict) -> str:
         kb.fetch_input(claim["file_url"], dest, claim.get("sha256"))
         out = process_job_session(
             job_id, dest, claim.get("preprocess"),
-            cancel_check=lambda: _status(base, key, job_id).get("status")
-            != "cancelled",
+            cancel_check=lambda: _cancel_check(base, key, job_id),
         )
         if out is None:
             return "cancelled"
@@ -350,6 +370,7 @@ def run_job(base: str, key: str, claim: dict) -> str:
 def run_loop(base: str, key: str) -> int:
     start = time.monotonic()
     last_heartbeat = float("-inf")
+    claim_retries = 0
     while True:
         now = time.monotonic()
         if now - start > SESSION_MAX_AGE_S - BUDGET_EXIT_MARGIN_S:
@@ -361,9 +382,19 @@ def run_loop(base: str, key: str) -> int:
         try:
             claim = _http_json("GET", f"{base}/api/jobs/next", key)
         except urllib.error.HTTPError as exc:
-            # session đóng (401) / server đóng session → dừng sạch
+            # 429 = limiter transient → backoff retry CÓ CAP; hết cap hoặc lỗi
+            # khác (401 session đóng) → dừng sạch.
+            if exc.code == 429 and claim_retries < CLAIM_MAX_RETRIES:
+                claim_retries += 1
+                delay = min(CLAIM_BACKOFF_MAX_S,
+                            CLAIM_BACKOFF_BASE_S * 2 ** (claim_retries - 1))
+                print(f"[session] claim 429 — backoff {delay:.0f}s "
+                      f"({claim_retries}/{CLAIM_MAX_RETRIES})", flush=True)
+                time.sleep(delay)
+                continue
             print(f"[session] claim HTTP {exc.code} — exit 1", flush=True)
             return EXIT_FATAL
+        claim_retries = 0
         if claim.get("empty"):
             print("[session] queue rỗng — exit 0", flush=True)
             return EXIT_GRACEFUL

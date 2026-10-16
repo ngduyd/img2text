@@ -5,6 +5,7 @@ phải cheap). Fake backend monkeypatch urllib seams (AC2/AC10)."""
 import json
 import sys
 import types
+import urllib.error
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -176,3 +177,67 @@ def test_quota_low_exits_graceful(monkeypatch):
     monkeypatch.setattr(sess, "_http_json", fake_http)
     monkeypatch.setattr(sess, "HEARTBEAT_INTERVAL_S", 10**9)
     assert sess.run_loop("http://base", "k") == sess.EXIT_GRACEFUL
+
+def test_cancel_check_429_treated_not_cancelled(monkeypatch):
+    """Limiter 429 lúc poll status (transient) → coi như chưa cancel, KHÔNG raise
+    (tránh fail SAI job khi limiter nghẽn tạm thời)."""
+    def fake_status_429(base, key, job_id):
+        raise urllib.error.HTTPError(
+            "http://base", 429, "Too Many Requests", {}, None
+        )
+    monkeypatch.setattr(sess, "_status", fake_status_429)
+    assert sess._cancel_check("http://base", "k", 7) is True
+
+def test_cancel_check_timeout_treated_not_cancelled(monkeypatch):
+    """Timeout lúc poll status → coi như chưa cancel, KHÔNG raise."""
+    def fake_status_timeout(base, key, job_id):
+        raise TimeoutError("timed out")
+    monkeypatch.setattr(sess, "_status", fake_status_timeout)
+    assert sess._cancel_check("http://base", "k", 7) is True
+
+def test_claim_429_backoff_then_success(monkeypatch):
+    """Claim 429 MỘT lần rồi OK → backoff rồi claim lại, loop TIẾP (empty →
+    exit 0), KHÔNG exit fatal."""
+    calls = {"n": 0}
+    sleeps: list[float] = []
+
+    def fake_http(method, url, key, payload=None, timeout=60):
+        if url.endswith("/api/jobs/next"):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise urllib.error.HTTPError(
+                    url, 429, "Too Many Requests", {}, None
+                )
+            return {"empty": True}
+        return {}
+
+    monkeypatch.setattr(sess, "_http_json", fake_http)
+    monkeypatch.setattr(sess, "HEARTBEAT_INTERVAL_S", 10**9)
+    monkeypatch.setattr(sess, "CLAIM_BACKOFF_BASE_S", 0.0)
+    monkeypatch.setattr(sess.time, "sleep", lambda s: sleeps.append(s))
+
+    assert sess.run_loop("http://base", "k") == sess.EXIT_GRACEFUL
+    assert calls["n"] == 2  # 1× 429 → retry → empty
+    assert len(sleeps) == 1  # đã backoff đúng 1 lần
+
+def test_claim_429_capped_then_fatal(monkeypatch):
+    """429 LIÊN TỤC → retry CÓ CAP (số lần + sleep tối đa) rồi EXIT_FATAL —
+    KHÔNG treo kernel vĩnh viễn."""
+    calls = {"n": 0}
+    sleeps: list[float] = []
+
+    def fake_http(method, url, key, payload=None, timeout=60):
+        if url.endswith("/api/jobs/next"):
+            calls["n"] += 1
+        raise urllib.error.HTTPError(url, 429, "Too Many Requests", {}, None)
+
+    monkeypatch.setattr(sess, "_http_json", fake_http)
+    monkeypatch.setattr(sess, "HEARTBEAT_INTERVAL_S", 10**9)
+    monkeypatch.setattr(sess, "CLAIM_BACKOFF_BASE_S", 1.0)
+    monkeypatch.setattr(sess, "CLAIM_MAX_RETRIES", 3)
+    monkeypatch.setattr(sess.time, "sleep", lambda s: sleeps.append(s))
+
+    assert sess.run_loop("http://base", "k") == sess.EXIT_FATAL
+    assert calls["n"] == 4  # 1 lần gốc + 3 retry
+    assert len(sleeps) == 3
+    assert all(s <= sess.CLAIM_BACKOFF_MAX_S for s in sleeps)  # cap sleep
