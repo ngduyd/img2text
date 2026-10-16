@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import get_current_user, get_runner_key, require_ocr
-from app.core.limiter import DailyCounter
+from app.core.limiter import DailyCounter, rate_limit_upload
 from app.core.models import DocumentVersion, Job, OcrSuggestion, User, WorkerHeartbeat
 from app.core.schemas import PreprocessIn, ResultBody
 from app.core.security import hash_worker_token
@@ -293,6 +293,7 @@ async def create_job(
     request: Request,
     body: JobCreateBody,
     user: User = Depends(_ocr_user),
+    _: None = Depends(rate_limit_upload),  # P2 #20: 30/giờ per user
     storage: StorageDriver = Depends(get_storage),
     session: AsyncSession = Depends(get_session),
 ) -> dict:

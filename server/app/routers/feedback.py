@@ -13,6 +13,7 @@ from sqlalchemy.orm import aliased
 
 from app.core.db import get_session
 from app.core.deps import get_current_user, require_admin
+from app.core.limiter import rate_limit_feedback
 from app.core.models import Feedback, User
 
 router = APIRouter(tags=["feedback"])
@@ -35,6 +36,7 @@ async def create_feedback(
     body: FeedbackIn,
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
+    _: None = Depends(rate_limit_feedback),  # P2 #20: 10/phút per user
 ) -> dict:
     row = Feedback(user_id=user.id, content=body.content, page_path=body.page_path)
     session.add(row)
