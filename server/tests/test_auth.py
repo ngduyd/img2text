@@ -83,3 +83,22 @@ async def test_resend_limit_still_429_before_send(client, db_session, monkeypatc
     assert resp.status_code == 429
     assert resp.json()["code"] == "email_limit"
 
+
+# --- #11 (spec 2026-10-15): bcrypt 72-byte cap at API boundary ---
+
+async def test_register_rejects_password_over_72_bytes(client):
+    resp = await client.post(
+        "/api/auth/register", json={"email": "a@b.c", "password": "x" * 73}
+    )
+    assert resp.status_code == 400
+    assert resp.json() == {"code": "password_too_long", "max_bytes": 72}
+
+async def test_password_reset_rejects_over_72_bytes(client):
+    """Length check TRƯỚC code claim → 400 kể cả code sai (spec expects
+    400, không phải 422)."""
+    resp = await client.post(
+        "/api/auth/password/reset",
+        json={"email": "a@b.c", "code": "123456", "password": "x" * 73},
+    )
+    assert resp.status_code == 400
+    assert resp.json() == {"code": "password_too_long", "max_bytes": 72}

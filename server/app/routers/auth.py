@@ -25,6 +25,7 @@ from app.core.security import (
     generate_email_code,
     hash_email_code,
     hash_password,
+    password_too_long,
     set_auth_cookies,
     verify_password,
 )
@@ -154,7 +155,13 @@ async def register(
     vượt — bỏ check, record rồi commit chung.
 
     #9: gửi INLINE (không background) — SMTP down → 503 email_unavailable
-    thay vì 201 im lặng; user đã commit nên duplicate register vẫn 201."""
+    thay vì 201 im lặng; user đã commit nên duplicate register vẫn 201.
+    #11: password >72 byte → 400 password_too_long TRƯỚC khi hash."""
+    if password_too_long(creds.password):
+        return JSONResponse(
+            status_code=400,
+            content={"code": "password_too_long", "max_bytes": 72},
+        )
     existing = await session.scalar(select(User).where(User.email == creds.email))
     if existing is not None:
         return {"status": "ok"}
@@ -419,7 +426,14 @@ async def reset(
     per-user (sha256(email:code:secret)) + chưa hết hạn trong MỘT conditional
     UPDATE ... RETURNING (atomic claim — không check-then-set race).
     0 match → 422. Đúng → đổi mật khẩu + revoke ALL refresh CÙNG transaction
-    (single commit; code single-use vì đã NULL claim)."""
+    (single commit; code single-use vì đã NULL claim).
+
+    #11: password >72 byte → 400 TRƯỚC code claim (spec: đủ code vẫn 400)."""
+    if password_too_long(body.password):
+        return JSONResponse(
+            status_code=400,
+            content={"code": "password_too_long", "max_bytes": 72},
+        )
     now = datetime.now(timezone.utc)
     claim = await session.execute(
         update(User)

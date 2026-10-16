@@ -6,6 +6,7 @@ email/new_password required. Password change revokes every refresh token
 """
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +16,7 @@ from app.core.deps import get_current_user
 from app.core.limiter import rate_limit_auth
 from app.core.models import User
 from app.routers.auth import UserOut, _EmailIn, _user_out, revoke_all_refresh
-from app.core.security import hash_password, verify_password
+from app.core.security import hash_password, password_too_long, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["profile"])
 
@@ -38,6 +39,13 @@ async def update_profile(
     user: User = Depends(get_current_user),
     _: None = Depends(rate_limit_auth),  # bcrypt verify per request; no brute-force surface
 ) -> UserOut:
+    #11: password >72 byte → 400 boundary TRƯỚC (bcrypt cap — kể cả sai
+    # current_password cũng không được hash).
+    if password_too_long(body.new_password or ""):
+        return JSONResponse(
+            status_code=400,
+            content={"code": "password_too_long", "max_bytes": 72},
+        )
     if not verify_password(body.current_password, user.password_hash):
         raise HTTPException(status_code=401, detail="Sai mật khẩu.")
     if body.email is not None and body.email != user.email:
