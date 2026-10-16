@@ -127,7 +127,7 @@ chỉ còn import trong chính 13 files trên mới xóa. Sau xóa `npx tsc --no
 - `Auth.test.tsx`: Signin/Signup untouched; Forgot/Reset chuyển AuthLayout — check asserts wrapper, giữ testids form.
 - `ExtractionPage.test.tsx`: giữ `link-back-job`, `extraction-loading`; header testid giữ.
 - `Profile.test.tsx`: giữ `profile-loading` (giờ Skeleton).
-- `Jobs.upload.test.tsx`: ở lại, không vỡ (comment Dropzone historical).
+- `Jobs.upload.test.tsx`: ở lại; update :147 — bỏ assert `quota-remaining` (hệ quả E2: QuotaBadge rời khỏi Jobs page, chỉ còn ở nav; test render page-only nên không còn node này. Quota vẫn được cover bởi App.test ở nav).
 - `admin/AdminWorkers.test.tsx`, `Admin.test.tsx` (8 tabs rail, giữ testids rail), `AdminStorage/AdminUsers/AdminSettings/AdminFeedbacks/AdminKaggleQuota/VerifyModal tests`: testid-based, giữ testids.
 - `pages/Feedback.test.tsx` (co-located trong src/pages, không phải tests/): testids-only, an toàn nếu giữ testids/id.
 - `tokens.test.ts`: không đụng tokens, phải pass.
