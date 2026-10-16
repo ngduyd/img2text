@@ -50,7 +50,7 @@ export default function ExtractionPage() {
     <PageShell>
       <PageHeader
         testid="extraction-header"
-        title={`${t("extraction.title")} #${id}`}
+        title={<>{t("extraction.title")} <span className="font-mono">#{id}</span></>}
         beforeTitle={
           <Link
             to={`/jobs/${id}`}

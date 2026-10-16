@@ -97,12 +97,12 @@ export default function AdminStorage() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 border-b border-border bg-surface-2 text-left text-xs text-muted">
                   <tr>
-                    <th scope="col" className="px-2 py-2 font-medium">#</th>
-                    <th scope="col" className="px-2 py-2 font-medium">{t("storage.table.email")}</th>
-                    <th scope="col" className="px-2 py-2 font-medium">{t("storage.table.filename")}</th>
-                    <th scope="col" className="px-2 py-2 font-medium">{t("storage.table.bytes")}</th>
-                    <th scope="col" className="px-2 py-2 font-medium">{t("storage.table.created")}</th>
-                    <th scope="col" className="px-2 py-2 font-medium">{t("storage.table.status")}</th>
+                    <th scope="col" className="sticky top-0 z-10 border-b border-border bg-surface-2 px-2 py-2 font-medium text-muted">#</th>
+                    <th scope="col" className="sticky top-0 z-10 border-b border-border bg-surface-2 px-2 py-2 font-medium text-muted">{t("storage.table.email")}</th>
+                    <th scope="col" className="sticky top-0 z-10 border-b border-border bg-surface-2 px-2 py-2 font-medium text-muted">{t("storage.table.filename")}</th>
+                    <th scope="col" className="sticky top-0 z-10 border-b border-border bg-surface-2 px-2 py-2 font-medium text-muted">{t("storage.table.bytes")}</th>
+                    <th scope="col" className="sticky top-0 z-10 border-b border-border bg-surface-2 px-2 py-2 font-medium text-muted">{t("storage.table.created")}</th>
+                    <th scope="col" className="sticky top-0 z-10 border-b border-border bg-surface-2 px-2 py-2 font-medium text-muted">{t("storage.table.status")}</th>
                   </tr>
                 </thead>
                 <tbody>

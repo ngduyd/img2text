@@ -3,8 +3,9 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { translate, useT } from "../../i18n";
-import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
+import EmptyState from "../../components/ui/EmptyState";
+import Pagination from "../../components/ui/Pagination";
 import Skeleton from "../../components/ui/Skeleton";
 
 const PAGE_SIZE = 20;
@@ -35,13 +36,7 @@ export default function AdminFeedbacks() {
       {isLoading ? (
         <Skeleton testid="fb-loading" />
       ) : items.length === 0 ? (
-        <div
-          data-testid="fb-empty"
-          className="flex flex-col items-center gap-2 px-4 py-8 text-center"
-        >
-          <MessageSquare className="h-8 w-8 text-muted" aria-hidden="true" />
-          <p className="text-sm text-muted">{t("admin.feedbacks.empty")}</p>
-        </div>
+        <EmptyState icon={MessageSquare} body={t("admin.feedbacks.empty")} testid="fb-empty" />
       ) : (
         <ul className="divide-y divide-border">
           {items.map((fb) => (
@@ -61,31 +56,20 @@ export default function AdminFeedbacks() {
           ))}
         </ul>
       )}
-      <div className="mt-3 flex items-center justify-end gap-2">
-        <Button
-          type="button"
-          testid="fb-prev"
-          size="sm"
-          variant="ghost"
-          disabled={page <= 1}
-          onClick={() => setPage((p) => p - 1)}
-        >
-          {t("jobs.prev")}
-        </Button>
-        <span className="text-sm text-muted">
-          {t("admin.feedbacks.page", { page, pages })}
-        </span>
-        <Button
-          type="button"
-          testid="fb-next"
-          size="sm"
-          variant="ghost"
-          disabled={page >= pages}
-          onClick={() => setPage((p) => p + 1)}
-        >
-          {t("jobs.next")}
-        </Button>
-      </div>
+      <Pagination
+        page={page}
+        totalPages={pages}
+        onChange={setPage}
+        prevTestid="fb-prev"
+        nextTestid="fb-next"
+        prevLabel={t("jobs.prev")}
+        nextLabel={t("jobs.next")}
+        info={
+          <span className="text-sm text-muted">
+            {t("admin.feedbacks.page", { page, pages })}
+          </span>
+        }
+      />
     </Card>
   );
 }

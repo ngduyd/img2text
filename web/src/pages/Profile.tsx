@@ -37,7 +37,11 @@ export default function Profile() {
     // Loading state instead of blank page while [me] resolves (ui-ux-dev checklist).
     return (
       <PageShell>
-        <Skeleton testid="profile-loading" className="h-6 w-40" />
+        <div data-testid="profile-loading" className="flex flex-col gap-4">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-8 w-40" />
+        </div>
       </PageShell>
     );
   }

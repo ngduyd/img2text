@@ -18,6 +18,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import PageShell from "../components/PageShell";
 import PageHeader from "../components/PageHeader";
 import EmptyState from "../components/ui/EmptyState";
+import Pagination from "../components/ui/Pagination";
 import { Stat, fmtBytes } from "../components/ui/Stat";
 
 type ConfirmState = { kind: "one"; id: number } | { kind: "due" } | null;
@@ -259,31 +260,22 @@ export default function Storage() {
             )}
             {/* AC10/P0-2: pagination — mirror AdminStorage prev/next. */}
             {data && items.length > 0 && (
-              <div className="mt-3 flex items-center justify-end gap-2 text-sm">
-                <span className="text-muted">
-                  {t("storage.pageInfo", { page, total: data.total })}
-                </span>
-                <Button
-                  testid="storage-own-prev"
-                  aria-label={t("storage.prevPage")}
-                  variant="secondary"
-                  size="sm"
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => p - 1)}
-                >
-                  {t("storage.prevPage")}
-                </Button>
-                <Button
-                  testid="storage-own-next"
-                  aria-label={t("storage.nextPage")}
-                  variant="secondary"
-                  size="sm"
-                  disabled={page * PAGE_SIZE >= data.total}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  {t("storage.nextPage")}
-                </Button>
-              </div>
+              <Pagination
+                page={page}
+                totalPages={Math.max(1, Math.ceil(data.total / PAGE_SIZE))}
+                onChange={setPage}
+                prevTestid="storage-own-prev"
+                nextTestid="storage-own-next"
+                prevLabel={t("storage.prevPage")}
+                nextLabel={t("storage.nextPage")}
+                prevAriaLabel={t("storage.prevPage")}
+                nextAriaLabel={t("storage.nextPage")}
+                info={
+                  <span className="text-muted text-sm">
+                    {t("storage.pageInfo", { page, total: data.total })}
+                  </span>
+                }
+              />
             )}
           </section>
 

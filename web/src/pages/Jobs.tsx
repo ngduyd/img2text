@@ -140,21 +140,21 @@ export default function Jobs() {
         actions={
           <dl className="flex gap-4">
             <div className="text-right">
-              <dt className="text-xs text-muted">{t("jobs.stats.total")}</dt>
+              <dt className="sr-only">{t("jobs.stats.total")}</dt>
               <dd>
-                <Stat testid="stats-total" value={String(jobs?.total ?? items.length)} />
+                <Stat testid="stats-total" label={t("jobs.stats.total")} value={String(jobs?.total ?? items.length)} />
               </dd>
             </div>
             <div className="text-right">
-              <dt className="text-xs text-muted">{t("jobs.stats.pending")}</dt>
+              <dt className="sr-only">{t("jobs.stats.pending")}</dt>
               <dd>
-                <Stat testid="stats-pending" value={String(pending)} valueClassName="text-warning" />
+                <Stat testid="stats-pending" label={t("jobs.stats.pending")} value={String(pending)} valueClassName="text-warning" />
               </dd>
             </div>
             <div className="text-right">
-              <dt className="text-xs text-muted">{t("jobs.stats.done")}</dt>
+              <dt className="sr-only">{t("jobs.stats.done")}</dt>
               <dd>
-                <Stat testid="stats-done" value={String(done)} valueClassName="text-success" />
+                <Stat testid="stats-done" label={t("jobs.stats.done")} value={String(done)} valueClassName="text-success" />
               </dd>
             </div>
           </dl>

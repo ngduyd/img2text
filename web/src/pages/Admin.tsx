@@ -16,6 +16,7 @@ import AdminStorage from "./admin/AdminStorage";
 import AdminWorkers from "./admin/AdminWorkers";
 import AdminUsers from "./admin/AdminUsers";
 import PageShell from "../components/PageShell";
+import PageHeader from "../components/PageHeader";
 import Skeleton from "../components/ui/Skeleton";
 
 // Plan V3: desktop ≥md = vertical sub-rail (icon + label); mobile = horizontal scroll pills. Testids tab-* kept (R51).
@@ -52,7 +53,7 @@ export default function Admin() {
 
   return (
     <PageShell width="wide">
-      <h1 className="mb-4 text-xl font-bold">{t("admin.title")}</h1>
+      <PageHeader title={t("admin.title")} />
       <div className="flex flex-col gap-4 md:flex-row md:gap-6">
         <nav
           data-testid="admin-rail"

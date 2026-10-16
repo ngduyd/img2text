@@ -28,6 +28,8 @@ interface PaginationProps {
   ariaLabel?: string;
   prevLabel?: string;
   nextLabel?: string;
+  prevAriaLabel?: string;
+  nextAriaLabel?: string;
 }
 
 export default function Pagination({
@@ -43,6 +45,8 @@ export default function Pagination({
   ariaLabel,
   prevLabel = "‹",
   nextLabel = "›",
+  prevAriaLabel,
+  nextAriaLabel,
 }: PaginationProps) {
   return (
     <nav
@@ -52,6 +56,7 @@ export default function Pagination({
     >
       <Button
         testid={prevTestid}
+        aria-label={prevAriaLabel}
         size="sm"
         variant="secondary"
         disabled={page <= 1}
@@ -80,6 +85,7 @@ export default function Pagination({
         )}
       <Button
         testid={nextTestid}
+        aria-label={nextAriaLabel}
         size="sm"
         variant="secondary"
         disabled={page >= totalPages}

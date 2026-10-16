@@ -7,7 +7,7 @@ export default function PageHeader({
   testid,
   beforeTitle,
 }: {
-  title: string;
+  title: ReactNode;
   subtitle?: string;
   actions?: ReactNode;
   testid?: string;
