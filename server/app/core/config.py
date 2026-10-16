@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     # Wave-5 S1: purge file gốc — interval tick (floor 60s) + retention 7d.
     purge_interval_seconds: int = 3600
     purge_retention_days: int = 7
+    # #12 (spec 2026-10-15): daily pg_dump — cron expr (APScheduler
+    # from_crontab: "min hour dom mon dow"); override qua Setting row
+    # backup_cron / backup_retention_days (runtime_settings, không qua
+    # admin API — PUT allowlist giữ nguyên).
+    backup_cron: str = "0 4 * * *"
+    backup_retention_days: int = 14
     # Plan K2: Kaggle worker orchestration (backend auto-spawn kernel run).
     # Enabled iff username + (key OR api_token) + kernel_ref all set — feature
     # self-disables and the server never imports the kaggle package otherwise.
