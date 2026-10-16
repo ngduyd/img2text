@@ -1,0 +1,14 @@
+{
+  "id": "OWNER/img2text-session",
+  "title": "img2text-session",
+  "code_file": "img2text_session.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [
+    "jhandf/img2text-wheelbuild-env"
+  ],
+  "machine_shape": "NvidiaTeslaT4"
+}

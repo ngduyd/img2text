@@ -97,7 +97,8 @@ def _log_gpu(tag: str) -> None:
         paddle.device.cuda.empty_cache()
 
 def _predict_pages_one_by_one(pipeline, pages, save, raw_dir,
-                              timeout: float | None = None) -> None:
+                              timeout: float | None = None,
+                              cancel_check=None) -> bool:
     """PRIMARY (lane H OCR perf): predict TỪNG trang, GIỮ 1 pipeline instance
     (model load 1 lần) — batch generator mode (treo im lặng ~1h với ảnh
     pathological) chỉ còn sau BATCH_PREDICT=1. Mỗi trang bọc SIGALRM
@@ -107,12 +108,18 @@ def _predict_pages_one_by_one(pipeline, pages, save, raw_dir,
     ceiling (ponytail): SIGALRM chỉ raise khi bytecode Python chạy — predict
     kẹt trong native/CUDA call không nhường GIL/bytecode → vẫn treo; upgrade
     path = subprocess watchdog từng trang (đổi lấy model reload ~26s/trang).
-    Sau timeout GIỮ instance — trang sau cũng fail → error.txt, chạy tiếp."""
+    Sau timeout GIỮ instance — trang sau cũng fail → error.txt, chạy tiếp.
+
+    cancel_check (session kernel, AC7): callable trả False → dừng ngay,
+    trả False (giữ nguyên cache các trang đã xong — per-page resume);
+    mặc định None = hành vi cũ, luôn True."""
     import signal
     import traceback
 
     timeout = _page_timeout() if timeout is None else timeout
     for p in pages:
+        if cancel_check is not None and not cancel_check():
+            return False
         t2 = time.time()
         signal.signal(signal.SIGALRM, _alarm_handler)
         signal.setitimer(signal.ITIMER_REAL, timeout)
@@ -132,6 +139,7 @@ def _predict_pages_one_by_one(pipeline, pages, save, raw_dir,
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)  # hủy watchdog khi ra khỏi trang
         _log_gpu(p.stem)
+    return True
 
 def _ocr_phase(argv: list[str]) -> int:
     import traceback
@@ -242,16 +250,20 @@ def _find_wheelhouse() -> str | None:
             return d
     return hits[0] if hits else None
 
-if __name__ == "__main__":
-    # --ocr re-exec dispatch (OCR phase, venv) — BEFORE the heavy bootstrap
-    if len(sys.argv) > 1 and sys.argv[1] == "--ocr":
-        sys.exit(_ocr_phase(sys.argv[2:]))
+def bootstrap_venv() -> None:
+    """Parent-phase bootstrap (Kaggle kernel Python; pip/apt errors
+    check=False — verify after, never let install noise kill the script).
+    Script/re-exec ONLY — callers invoke this as __main__ flow; importing
+    this module (unit tests, session kernel) must not pip/apt/venv nor pull
+    heavy deps (cv2/numpy/PIL/rapidfuzz). Sets the cv2/np/Image/fuzz module
+    globals the pipeline functions below resolve lazily.
 
+    Raises SystemExit (kê message) khi venv/paddle không dựng được — session
+    kernel bắt → exit 90 (spec session worker T7, AC10)."""
+    global cv2, np, Image, fuzz  # noqa: PLW0603 — bootstrap side effect
     # ===================================================================
-    # Parent phase bootstrap (Kaggle kernel Python; pip/apt errors
-    # check=False — verify after, never let install noise kill the script).
-    # Script execution ONLY: importing this module (unit tests) must not
-    # pip/apt/venv nor pull heavy deps (cv2/numpy/PIL/rapidfuzz).
+    # pip/apt errors check=False — verify after, never let install noise
+    # kill the script.
     # ===================================================================
     subprocess.run([sys.executable, "-m", "pip", "install", "-q", "uv"], check=False)
     # pip --user uv lands in ~/.local/bin — make sure the `uv` name resolves.
@@ -340,6 +352,12 @@ if __name__ == "__main__":
     import numpy as np  # noqa: E402
     from PIL import Image  # noqa: E402
     from rapidfuzz import fuzz  # noqa: E402
+
+if __name__ == "__main__":
+    # --ocr re-exec dispatch (OCR phase, venv) — BEFORE the heavy bootstrap
+    if len(sys.argv) > 1 and sys.argv[1] == "--ocr":
+        sys.exit(_ocr_phase(sys.argv[2:]))
+    bootstrap_venv()
 
 # ===========================================================================
 # worker/verdict.py (flattened, FULL — precheck gates the OCR phase; resolve/
