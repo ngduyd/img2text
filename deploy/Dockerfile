@@ -22,6 +22,8 @@ COPY server/ /app/server/
 COPY deploy/reference.docx /app/deploy/reference.docx
 # kaggle_stage_src default (deploy/kaggle) must resolve inside the image.
 COPY deploy/kaggle /app/deploy/kaggle
+# Boot migrations: lifespan applies /app/docs/migrations/*.sql after create_all.
+COPY docs/migrations /app/docs/migrations
 
 # Plan K2: [kaggle] extra installs the Kaggle API client — the server imports
 # it lazily and orchestration self-disables without it (no hard dependency).
