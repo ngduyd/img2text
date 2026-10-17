@@ -7,7 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.services.kaggle_quota import _seconds
+from app.core.config import settings
+from app.services.kaggle_quota import _seconds, quota_remaining_seconds
 
 QUOTA_RESPONSE = SimpleNamespace(
     gpuQuota=SimpleNamespace(
@@ -61,6 +62,22 @@ def test_seconds_parses_legacy_strings():
     assert _seconds("5900.915.0s") == pytest.approx(5900.915)
     assert _seconds("21600.0s") == pytest.approx(21600.0)
     assert _seconds(7200) == pytest.approx(7200.0)
+
+
+def test_quota_remaining_seconds_timedelta():
+    """Gate AC6: api trả timedelta → remaining 108000s (KHÔNG phải 1.0) và
+    ≥ ngưỡng spawn → cho phép spawn."""
+    api = SimpleNamespace(
+        quota_view=lambda: SimpleNamespace(
+            gpuQuota=SimpleNamespace(
+                timeUsed=timedelta(0),
+                totalTimeAllowed=timedelta(days=1, seconds=21600),
+            ),
+        ),
+    )
+    remaining = quota_remaining_seconds(api)
+    assert remaining == pytest.approx(108000.0)
+    assert remaining >= settings.kaggle_session_min_quota_s
 
 
 class StubKaggleApi:

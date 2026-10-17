@@ -226,6 +226,24 @@ async def test_quota_gate_blocks_spawn(db_session, monkeypatch):
     assert len(api.pushes) == 1
     assert orch.session_quota_low() is False
 
+async def test_quota_gate_timedelta_allows_spawn(db_session, monkeypatch):
+    """SDK 2.2.4 trả timedelta → remaining 108000s ≥ 7200s → spawn. Regression:
+    str(td)='1 day, 6:00:00' từng parse nhầm thành 1s → quota_low → không bao giờ spawn."""
+    api = FakeApi()
+    api.quota_view = lambda: SimpleNamespace(
+        gpuQuota=SimpleNamespace(
+            timeUsed=timedelta(0),
+            totalTimeAllowed=timedelta(days=1, seconds=21600),
+        ),
+    )
+    monkeypatch.setattr(orch, "_api", lambda: api)
+    await _seed_job(db_session, "queued")
+    pushed = await orch.ensure_worker(SessionLocal)
+    assert pushed is True
+    assert orch.session_quota_low() is False
+    assert len(api.pushes) == 1
+
+
 async def test_dead_kernel_reverts_claimed_clears_session_id_and_respawns(
     db_session, monkeypatch
 ):
