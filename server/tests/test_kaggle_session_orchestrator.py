@@ -107,15 +107,51 @@ async def test_spawn_session_bakes_base_url(db_session, monkeypatch):
     assert "__BASE_URL__" not in script
     assert "__SESSION_KEY__" not in script
 
+async def test_spawn_session_bakes_worker_base_url(db_session, monkeypatch):
+    """W1: worker_base_url set → bake nó, KHÔNG bake base_url (browser-facing)."""
+    monkeypatch.setattr(settings, "base_url", "http://localhost:5173")
+    monkeypatch.setattr(settings, "worker_base_url", "https://worker.example.com")
+    api = FakeApi()
+    assert await orch._spawn_session(api, SessionLocal, key="k-worker") is True
+    script = api.pushes[0]["img2text_session.py"]
+    assert "https://worker.example.com" in script
+    assert "http://localhost:5173" not in script
+    assert "__BASE_URL__" not in script
+
+async def test_spawn_session_falls_back_to_base_url(db_session, monkeypatch):
+    """W1: worker_base_url rỗng → fallback base_url (backward-compat)."""
+    monkeypatch.setattr(settings, "base_url", "https://api.example.com")
+    monkeypatch.setattr(settings, "worker_base_url", "")
+    api = FakeApi()
+    assert await orch._spawn_session(api, SessionLocal, key="k-fallback") is True
+    script = api.pushes[0]["img2text_session.py"]
+    assert "https://api.example.com" in script
+    assert "__BASE_URL__" not in script
+
 async def test_spawn_session_warns_unreachable_base_url(
     db_session, monkeypatch, caplog
 ):
     """base_url rỗng/localhost → kernel Kaggle không reach được → warning."""
     # F3: pin settings để không phụ thuộc env shell (pydantic case-insensitive).
     monkeypatch.setattr(settings, "base_url", "http://localhost:8000")
+    monkeypatch.setattr(settings, "worker_base_url", "")
     api = FakeApi()
     with caplog.at_level(logging.WARNING, logger=orch.__name__):
         assert await orch._spawn_session(api, SessionLocal, key="k-warn") is True
+    assert any(
+        "base_url" in r.message and "reach" in r.message
+        for r in caplog.records
+    )
+
+async def test_spawn_session_warns_worker_base_url_localhost(
+    db_session, monkeypatch, caplog
+):
+    """W1: api_base localhost (qua worker_base_url) → warn, dù base_url public."""
+    monkeypatch.setattr(settings, "base_url", "https://api.example.com")
+    monkeypatch.setattr(settings, "worker_base_url", "http://127.0.0.1:8000")
+    api = FakeApi()
+    with caplog.at_level(logging.WARNING, logger=orch.__name__):
+        assert await orch._spawn_session(api, SessionLocal, key="k-warn2") is True
     assert any(
         "base_url" in r.message and "reach" in r.message
         for r in caplog.records

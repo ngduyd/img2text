@@ -310,20 +310,21 @@ async def _spawn_session(
         for name in ("img2text_session.py", "img2text_batch.py"):
             shutil.copyfile(src / "kernel" / name, build / name)
         script_path = build / "img2text_session.py"
+        api_base = settings.worker_base_url or settings.base_url
         script_path.write_text(
             script_path.read_text(encoding="utf-8")
             .replace("__SESSION_KEY__", key)
-            .replace("__BASE_URL__", settings.base_url),
+            .replace("__BASE_URL__", api_base),
             encoding="utf-8",
         )
         if (
-            not settings.base_url
-            or "localhost" in settings.base_url
-            or "127.0.0.1" in settings.base_url
+            not api_base
+            or "localhost" in api_base
+            or "127.0.0.1" in api_base
         ):
             logger.warning(
                 "kaggle session: base_url %r không reach được từ Kaggle kernel",
-                settings.base_url,
+                api_base,
             )
         meta = _sub_owner(
             json.loads(

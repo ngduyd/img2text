@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     # raises RuntimeError (fail-fast: empty, dev default, or <32 chars).
     app_secret: str = ""
     base_url: str = "http://localhost:8000"
+    # API base bake vào kernel Kaggle (reachable từ Kaggle). Rỗng → fallback
+    # base_url. Tách khỏi base_url (browser-facing: cookie Secure / Vite dev).
+    worker_base_url: str = ""
     admin_email: str = ""
     admin_password: str = ""
     log_path: str = "logs/img2text.log"
