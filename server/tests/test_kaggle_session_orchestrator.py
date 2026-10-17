@@ -25,10 +25,13 @@ class FakeApi:
     def __init__(self) -> None:
         self.pushes: list[dict[str, str]] = []  # staged files per push
         self.status = "running"
+        self.status_refs: list[str] = []  # ref passed to kernels_status
         self.gpu_used_s = 3600.0
         self.gpu_total_s = 21600.0
 
-    def kernels_push(self, folder: str) -> str:
+    def kernels_push(self, folder: str) -> dict:
+        """kaggle 2.x: trả DICT ({ref:'/code/owner/slug', ...}), KHÔNG phải
+        string — bug gốc lưu str(dict) vào DB."""
         from pathlib import Path
 
         self.pushes.append({
@@ -36,9 +39,15 @@ class FakeApi:
             for p in Path(folder).iterdir()
             if p.is_file()
         })
-        return SESSION_REF
+        return {
+            "ref": f"/code/{SESSION_REF}",
+            "url": f"https://kaggle.com/code/{SESSION_REF}",
+            "versionNumber": 1,
+            "kernelId": 42,
+        }
 
     def kernels_status(self, ref: str):
+        self.status_refs.append(ref)
         return SimpleNamespace(status=self.status)
 
     def quota_view(self):
@@ -199,6 +208,26 @@ async def test_spawn_session_stores_hash_not_plaintext(db_session):
         {"i": sid},
     )
     assert key not in row_text
+
+async def test_norm_session_ref_variants():
+    """R1: chuẩn hóa ref từ mọi dạng về 'owner/slug'."""
+    legacy = json.dumps({"ref": f"/code/{SESSION_REF}", "versionNumber": 1})
+    assert orch._norm_session_ref(legacy) == SESSION_REF  # JSON dict-string (DB cũ)
+    assert orch._norm_session_ref(f"/code/{SESSION_REF}") == SESSION_REF
+    assert orch._norm_session_ref(SESSION_REF) == SESSION_REF  # đã đúng → nguyên
+    assert orch._norm_session_ref({"ref": f"/code/{SESSION_REF}"}) == SESSION_REF
+    assert orch._norm_session_ref("{not json") == "{not json"  # parse lỗi → nguyên
+
+async def test_spawn_session_kernel_ref_not_json(db_session):
+    """R1: spawn lưu 'owner/slug' (từ meta['id']) làm ref, KHÔNG phải
+    str(dict) từ kernels_push."""
+    api = FakeApi()
+    assert await orch._spawn_session(api, SessionLocal, key="k-norm") is True
+    sid = await _live_session_id(db_session)
+    row = await db_session.get(WorkerSession, sid)
+    assert row.kernel_ref == SESSION_REF
+    assert "{" not in row.kernel_ref
+    assert orch._sessions[sid]["ref"] == SESSION_REF
 
 async def test_single_active_session_guard(db_session, monkeypatch):
     api = FakeApi()

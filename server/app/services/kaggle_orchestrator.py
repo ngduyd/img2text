@@ -340,10 +340,14 @@ async def _spawn_session(
             json.dumps(meta, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
+        # kernels_push trả DICT (kaggle 2.x) — chỉ để log; ref lưu DB/map là
+        # meta['id'] = 'owner/slug' (kernels_status cần dạng này, không phải
+        # str(dict)).
+        kernel_ref = meta["id"]
         ref = await asyncio.to_thread(api.kernels_push, str(build))
         now = datetime.now(timezone.utc)
         async with session_factory() as session:
-            row = WorkerSession(kernel_ref=str(ref), key_hash=key_hash)
+            row = WorkerSession(kernel_ref=kernel_ref, key_hash=key_hash)
             session.add(row)
             await session.commit()
             await session.refresh(row)
@@ -353,11 +357,14 @@ async def _spawn_session(
     _last_spawn = time.monotonic()
     _sessions[session_id] = {
         "id": session_id,
-        "ref": str(ref),
+        "ref": kernel_ref,
         "spawned_at": now,
     }
     await _touch_batch_heartbeat(session_factory, worker_id="kaggle-session")
-    logger.info("kaggle session: pushed kernel %s (session %s)", ref, session_id)
+    logger.info(
+        "kaggle session: pushed kernel %s → ref %s (session %s)",
+        ref, kernel_ref, session_id,
+    )
     return True
 
 async def _close_session(session_factory, session_id: int) -> list[int]:
@@ -517,6 +524,22 @@ def _get_storage():
     from app.services.storage import build_storage
 
     return build_storage()
+
+def _norm_session_ref(raw) -> str:
+    """Chuẩn hóa session kernel ref về 'owner/slug' cho api.kernels_status.
+    kaggle 2.x kernels_push trả DICT ({'ref': '/code/owner/slug', ...}); DB row
+    cũ lưu str(dict). strip prefix '/code/' → 'owner/slug'. Còn lại trả nguyên."""
+    if isinstance(raw, str) and raw.lstrip().startswith("{"):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict):
+            raw = parsed.get("ref", raw)
+    elif isinstance(raw, dict):
+        raw = raw.get("ref", raw)
+    ref = str(raw)
+    return ref[len("/code/"):] if ref.startswith("/code/") else ref
 
 def _norm_status(resp) -> str | None:
     """kaggle 2.2.4 status → lowercase (enum repr KernelWorkerStatus.COMPLETE
