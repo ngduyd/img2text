@@ -3,6 +3,7 @@
 
 import hashlib
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -93,6 +94,29 @@ async def _seed_job(db_session, status="queued", session_id=None) -> int:
 async def _live_session_id(db_session):
     return await db_session.scalar(
         select(WorkerSession.id).where(WorkerSession.closed_at.is_(None))
+    )
+
+async def test_spawn_session_bakes_base_url(db_session, monkeypatch):
+    """E2: base_url bake vào script lúc push (__BASE_URL__ substitute), KHÔNG
+    còn placeholder nào — kernel session không cần Secrets."""
+    monkeypatch.setattr(settings, "base_url", "https://api.example.com")
+    api = FakeApi()
+    assert await orch._spawn_session(api, SessionLocal, key="k-url") is True
+    script = api.pushes[0]["img2text_session.py"]
+    assert "https://api.example.com" in script
+    assert "__BASE_URL__" not in script
+    assert "__SESSION_KEY__" not in script
+
+async def test_spawn_session_warns_unreachable_base_url(
+    db_session, monkeypatch, caplog
+):
+    """base_url rỗng/localhost → kernel Kaggle không reach được → warning."""
+    api = FakeApi()
+    with caplog.at_level(logging.WARNING, logger=orch.__name__):
+        assert await orch._spawn_session(api, SessionLocal, key="k-warn") is True
+    assert any(
+        "base_url" in r.message and "reach" in r.message
+        for r in caplog.records
     )
 
 async def test_spawn_session_stores_hash_not_plaintext(db_session):
