@@ -1,6 +1,6 @@
 """FastAPI app factory: lifespan + wiring.
 
-Lifespan: create_all → admin bootstrap → scheduler; shutdown closes the
+Lifespan: create_all → migrations → admin bootstrap → scheduler; shutdown closes the
 scheduler and engine. Ruling R6: pure-ASGI middlewares read
 app.state.session_factory (set here). Routers mount order: auth, profile
 (same /api/auth prefix), admin, jobs, exports, region_edit.
@@ -21,6 +21,7 @@ from app.services.admin_bootstrap import bootstrap_admin
 from app.services.email_sends import EmailLimitExceeded
 from app.core.config import settings
 from app.core.db import Base, SessionLocal, engine
+from app.core.migrations import apply_migrations
 from app.core.ratelimit import RateLimitMiddleware
 from app.core.middleware import (
     EmailVerifyGateMiddleware,
@@ -73,6 +74,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Alembic before first deploy (Plan B adds jobs table).
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # create_all never ALTERs existing tables — apply hand-SQL migrations
+    # (docs/migrations/*.sql) right after, before anything reads the schema.
+    await apply_migrations(engine)
     async with SessionLocal() as session:
         await bootstrap_admin(session, settings.admin_email, settings.admin_password)
     init_scheduler(app)
