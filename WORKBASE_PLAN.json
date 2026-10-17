@@ -1,0 +1,36 @@
+{
+  "lane": "worker-base-url",
+  "goal": "Tách WORKER_BASE_URL khỏi BASE_URL: kernel bake dùng WORKER_BASE_URL (fallback base_url); BASE_URL giữ nguyên cho cookie Secure.",
+  "base": "branch lane-workbase từ master 803d376",
+  "why": "settings.base_url bị overload: (a) cookie Secure (security.py:89), (b) 'browser-facing' trong dev = Vite :5173 (deploy/.env.dev:10). Kernel cần API base reachable từ Kaggle — ngữ nghĩa khác.",
+  "design": [
+    "config.py: thêm worker_base_url: str = '' (empty → fallback base_url).",
+    "orchestrator _spawn_session: api_base = settings.worker_base_url or settings.base_url; bake __BASE_URL__ = api_base; warn nếu api_base rỗng/localhost/127.0.0.1 (giữ logic F2 cũ).",
+    "kernel KHÔNG đổi (vẫn env BASE_URL / placeholder __BASE_URL__).",
+    "env parity: PHẢI thêm WORKER_BASE_URL vào deploy/.env.example (test 2 chiều strict).",
+    ".env.example + .env.dev.example: thêm dòng WORKER_BASE_URL (commented hướng dẫn)."
+  ],
+  "tasks": [
+    {
+      "id": "W1",
+      "brief": "config.py: worker_base_url field (default ''). orchestrator _spawn_session: resolve api_base = worker_base_url or base_url; dùng api_base cho cả bake + warn. Test: worker_base_url set → bake nó (không bake base_url); rỗng → fallback base_url; warn khi api_base localhost/rỗng.",
+      "files_scope": ["server/app/core/config.py", "server/app/services/kaggle_orchestrator.py", "server/tests/test_kaggle_session_orchestrator.py"],
+      "verify_cmd": "pytest server/tests/test_kaggle_session_orchestrator.py -q (DB img2text_test_env)"
+    },
+    {
+      "id": "W2",
+      "brief": "deploy/.env.example + deploy/.env.dev.example: thêm WORKER_BASE_URL (parity bắt buộc). deploy/.env.dev.example: WORKER_BASE_URL để trống kèm comment 'API public cho kernel; rỗng → fallback BASE_URL'. Kiểm test_env_parity xanh.",
+      "files_scope": ["deploy/.env.example", "deploy/.env.dev.example"],
+      "verify_cmd": "pytest server/tests/test_env_parity.py -q"
+    }
+  ],
+  "assumptions": [
+    "Fallback base_url giữ backward-compat (deploy cũ không set WORKER_BASE_URL vẫn chạy).",
+    "Kernel env var vẫn tên BASE_URL (không đổi contract kernel)."
+  ],
+  "risks": [
+    "Quên .env.example → CI env_parity fail (đã tính trong W2).",
+    "Không fail-fast prod nếu WORKER_BASE_URL localhost — chỉ warn (giống F2 hiện tại)."
+  ],
+  "non_goals": ["Không đổi kernel script.", "Không đổi cookie Secure logic.", "Không đổi Secrets override (vẫn thắng)."]
+}

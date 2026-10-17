@@ -100,6 +100,7 @@ async def test_spawn_session_bakes_base_url(db_session, monkeypatch):
     """E2: base_url bake vào script lúc push (__BASE_URL__ substitute), KHÔNG
     còn placeholder nào — kernel session không cần Secrets."""
     monkeypatch.setattr(settings, "base_url", "https://api.example.com")
+    monkeypatch.setattr(settings, "worker_base_url", "")
     api = FakeApi()
     assert await orch._spawn_session(api, SessionLocal, key="k-url") is True
     script = api.pushes[0]["img2text_session.py"]
@@ -128,6 +129,19 @@ async def test_spawn_session_falls_back_to_base_url(db_session, monkeypatch):
     assert "https://api.example.com" in script
     assert "__BASE_URL__" not in script
 
+async def test_spawn_session_whitespace_worker_base_url_falls_back(
+    db_session, monkeypatch
+):
+    """F1: worker_base_url whitespace-only → strip → fallback base_url,
+    KHÔNG bake chuỗi "  " vào script."""
+    monkeypatch.setattr(settings, "base_url", "https://api.example.com")
+    monkeypatch.setattr(settings, "worker_base_url", "  ")
+    api = FakeApi()
+    assert await orch._spawn_session(api, SessionLocal, key="k-ws") is True
+    script = api.pushes[0]["img2text_session.py"]
+    assert "https://api.example.com" in script
+    assert "__BASE_URL__" not in script
+
 async def test_spawn_session_warns_unreachable_base_url(
     db_session, monkeypatch, caplog
 ):
@@ -139,7 +153,7 @@ async def test_spawn_session_warns_unreachable_base_url(
     with caplog.at_level(logging.WARNING, logger=orch.__name__):
         assert await orch._spawn_session(api, SessionLocal, key="k-warn") is True
     assert any(
-        "base_url" in r.message and "reach" in r.message
+        "api_base" in r.message and "reach" in r.message
         for r in caplog.records
     )
 
@@ -153,7 +167,7 @@ async def test_spawn_session_warns_worker_base_url_localhost(
     with caplog.at_level(logging.WARNING, logger=orch.__name__):
         assert await orch._spawn_session(api, SessionLocal, key="k-warn2") is True
     assert any(
-        "base_url" in r.message and "reach" in r.message
+        "api_base" in r.message and "reach" in r.message
         for r in caplog.records
     )
 
