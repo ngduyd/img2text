@@ -294,6 +294,21 @@ async def _touch_batch_heartbeat(
 # spawned_at}} — DB worker_sessions là bản durable (restart adopt).
 _sessions: dict[int, dict] = {}
 
+# Kaggle script kernel CHỈ chạy code_file (sibling img2text_batch.py không
+# được upload) → nhúng batch source vào cùng file: session `import
+# img2text_batch as kb` hit sys.modules. `{batch!r}` format 1 lần; session
+# source nối SAU (không qua format → ngoặc nhọn trong session an toàn).
+_KB_INLINE_LOADER = '''import sys as _sys, types as _types
+
+_EMBEDDED_KB = {batch!r}
+_kb = _types.ModuleType("img2text_batch")
+_kb.__file__ = __file__
+# Đăng ký TRƯỚC exec: dataclass cần sys.modules[cls.__module__] trong lúc exec.
+_sys.modules["img2text_batch"] = _kb
+exec(compile(_EMBEDDED_KB, "img2text_batch.py", "exec"), _kb.__dict__)
+
+'''
+
 async def _spawn_session(
     api, session_factory, *, key: str | None = None
 ) -> bool:
@@ -308,14 +323,29 @@ async def _spawn_session(
     src = _stage_src()
     build = Path(tempfile.mkdtemp(prefix="kaggle-img2text-session-"))
     try:
-        for name in ("img2text_session.py", "img2text_batch.py"):
-            shutil.copyfile(src / "kernel" / name, build / name)
-        script_path = build / "img2text_session.py"
+        batch_src = (src / "kernel" / "img2text_batch.py").read_text(
+            encoding="utf-8"
+        )
         api_base = (settings.worker_base_url or "").strip() or settings.base_url
-        script_path.write_text(
-            script_path.read_text(encoding="utf-8")
+        # Substitute placeholder TRÊN session source (batch source không có).
+        session_src = (
+            (src / "kernel" / "img2text_session.py")
+            .read_text(encoding="utf-8")
             .replace("__SESSION_KEY__", key)
-            .replace("__BASE_URL__", api_base),
+            .replace("__BASE_URL__", api_base)
+        )
+        # `from __future__` phải đứng đầu file → chèn loader NGAY SAU dòng
+        # future-import cuối (không có → chèn đầu).
+        _lines = session_src.splitlines(keepends=True)
+        _at = 0
+        for _i, _ln in enumerate(_lines):
+            if _ln.lstrip().startswith("from __future__"):
+                _at = _i + 1
+        script_path = build / "img2text_session.py"
+        script_path.write_text(
+            "".join(_lines[:_at])
+            + _KB_INLINE_LOADER.format(batch=batch_src)
+            + "".join(_lines[_at:]),
             encoding="utf-8",
         )
         if (
