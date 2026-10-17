@@ -245,7 +245,7 @@ def test_main_localhost_base_url_fails_before_bootstrap(monkeypatch):
     """F2: BASE_URL localhost → chết rẻ trước bootstrap (không tốn pip install)."""
     monkeypatch.setattr(
         sess.kb, "bootstrap_venv",
-        lambda: (_ for _ in ()).throw(AssertionError("bootstrap gọi rồi")),
+        lambda progress=None: (_ for _ in ()).throw(AssertionError("bootstrap gọi rồi")),
     )
     monkeypatch.delenv("_IMG2TEXT_SESSION_VENV", raising=False)
     for base in ("http://localhost:8000", "http://127.0.0.1:8000"):
