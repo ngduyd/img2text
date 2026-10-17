@@ -111,6 +111,8 @@ async def test_spawn_session_warns_unreachable_base_url(
     db_session, monkeypatch, caplog
 ):
     """base_url rỗng/localhost → kernel Kaggle không reach được → warning."""
+    # F3: pin settings để không phụ thuộc env shell (pydantic case-insensitive).
+    monkeypatch.setattr(settings, "base_url", "http://localhost:8000")
     api = FakeApi()
     with caplog.at_level(logging.WARNING, logger=orch.__name__):
         assert await orch._spawn_session(api, SessionLocal, key="k-warn") is True

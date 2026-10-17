@@ -73,8 +73,8 @@ def _exec_substituted_source(monkeypatch) -> dict:
     sub = src.replace("__BASE_URL__", "http://staged.example").replace(
         "__SESSION_KEY__", "sk-baked"
     )
-    monkeypatch.setenv("BASE_URL", "")
-    monkeypatch.setenv("SESSION_KEY", "")
+    monkeypatch.delenv("BASE_URL", raising=False)
+    monkeypatch.delenv("SESSION_KEY", raising=False)
     sys.path.insert(0, str(KERNEL_DIR))
     try:
         ns: dict = {"__name__": "img2text_session_under_test"}
@@ -110,6 +110,16 @@ def test_source_substitution_resolves_env(monkeypatch):
     ns = _exec_substituted_source(monkeypatch)
     assert ns["BASE_URL"] == "http://staged.example"
     assert ns["SESSION_KEY"] == "sk-baked"
+
+def test_baked_secret_not_written_to_environ(monkeypatch):
+    """F1: SESSION_KEY KHÔNG ghi lại os.environ (subprocess con kế thừa secret).
+    Chỉ BASE_URL (public, main() đọc env) được ghi cho re-exec."""
+    ns = _exec_substituted_source(monkeypatch)
+    assert ns["SESSION_KEY"] == "sk-baked"
+    assert "SESSION_KEY" not in os.environ
+    assert ns["BASE_URL"] == "http://staged.example"
+    assert os.environ["BASE_URL"] == "http://staged.example"
+
 
 def test_source_substitution_env_beats_bake(monkeypatch):
     """Env override vẫn thắng giá trị bake trong source đã substitute."""
@@ -230,6 +240,17 @@ def test_main_missing_base_url_is_fatal(monkeypatch):
     monkeypatch.delenv("BASE_URL", raising=False)
     monkeypatch.delenv("_IMG2TEXT_SESSION_VENV", raising=False)
     assert sess.main() == sess.EXIT_FATAL
+
+def test_main_localhost_base_url_fails_before_bootstrap(monkeypatch):
+    """F2: BASE_URL localhost → chết rẻ trước bootstrap (không tốn pip install)."""
+    monkeypatch.setattr(
+        sess.kb, "bootstrap_venv",
+        lambda: (_ for _ in ()).throw(AssertionError("bootstrap gọi rồi")),
+    )
+    monkeypatch.delenv("_IMG2TEXT_SESSION_VENV", raising=False)
+    for base in ("http://localhost:8000", "http://127.0.0.1:8000"):
+        monkeypatch.setenv("BASE_URL", base)
+        assert sess.main() == sess.EXIT_FATAL
 
 def test_quota_low_exits_graceful(monkeypatch):
     """AC5: server_flags.quota_low → exit 0."""

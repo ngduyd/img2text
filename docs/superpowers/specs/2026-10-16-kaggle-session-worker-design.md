@@ -171,7 +171,7 @@ Sau `get_runner_key` (L58). Bearer = plaintext session key; lookup `WorkerSessio
 
 Script kernel (`kernel_type: script`), tái dùng toàn khối từ `img2text_batch.py` (chọn: stage cả 2 file, script import trực tiếp — giảm trùng code):
 
-- `__SESSION_KEY__` placeholder → key thật lúc staged (T6); đọc env `BASE_URL` (Secrets, README §2 giữ).
+- `__SESSION_KEY__`/`__BASE_URL__` placeholder → giá trị thật lúc staged push (T6): session mode nhận `BASE_URL` qua orchestrator bake lúc push (KHÔNG cần Kaggle Secrets); Secrets chỉ còn cho path manual/push.py.
 - Bootstrap 1×/session (reuse venv/wheelhouse ~L620-700) → fail → `sys.exit(90)` (session-level).
 - Loop (AC2/AC5/AC7/AC10):
   1. `GET {BASE_URL}/api/jobs/next` Bearer key → **200 JSON** (T4 shape) — `{"empty": true}` hoặc `quota_low` → exit 0.

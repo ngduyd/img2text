@@ -38,18 +38,20 @@ SESSION_KEY_PLACEHOLDER = "__SESSION_KEY__"
 # orchestrator _sub_owner-style substitute lúc staged push; test tự set.
 BASE_URL_PLACEHOLDER = "__BASE_URL__"
 
-def _baked_env(name: str, placeholder: str) -> str:
+def _baked_env(name: str, placeholder: str, *, writeback: bool = True) -> str:
     """Resolve env-first: os.environ (Secrets/manual override) THẮNG; chưa có
     → giá trị placeholder (đã substitute lúc staged push = bake). Placeholder
     còn nguyên (chưa push, literal __NAME__) + không env → ''. Ghi lại vào
-    os.environ để re-exec (os.execve) giữ được."""
+    os.environ CHỈ khi writeback (BASE_URL: public, main() đọc env — giữ qua
+    re-exec). SESSION_KEY KHÔNG ghi (tránh subprocess con kế thừa secret)."""
     value = os.environ.get(name) or placeholder
     if value == f"__{name}__":
         return ""
-    os.environ[name] = value
+    if writeback:
+        os.environ[name] = value
     return value
 
-SESSION_KEY = _baked_env("SESSION_KEY", SESSION_KEY_PLACEHOLDER)
+SESSION_KEY = _baked_env("SESSION_KEY", SESSION_KEY_PLACEHOLDER, writeback=False)
 BASE_URL = _baked_env("BASE_URL", BASE_URL_PLACEHOLDER)
 # Session budget: exit 0 trước khi chạm ~9h Kaggle limit (margin 30 phút).
 SESSION_MAX_AGE_S = float(os.environ.get("SESSION_MAX_AGE_S") or 30600)
@@ -422,6 +424,10 @@ def main() -> int:
     if not base:
         print("[session] thiếu BASE_URL (env hoặc bake __BASE_URL__ lúc push)",
               flush=True)
+        return EXIT_FATAL
+    if "localhost" in base or "127.0.0.1" in base:
+        print(f"[session] BASE_URL {base!r} localhost — Kaggle kernel không "
+              "reach được; exit 1 trước bootstrap", flush=True)
         return EXIT_FATAL
     if os.environ.get("_IMG2TEXT_SESSION_VENV") != "1":
         try:
