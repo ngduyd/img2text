@@ -93,12 +93,13 @@ def _put_bytes(url: str, data: bytes, timeout=300) -> None:
     with urllib.request.urlopen(req, timeout=timeout):
         pass
 
-def _heartbeat(base: str, key: str) -> None:
+def _heartbeat(base: str, key: str, stage: str) -> None:
     """Best-effort telemetry (server poll marker đã chính); lỗi không kill
-    session."""
+    session. worker_id riêng ('kaggle-session-kernel') — KHÔNG ghi đè marker
+    'kaggle-session' của orchestrator."""
     try:
         _http_json("POST", f"{base}/api/worker/heartbeat", key, {
-            "worker_id": "kaggle-session", "kind": "kaggle-session",
+            "worker_id": "kaggle-session-kernel", "kind": stage[:20],
         })
     except Exception as exc:
         print(f"[session] heartbeat lỗi: {exc}", flush=True)
@@ -393,7 +394,7 @@ def run_loop(base: str, key: str) -> int:
             print("[session] budget gần hết — exit 0", flush=True)
             return EXIT_GRACEFUL
         if now - last_heartbeat >= HEARTBEAT_INTERVAL_S:
-            _heartbeat(base, key)
+            _heartbeat(base, key, "session:loop")
             last_heartbeat = now
         try:
             claim = _http_json("GET", f"{base}/api/jobs/next", key)
@@ -429,15 +430,20 @@ def main() -> int:
         print(f"[session] BASE_URL {base!r} localhost — Kaggle kernel không "
               "reach được; exit 1 trước bootstrap", flush=True)
         return EXIT_FATAL
+    # Báo reach+auth NGAY (~1 phút) — trước bootstrap 15-20 phút.
+    _heartbeat(base, SESSION_KEY, "session:boot")
     if os.environ.get("_IMG2TEXT_SESSION_VENV") != "1":
         try:
-            kb.bootstrap_venv()
+            kb.bootstrap_venv(
+                progress=lambda s: _heartbeat(base, SESSION_KEY, f"session:{s}")
+            )
         except (SystemExit, Exception) as exc:
             print(f"[session] bootstrap session-level fail: {exc}", flush=True)
             return EXIT_SESSION_LEVEL
         os.environ["_IMG2TEXT_SESSION_VENV"] = "1"
         os.execve(kb.VENV_PY, [kb.VENV_PY, __file__], os.environ)
         return EXIT_FATAL  # unreachable
+    _heartbeat(base, SESSION_KEY, "session:loop")
     try:
         return run_loop(base, SESSION_KEY)
     except (Exception, SystemExit) as exc:

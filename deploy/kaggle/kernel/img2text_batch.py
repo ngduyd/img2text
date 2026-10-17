@@ -250,7 +250,7 @@ def _find_wheelhouse() -> str | None:
             return d
     return hits[0] if hits else None
 
-def bootstrap_venv() -> None:
+def bootstrap_venv(progress=None) -> None:
     """Parent-phase bootstrap (Kaggle kernel Python; pip/apt errors
     check=False — verify after, never let install noise kill the script).
     Script/re-exec ONLY — callers invoke this as __main__ flow; importing
@@ -258,9 +258,13 @@ def bootstrap_venv() -> None:
     heavy deps (cv2/numpy/PIL/rapidfuzz). Sets the cv2/np/Image/fuzz module
     globals the pipeline functions below resolve lazily.
 
+    progress: optional callable(label) — báo mốc tiến độ (uv/deps/venv/
+    paddle/model) cho session kernel heartbeat; None (batch path) → no-op.
+
     Raises SystemExit (kê message) khi venv/paddle không dựng được — session
     kernel bắt → exit 90 (spec session worker T7, AC10)."""
     global cv2, np, Image, fuzz  # noqa: PLW0603 — bootstrap side effect
+    notify = progress if progress is not None else (lambda *_a: None)
     # ===================================================================
     # pip/apt errors check=False — verify after, never let install noise
     # kill the script.
@@ -270,6 +274,7 @@ def bootstrap_venv() -> None:
     _local_bin = os.path.expanduser("~/.local/bin")
     if _local_bin not in os.environ.get("PATH", "").split(os.pathsep):
         os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + _local_bin
+    notify("uv")
     subprocess.run(["apt-get", "-qq", "update"], check=False)
     subprocess.run(
         [
@@ -280,6 +285,7 @@ def bootstrap_venv() -> None:
         ],
         check=False,
     )
+    notify("deps")
 
     # Idempotent: venv đã có → bỏ qua cài (notebook pattern), chỉ verify import.
     if not os.path.exists(VENV_PY):
@@ -325,6 +331,7 @@ def bootstrap_venv() -> None:
                 ],
             ):
                 subprocess.run(cmd, check=False)
+    notify("venv")
 
     if not os.path.exists(VENV_PY):
         # uv venv failed (no network/quota/python) — hint thay vì FileNotFoundError thô
@@ -347,11 +354,13 @@ def bootstrap_venv() -> None:
             "venv py3.12/paddle: import FAIL (đã cài xong) — stderr:\n" + detail
         )
     print(f"venv paddle: {_paddle_check.stdout.strip()} (version, cuda_build)")
+    notify("paddle")
 
     import cv2  # noqa: E402
     import numpy as np  # noqa: E402
     from PIL import Image  # noqa: E402
     from rapidfuzz import fuzz  # noqa: E402
+    notify("model")
 
 if __name__ == "__main__":
     # --ocr re-exec dispatch (OCR phase, venv) — BEFORE the heavy bootstrap

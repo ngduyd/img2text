@@ -245,7 +245,7 @@ def test_main_localhost_base_url_fails_before_bootstrap(monkeypatch):
     """F2: BASE_URL localhost → chết rẻ trước bootstrap (không tốn pip install)."""
     monkeypatch.setattr(
         sess.kb, "bootstrap_venv",
-        lambda: (_ for _ in ()).throw(AssertionError("bootstrap gọi rồi")),
+        lambda progress=None: (_ for _ in ()).throw(AssertionError("bootstrap gọi rồi")),
     )
     monkeypatch.delenv("_IMG2TEXT_SESSION_VENV", raising=False)
     for base in ("http://localhost:8000", "http://127.0.0.1:8000"):
@@ -315,6 +315,94 @@ def test_claim_429_backoff_then_success(monkeypatch):
     assert sess.run_loop("http://base", "k") == sess.EXIT_GRACEFUL
     assert calls["n"] == 2  # 1× 429 → retry → empty
     assert len(sleeps) == 1  # đã backoff đúng 1 lần
+
+def test_heartbeat_kernel_worker_id_and_kind(monkeypatch):
+    """B2: heartbeat mang stage (kind) + worker_id RIÊNG 'kaggle-session-kernel'
+    (không ghi đè marker orchestrator 'kaggle-session')."""
+    seen: dict = {}
+
+    def fake_http(method, url, key, payload=None, timeout=60):
+        seen["method"] = method
+        seen["url"] = url
+        seen["payload"] = payload
+        return {}
+
+    monkeypatch.setattr(sess, "_http_json", fake_http)
+    sess._heartbeat("http://base", "k", "session:boot")
+    assert seen["method"] == "POST"
+    assert seen["url"] == "http://base/api/worker/heartbeat"
+    assert seen["payload"] == {
+        "worker_id": "kaggle-session-kernel", "kind": "session:boot",
+    }
+
+def test_heartbeat_best_effort_swallows(monkeypatch):
+    """B2: heartbeat lỗi (net) KHÔNG được kill session."""
+    def boom(*a, **kw):
+        raise RuntimeError("net down")
+    monkeypatch.setattr(sess, "_http_json", boom)
+    sess._heartbeat("http://base", "k", "session:boot")  # không raise
+
+def test_bootstrap_venv_progress_labels_and_none_parity(monkeypatch):
+    """B1: progress nhận đúng các mốc uv/deps/venv/paddle/model; progress=None
+    (batch path cũ) là no-op, không lỗi."""
+    labels: list[str] = []
+    monkeypatch.setattr(
+        kb.subprocess, "run",
+        lambda *a, **kw: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    # VENV_PY trỏ file có thật → bỏ qua khối cài venv.
+    monkeypatch.setattr(kb, "VENV_PY", sys.executable)
+    # server venv không có cv2/numpy/PIL/rapidfuzz → stub sys.modules.
+    for name in ("cv2", "numpy"):
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    pil = types.ModuleType("PIL")
+    pil.Image = types.ModuleType("PIL.Image")
+    monkeypatch.setitem(sys.modules, "PIL", pil)
+    monkeypatch.setitem(sys.modules, "PIL.Image", pil.Image)
+    rf = types.ModuleType("rapidfuzz")
+    rf.fuzz = types.ModuleType("rapidfuzz.fuzz")
+    monkeypatch.setitem(sys.modules, "rapidfuzz", rf)
+    monkeypatch.setitem(sys.modules, "rapidfuzz.fuzz", rf.fuzz)
+
+    kb.bootstrap_venv(progress=labels.append)
+    assert labels == ["uv", "deps", "venv", "paddle", "model"]
+
+    labels.clear()
+    kb.bootstrap_venv()  # None → no-op, không lỗi
+    assert labels == []
+
+def test_main_boot_heartbeat_before_bootstrap(monkeypatch):
+    """B2: main() gửi 'session:boot' TRƯỚC bootstrap, rồi các mốc
+    session:<label> qua progress, mọi kind ≤20 ký tự."""
+    events: list[tuple] = []
+
+    def fake_http(method, url, key, payload=None, timeout=60):
+        if url.endswith("/api/worker/heartbeat"):
+            events.append(("hb", payload["kind"]))
+        return {}
+
+    monkeypatch.setattr(sess, "_http_json", fake_http)
+    monkeypatch.setenv("BASE_URL", "http://base")
+    monkeypatch.delenv("_IMG2TEXT_SESSION_VENV", raising=False)
+
+    def fake_bootstrap(progress=None):
+        events.append(("bootstrap",))
+        for lbl in ("uv", "deps", "venv", "paddle", "model"):
+            progress(lbl)
+
+    monkeypatch.setattr(sess.kb, "bootstrap_venv", fake_bootstrap)
+    # execve thật sẽ thay process → fake để kiểm thứ tự rồi return.
+    monkeypatch.setattr(sess.os, "execve", lambda *a, **kw: events.append(("execve",)))
+
+    rc = sess.main()
+    assert rc == sess.EXIT_FATAL  # execve trả về → nhánh unreachable
+    kinds = [e[1] for e in events if e[0] == "hb"]
+    assert kinds == [
+        "session:boot", "session:uv", "session:deps", "session:venv",
+        "session:paddle", "session:model",
+    ]
+    assert events.index(("hb", "session:boot")) < events.index(("bootstrap",))
+    assert all(len(k) <= 20 for k in kinds)
 
 def test_run_job_final_status_429_not_failed(monkeypatch):
     """F3: final status check sau OCR gặp 429 (transient) → coi như chưa
