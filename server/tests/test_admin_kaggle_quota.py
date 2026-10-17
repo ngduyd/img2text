@@ -2,9 +2,12 @@
 
 import sys
 import types
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
+
+from app.services.kaggle_quota import _seconds
 
 QUOTA_RESPONSE = SimpleNamespace(
     gpuQuota=SimpleNamespace(
@@ -23,6 +26,41 @@ QUOTA_RESPONSE = SimpleNamespace(
     ),
     quotaRefreshTime="2026-10-20T00:00:00Z",
 )
+
+
+# kaggle SDK 2.2.4 (thật) trả timedelta cho timeUsed/totalTimeAllowed.
+QUOTA_RESPONSE_TIMEDELTA = SimpleNamespace(
+    gpuQuota=SimpleNamespace(
+        timeUsed=timedelta(seconds=5900, milliseconds=915),
+        timeReserved=timedelta(0),
+        totalTimeAllowed=timedelta(days=1, seconds=21600),
+        minimumTimeAllowed=timedelta(hours=1),
+        hasEverRun=True,
+    ),
+    tpuQuota=SimpleNamespace(
+        timeUsed=timedelta(hours=2, seconds=0, microseconds=500000),
+        timeReserved=timedelta(0),
+        totalTimeAllowed=timedelta(hours=20),
+        minimumTimeAllowed=timedelta(0),
+        hasEverRun=True,
+    ),
+    quotaRefreshTime="2026-10-20T00:00:00Z",
+)
+
+
+def test_seconds_parses_timedelta():
+    """SDK 2.2.4: timedelta → total_seconds(); str(td)='1 day, 6:00:00' phải KHÔNG
+    bị regex bắt nhầm thành '1'."""
+    assert _seconds(timedelta(0)) == 0.0
+    assert _seconds(timedelta(days=1, seconds=21600)) == pytest.approx(108000.0)
+    assert _seconds(timedelta(seconds=5900, milliseconds=915)) == pytest.approx(5900.915)
+
+
+def test_seconds_parses_legacy_strings():
+    """Version cũ: string vẫn đúng (không regress)."""
+    assert _seconds("5900.915.0s") == pytest.approx(5900.915)
+    assert _seconds("21600.0s") == pytest.approx(21600.0)
+    assert _seconds(7200) == pytest.approx(7200.0)
 
 
 class StubKaggleApi:
@@ -68,6 +106,24 @@ async def test_kaggle_quota_parses_seconds(admin_client, monkeypatch):
     assert tpu["used_s"] == pytest.approx(7200.5)
     assert tpu["total_s"] == pytest.approx(72000.0)
     assert tpu["refresh"] == "2026-10-20T00:00:00Z"
+
+
+async def test_kaggle_quota_parses_timedelta_response(admin_client, monkeypatch):
+    """SDK 2.2.4 trả timedelta → total_s phải là 108000s (30h), KHÔNG phải 1.0s
+    (str(td)='1 day, 6:00:00' từng bị regex bắt nhầm '1')."""
+    _install_kaggle(monkeypatch)
+    StubKaggleApi.response = QUOTA_RESPONSE_TIMEDELTA
+    try:
+        r = await admin_client.get("/api/admin/kaggle-quota")
+        assert r.status_code == 200, r.text
+        gpu = r.json()["gpu"]
+        assert gpu["used_s"] == pytest.approx(5900.915)
+        assert gpu["total_s"] == pytest.approx(108000.0)
+        assert gpu["remaining_s"] == pytest.approx(102099.085)
+        tpu = r.json()["tpu"]
+        assert tpu["total_s"] == pytest.approx(72000.0)
+    finally:
+        StubKaggleApi.response = QUOTA_RESPONSE
 
 
 async def test_kaggle_quota_inner_snake_case_kagglesdk(admin_client, monkeypatch):

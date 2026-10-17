@@ -5,6 +5,7 @@ HTTP mapping giữ nguyên tên để admin pin test không đổi); orchestrato
 dispatch gate dùng quota_remaining_seconds() — không duplicate field-mapping.
 """
 
+import datetime
 import logging
 import re
 
@@ -13,8 +14,13 @@ from fastapi import HTTPException
 logger = logging.getLogger(__name__)
 
 def _seconds(value) -> float:
-    """Kaggle quota duration → float giây. Số pass-through; chuỗi "21600.0s"
+    """Kaggle quota duration → float giây.
+
+    SDK 2.2.4 trả datetime.timedelta → total_seconds() (str(td)='1 day, 6:00:00'
+    sẽ bị regex bắt nhầm '1'). Version cũ: số pass-through; chuỗi "21600.0s"
     bỏ đuôi "s"; "5900.915.0s" (thừa dấu chấm) → số đầu tiên 5900.915."""
+    if isinstance(value, datetime.timedelta):
+        return value.total_seconds()
     if isinstance(value, (int, float)):
         return float(value)
     text = str(value).strip()
