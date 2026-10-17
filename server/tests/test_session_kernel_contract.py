@@ -3,6 +3,7 @@ img2text_session.py). Import module — KHÔNG bootstrap (kb rule: importing
 phải cheap). Fake backend monkeypatch urllib seams (AC2/AC10)."""
 
 import json
+import os
 import sys
 import types
 import urllib.error
@@ -64,6 +65,68 @@ def test_session_kernel_import_parity():
     assert sess.EXIT_SESSION_LEVEL == 90
     # bootstrap tách thành hàm tái sử dụng (KHÔNG copy-paste vào session)
     assert callable(kb.bootstrap_venv)
+
+def _exec_substituted_source(monkeypatch) -> dict:
+    """Exec img2text_session.py với placeholder đã substitute (giống _spawn_session
+    lúc staged push) trong namespace sạch → kiểm giá trị resolve module-level."""
+    src = (KERNEL_DIR / "img2text_session.py").read_text(encoding="utf-8")
+    sub = src.replace("__BASE_URL__", "http://staged.example").replace(
+        "__SESSION_KEY__", "sk-baked"
+    )
+    monkeypatch.setenv("BASE_URL", "")
+    monkeypatch.setenv("SESSION_KEY", "")
+    sys.path.insert(0, str(KERNEL_DIR))
+    try:
+        ns: dict = {"__name__": "img2text_session_under_test"}
+        exec(compile(sub, "img2text_session.py", "exec"), ns)
+    finally:
+        sys.path.remove(str(KERNEL_DIR))
+    return ns
+
+def test_baked_env_env_first_wins(monkeypatch):
+    """env (Secrets/manual) THẮNG giá trị bake."""
+    monkeypatch.setenv("BASE_URL", "http://env.example")
+    assert sess._baked_env("BASE_URL", "http://baked.example") == "http://env.example"
+    assert os.environ["BASE_URL"] == "http://env.example"
+
+def test_baked_env_baked_fallback_and_writeback(monkeypatch):
+    """Chưa có env → dùng giá trị bake + ghi lại os.environ (giữ qua re-exec)."""
+    monkeypatch.delenv("BASE_URL", raising=False)
+    assert sess._baked_env("BASE_URL", "http://baked.example") == "http://baked.example"
+    try:
+        assert os.environ["BASE_URL"] == "http://baked.example"
+    finally:
+        os.environ.pop("BASE_URL", None)
+
+def test_baked_env_bare_placeholder_empty(monkeypatch):
+    """Placeholder còn nguyên (chưa substitute) + không env → ''."""
+    monkeypatch.delenv("BASE_URL", raising=False)
+    assert sess._baked_env("BASE_URL", "__BASE_URL__") == ""
+    assert "BASE_URL" not in os.environ
+
+def test_source_substitution_resolves_env(monkeypatch):
+    """Source đã substitute placeholder (bake) → BASE_URL/SESSION_KEY resolve.
+    Không có env → lấy giá trị bake."""
+    ns = _exec_substituted_source(monkeypatch)
+    assert ns["BASE_URL"] == "http://staged.example"
+    assert ns["SESSION_KEY"] == "sk-baked"
+
+def test_source_substitution_env_beats_bake(monkeypatch):
+    """Env override vẫn thắng giá trị bake trong source đã substitute."""
+    monkeypatch.setenv("BASE_URL", "http://override.example")
+    monkeypatch.setenv("SESSION_KEY", "sk-override")
+    src = (KERNEL_DIR / "img2text_session.py").read_text(encoding="utf-8")
+    sub = src.replace("__BASE_URL__", "http://staged.example").replace(
+        "__SESSION_KEY__", "sk-baked"
+    )
+    sys.path.insert(0, str(KERNEL_DIR))
+    try:
+        ns: dict = {"__name__": "img2text_session_under_test2"}
+        exec(compile(sub, "img2text_session.py", "exec"), ns)
+    finally:
+        sys.path.remove(str(KERNEL_DIR))
+    assert ns["BASE_URL"] == "http://override.example"
+    assert ns["SESSION_KEY"] == "sk-override"
 
 def test_adapt_document_parity_with_server():
     """kernel adapt_document == orchestrator adapt_batch_document (cùng doc)."""
