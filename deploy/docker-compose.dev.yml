@@ -98,6 +98,8 @@ services:
       # source from the mount; third-party deps stay in site-packages
       # (pip install /app/server baked at build time).
       - ../server:/app/server
+      # Boot migrations: lifespan applies /app/docs/migrations/*.sql (read-only).
+      - ../docs:/app/docs:ro
       # Plan K2: Kaggle kernel source templates (read-only — orchestrator
       # stages into KAGGLE_STAGE_DIR, never writes here).
       - ../deploy/kaggle:/app/deploy/kaggle:ro
