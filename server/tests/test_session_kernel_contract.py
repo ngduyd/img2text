@@ -316,6 +316,35 @@ def test_claim_429_backoff_then_success(monkeypatch):
     assert calls["n"] == 2  # 1× 429 → retry → empty
     assert len(sleeps) == 1  # đã backoff đúng 1 lần
 
+def test_bootstrap_venv_progress_labels_and_none_parity(monkeypatch):
+    """B1: progress nhận đúng các mốc uv/deps/venv/paddle/model; progress=None
+    (batch path cũ) là no-op, không lỗi."""
+    labels: list[str] = []
+    monkeypatch.setattr(
+        kb.subprocess, "run",
+        lambda *a, **kw: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    # VENV_PY trỏ file có thật → bỏ qua khối cài venv.
+    monkeypatch.setattr(kb, "VENV_PY", sys.executable)
+    # server venv không có cv2/numpy/PIL/rapidfuzz → stub sys.modules.
+    for name in ("cv2", "numpy"):
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    pil = types.ModuleType("PIL")
+    pil.Image = types.ModuleType("PIL.Image")
+    monkeypatch.setitem(sys.modules, "PIL", pil)
+    monkeypatch.setitem(sys.modules, "PIL.Image", pil.Image)
+    rf = types.ModuleType("rapidfuzz")
+    rf.fuzz = types.ModuleType("rapidfuzz.fuzz")
+    monkeypatch.setitem(sys.modules, "rapidfuzz", rf)
+    monkeypatch.setitem(sys.modules, "rapidfuzz.fuzz", rf.fuzz)
+
+    kb.bootstrap_venv(progress=labels.append)
+    assert labels == ["uv", "deps", "venv", "paddle", "model"]
+
+    labels.clear()
+    kb.bootstrap_venv()  # None → no-op, không lỗi
+    assert labels == []
+
 def test_run_job_final_status_429_not_failed(monkeypatch):
     """F3: final status check sau OCR gặp 429 (transient) → coi như chưa
     cancel, KHÔNG raise → job vẫn done (KHÔNG fail SAI qua fail-post)."""
