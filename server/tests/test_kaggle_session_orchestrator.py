@@ -229,6 +229,27 @@ async def test_spawn_session_kernel_ref_not_json(db_session):
     assert "{" not in row.kernel_ref
     assert orch._sessions[sid]["ref"] == SESSION_REF
 
+async def test_poll_normalizes_legacy_json_ref(db_session, monkeypatch):
+    """R2: row legacy kernel_ref = JSON dict-string → _poll_session gọi
+    kernels_status với 'owner/slug' (không crash); session tự lành."""
+    api = FakeApi()
+    api.status = "running"
+    row = WorkerSession(
+        kernel_ref=json.dumps({"ref": f"/code/{SESSION_REF}", "kernelId": 7}),
+        key_hash=hash_worker_token("k-legacy"),
+    )
+    db_session.add(row)
+    await db_session.commit()
+    await db_session.refresh(row)
+    sid = row.id
+    orch._sessions.clear()
+    monkeypatch.setattr(orch, "_api", lambda: api)
+    pushed = await orch.ensure_worker(SessionLocal)
+    assert pushed is False  # adopt, không spawn mới
+    assert SESSION_REF in api.status_refs  # normalize trước kernels_status
+    assert "{" not in "".join(api.status_refs)
+    assert sid in orch._sessions  # session tự lành
+
 async def test_single_active_session_guard(db_session, monkeypatch):
     api = FakeApi()
     assert await orch._spawn_session(api, SessionLocal, key="k1") is True

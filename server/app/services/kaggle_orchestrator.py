@@ -407,7 +407,8 @@ async def _poll_session(api, session_factory, entry: dict) -> str:
     await _touch_batch_heartbeat(
         session_factory, worker_id="kaggle-session"
     )
-    status = _norm_status(await asyncio.to_thread(api.kernels_status, entry["ref"]))
+    ref = _norm_session_ref(entry["ref"])
+    status = _norm_status(await asyncio.to_thread(api.kernels_status, ref))
     age_s = (
         datetime.now(timezone.utc) - entry["spawned_at"]
     ).total_seconds()
@@ -441,7 +442,7 @@ async def _ensure_sessions(api, session_factory) -> bool:
             continue
         entry = {
             "id": row.id,
-            "ref": row.kernel_ref,
+            "ref": _norm_session_ref(row.kernel_ref),
             "spawned_at": row.spawned_at,
         }
         outcome = await _poll_session(api, session_factory, entry)
