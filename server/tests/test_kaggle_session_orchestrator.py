@@ -4,6 +4,7 @@
 import hashlib
 import json
 import logging
+import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -186,8 +187,8 @@ async def test_spawn_session_stores_hash_not_plaintext(db_session):
     assert await orch._spawn_session(api, SessionLocal, key=key) is True
     assert len(api.pushes) == 1
     staged = api.pushes[0]
-    assert {"img2text_session.py", "img2text_batch.py",
-            "kernel-metadata.json"} <= set(staged)
+    assert {"img2text_session.py", "kernel-metadata.json"} <= set(staged)
+    assert "img2text_batch.py" not in staged  # inlined, không sibling
     script = staged["img2text_session.py"]
     assert key in script  # key được chèn vào script lúc staged push
     assert "__SESSION_KEY__" not in script
@@ -208,6 +209,53 @@ async def test_spawn_session_stores_hash_not_plaintext(db_session):
         {"i": sid},
     )
     assert key not in row_text
+
+async def test_spawn_session_code_file_inlines_batch(db_session, monkeypatch):
+    """K2a: code_file nhúng loader + batch source — Kaggle script kernel CHỈ
+    chạy code_file, sibling img2text_batch.py không upload."""
+    monkeypatch.setattr(settings, "base_url", "https://api.example.com")
+    monkeypatch.setattr(settings, "worker_base_url", "")
+    api = FakeApi()
+    assert await orch._spawn_session(api, SessionLocal, key="k-inline") is True
+    staged = api.pushes[0]
+    script = staged["img2text_session.py"]
+    assert "_EMBEDDED_KB" in script
+    assert 'sys.modules["img2text_batch"]' in script
+    # dấu hiệu source batch thật đã nhúng (không chỉ loader rỗng)
+    assert 'ModuleType("img2text_batch")' in script
+    assert "img2text_batch.py" in script  # compile() filename
+    assert json.loads(staged["kernel-metadata.json"])["code_file"] == \
+        "img2text_session.py"
+
+async def test_inlined_script_runs_standalone(db_session, monkeypatch, tmp_path):
+    """K2b: exec script ghép trong sandbox KHÔNG có img2text_batch.py cạnh →
+    sys.modules['img2text_batch'] tồn tại + có kb.WORK_DIR (self-contained)."""
+    monkeypatch.setattr(settings, "base_url", "https://api.example.com")
+    monkeypatch.setattr(settings, "worker_base_url", "")
+    api = FakeApi()
+    assert await orch._spawn_session(api, SessionLocal, key="k-standalone") is True
+    script = api.pushes[0]["img2text_session.py"]
+    script_path = tmp_path / "img2text_session.py"
+    script_path.write_text(script, encoding="utf-8")
+    assert not (tmp_path / "img2text_batch.py").exists()  # no sibling
+    # exec trong namespace sạch; __name__ != __main__ → không chạy main().
+    ns = {"__file__": str(script_path), "__name__": "kaggle_session_script"}
+    exec(compile(script, str(script_path), "exec"), ns)
+    kb = sys.modules.get("img2text_batch")
+    assert kb is not None  # loader đăng ký module
+    assert kb.WORK_DIR == "/tmp/img2text-batch"
+    assert ns["kb"] is kb  # `import img2text_batch as kb` hit sys.modules
+
+async def test_spawn_session_no_placeholders_left(db_session, monkeypatch):
+    """K2c: placeholder __SESSION_KEY__/__BASE_URL__ đã substitute hết."""
+    monkeypatch.setattr(settings, "base_url", "https://api.example.com")
+    monkeypatch.setattr(settings, "worker_base_url", "")
+    api = FakeApi()
+    assert await orch._spawn_session(api, SessionLocal, key="k-ph") is True
+    script = api.pushes[0]["img2text_session.py"]
+    assert "__SESSION_KEY__" not in script
+    assert "__BASE_URL__" not in script
+    assert "k-ph" in script
 
 async def test_norm_session_ref_variants():
     """R1: chuẩn hóa ref từ mọi dạng về 'owner/slug'."""
