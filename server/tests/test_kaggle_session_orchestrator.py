@@ -217,6 +217,11 @@ async def test_norm_session_ref_variants():
     assert orch._norm_session_ref(SESSION_REF) == SESSION_REF  # đã đúng → nguyên
     assert orch._norm_session_ref({"ref": f"/code/{SESSION_REF}"}) == SESSION_REF
     assert orch._norm_session_ref("{not json") == "{not json"  # parse lỗi → nguyên
+    # repr Python dấu đơn (phòng SDK đổi format)
+    assert orch._norm_session_ref(str({"ref": f"/code/{SESSION_REF}"})) == SESSION_REF
+    # JSON hợp lệ nhưng thiếu key 'ref' → nguyên (không crash)
+    missing = json.dumps({"kernelId": 7})
+    assert orch._norm_session_ref(missing) == missing
 
 async def test_spawn_session_kernel_ref_not_json(db_session):
     """R1: spawn lưu 'owner/slug' (từ meta['id']) làm ref, KHÔNG phải

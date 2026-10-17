@@ -31,6 +31,7 @@ in jobs.kaggle_ref (spec 2026-10-09) so _ensure_batch_runs re-adopts an
 "extracting" job after a restart — the poll loop resumes, no orphan kernel.
 """
 
+import ast
 import asyncio
 import json
 import logging
@@ -531,14 +532,18 @@ def _norm_session_ref(raw) -> str:
     kaggle 2.x kernels_push trả DICT ({'ref': '/code/owner/slug', ...}); DB row
     cũ lưu str(dict). strip prefix '/code/' → 'owner/slug'. Còn lại trả nguyên."""
     if isinstance(raw, str) and raw.lstrip().startswith("{"):
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            parsed = None
-        if isinstance(parsed, dict):
-            raw = parsed.get("ref", raw)
-    elif isinstance(raw, dict):
-        raw = raw.get("ref", raw)
+        parsed = None
+        for loader in (json.loads, ast.literal_eval):  # json = format thật;
+            try:                                       # ast phòng repr dấu đơn
+                parsed = loader(raw)
+                break
+            except (ValueError, SyntaxError):
+                continue
+        ref = parsed.get("ref") if isinstance(parsed, dict) else None
+        if isinstance(ref, str):
+            raw = ref
+    elif isinstance(raw, dict) and isinstance(raw.get("ref"), str):
+        raw = raw["ref"]
     ref = str(raw)
     return ref[len("/code/"):] if ref.startswith("/code/") else ref
 
