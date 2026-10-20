@@ -66,6 +66,8 @@ it("renders 7 tabs, default overview with summed stat cards", async () => {
         jobs_done: 3,
         jobs_failed: 1,
         page_views: 10,
+        emails_sent: 0,
+        emails_failed: 0,
         gpu_seconds: 100.5,
         estimated_cost_usd: 1.25,
       },
@@ -76,10 +78,13 @@ it("renders 7 tabs, default overview with summed stat cards", async () => {
         jobs_done: 2,
         jobs_failed: 0,
         page_views: 5,
+        emails_sent: 0,
+        emails_failed: 0,
         gpu_seconds: 50,
         estimated_cost_usd: 2.5,
       },
     ],
+    emails_stuck: 0,
   });
   renderWithRouter(<Admin />, { route: "/admin" });
   expect(screen.getByTestId("tab-overview")).toBeInTheDocument();
@@ -105,7 +110,7 @@ it("renders 7 tabs, default overview with summed stat cards", async () => {
 
 it("overview quick links navigate to other tabs", async () => {
   vi.mocked(api.me).mockResolvedValue(adminMe);
-  vi.mocked(api.adminStats).mockResolvedValue({ days: [] });
+  vi.mocked(api.adminStats).mockResolvedValue({ days: [], emails_stuck: 0 });
   vi.mocked(api.adminListUsers).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Admin />);
   const user = userEvent.setup();
@@ -204,10 +209,13 @@ it("stats tab renders cost column", async () => {
         jobs_done: 1,
         jobs_failed: 1,
         page_views: 9,
+        emails_sent: 0,
+        emails_failed: 0,
         gpu_seconds: 10800,
         estimated_cost_usd: 7.5,
       },
     ],
+    emails_stuck: 0,
   });
   renderWithRouter(<Admin />);
   const user = userEvent.setup();
@@ -274,7 +282,7 @@ it("logs tab filters by ip", async () => {
 
 it("admin home has no jobs board, no dropzone (absence asserts)", async () => {
   vi.mocked(api.me).mockResolvedValue(adminMe);
-  vi.mocked(api.adminStats).mockResolvedValue({ days: [] });
+  vi.mocked(api.adminStats).mockResolvedValue({ days: [], emails_stuck: 0 });
   renderWithRouter(<Admin />, { route: "/admin" });
   await screen.findByTestId("stat-users"); // admin content rendered
   expect(screen.queryAllByTestId((id: string) => id.startsWith("job-row"))).toHaveLength(0);
@@ -284,7 +292,7 @@ it("admin home has no jobs board, no dropzone (absence asserts)", async () => {
 
 it("admin sub-rail renders 7 items; active item has aria-current=page", async () => {
   vi.mocked(api.me).mockResolvedValue(adminMe);
-  vi.mocked(api.adminStats).mockResolvedValue({ days: [] });
+  vi.mocked(api.adminStats).mockResolvedValue({ days: [], emails_stuck: 0 });
   renderWithRouter(<Admin />, { route: "/admin" });
   await screen.findByTestId("stat-users"); // admin content rendered
   const rail = screen.getByTestId("admin-rail");

@@ -386,7 +386,10 @@
       "jobsDone": "Job hoàn tất",
       "jobsFailed": "Job thất bại",
       "gpuTotal": "Tổng GPU (giây)",
-      "cost": "Chi phí ước tính (USD)"
+      "cost": "Chi phí ước tính (USD)",
+      "emailsSent": "Email đã gửi",
+      "emailsFailed": "Email gửi lỗi",
+      "emailsStuck": "{n} email kẹt trong outbox — drain job chết hoặc SMTP treo."
     },
     "stats": {
       "date": "Ngày",
@@ -395,6 +398,8 @@
       "done": "Hoàn tất",
       "failed": "Thất bại",
       "views": "Lượt xem",
+      "emailsSent": "Email đã gửi",
+      "emailsFailed": "Email lỗi",
       "gpu": "GPU (giây)",
       "cost": "Chi phí ước tính",
       "from": "Từ",
@@ -666,7 +671,9 @@
       "cancel": "Hủy",
       "delete": "Xóa",
       "deleteTitle": "Xóa job #{id}?",
-      "deleteMessage": "Toàn bộ dữ liệu (file gốc, kết quả, phiên bản) sẽ bị xóa vĩnh viễn. Không thể hoàn tác."
+      "deleteMessage": "Toàn bộ dữ liệu (file gốc, kết quả, phiên bản) sẽ bị xóa vĩnh viễn. Không thể hoàn tác.",
+      "pageOne": "trang",
+      "more": "Thao tác khác"
     }
   },
   "feedback": {

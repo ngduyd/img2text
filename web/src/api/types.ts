@@ -189,8 +189,16 @@ export interface AdminStatsDay {
   jobs_done: number;
   jobs_failed: number;
   page_views: number;
+  emails_sent: number;
+  emails_failed: number;
   gpu_seconds: number;
   estimated_cost_usd: number;
+}
+
+/** GET /api/admin/stats — days[] + email outbox rows kẹt (lease quá hạn). */
+export interface AdminStatsResponse {
+  days: AdminStatsDay[];
+  emails_stuck: number;
 }
 
 /** Plan S: admin runtime settings — effective value + source (Setting row vs env). */

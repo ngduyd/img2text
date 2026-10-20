@@ -386,7 +386,10 @@
       "jobsDone": "Jobs done",
       "jobsFailed": "Jobs failed",
       "gpuTotal": "Total GPU (seconds)",
-      "cost": "Estimated cost (USD)"
+      "cost": "Estimated cost (USD)",
+      "emailsSent": "Emails sent",
+      "emailsFailed": "Emails failed",
+      "emailsStuck": "{n} email(s) stuck in the outbox — drain job dead or SMTP hung."
     },
     "stats": {
       "date": "Date",
@@ -395,6 +398,8 @@
       "done": "Done",
       "failed": "Failed",
       "views": "Views",
+      "emailsSent": "Emails sent",
+      "emailsFailed": "Emails failed",
       "gpu": "GPU (seconds)",
       "cost": "Estimated cost",
       "from": "From",
@@ -666,7 +671,9 @@
       "cancel": "Cancel",
       "delete": "Delete",
       "deleteTitle": "Delete job #{id}?",
-      "deleteMessage": "All data (original file, results, versions) will be permanently deleted. This cannot be undone."
+      "deleteMessage": "All data (original file, results, versions) will be permanently deleted. This cannot be undone.",
+      "pageOne": "page",
+      "more": "More actions"
     }
   },
   "feedback": {

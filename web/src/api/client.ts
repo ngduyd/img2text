@@ -1,4 +1,4 @@
-import type { AdminStatsDay, FeedbackItem, Job, JobsPage, QuotaPatch, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LlmTestResult, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion, WorkersResponse, StorageOverview } from "./types";
+import type { AdminStatsResponse, FeedbackItem, Job, JobsPage, QuotaPatch, RegionPatchOut, User, AdminSettings, AdminSettingsPut, LlmTestResult, LayoutStyle, Suggestion, Extraction, ExtractionSaveResult, DocumentVersion, WorkersResponse, StorageOverview } from "./types";
 import { loadPdf } from "../lib/pdfjs";
 import { translate } from "../i18n";
 
@@ -386,7 +386,7 @@ export const api = {
   adminPatchQuota: (id: number | string, body: QuotaPatch) =>
     request<void>(`/api/admin/users/${id}/quota`, { method: "PATCH", body }),
   adminStats: (from: string, to: string) =>
-    request<{ days: AdminStatsDay[] }>(`/api/admin/stats?from=${from}&to=${to}`),
+    request<AdminStatsResponse>(`/api/admin/stats?from=${from}&to=${to}`),
   // Spec #7: worker heartbeats (admin-only) — 403/401 → UI ẩn card.
   getWorkers: () => request<WorkersResponse>("/api/admin/workers"),
   // Lane K: Kaggle GPU/TPU quota (admin-only, 503 khi thiếu package).

@@ -15,6 +15,8 @@ const CARDS = [
   { id: "failed", labelKey: "admin.overview.jobsFailed", sum: (d: AdminStatsDay) => d.jobs_failed },
   { id: "gpu", labelKey: "admin.overview.gpuTotal", sum: (d: AdminStatsDay) => d.gpu_seconds },
   { id: "cost", labelKey: "admin.overview.cost", sum: (d: AdminStatsDay) => d.estimated_cost_usd },
+  { id: "emailsSent", labelKey: "admin.overview.emailsSent", sum: (d: AdminStatsDay) => d.emails_sent },
+  { id: "emailsFailed", labelKey: "admin.overview.emailsFailed", sum: (d: AdminStatsDay) => d.emails_failed },
 ] as const;
 
 const QUICK_LINKS = [
@@ -36,6 +38,11 @@ export default function AdminOverview({ onNavigate }: { onNavigate: (tab: AdminT
 
   return (
     <div>
+      {(data?.emails_stuck ?? 0) > 0 && (
+        <p role="status" className="mb-4 text-sm text-error">
+          {t("admin.overview.emailsStuck", { n: data!.emails_stuck })}
+        </p>
+      )}
       <div className="mb-4 grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(11rem,1fr))]">
         {CARDS.map((c) => (
           <Card key={c.id} testid={`stat-${c.id}`}>
