@@ -205,22 +205,23 @@ export default function MultiFileUpload({
 
   return (
     <div data-testid="multi-file-upload">
-      {/* Cluster cũ: [hint | Gửi] — layout khung không đổi (spec U1). */}
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted">
-          {entries.length > 0 &&
-            t("upload.summary", { files: entries.length, pages: total(entries), max: MAX_PAGES })}
-        </p>
-        <Button
-          testid="muf-submit"
-          className="ml-auto"
-          disabled={disabled || entries.length === 0 || total(entries) === 0 || busy}
-          loading={busy}
-          onClick={() => void submit()}
-        >
-          {t("upload.send")}
-        </Button>
-      </div>
+      {/* D5: chỉ 1 CTA — hàng "Gửi" chỉ hiện khi đã có file (rỗng = dropzone là CTA). */}
+      {entries.length > 0 && (
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-muted">
+            {t("upload.summary", { files: entries.length, pages: total(entries), max: MAX_PAGES })}
+          </p>
+          <Button
+            testid="muf-submit"
+            className="ml-auto"
+            disabled={disabled || total(entries) === 0 || busy}
+            loading={busy}
+            onClick={() => void submit()}
+          >
+            {t("upload.send")}
+          </Button>
+        </div>
+      )}
       <div
         data-testid="muf-drop"
         onDragOver={(e) => e.preventDefault()}

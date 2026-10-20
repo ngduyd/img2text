@@ -134,21 +134,18 @@ export default function Jobs() {
 
   return (
     <PageShell width="data">
-      <PageHeader
-        title={t("jobs.title")}
-        subtitle={t("jobs.subtitle")}
-        actions={
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Stat testid="stats-total" label={t("jobs.stats.total")} value={String(jobs?.total ?? items.length)} />
-            <Stat testid="stats-pending" label={t("jobs.stats.pending")} value={String(pending)} valueClassName="text-warning" />
-            <Stat testid="stats-done" label={t("jobs.stats.done")} value={String(done)} valueClassName="text-success" />
-          </div>
-        }
-      />
+      <PageHeader title={t("jobs.title")} subtitle={t("jobs.subtitle")} />
+
+      {/* D10: 3 số liệu trên MỘT hàng, không chen vào header. */}
+      <div className="mb-4 grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-3">
+        <Stat testid="stats-total" label={t("jobs.stats.total")} value={String(jobs?.total ?? items.length)} />
+        <Stat testid="stats-pending" label={t("jobs.stats.pending")} value={String(pending)} valueClassName="text-warning" />
+        <Stat testid="stats-done" label={t("jobs.stats.done")} value={String(done)} valueClassName="text-success" />
+      </div>
 
       {/* Toolbar: search + sort + filter tabs — spec #3 (q/sort/status server-side). */}
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-1 flex-wrap items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+        <div className="flex flex-1 flex-wrap items-end gap-2">
           <label className="relative min-w-40 flex-1 sm:max-w-xs">
             <span className="sr-only">{t("jobs.searchLabel")}</span>
             <input

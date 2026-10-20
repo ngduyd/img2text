@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { Download, FileText, Image as ImageIcon, RotateCcw } from "lucide-react";
+import { Link } from "react-router-dom";
+import { FileText, Image as ImageIcon, MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "../api/client";
 import type { JobListItem } from "../api/types";
@@ -20,6 +20,37 @@ function formatDuration(ms: number): string {
     : translate("jobs.row.durationMin", { m: Math.round(s / 60) });
 }
 
+/** 1 mục trong menu ⋯: full-width, tự ẩn khi `show` false. */
+function MenuAction({
+  testid,
+  show,
+  label,
+  onClick,
+  disabled = false,
+  danger = false,
+}: {
+  testid: string;
+  show: boolean;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  if (!show) return null;
+  return (
+    <Button
+      testid={testid}
+      size="sm"
+      variant={danger ? "danger" : "ghost"}
+      disabled={disabled}
+      onClick={onClick}
+      className="w-full justify-start"
+    >
+      {label}
+    </Button>
+  );
+}
+
 /** File-centric list row (R52): server list has NO storage_key → name line from id/type/pages.
  *  Phase 4: `selected`/`onToggle` add the bulk-retry checkbox (no handler → no checkbox).
  */
@@ -32,7 +63,6 @@ export default function JobRow({
   selected?: boolean;
   onToggle?: (id: number) => void;
 }) {
-  const navigate = useNavigate();
   const { t } = useT();
   const queryClient = useQueryClient();
   const dateFormat = new Intl.DateTimeFormat(translate("i18n.locale"), { dateStyle: "medium", timeStyle: "short" });
@@ -95,92 +125,91 @@ export default function JobRow({
           {isPdf ? <FileText className="h-4 w-4" /> : <ImageIcon className="h-4 w-4" />}
         </span>
         <div className="min-w-0">
-          <span className="block truncate font-medium text-text">
+          <Link
+            to={`/jobs/${job.id}`}
+            data-testid={`btn-view-${job.id}`}
+            className="block truncate font-medium text-text hover:text-accent-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
             <span className="font-mono">#{job.id}</span> · {isPdf ? "PDF" : t("jobs.row.image")} ·{" "}
-            <span className="font-mono">{job.page_count}</span> {t("jobs.row.pages")}
-          </span>
+            <span className="font-mono">{job.page_count}</span>{" "}
+            {job.page_count === 1 ? t("jobs.row.pageOne") : t("jobs.row.pages")}
+          </Link>
           <div className="mt-0.5 text-xs text-muted">
             <span className="font-mono">{dateFormat.format(new Date(job.created_at))}</span>
             {duration && <span className="ml-2 font-mono">{duration}</span>}
           </div>
         </div>
       </div>
-      {/* 320px: wrap + justify-end; nhãn dài → icon+aria-label dưới sm (label ẩn sm:inline). */}
+      {/* D4: badge + 1 nút ⋯ — thao tác phụ nằm trong menu (không quá 3 control/hàng). */}
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Badge tone={STATUS_TONE[job.status]} testid={`badge-${job.id}`}>
           {t(STATUS_KEY[job.status])}
         </Badge>
-        <Button
-          testid={`btn-view-${job.id}`}
-          size="sm"
-          variant="secondary"
-          onClick={() => navigate(`/jobs/${job.id}`)}
-        >
-          {t("jobs.row.view")}
-        </Button>
-        {job.status === "done" && (
-          <Button
-            testid={`btn-dl-original-${job.id}`}
-            size="sm"
-            variant="secondary"
-            title={t("jobs.row.downloadOriginal")}
-            aria-label={t("jobs.row.downloadOriginal")}
-            onClick={async () => {
-              // P2: same-origin blob download (presigned host unreachable via port-forward).
-              // R59a: download failure surfaces as toast (no inline slot here).
-              try {
-                const blob = await api.downloadJobFile(job.id);
-                const href = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = href;
-                a.download = `job-${job.id}.${blob.type.split("/")[1] || (isPdf ? "pdf" : "jpg")}`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                URL.revokeObjectURL(href);
-              } catch (err) {
-                toast.error(mapApiError(err));
-              }
+        <details data-testid={`row-menu-${job.id}`} className="relative">
+          <summary
+            data-testid={`btn-menu-${job.id}`}
+            aria-label={t("jobs.row.more")}
+            title={t("jobs.row.more")}
+            className="flex cursor-pointer list-none items-center justify-center rounded-md border border-border bg-surface px-3 py-1 text-sm text-text transition duration-150 ease-out hover:bg-surface-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden"
+          >
+            <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+          </summary>
+          {/* Click 1 mục → đóng menu (details native, không cần state React). */}
+          <div
+            role="menu"
+            aria-label={t("jobs.row.more")}
+            className="absolute right-0 z-20 mt-1 flex w-48 flex-col gap-1 rounded-card border border-border bg-surface p-1 shadow-card"
+            onClick={(e) => {
+              const d = e.currentTarget.closest("details");
+              if (d) d.open = false;
             }}
           >
-            <Download className="h-4 w-4 sm:hidden" aria-hidden="true" />
-            <span className="hidden sm:inline">{t("jobs.row.downloadOriginal")}</span>
-          </Button>
-        )}
-        {job.status === "failed" && (
-          <Button
-            testid={`btn-retry-job-${job.id}`}
-            size="sm"
-            variant="secondary"
-            title={t("jobs.row.retry")}
-            aria-label={t("jobs.row.retry")}
-            disabled={retry.isPending}
-            onClick={() => retry.mutate()}
-          >
-            <RotateCcw className="h-4 w-4 sm:hidden" aria-hidden="true" />
-            <span className="hidden sm:inline">{t("jobs.row.retry")}</span>
-          </Button>
-        )}
-        {cancellable && (
-          <Button
-            testid={`btn-cancel-job-${job.id}`}
-            size="sm"
-            variant="secondary"
-            disabled={cancel.isPending}
-            onClick={() => cancel.mutate()}
-          >
-            {t("jobs.row.cancel")}
-          </Button>
-        )}
-        {/* Spec #1: xóa job — destructive, confirm trước khi gọi DELETE. */}
-        <Button
-          testid={`btn-delete-job-${job.id}`}
-          size="sm"
-          variant="danger"
-          onClick={() => setConfirmDelete(true)}
-        >
-          {t("jobs.row.delete")}
-        </Button>
+            <MenuAction
+              testid={`btn-dl-original-${job.id}`}
+              show={job.status === "done"}
+              label={t("jobs.row.downloadOriginal")}
+              onClick={async () => {
+                // P2: same-origin blob download (presigned host unreachable via port-forward).
+                // R59a: download failure surfaces as toast (no inline slot here).
+                try {
+                  const blob = await api.downloadJobFile(job.id);
+                  const href = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = href;
+                  a.download = `job-${job.id}.${blob.type.split("/")[1] || (isPdf ? "pdf" : "jpg")}`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                  URL.revokeObjectURL(href);
+                } catch (err) {
+                  toast.error(mapApiError(err));
+                }
+              }}
+            />
+            <MenuAction
+              testid={`btn-retry-job-${job.id}`}
+              show={job.status === "failed"}
+              label={t("jobs.row.retry")}
+              disabled={retry.isPending}
+              onClick={() => retry.mutate()}
+            />
+            <MenuAction
+              testid={`btn-cancel-job-${job.id}`}
+              show={cancellable}
+              label={t("jobs.row.cancel")}
+              disabled={cancel.isPending}
+              onClick={() => cancel.mutate()}
+            />
+            {/* Spec #1: xóa job — destructive, confirm trước khi gọi DELETE. */}
+            <MenuAction
+              testid={`btn-delete-job-${job.id}`}
+              show
+              danger
+              label={t("jobs.row.delete")}
+              onClick={() => setConfirmDelete(true)}
+            />
+          </div>
+        </details>
       </div>
       <ConfirmDialog
         open={confirmDelete}
