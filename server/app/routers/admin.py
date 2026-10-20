@@ -20,7 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import get_current_user, require_admin
-from app.core.models import Job, PageView, RequestLog, Setting, User, WorkerHeartbeat
+from app.core.models import (
+    EmailSend,
+    Job,
+    PageView,
+    RequestLog,
+    Setting,
+    User,
+    WorkerHeartbeat,
+)
 from app.routers.auth import revoke_all_refresh
 from app.services.kaggle_quota import kaggle_quota_payload
 from app.services.purge import purge_due_jobs, purge_retention_days
@@ -276,6 +284,8 @@ async def stats(
     """Per-day activity + gpu cost estimate; dates inclusive, UTC days.
 
     Default window: last 7 days (to=today). Gap days zero-filled.
+    emails_sent/emails_failed = ledger email theo ngày; emails_stuck = row còn
+    queued/sending quá 15' (toàn bảng) → drain job chết / SMTP treo.
     """
     today = datetime.now(timezone.utc).date()
     end = to or today
@@ -306,6 +316,24 @@ async def stats(
     )
     views = await _grouped(session, PageView, PageView.created_at,
                            (PageView.created_at >= lo, PageView.created_at < hi))
+    emails = await _grouped(
+        session, EmailSend, EmailSend.created_at,
+        (EmailSend.created_at >= lo, EmailSend.created_at < hi),
+        {
+            "sent": func.sum(case((EmailSend.status == "sent", 1), else_=0)),
+            "failed": func.sum(case((EmailSend.status == "failed", 1), else_=0)),
+        },
+    )
+    emails_stuck = (
+        await session.scalar(
+            select(func.count())
+            .select_from(EmailSend)
+            .where(
+                EmailSend.status.in_(("queued", "sending")),
+                EmailSend.created_at < datetime.now(timezone.utc) - timedelta(minutes=15),
+            )
+        )
+    ) or 0
 
     days: list[dict] = []
     cur = start
@@ -313,6 +341,7 @@ async def stats(
         u = (users.get(cur) or (0,))[0]
         j = jobs.get(cur) or (0, 0, 0, 0.0)
         v = (views.get(cur) or (0,))[0]
+        e = emails.get(cur) or (0, 0, 0)
         gpu = float(j[3])
         days.append({
             "date": cur.isoformat(),
@@ -321,11 +350,13 @@ async def stats(
             "jobs_done": int(j[1]),
             "jobs_failed": int(j[2]),
             "page_views": v,
+            "emails_sent": int(e[1]),
+            "emails_failed": int(e[2]),
             "gpu_seconds": gpu,
             "estimated_cost_usd": round(gpu / 3600 * rate, 4),
         })
         cur += timedelta(days=1)
-    return {"days": days}
+    return {"days": days, "emails_stuck": int(emails_stuck)}
 
 # --- Lane K: Kaggle GPU/TPU quota (admin card) ---
 # Parse + HTTP mapping (503/502, response shape) tách
