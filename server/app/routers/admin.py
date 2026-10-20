@@ -14,7 +14,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from httpx import AsyncClient
 from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
-from sqlalchemy import Date, Float, case, cast, func, select
+from sqlalchemy import Date, Float, and_, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -285,7 +285,8 @@ async def stats(
 
     Default window: last 7 days (to=today). Gap days zero-filled.
     emails_sent/emails_failed = ledger email theo ngày; emails_stuck = row còn
-    queued/sending quá 15' (toàn bảng) → drain job chết / SMTP treo.
+    queued quá due 15' (drain job chết) hoặc row sending đã hết lease
+    (next_attempt_at là lease deadline khi đang gửi → crash giữa send).
     """
     today = datetime.now(timezone.utc).date()
     end = to or today
@@ -324,13 +325,22 @@ async def stats(
             "failed": func.sum(case((EmailSend.status == "failed", 1), else_=0)),
         },
     )
+    now = datetime.now(timezone.utc)
     emails_stuck = (
         await session.scalar(
             select(func.count())
             .select_from(EmailSend)
             .where(
-                EmailSend.status.in_(("queued", "sending")),
-                EmailSend.created_at < datetime.now(timezone.utc) - timedelta(minutes=15),
+                or_(
+                    and_(
+                        EmailSend.status == "queued",
+                        EmailSend.next_attempt_at < now - timedelta(minutes=15),
+                    ),
+                    and_(
+                        EmailSend.status == "sending",
+                        EmailSend.next_attempt_at < now,  # lease hết hạn
+                    ),
+                )
             )
         )
     ) or 0
