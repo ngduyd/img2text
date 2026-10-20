@@ -32,7 +32,10 @@
     "skip": "Bỏ qua điều hướng",
     "ariaMain": "Điều hướng chính",
     "features": "Tính năng",
-    "storage": "Dung lượng"
+    "storage": "Dung lượng",
+    "language": "Ngôn ngữ",
+    "theme": "Giao diện",
+    "ocr": "OCR"
   },
   "status": {
     "queued": "Đang lập lịch",
@@ -182,7 +185,14 @@
     "originalFile": "File gốc",
     "infoTitle": "Thông tin",
     "layoutToggleAria": "Thu gọn/mở panel Layout",
-    "layout": "Layout"
+    "layout": "Layout",
+    "subnavAria": "Các mục của job",
+    "overview": "Tổng quan",
+    "textDesc": "Đọc văn bản đã trích xuất và sửa lỗi OCR đối chiếu với trang gốc.",
+    "layoutDesc": "Dựng lại và chỉnh sửa bố cục trang bằng trình soạn thảo trên trình duyệt.",
+    "notReadyYet": "Chưa có nội dung — job đang xử lý.",
+    "textNotReady": "Văn bản chưa sẵn sàng.",
+    "layoutNotReady": "Layout chưa sẵn sàng."
   },
   "info": {
     "createdAt": "Tạo lúc:",

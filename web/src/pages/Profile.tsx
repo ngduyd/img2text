@@ -36,7 +36,7 @@ export default function Profile() {
   if (!me) {
     // Loading state instead of blank page while [me] resolves (ui-ux-dev checklist).
     return (
-      <PageShell>
+      <PageShell width="form">
         <div data-testid="profile-loading" className="flex flex-col gap-4">
           <Skeleton className="h-8 w-40" />
           <div className="rounded-card border border-border bg-surface p-4 shadow-card">
@@ -102,7 +102,7 @@ export default function Profile() {
   }
 
   return (
-    <PageShell>
+    <PageShell width="form">
       <PageHeader title={t("profile.title")} actions={<LangSwitch testid="lang-switch-settings" />} />
       <div className="flex flex-col gap-4">
         <Card title={t("profile.infoTitle")} testid="card-profile-info">

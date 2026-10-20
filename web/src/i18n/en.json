@@ -32,7 +32,10 @@
     "skip": "Skip to content",
     "ariaMain": "Main navigation",
     "features": "Features",
-    "storage": "Storage"
+    "storage": "Storage",
+    "language": "Language",
+    "theme": "Appearance",
+    "ocr": "OCR"
   },
   "status": {
     "queued": "Queued",
@@ -182,7 +185,14 @@
     "originalFile": "Original file",
     "infoTitle": "Info",
     "layoutToggleAria": "Toggle layout panel",
-    "layout": "Layout"
+    "layout": "Layout",
+    "subnavAria": "Job sections",
+    "overview": "Overview",
+    "textDesc": "Read the extracted text and fix OCR errors against the original page.",
+    "layoutDesc": "Rebuild and edit the page layout in a browser word processor.",
+    "notReadyYet": "Nothing to show yet — the job is still processing.",
+    "textNotReady": "Text is not ready yet.",
+    "layoutNotReady": "Layout is not ready yet."
   },
   "info": {
     "createdAt": "Created:",

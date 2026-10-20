@@ -133,7 +133,7 @@ export default function Jobs() {
   };
 
   return (
-    <PageShell>
+    <PageShell width="data">
       <PageHeader
         title={t("jobs.title")}
         subtitle={t("jobs.subtitle")}

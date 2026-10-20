@@ -122,6 +122,11 @@ function renderWithRouter(ui: ReactElement, { route = "/" } = {}) {
   );
 }
 
+/** SPEC D3: trang con — chỉ render đúng section được test. */
+function renderSection(section: "text" | "layout", { route = "/jobs/5" } = {}) {
+  return renderWithRouter(<JobDetail section={section} />, { route });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   // WS-UI: blob cache module-level share giữa test — dọn để mock mới có hiệu lực.
@@ -234,14 +239,14 @@ it("done without layout_cache shows retry-layout button and calls api", async ()
 it("done with layout_cache still shows retry-layout button", async () => {
   mockJob({ ...DONE_JOB, layout_cache: { md: true, docx: true } });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  await screen.findByTestId("layout-preview");
+  await screen.findByTestId("job-subnav");
   expect(screen.getByTestId("btn-retry-layout")).toBeInTheDocument();
 });
 
 it("done stops polling", async () => {
   mockJob({ id: 5, status: "done", result: EMPTY_RESULT } as Job);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  expect(await screen.findByTestId("layout-preview")).toBeInTheDocument();
+  expect(await screen.findByTestId("job-subnav")).toBeInTheDocument();
   expect(pollSpyCalled()).toBe(false);
 });
 
@@ -262,10 +267,10 @@ const DONE_JOB: Job = {
 it("done renders 3 panels: original + result + info with status badge", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  // U4+U5: default mở cả 2 panel — không cần click toggle.
+  // D3: Overview giữ file gốc + thông tin; văn bản nằm ở trang con /text.
   expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
-  expect(screen.getByTestId("panel-result")).toBeInTheDocument();
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
+  expect(screen.queryByTestId("panel-result")).not.toBeInTheDocument();
   expect(screen.getByTestId("status-5")).toHaveTextContent("Done");
 });
 
@@ -273,7 +278,7 @@ it("done renders 3 panels: original + result + info with status badge", async ()
 it("done: no job-meta/output badge, stats line + ExportBar render", async () => {
   mockJob({ ...DONE_JOB, output_format: "docx" });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  await screen.findByTestId("layout-preview");
+  await screen.findByTestId("job-subnav");
   expect(screen.queryByTestId("job-meta")).not.toBeInTheDocument();
   expect(screen.queryByTestId("job-output-format")).not.toBeInTheDocument();
   expect(screen.getByTestId("result-stats")).toBeInTheDocument();
@@ -305,20 +310,15 @@ it("header: back link, title, badge, actions in one row (adjust-only)", async ()
   expect(
     screen.getByRole("heading", { level: 1, name: "Job detail #5" }),
   ).toBeInTheDocument();
-  // U8: btn-edit-doc dời khỏi header → vào heading row section Layout.
-  expect(screen.getByTestId("job-header")).not.toContainElement(
-    screen.getByTestId("btn-edit-doc"),
-  );
-  expect(
-    within(screen.getByTestId("section-layout")).getByTestId("btn-edit-doc"),
-  ).toBeInTheDocument();
+  // D3: btn-edit-doc nằm ở trang /layout, không ở header Overview.
+  expect(screen.queryByTestId("btn-edit-doc")).not.toBeInTheDocument();
   expect(screen.queryByTestId("btn-retry-job")).not.toBeInTheDocument();
 });
 
 /** JD2 amendment: btn-edit-doc = preview ↔ editor trong Section "Layout". */
 it("btn-edit-doc toggles editor: preview → editor → preview, no navigation", async () => {
   mockJob(DONE_JOB);
-  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  renderSection("layout");
   const user = userEvent.setup();
   const btn = await screen.findByTestId("btn-edit-doc");
   expect(btn).toHaveTextContent("Edit");
@@ -330,8 +330,6 @@ it("btn-edit-doc toggles editor: preview → editor → preview, no navigation",
   expect(btn).toHaveTextContent("Editing");
   const editor = await screen.findByTestId("md-editor");
   expect(editor.querySelector("textarea")).toHaveFocus();
-  expect(scrollIntoViewMock).toHaveBeenCalledTimes(1);
-  expect(scrollIntoViewMock).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
   // Toggle lần 2 → quay lại preview (UnifiedEditor unmount).
   await user.click(screen.getByTestId("btn-edit-doc"));
   expect(btn).toHaveAttribute("aria-pressed", "false");
@@ -364,7 +362,7 @@ it("header download dropdown: 4 text formats call exportJob + open url", async (
 /** U7: xóa TOÀN BỘ switch MD/Word — header fmt switch + preview toggle vắng trong DOM. */
 it("U7: no fmt-md-layout/fmt-docx-layout/preview-mode-md/preview-mode-word in DOM; fmt fixed = output_format", async () => {
   mockJob({ ...DONE_JOB, output_format: "docx" });
-  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  renderSection("layout");
   await screen.findByTestId("layout-preview");
   expect(screen.queryByTestId("fmt-md-layout")).not.toBeInTheDocument();
   expect(screen.queryByTestId("fmt-docx-layout")).not.toBeInTheDocument();
@@ -380,9 +378,8 @@ it("U6: aside sidebar lg:sticky lg:top-32", async () => {
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("detail-grid");
   const aside = document.querySelector("aside")!;
-  expect(aside.className).toContain("lg:sticky");
-  expect(aside.className).toContain("lg:top-32");
-  // <lg không sticky (không class sticky trần).
+  // D3: Overview 2 cột, aside không sticky (trang ngắn, không cần bám).
+  expect(aside.className).toContain("lg:col-span-5");
   expect(aside.className).not.toMatch(/(^|\s)sticky/);
 });
 
@@ -412,55 +409,47 @@ it("U4+U5: original+info default open with label left / chevron right", async ()
   expect(screen.queryByTestId("panel-original")).not.toBeInTheDocument();
 });
 
-/** U3: section Layout collapsible — btn-toggle-layout, default mở, chevron rotate, aria-expanded/controls. */
-it("U3: layout collapsible toggles aria-expanded via btn-toggle-layout (default open)", async () => {
+/** D3: 3 trang tách — subnav có 3 link, aria-current đúng trang đang mở. */
+it("D3: job-subnav renders 3 links and marks the active page", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  await screen.findByTestId("section-layout");
-  const btn = screen.getByTestId("btn-toggle-layout");
-  expect(btn).toHaveAttribute("aria-expanded", "true");
-  expect(btn).toHaveAttribute("aria-controls", "layout-panel-wrap");
-  // Default mở: preview + stats + export render.
-  expect(screen.getByTestId("layout-preview")).toBeInTheDocument();
-  const chevron = btn.querySelector("svg")!;
-  expect(chevron.getAttribute("class")).toContain("rotate-180");
-  // GIỮ scroll region Layout hiện tại (preview container).
-  const preview = screen.getByTestId("preview-md");
-  expect(preview.className).toContain("max-h-[75vh]");
-  const user = userEvent.setup();
-  await user.click(btn);
-  expect(btn).toHaveAttribute("aria-expanded", "false");
-  expect(chevron.getAttribute("class")).not.toContain("rotate-180");
-  expect(screen.queryByTestId("layout-preview")).not.toBeInTheDocument();
-  expect(screen.queryByTestId("result-stats")).not.toBeInTheDocument();
-  // Header row giữ nguyên heading → edit → chevron.
-  const layoutSection = screen.getByTestId("section-layout");
-  const layoutHeading = layoutSection.querySelector("h2")!;
-  const row = layoutHeading.parentElement!;
-  expect(row.firstElementChild).toBe(layoutHeading);
-  expect(row).toContainElement(screen.getByTestId("btn-edit-doc"));
-  expect(row).toContainElement(btn);
+  const nav = await screen.findByTestId("job-subnav");
+  expect(within(nav).getByTestId("subnav-overview")).toHaveAttribute(
+    "href",
+    "/jobs/5",
+  );
+  expect(within(nav).getByTestId("subnav-text")).toHaveAttribute("href", "/jobs/5/text");
+  expect(within(nav).getByTestId("subnav-layout")).toHaveAttribute(
+    "href",
+    "/jobs/5/layout",
+  );
+  expect(within(nav).getByTestId("subnav-overview")).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  expect(within(nav).getByTestId("subnav-text")).not.toHaveAttribute("aria-current");
 });
 
-/** U2+U8: nút Edit vào heading row — Text: heading → edit (không chevron); Layout: heading → edit. */
-it("U2+U8: edit buttons live in heading rows (Text no chevron; Layout heading→edit)", async () => {
+/** D3: mỗi trang chỉ render section của mình (không còn 2 editor cùng màn). */
+it("D3: overview has no editors; text page has panel-result; layout page has editor", async () => {
   mockJob(DONE_JOB);
-  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  const textSection = await screen.findByTestId("section-text");
-  const editText = within(textSection).getByTestId("btn-edit-text");
-  const textRow = editText.parentElement!;
-  const textHeading = textSection.querySelector("h2")!;
-  // heading → edit: cùng row, heading đứng TRƯỚC button, đúng 2 children (không chevron).
-  expect(Array.from(textRow.children)).toEqual([textHeading, editText]);
-  // Text KHÔNG collapsible — không nút toggle section (IssuesPanel toggle là panel riêng).
-  expect(textSection.querySelector("[data-testid^='btn-toggle']")).toBeNull();
-  expect(textRow.querySelector("svg")).toBeNull();
-  const layoutSection = await screen.findByTestId("section-layout");
-  const editDoc = within(layoutSection).getByTestId("btn-edit-doc");
-  const layoutHeading = layoutSection.querySelector("h2")!;
-  const layoutRow = layoutHeading.parentElement!;
-  expect(layoutRow.firstElementChild).toBe(layoutHeading);
-  expect(layoutRow).toContainElement(editDoc);
+  const view = renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  await screen.findByTestId("job-subnav");
+  expect(screen.queryByTestId("panel-result")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("layout-preview")).not.toBeInTheDocument();
+  // Overview có 2 link sang trang con.
+  expect(screen.getByTestId("link-open-text")).toBeInTheDocument();
+  expect(screen.getByTestId("link-open-layout")).toBeInTheDocument();
+  view.unmount();
+
+  const text = renderSection("text");
+  expect(await screen.findByTestId("detail-text")).toBeInTheDocument();
+  expect(screen.queryByTestId("layout-preview")).not.toBeInTheDocument();
+  text.unmount();
+
+  renderSection("layout");
+  expect(await screen.findByTestId("layout-preview")).toBeInTheDocument();
+  expect(screen.queryByTestId("detail-text")).not.toBeInTheDocument();
 });
 
 /**
@@ -489,7 +478,7 @@ it("U1 P0: navigate A→B → getJob id=2, preview shows B (không html A), hist
         element: (
           <>
             <Link to="/jobs/2" data-testid="nav-b">go B</Link>
-            <JobDetail />
+            <JobDetail section="layout" />
           </>
         ),
       },
@@ -520,7 +509,7 @@ it("U1 P0: navigate A→B → getJob id=2, preview shows B (không html A), hist
 it("review r1 P1: no duplicate btn-retry-layout (editor retry = btn-retry-layout-error)", async () => {
   mockJob(DONE_JOB);
   vi.mocked(api.exportJob).mockRejectedValue(new ApiError("boom"));
-  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  renderSection("layout");
   const user = userEvent.setup();
   await user.click(await screen.findByTestId("btn-edit-doc"));
   await screen.findByTestId("layout-error");
@@ -570,7 +559,7 @@ it("btn-retry-layout: confirm → retryLayout + toast; cancel → no call", asyn
 /** Wave-3 #7 → Lane I Task 4: bỏ btn-edit-layout + textarea; btn-edit-doc mở UnifiedEditor. */
 it("no btn-edit-layout / layout-editor-textarea; btn-edit-doc opens UnifiedEditor", async () => {
   mockJob(DONE_JOB);
-  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
+  renderSection("layout");
   const user = userEvent.setup();
   expect(screen.queryByTestId("btn-edit-layout")).not.toBeInTheDocument();
   expect(screen.queryByTestId("layout-editor-textarea")).not.toBeInTheDocument();
@@ -582,8 +571,7 @@ it("no btn-edit-layout / layout-editor-textarea; btn-edit-doc opens UnifiedEdito
 it("renders single wrapper grid: collapsible original+info right (U4+U5 default open, no sticky)", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  await screen.findByTestId("section-text");
-  await screen.findByTestId("section-layout");
+  await screen.findByTestId("detail-grid");
   const grid = screen.getByTestId("detail-grid");
   expect(grid.className).toContain("lg:grid-cols-12");
   const colClasses = grid.className.split(/\s+/).filter((c) => c.includes("grid-cols"));
@@ -593,8 +581,7 @@ it("renders single wrapper grid: collapsible original+info right (U4+U5 default 
   const aside = grid.querySelector("aside");
   expect(aside).not.toBeNull();
   expect(aside!.className).toContain("lg:col-span-5");
-  // U6: sticky ≥lg (lg:sticky lg:top-32), <lg không sticky.
-  expect(aside!.className).toContain("lg:sticky");
+  // D3: overview không sticky (trang ngắn).
   expect(aside!.className).not.toMatch(/(^|\s)sticky/);
   // U4+U5: default MỞ — panel mount ngay, aria-expanded=true.
   expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
@@ -603,7 +590,6 @@ it("renders single wrapper grid: collapsible original+info right (U4+U5 default 
   expect(screen.getByTestId("btn-toggle-info")).toHaveAttribute("aria-expanded", "true");
   await screen.findByTestId("original-pdf-frame");
   await waitFor(() => expect(api.downloadJobFile).toHaveBeenCalledTimes(1));
-  expect(screen.getByTestId("layout-preview")).toBeInTheDocument();
   expect(screen.getByTestId("export-bar")).toBeInTheDocument();
   // Đóng → unmount + fetch không tăng (1 panel duy nhất).
   const user = userEvent.setup();
@@ -616,8 +602,8 @@ it("renders single wrapper grid: collapsible original+info right (U4+U5 default 
 /** U9 supersede wave-3 #6: section Văn bản CUỘN trong vùng max-h-[75vh] (không tràn trang). */
 it("section-text content scrolls in max-h-[75vh] region", async () => {
   mockJob(DONE_JOB);
-  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  const section = await screen.findByTestId("section-text");
+  renderSection("text");
+  const section = await screen.findByTestId("detail-text");
   const article = await screen.findByTestId("extraction-text");
   expect(section).toContainElement(article);
   const scroller = article.parentElement!;
@@ -625,24 +611,24 @@ it("section-text content scrolls in max-h-[75vh] region", async () => {
   expect(scroller.className).toMatch(/overflow-y-auto/);
 });
 
-// P1-2 review r1: extract_only không gen layout → ẩn Section Layout + export-bar.
-it("extract_only done hides section-layout and export groups", async () => {
+// P1-2 review r1: extract_only không gen layout → không có link sang /layout + không export.
+it("extract_only done hides layout link and export groups", async () => {
   mockJob({ ...DONE_JOB, mode: "extract_only" });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  await screen.findByTestId("panel-result");
-  expect(screen.queryByTestId("section-layout")).not.toBeInTheDocument();
+  await screen.findByTestId("link-open-text");
+  expect(screen.queryByTestId("link-open-layout")).not.toBeInTheDocument();
   expect(screen.queryByTestId("export-bar")).not.toBeInTheDocument();
 });
 
-/** Lane B Task 1: 2 section cuộn dọc (h2 + spacing token) — KHÔNG còn tab Extraction/Layout. */
-it("2 section h2 'Văn bản' + 'Layout', không còn tab buttons", async () => {
+/** D3: mỗi trang con có đúng 1 h1 (heading trang), không còn h2 section trùng tên. */
+it("D3: each section page has one h1, no duplicate tab UI", async () => {
   mockJob(DONE_JOB);
-  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  await screen.findByTestId("section-text");
-  await screen.findByTestId("section-layout");
-  expect(screen.getByRole("heading", { level: 2, name: "Text" })).toBeInTheDocument();
-  expect(screen.getByRole("heading", { level: 2, name: "Layout" })).toBeInTheDocument();
+  const a = renderSection("text");
+  expect(await screen.findByRole("heading", { level: 1, name: /Text/ })).toBeInTheDocument();
   expect(screen.queryAllByRole("tab")).toHaveLength(0);
+  a.unmount();
+  renderSection("layout");
+  expect(await screen.findByRole("heading", { level: 1, name: /Layout/ })).toBeInTheDocument();
   expect(screen.queryByRole("tablist")).toBeNull();
 });
 
@@ -670,8 +656,8 @@ it("loading shows skeleton instead of blank page", () => {
 // Phase 2 Task 4 (Sub-system B): link sang trang trích xuất (done jobs only).
 it("done renders link to extraction page", async () => {
   mockJob(DONE_JOB);
-  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  await screen.findByTestId("panel-result");
+  renderSection("text");
+  await screen.findByTestId("detail-text");
   // Lane I Task 3: bỏ nút "Mở trang trích xuất đầy đủ" (route vẫn giữ, không còn link từ đây).
   expect(screen.queryByTestId("link-extraction")).not.toBeInTheDocument();
 });

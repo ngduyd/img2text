@@ -36,7 +36,7 @@ export default function Feedback() {
   }
 
   return (
-    <PageShell>
+    <PageShell width="form">
       <PageHeader title={t("feedback.title")} />
       <Card testid="card-feedback">
         <form onSubmit={submit} className="flex flex-col gap-3">

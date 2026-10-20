@@ -20,7 +20,7 @@ const CARDS: { testid: string; icon: LucideIcon; title: string; desc: string }[]
 export default function Features() {
   const { t } = useT();
   return (
-    <PageShell width="wide" testid="features-page">
+    <PageShell width="data" testid="features-page">
       {/* Hero: left-aligned (editorial), one accent via badge. Fits first viewport. */}
       <section data-testid="features-hero" className="max-w-2xl">
         <div className="flex items-center gap-3">

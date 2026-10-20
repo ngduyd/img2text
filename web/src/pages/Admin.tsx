@@ -52,7 +52,7 @@ export default function Admin() {
   if (isError || (me && me.role !== "admin")) return null;
 
   return (
-    <PageShell width="wide">
+    <PageShell width="data">
       <PageHeader title={t("admin.title")} />
       <div className="flex flex-col gap-4 md:flex-row md:gap-6">
         <nav

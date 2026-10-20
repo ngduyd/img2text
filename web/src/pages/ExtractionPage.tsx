@@ -47,7 +47,7 @@ export default function ExtractionPage() {
   };
 
   return (
-    <PageShell>
+    <PageShell width="data">
       <PageHeader
         testid="extraction-header"
         title={<>{t("extraction.title")} <span className="font-mono">#{id}</span></>}

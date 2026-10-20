@@ -1,6 +1,6 @@
 import type { Query } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ChevronDown, FileQuestion, PenLine, TriangleAlert } from "lucide-react";
+import { ArrowLeft, ChevronDown, FileQuestion, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -34,7 +34,16 @@ const jobRefetchInterval = (q: Query<Job>): number | false =>
  * SECTION "Layout" (LayoutPreview / editor khi "Chỉnh sửa" + ExportBar);
  * col phải = collapsible "File gốc" + "Thông tin" (Lane I Task 2, bỏ sticky).
  */
-export default function JobDetail() {
+export type JobSection = "overview" | "text" | "layout";
+
+const SUBPAGES = [
+  { key: "overview", path: "", testid: "subnav-overview", labelKey: "jd.overview" },
+  { key: "text", path: "/text", testid: "subnav-text", labelKey: "jd.sectionText" },
+  { key: "layout", path: "/layout", testid: "subnav-layout", labelKey: "jd.layout" },
+] as const;
+
+/** SPEC-ui-redesign D3: mỗi route render ĐÚNG 1 section (overview | text | layout). */
+export default function JobDetail({ section = "overview" }: { section?: JobSection } = {}) {
   const { t } = useT();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -55,8 +64,6 @@ export default function JobDetail() {
   const [editing, setEditing] = useState(false);
   /** U2: nút Edit text dời ra heading row section Text (controlled xuống TextSection). */
   const [editingText, setEditingText] = useState(false);
-  /** U3: section Layout collapsible — default mở, chevron rotate-180. */
-  const [layoutOpen, setLayoutOpen] = useState(true);
   /** Lane I Task 6: dropdown "Tải xuống" ở header (gộp 4 định dạng text). */
   const [downloadOpen, setDownloadOpen] = useState(false);
   /** U7: bỏ switch MD/Word — fmt fixed init theo job.output_format. */
@@ -92,7 +99,6 @@ export default function JobDetail() {
     setConfirmDelete(false);
     setEditing(false);
     setEditingText(false);
-    setLayoutOpen(true);
     setDownloadOpen(false);
     setRetryingLayout(false);
     setConfirmRetry(false);
@@ -102,17 +108,6 @@ export default function JobDetail() {
     setRetryError(null);
     // oxlint-disable-next-line react/set-state-in-effect -- reset theo id (U1)
   }, [id]);
-
-  const toggleEdit = () => {
-    if (editing) {
-      setEditing(false);
-      document
-        .querySelector('[data-testid="panel-editor"]')
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-    setEditing(true);
-  };
 
   /** Lane I Task 6: confirm "Vẽ lại layout" → POST retry-layout + loading + toast (R59). */
   const confirmRetryLayout = async () => {
@@ -134,7 +129,7 @@ export default function JobDetail() {
   if (!job) {
     // Loading → Skeleton (DESIGN.md §4); never a blank page (ui-ux-dev checklist).
     return (
-      <PageShell>
+      <PageShell width="data">
         {isPending ? (
           <div data-testid="job-loading" className="flex flex-col gap-4">
             <Skeleton className="h-8 w-2/3" />
@@ -179,7 +174,7 @@ export default function JobDetail() {
   const regions = (job.result?.pages ?? []).flatMap((p) => p.regions);
 
   return (
-    <PageShell width="wide">
+    <PageShell width={section === "overview" ? "data" : "editor"}>
       {/* Header 3-4 dòng mobile — sticky che viewport đọc doc dài; chỉ sticky ≥lg (dưới AppNav h-16). */}
       <header
         data-testid="job-header"
@@ -416,87 +411,159 @@ export default function JobDetail() {
           {retryError}
         </p>
       )}
-
       {/*
-        Wave-3 #5 → Lane I Task 2: col trái stack 2 section; col phải = collapsible
-        "File gốc" + "Thông tin" (Button aria-expanded, default closed — mở mới mount).
+        SPEC-ui-redesign D3: 3 trang tách — Overview (mặc định) / Văn bản / Dựng layout.
+        Mỗi route chỉ render ĐÚNG section của mình, full width; không còn cột trái rỗng.
       */}
-      <div key={job.id} data-testid="detail-grid" className="grid gap-4 lg:grid-cols-12 lg:gap-6">
-        <div className="flex min-w-0 flex-col gap-6 lg:col-span-7">
-          {/* SECTION "Văn bản" — hiện cả khi status rendering (OCR xong). */}
-          {textReady && (
-            <section
-              data-testid="section-text"
-              aria-labelledby="section-text-title"
-              className="flex flex-col gap-4"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <h2 id="section-text-title" className="text-lg font-semibold tracking-tight">
-                  {t("jd.sectionText")}
-                </h2>
-                {/* U2: heading → edit; Text KHÔNG collapsible (chỉ scroll — U9). */}
+      <nav
+        data-testid="job-subnav"
+        aria-label={t("jd.subnavAria")}
+        className="mb-5 flex flex-wrap items-center gap-1 border-b border-border pb-2"
+      >
+        {SUBPAGES.map(({ key, path, testid, labelKey }) => (
+          <Link
+            key={key}
+            to={`/jobs/${id}${path}`}
+            data-testid={testid}
+            aria-current={section === key ? "page" : undefined}
+            className={[
+              "rounded-sm px-3 py-2 text-sm transition duration-150 ease-out",
+              section === key
+                ? "bg-surface-2 font-semibold text-text"
+                : "text-muted hover:bg-surface-2 hover:text-text",
+            ].join(" ")}
+          >
+            {t(labelKey)}
+          </Link>
+        ))}
+      </nav>
+
+      {section === "overview" && (
+        <div key={job.id} data-testid="detail-grid" className="grid gap-4 lg:grid-cols-12 lg:gap-6">
+          <div className="flex min-w-0 flex-col gap-6 lg:col-span-7">
+            {textReady && (
+              <LinkCard
+                to={`/jobs/${id}/text`}
+                testid="link-open-text"
+                title={t("jd.sectionText")}
+                desc={t("jd.textDesc")}
+              />
+            )}
+            {layoutReady && (
+              <LinkCard
+                to={`/jobs/${id}/layout`}
+                testid="link-open-layout"
+                title={t("jd.layout")}
+                desc={t("jd.layoutDesc")}
+              />
+            )}
+            {!textReady && !layoutReady && (
+              <p data-testid="not-ready" className="text-sm text-muted">
+                {t("jd.notReadyYet")}
+              </p>
+            )}
+            {result && layoutReady && (
+              <>
+                <p data-testid="result-stats" className="text-sm text-muted">
+                  {t("jd.stats", {
+                    pages: job.page_count,
+                    gpu: result.gpu_seconds,
+                    model: result.model_version,
+                  })}
+                </p>
+                <Card testid="panel-export">
+                  <ExportBar jobId={id!} />
+                </Card>
+              </>
+            )}
+          </div>
+          {/* ẢNH GỐC + Thông tin — collapsible, mặc định mở. */}
+          <aside className="flex min-w-0 flex-col gap-4 lg:col-span-5 lg:self-start">
+            <section className="rounded-card border border-border bg-surface shadow-card">
+              <h2>
                 <Button
-                  testid="btn-edit-text"
-                  variant="secondary"
-                  aria-pressed={editingText}
-                  onClick={() => setEditingText((v) => !v)}
+                  testid="btn-toggle-original"
+                  variant="ghost"
+                  aria-expanded={originalOpen}
+                  aria-controls="original-panel-wrap"
+                  className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-base font-semibold"
+                  onClick={() => setOriginalOpen((v) => !v)}
                 >
-                  {editingText ? t("editor.editing") : t("editor.edit")}
+                  {t("jd.originalFile")}
+                  <ChevronDown
+                    className={`h-4 w-4 text-muted transition duration-150 ease-out ${originalOpen ? "rotate-180" : ""}`}
+                    aria-hidden="true"
+                  />
                 </Button>
-              </div>
-              <div data-testid="panel-result" className="flex min-w-0 flex-col gap-6">
-                <TextSection
-                  jobId={id!}
-                  regions={regions}
-                  fileType={job.file_type}
-                  editingText={editingText}
-                  onEditingTextChange={setEditingText}
-                />
+              </h2>
+              <div id="original-panel-wrap" className={originalOpen ? "border-t border-border p-4" : "hidden"}>
+                {originalOpen && <OriginalFilePanel jobId={id!} fileType={job.file_type} />}
               </div>
             </section>
-          )}
-
-          {/* SECTION "Layout" — preview (default) / editor khi "Chỉnh sửa". */}
-          {layoutReady && result && (
-            <section
-              data-testid="section-layout"
-              aria-labelledby="section-layout-title"
-              className="flex flex-col gap-4"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <h2 id="section-layout-title" className="text-lg font-semibold tracking-tight">
-                  {t("jd.layout")}
-                </h2>
-                {/* U3: chevron toggle — heading → edit → chevron; aria-controls vào wrap panel. */}
-                <div className="flex items-center gap-1">
-                  <Button
-                    testid="btn-edit-doc"
-                    variant="secondary"
-                    aria-pressed={editing}
-                    disabled={job.status !== "done"}
-                    onClick={toggleEdit}
-                  >
-                    <PenLine className="h-4 w-4" aria-hidden="true" />
-                    {editing ? t("jd.editing") : t("jd.edit")}
-                  </Button>
-                  <Button
-                    testid="btn-toggle-layout"
-                    variant="ghost"
-                    aria-expanded={layoutOpen}
-                    aria-controls="layout-panel-wrap"
-                    aria-label={t("jd.layoutToggleAria")}
-                    onClick={() => setLayoutOpen((v) => !v)}
-                  >
-                    <ChevronDown
-                      className={`h-4 w-4 text-muted transition duration-150 ease-out ${layoutOpen ? "rotate-180" : ""}`}
-                      aria-hidden="true"
-                    />
-                  </Button>
-                </div>
+            <section className="rounded-card border border-border bg-surface shadow-card">
+              <h2>
+                <Button
+                  testid="btn-toggle-info"
+                  variant="ghost"
+                  aria-expanded={infoOpen}
+                  aria-controls="info-panel-wrap"
+                  className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-base font-semibold"
+                  onClick={() => setInfoOpen((v) => !v)}
+                >
+                  {t("jd.infoTitle")}
+                  <ChevronDown
+                    className={`h-4 w-4 text-muted transition duration-150 ease-out ${infoOpen ? "rotate-180" : ""}`}
+                    aria-hidden="true"
+                  />
+                </Button>
+              </h2>
+              <div id="info-panel-wrap" className={infoOpen ? "border-t border-border p-4" : "hidden"}>
+                {infoOpen && <InfoPanel job={job} />}
               </div>
-              <div id="layout-panel-wrap">
-              {layoutOpen && (
-                <>
+            </section>
+          </aside>
+        </div>
+      )}
+
+      {section === "text" && (
+        <div key={job.id} data-testid="detail-text" className="flex flex-col gap-4 px-4 sm:px-6">
+          <h1 className="text-2xl font-bold tracking-tight">
+            {t("jd.sectionText")}
+            <span className="ml-2 font-mono text-base font-normal text-muted">#{job.id}</span>
+          </h1>
+          {textReady ? (
+            <TextSection
+              jobId={id!}
+              regions={regions}
+              fileType={job.file_type}
+              editingText={editingText}
+              onEditingTextChange={setEditingText}
+            />
+          ) : (
+            <p className="text-sm text-muted">{t("jd.textNotReady")}</p>
+          )}
+        </div>
+      )}
+
+      {section === "layout" && (
+        <div key={job.id} data-testid="detail-layout" className="flex flex-col gap-4 px-4 sm:px-6">
+          {layoutReady && result ? (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h1 className="text-2xl font-bold tracking-tight">
+                  {t("jd.layout")}
+                  <span className="ml-2 font-mono text-base font-normal text-muted">#{job.id}</span>
+                </h1>
+                <Button
+                  testid="btn-edit-doc"
+                  variant={editing ? "primary" : "secondary"}
+                  aria-pressed={editing}
+                  disabled={job.status !== "done"}
+                  onClick={() => setEditing((v) => !v)}
+                >
+                  {editing ? t("jd.editing") : t("jd.edit")}
+                </Button>
+              </div>
               {editing ? (
                 <UnifiedEditor
                   jobId={id!}
@@ -508,66 +575,41 @@ export default function JobDetail() {
               ) : (
                 <LayoutPreview job={job} fmt={layoutFmt} />
               )}
-              {/* Stats line dưới preview (spec: SECTION Layout). */}
-              <p data-testid="result-stats" className="text-sm text-muted">
-                {t("jd.stats", { pages: job.page_count, gpu: result.gpu_seconds, model: result.model_version })}
-              </p>
-                </>
-              )}
-              </div>
-              {/* WS-UI item 13: ExportBar 2 nhóm DƯỚI preview cột trái (không còn trong rail). */}
-              <Card testid="panel-export">
-                <ExportBar jobId={id!} />
-              </Card>
-            </section>
+            </>
+          ) : (
+            <p className="text-sm text-muted">{t("jd.layoutNotReady")}</p>
           )}
         </div>
-        {/* ẢNH GỐC + Thông tin — collapsible (U6: sticky lg:top-32 = AppNav 4rem + job-header 4rem). */}
-        <aside className="flex min-w-0 flex-col gap-4 lg:sticky lg:top-32 lg:col-span-5 lg:self-start">
-          <section className="rounded-card border border-border bg-surface shadow-card">
-            <h2>
-              <Button
-                testid="btn-toggle-original"
-                variant="ghost"
-                aria-expanded={originalOpen}
-                aria-controls="original-panel-wrap"
-                className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-base font-semibold"
-                onClick={() => setOriginalOpen((v) => !v)}
-              >
-                {t("jd.originalFile")}
-                <ChevronDown
-                  className={`h-4 w-4 text-muted transition duration-150 ease-out ${originalOpen ? "rotate-180" : ""}`}
-                  aria-hidden="true"
-                />
-              </Button>
-            </h2>
-            <div id="original-panel-wrap" className={originalOpen ? "border-t border-border p-4" : "hidden"}>
-              {originalOpen && <OriginalFilePanel jobId={id!} fileType={job.file_type} />}
-            </div>
-          </section>
-          <section className="rounded-card border border-border bg-surface shadow-card">
-            <h2>
-              <Button
-                testid="btn-toggle-info"
-                variant="ghost"
-                aria-expanded={infoOpen}
-                aria-controls="info-panel-wrap"
-                className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-base font-semibold"
-                onClick={() => setInfoOpen((v) => !v)}
-              >
-                {t("jd.infoTitle")}
-                <ChevronDown
-                  className={`h-4 w-4 text-muted transition duration-150 ease-out ${infoOpen ? "rotate-180" : ""}`}
-                  aria-hidden="true"
-                />
-              </Button>
-            </h2>
-            <div id="info-panel-wrap" className={infoOpen ? "border-t border-border p-4" : "hidden"}>
-              {infoOpen && <InfoPanel job={job} />}
-            </div>
-          </section>
-        </aside>
-      </div>
+      )}
     </PageShell>
+  );
+}
+
+/** Nhãn + mô tả cho 2 trang con (Overview). */
+function LinkCard({
+  to,
+  testid,
+  title,
+  desc,
+}: {
+  to: string;
+  testid: string;
+  title: string;
+  desc: string;
+}) {
+  return (
+    <Link
+      to={to}
+      data-testid={testid}
+      className="group flex items-start justify-between gap-4 rounded-card border border-border bg-surface p-4 transition duration-150 ease-out hover:border-accent-text/40 hover:bg-surface-2"
+    >
+      <span className="min-w-0">
+        <span className="block text-base font-semibold">{title}</span>
+        <span className="mt-1 block text-sm text-muted">{desc}</span>
+      </span>
+      <span aria-hidden="true" className="shrink-0 text-accent-text">
+        →
+      </span>
+    </Link>
   );
 }
