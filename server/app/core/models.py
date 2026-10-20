@@ -90,20 +90,33 @@ class RefreshToken(Base):
 # 2026-10-15_email_verify.sql DROP TABLE password_reset_tokens.
 
 class EmailSend(Base):
-    """Wave-5 S5 audit: 1 row / outbound email. Kinds: welcome |
+    """Wave-5 S5 + outbox: 1 row / outbound email. Kinds: welcome |
     verify_code | reset_code. Per-kind limits (5/24h rolling + spacing
     10'/1h) đọc bảng này — app/services/email_sends.py.
 
-    Hand-SQL migration (dev/test đã apply; create_all tạo trong test volume):
+    Outbox (2026-10-20): route chỉ enqueue (status='queued'), job scheduler
+    `flush-email-outbox` drain qua mailer; fail → backoff, 3 lần → 'failed'
+    (refund quota, giữ audit).
+
+    Hand-SQL migration (docs/migrations/2026-10-20_email_outbox.sql
+    ALTER-only — create_all never ALTERs; create_all tạo bảng trong test volume):
       CREATE TABLE email_sends (
         id bigserial PRIMARY KEY,
         user_id int NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         kind text NOT NULL,
         created_at timestamptz NOT NULL DEFAULT now()
       );
+      -- outbox columns + due index: xem migration file
     """
 
     __tablename__ = "email_sends"
+    __table_args__ = (
+        Index(
+            "email_sends_due",
+            "next_attempt_at",
+            postgresql_where=text("status = 'queued'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(
@@ -115,6 +128,25 @@ class EmailSend(Base):
         default=lambda: datetime.now(timezone.utc),
         server_default=text("now()"),
     )
+    # outbox payload (nullable: legacy audit rows không có nội dung)
+    to_email: Mapped[str | None] = mapped_column(Text, nullable=True)
+    subject: Mapped[str | None] = mapped_column(Text, nullable=True)
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(
+        Text, default="queued", server_default=text("'queued'")
+    )
+    attempts: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0")
+    )
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        server_default=text("now()"),
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 class Feedback(Base):
     """Wave-5 S6 (Lane B2): user feedback. user_id nullable (anon form

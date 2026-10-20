@@ -166,6 +166,25 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
         flush_logs, trigger="interval", seconds=30, id="flush-request-logs"
     )
 
+    async def flush_email_outbox() -> None:
+        """2026-10-20: drain DB email outbox (route chỉ enqueue).
+        ponytail: interval 20s cố định — chưa cần runtime override."""
+        from app.core.db import SessionLocal
+        from app.services import email_sends
+
+        try:
+            async with SessionLocal() as session:
+                sent, failed = await email_sends.drain(session)
+        except Exception:  # one failing pass must not kill the job
+            logger.warning("flush-email-outbox failed", exc_info=True)
+            return
+        if sent or failed:
+            logger.info("flush-email-outbox: sent=%d failed=%d", sent, failed)
+
+    scheduler.add_job(
+        flush_email_outbox, trigger="interval", seconds=20, id="flush-email-outbox"
+    )
+
     async def backup_db() -> None:
         """#12: daily pg_dump — cron/retention đọc runtime override mỗi tick
         (pattern reschedule reap-leases); pg_dump chạy to_thread (block I/O)

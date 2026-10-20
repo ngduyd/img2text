@@ -90,13 +90,13 @@ async def test_limit_4th_send_needs_1h_gap(db_session):
     assert 1700 <= body["retry_after_seconds"] <= 1801
 
 async def test_limit_4th_send_ok_when_gap_met(db_session):
-    from app.services.email_sends import check_limit, record
+    from app.services.email_sends import check_limit, enqueue
 
     u = await _user(db_session)
     _seed(db_session, u.id, "welcome", [20000, 15000, 10000, 7000])  # 4 lần cũ > 1h
     await db_session.commit()
     await check_limit(db_session, u.id, "welcome")  # 5th, gap 7000s > 1h → ok
-    record(db_session, u.id, "welcome")
+    enqueue(db_session, u.id, "welcome", u.email, "s", "b")
     await db_session.commit()
     from sqlalchemy import func, select
     from app.core.models import EmailSend
@@ -115,6 +115,14 @@ async def test_limit_kinds_independent(db_session):
     await check_limit(db_session, u.id, "verify_code")  # kind khác → ok
 
 # --- register: welcome + verify-code email; SMTP down → 503 (#9) ---
+
+async def _flush() -> None:
+    """Outbox: route chỉ enqueue — drain để fake send_email nhận được mail."""
+    from app.core.db import SessionLocal
+    from app.services import email_sends
+
+    async with SessionLocal() as session:
+        await email_sends.drain(session)
 
 def _capture():
     sent = []
@@ -139,6 +147,7 @@ async def test_register_sends_welcome_and_verify_code(client, monkeypatch, db_se
     )
     assert r.status_code == 201
     assert r.json() == {"status": "ok"}  # P1-1: body bằng nhau 2 case
+    await _flush()  # outbox: route chỉ enqueue
     assert [s[0] for s in sent] == ["new@x.io", "new@x.io"]
     code = None
     for _, subject, body in sent:
@@ -170,17 +179,21 @@ async def test_register_duplicate_identical_body(client, monkeypatch):
     )
     assert r1.status_code == 201 and r1.json() == {"status": "ok"}
     assert "set-cookie" not in r1.headers
+    await _flush()
     n_first = len(sent)
     r2 = await client.post(
         "/api/auth/register", json={"email": "dup@x.io", "password": "secret123"}
     )
     assert r2.status_code == 201 and r2.json() == {"status": "ok"}
     assert "set-cookie" not in r2.headers
-    assert len(sent) == n_first  # không gửi thêm email
+    await _flush()
+    assert len(sent) == n_first  # không enqueue thêm email
 
-async def test_register_smtp_down_returns_503(client, monkeypatch):
-    """#9: SMTP failure surfaces — register không còn 201 im lặng khi mail
-    server chết (user đã commit → resend/verify dùng lại được)."""
+async def test_register_smtp_down_still_201_queued(client, monkeypatch, db_session):
+    """Outbox: SMTP down không còn 503 — register 201, 2 row queued cho drain."""
+    from sqlalchemy import select
+    from app.core.models import EmailSend
+
     def boom(*a, **kw):
         raise RuntimeError("smtp down")
 
@@ -188,8 +201,16 @@ async def test_register_smtp_down_returns_503(client, monkeypatch):
     r = await client.post(
         "/api/auth/register", json={"email": "down@x.io", "password": "secret123"}
     )
-    assert r.status_code == 503
-    assert r.json() == {"code": "email_unavailable", "retry_after_seconds": 300}
+    assert r.status_code == 201 and r.json() == {"status": "ok"}
+    kinds = (
+        await db_session.execute(
+            select(EmailSend.kind, EmailSend.status).order_by(EmailSend.id)
+        )
+    ).all()
+    assert [tuple(k) for k in kinds] == [
+        ("welcome", "queued"),
+        ("verify_code", "queued"),
+    ]
     # user đã commit TRƯỚC khi gửi → duplicate register vẫn 201 (body cũ)
     dup = await client.post(
         "/api/auth/register", json={"email": "down@x.io", "password": "secret123"}
@@ -207,6 +228,7 @@ async def _register_with_code(client, monkeypatch, email="v@x.io"):
         "/api/auth/register", json={"email": email, "password": "secret123"}
     )
     assert r.status_code == 201
+    await _flush()  # outbox: route chỉ enqueue
     login = await client.post(
         "/api/auth/login", json={"email": email, "password": "secret123"}
     )
@@ -275,6 +297,7 @@ async def test_resend_new_code_overwrites_old(client, monkeypatch, db_session):
         "/api/auth/register", json={"email": "rs@x.io", "password": "secret123"}
     )
     assert r.status_code == 201
+    await _flush()  # outbox: route chỉ enqueue
     # P1-1: register không cookie → login để có session cho resend
     assert (
         await client.post(
@@ -292,6 +315,7 @@ async def test_resend_new_code_overwrites_old(client, monkeypatch, db_session):
     await db_session.commit()
     r = await client.post("/api/auth/verify/resend")
     assert r.status_code == 202 and r.json() == {}
+    await _flush()
     new = _code_from(sent[-1][2])
     assert new != old  # single active code: resend ghi đè
     assert (

@@ -1,8 +1,7 @@
-"""#9 (spec 2026-10-15): auth email routes trả 503 khi SMTP down.
+"""Auth email routes: outbox (2026-10-20) — route enqueue, KHÔNG gửi inline.
 
-503 flat {code:"email_unavailable", retry_after_seconds:300} — phân biệt với
-429 email_limit (rate limit) và 202 (gửi thành công). Register tạo user
-trước → test resend-503 seed user trực tiếp (không qua register email flow).
+SMTP down không còn 503: row nằm `queued` cho scheduler drain; chỉ rate limit
+(429 email_limit) và validation chặn ở HTTP. Test seed user trực tiếp.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -25,9 +24,8 @@ def _smtp_down(monkeypatch):
         monkeypatch.setattr(settings, key, value)
 
 
-async def test_verify_resend_returns_503_on_smtp_failure(
-    client, db_session, monkeypatch
-):
+async def test_verify_resend_queues_when_smtp_down(client, db_session, monkeypatch):
+    """SMTP down → 202 + row queued (không 503, không gửi inline)."""
     db_session.add(
         User(email="a@b.c", password_hash=hash_password("secret123"))
     )
@@ -38,8 +36,14 @@ async def test_verify_resend_returns_503_on_smtp_failure(
     assert r.status_code == 200
     _smtp_down(monkeypatch)
     resp = await client.post("/api/auth/verify/resend")
-    assert resp.status_code == 503
-    assert resp.json() == {"code": "email_unavailable", "retry_after_seconds": 300}
+    assert resp.status_code == 202 and resp.json() == {}
+    row = await db_session.scalar(
+        select(EmailSend)
+        .where(EmailSend.kind == "verify_code")
+        .execution_options(populate_existing=True)
+    )
+    assert (row.status, row.attempts) == ("queued", 0)
+    assert row.to_email == "a@b.c" and row.subject and row.body
 
 
 async def test_verify_resend_still_202_when_mail_flows(client, db_session):
@@ -57,8 +61,8 @@ async def test_verify_resend_still_202_when_mail_flows(client, db_session):
 
 
 async def test_resend_limit_still_429_before_send(client, db_session, monkeypatch):
-    """Distinguish: rate limit (429 email_limit) checked TRƯỚC send — SMTP
-    down không được biến limit thành 503."""
+    """Rate limit (429 email_limit) check TRƯỚC enqueue — SMTP state không
+    liên quan."""
     db_session.add(
         User(email="rl2@b.c", password_hash=hash_password("secret123"))
     )
