@@ -101,6 +101,9 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
                     results[label] = await prune(session)
                 except Exception:  # one failing prune must not skip the others
                     logger.exception("daily prune: %s failed", label)
+            # P2: prune helpers chỉ execute DELETE — thiếu commit thì
+            # session.close() rollback sạch, daily-prune không xoá gì.
+            await session.commit()
         logger.info(
             "daily prune: request_logs=%s page_views=%s refresh_tokens=%s "
             "email_sends=%s",
