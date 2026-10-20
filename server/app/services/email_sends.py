@@ -17,7 +17,7 @@ volume ever matters: Redis counter.
 import math
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.models import EmailSend
@@ -91,6 +91,17 @@ def enqueue(
             body=body,
         )
     )
+
+async def prune(session: AsyncSession, days: int = 90) -> int:
+    """Xoá email_sends cũ hơn `days`; trả rowcount.
+
+    Audit 90 ngày là đủ (row terminal đã redact body → không còn mã 6 số)."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    result = await session.execute(
+        delete(EmailSend).where(EmailSend.created_at < cutoff)
+    )
+    return result.rowcount
+
 
 async def drain(session: AsyncSession, limit: int = 20) -> tuple[int, int]:
     """Gửi email đang due; trả (sent, failed). Mỗi row commit riêng → 1 row

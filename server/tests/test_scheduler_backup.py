@@ -39,6 +39,16 @@ async def test_backup_db_job_registered_daily_0400(app):
     assert job.id == "backup-db"
 
 
+async def test_scheduler_registers_email_outbox_and_daily_prune(app):
+    """QA P3: 2 job wave-5 (flush-email-outbox, daily-prune) phải có id đã đăng ký."""
+    from app.services.scheduler import init_scheduler
+
+    init_scheduler(app)
+    ids = {j.id for j in app.state.scheduler.get_jobs()}
+    assert "flush-email-outbox" in ids
+    assert "daily-prune" in ids
+
+
 def test_backup_database_writes_gzipped_dump(tmp_path, monkeypatch):
     # echo "$1" = assert connstring truyền cho pg_dump
     _fake_pg_dump(tmp_path, monkeypatch, '#!/bin/sh\necho "$1"\n')

@@ -87,6 +87,7 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
             prune_refresh_tokens,
             prune_request_logs,
         )
+        from app.services import email_sends
 
         async with app.state.session_factory() as session:
             results: dict[str, int] = {}
@@ -94,16 +95,19 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
                 ("request_logs", prune_request_logs),
                 ("page_views", prune_page_views),
                 ("refresh_tokens", prune_refresh_tokens),
+                ("email_sends", email_sends.prune),
             ):
                 try:
                     results[label] = await prune(session)
                 except Exception:  # one failing prune must not skip the others
                     logger.exception("daily prune: %s failed", label)
         logger.info(
-            "daily prune: request_logs=%s page_views=%s refresh_tokens=%s",
+            "daily prune: request_logs=%s page_views=%s refresh_tokens=%s "
+            "email_sends=%s",
             results.get("request_logs"),
             results.get("page_views"),
             results.get("refresh_tokens"),
+            results.get("email_sends"),
         )
 
     scheduler.add_job(prune_all, trigger="cron", hour=3, minute=0, id="daily-prune")

@@ -108,6 +108,23 @@ it("renders 7 tabs, default overview with summed stat cards", async () => {
   expect(screen.getByText("Estimated cost (USD)")).toBeInTheDocument();
 });
 
+it("overview shows stuck-email warning only when emails_stuck > 0", async () => {
+  vi.mocked(api.me).mockResolvedValue(adminMe);
+  vi.mocked(api.adminStats).mockResolvedValue({ days: [], emails_stuck: 3 });
+  renderWithRouter(<Admin />, { route: "/admin" });
+  await screen.findByTestId("stat-users");
+  const status = await screen.findByRole("status");
+  expect(status).toHaveTextContent("3");
+});
+
+it("overview hides stuck-email warning when emails_stuck is 0", async () => {
+  vi.mocked(api.me).mockResolvedValue(adminMe);
+  vi.mocked(api.adminStats).mockResolvedValue({ days: [], emails_stuck: 0 });
+  renderWithRouter(<Admin />, { route: "/admin" });
+  await screen.findByTestId("stat-users");
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
 it("overview quick links navigate to other tabs", async () => {
   vi.mocked(api.me).mockResolvedValue(adminMe);
   vi.mocked(api.adminStats).mockResolvedValue({ days: [], emails_stuck: 0 });
