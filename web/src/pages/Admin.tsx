@@ -19,17 +19,32 @@ import PageShell from "../components/PageShell";
 import PageHeader from "../components/PageHeader";
 import Skeleton from "../components/ui/Skeleton";
 
-// Plan V3: desktop ≥md = vertical sub-rail (icon + label); mobile = horizontal scroll pills. Testids tab-* kept (R51).
-const TABS = [
-  { id: "overview", labelKey: "admin.tab.overview", icon: LayoutDashboard },
-  { id: "users", labelKey: "admin.tab.users", icon: Users },
-  { id: "api", labelKey: "admin.tab.api", icon: Terminal },
-  { id: "logs", labelKey: "admin.tab.logs", icon: ScrollText },
-  { id: "stats", labelKey: "admin.tab.stats", icon: BarChart3 },
-  { id: "storage", labelKey: "admin.tab.storage", icon: HardDrive },
-  { id: "settings", labelKey: "admin.tab.settings", icon: Settings },
-  // Lane B2 (wave-5 S6): feedback list.
-  { id: "feedbacks", labelKey: "admin.tab.feedbacks", icon: MessageSquare },
+// Plan V3: desktop ≥md = vertical sub-rail (icon + label); mobile = horizontal scroll pills.
+// Testids tab-* kept (R51). D10: rail gom 3 cụm thay vì 8 mục phẳng.
+const GROUPS = [
+  {
+    labelKey: "admin.group.overview",
+    items: [
+      { id: "overview", labelKey: "admin.tab.overview", icon: LayoutDashboard },
+      { id: "stats", labelKey: "admin.tab.stats", icon: BarChart3 },
+    ],
+  },
+  {
+    labelKey: "admin.group.data",
+    items: [
+      { id: "users", labelKey: "admin.tab.users", icon: Users },
+      { id: "storage", labelKey: "admin.tab.storage", icon: HardDrive },
+      { id: "feedbacks", labelKey: "admin.tab.feedbacks", icon: MessageSquare },
+    ],
+  },
+  {
+    labelKey: "admin.group.system",
+    items: [
+      { id: "api", labelKey: "admin.tab.api", icon: Terminal },
+      { id: "logs", labelKey: "admin.tab.logs", icon: ScrollText },
+      { id: "settings", labelKey: "admin.tab.settings", icon: Settings },
+    ],
+  },
 ] as const;
 
 /** Admin-only page; tabs are in-page state (not routes). Non-admins go home. No jobs board. */
@@ -60,35 +75,45 @@ export default function Admin() {
           aria-label={t("admin.title")}
           className="flex shrink-0 gap-1 overflow-x-auto border-b border-border pb-2 md:sticky md:top-16 md:w-52 md:flex-col md:self-start md:overflow-visible md:border-b-0 md:border-r md:border-border md:pb-0"
         >
-          {TABS.map((tabDef) => {
-            const active = tab === tabDef.id;
-            const Icon = tabDef.icon;
-            return (
-              <button
-                key={tabDef.id}
-                type="button"
-                data-testid={`tab-${tabDef.id}`}
-                aria-current={active ? "page" : undefined}
-                onClick={() => setTab(tabDef.id)}
-                className={[
-                  "relative flex h-11 shrink-0 cursor-pointer items-center gap-2 rounded-md px-3 text-sm transition-colors duration-150 ease-out",
-                  active
-                    ? "bg-surface-2 font-semibold text-text after:absolute after:inset-y-1.5 after:left-0 after:w-0.5 after:rounded-full after:bg-accent"
-                    : "text-muted hover:bg-surface-2 hover:text-text",
-                ].join(" ")}
+          {GROUPS.map((group) => (
+            <div key={group.labelKey} className="flex shrink-0 gap-1 md:flex-col md:gap-1">
+              <p
+                data-testid={`rail-group-${group.labelKey.split(".").pop()}`}
+                className="hidden px-3 pt-2 text-xs font-medium tracking-wide text-muted uppercase md:block"
               >
-                <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                {t(tabDef.labelKey)}
-              </button>
-            );
-          })}
+                {t(group.labelKey)}
+              </p>
+              {group.items.map((tabDef) => {
+                const active = tab === tabDef.id;
+                const Icon = tabDef.icon;
+                return (
+                  <button
+                    key={tabDef.id}
+                    type="button"
+                    data-testid={`tab-${tabDef.id}`}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => setTab(tabDef.id)}
+                    className={[
+                      "relative flex h-11 shrink-0 cursor-pointer items-center gap-2 rounded-md px-3 text-sm transition-colors duration-150 ease-out",
+                      active
+                        ? "bg-surface-2 font-semibold text-text after:absolute after:inset-y-1.5 after:left-0 after:w-0.5 after:rounded-full after:bg-accent"
+                        : "text-muted hover:bg-surface-2 hover:text-text",
+                    ].join(" ")}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    {t(tabDef.labelKey)}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
         </nav>
         <div className="min-w-0 flex-1">
           {!me ? (
             <Skeleton testid="admin-loading" className="h-10 w-full" />
           ) : (
             <>
-              {tab === "overview" && <AdminOverview onNavigate={setTab} />}
+              {tab === "overview" && <AdminOverview />}
               {tab === "users" && <AdminUsers />}
               {tab === "api" && <AdminApi />}
               {tab === "logs" && <AdminLogs />}

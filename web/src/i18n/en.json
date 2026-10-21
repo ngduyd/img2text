@@ -466,6 +466,11 @@
       "empty": "No feedback yet.",
       "anonymous": "unknown",
       "page": "{page}/{pages}"
+    },
+    "group": {
+      "overview": "Overview",
+      "data": "Data",
+      "system": "System"
     }
   },
   "profile": {

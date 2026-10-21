@@ -125,19 +125,15 @@ it("overview hides stuck-email warning when emails_stuck is 0", async () => {
   expect(screen.queryByRole("status")).not.toBeInTheDocument();
 });
 
-it("overview quick links navigate to other tabs", async () => {
+/** D10: 4 nút "đi tới tab" đã bỏ — rail (3 cụm) là đường điều hướng duy nhất. */
+it("overview has no duplicate quick-link buttons", async () => {
   vi.mocked(api.me).mockResolvedValue(adminMe);
   vi.mocked(api.adminStats).mockResolvedValue({ days: [], emails_stuck: 0 });
-  vi.mocked(api.adminListUsers).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Admin />);
-  const user = userEvent.setup();
-  await user.click(await screen.findByTestId("btn-goto-users"));
-  // ui-ux redo: empty users list → empty state box (table hidden); tab mounted
-  expect(await screen.findByText("No users yet")).toBeInTheDocument();
-  expect(screen.queryByTestId("stat-users")).not.toBeInTheDocument();
-  await user.click(screen.getByTestId("tab-overview"));
-  await user.click(await screen.findByTestId("btn-goto-api"));
-  expect(screen.getByTestId("api-activity-table")).toBeInTheDocument();
+  await screen.findByTestId("stat-users");
+  for (const tab of ["users", "api", "logs", "stats"]) {
+    expect(screen.queryByTestId(`btn-goto-${tab}`)).not.toBeInTheDocument();
+  }
 });
 
 it("api tab aggregates paths client-side, collapsing numeric segments", async () => {
@@ -316,6 +312,10 @@ it("admin sub-rail renders 7 items; active item has aria-current=page", async ()
   // V3: one responsive nav (mobile scroll / desktop vertical), 8 items with icons
   // (wave-5 S6: +Feedbacks B2, +storage B3).
   expect(within(rail).getAllByRole("button")).toHaveLength(8);
+  // D10: rail gom 3 cụm (Tổng quan / Dữ liệu / Hệ thống).
+  for (const g of ["overview", "data", "system"]) {
+    expect(within(rail).getByTestId(`rail-group-${g}`)).toBeInTheDocument();
+  }
   expect(within(rail).getByTestId("tab-overview")).toHaveAttribute("aria-current", "page");
   expect(within(rail).getByTestId("tab-users")).not.toHaveAttribute("aria-current");
 });

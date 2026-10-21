@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import type { AdminStatsDay } from "../../api/types";
-import Button from "../../components/ui/Button";
 import Card from "../../components/ui/Card";
 import { Stat } from "../../components/ui/Stat";
 import { useT } from "../../i18n";
@@ -19,15 +18,11 @@ const CARDS = [
   { id: "emailsFailed", labelKey: "admin.overview.emailsFailed", sum: (d: AdminStatsDay) => d.emails_failed },
 ] as const;
 
-const QUICK_LINKS = [
-  { tab: "users", labelKey: "admin.tab.users" },
-  { tab: "api", labelKey: "admin.tab.api" },
-  { tab: "logs", labelKey: "admin.tab.logs" },
-  { tab: "stats", labelKey: "admin.tab.stats" },
-] as const;
-
-/** Stat cards: sums across adminStats(7d) days[] + quick links to admin tabs. */
-export default function AdminOverview({ onNavigate }: { onNavigate: (tab: AdminTabId) => void }) {
+/**
+ * Stat cards: sums across adminStats(7d) days[].
+ * D10: 7 số liệu trên MỘT hàng; bỏ 4 nút "đi tới tab" — trùng với rail.
+ */
+export default function AdminOverview() {
   const { t } = useT();
   const range = last7Days();
   const { data } = useQuery({
@@ -43,18 +38,11 @@ export default function AdminOverview({ onNavigate }: { onNavigate: (tab: AdminT
           {t("admin.overview.emailsStuck", { n: data!.emails_stuck })}
         </p>
       )}
-      <div className="mb-4 grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(11rem,1fr))]">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
         {CARDS.map((c) => (
           <Card key={c.id} testid={`stat-${c.id}`}>
             <Stat label={t(c.labelKey)} value={String(days.reduce((s, d) => s + c.sum(d), 0))} />
           </Card>
-        ))}
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {QUICK_LINKS.map((q) => (
-          <Button key={q.tab} testid={`btn-goto-${q.tab}`} variant="secondary" size="sm" onClick={() => onNavigate(q.tab)}>
-            {t(q.labelKey)}
-          </Button>
         ))}
       </div>
     </div>

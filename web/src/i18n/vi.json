@@ -466,6 +466,11 @@
       "empty": "Chưa có góp ý nào.",
       "anonymous": "không rõ",
       "page": "{page}/{pages}"
+    },
+    "group": {
+      "overview": "Tổng quan",
+      "data": "Dữ liệu",
+      "system": "Hệ thống"
     }
   },
   "profile": {
