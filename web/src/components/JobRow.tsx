@@ -155,9 +155,10 @@ export default function JobRow({
             <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
           </summary>
           {/* Click 1 mục → đóng menu (details native, không cần state React). */}
+          {/* Disclosure (details/summary), KHÔNG phải ARIA menu: <summary> đã có
+              aria-expanded, item là button thường → đừng gắn role="menu" sai pattern. */}
           <div
-            role="menu"
-            aria-label={t("jobs.row.more")}
+            data-testid={`row-menu-panel-${job.id}`}
             className="absolute right-0 z-20 mt-1 flex w-48 flex-col gap-1 rounded-card border border-border bg-surface p-1 shadow-card"
             onClick={(e) => {
               const d = e.currentTarget.closest("details");

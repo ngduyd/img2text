@@ -204,13 +204,13 @@ it("renders row-select checkbox and fires onToggle with the job id", async () =>
   expect(onToggle).toHaveBeenCalledWith(7);
 });
 
-// D4: hàng chỉ còn badge + nút ⋯; thao tác phụ nằm trong role=menu.
+// D4: hàng chỉ còn badge + nút ⋯; thao tác phụ nằm trong panel của details.
 it("row actions collapse into a ⋯ menu", () => {
   renderRow(job({ status: "done" }));
   const actions = screen.getByTestId("row-menu-7").parentElement!;
   expect(actions).toHaveClass("flex-wrap", "justify-end");
   expect(screen.getByTestId("btn-menu-7")).toHaveAttribute("aria-label", "More actions");
-  const menu = screen.getByRole("menu");
+  const menu = screen.getByTestId("row-menu-panel-7");
   expect(menu).toContainElement(screen.getByTestId("btn-dl-original-7"));
   expect(menu).toContainElement(screen.getByTestId("btn-delete-job-7"));
 });

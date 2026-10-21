@@ -1,3 +1,4 @@
+import DOMPurify from "dompurify";
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../i18n";
 
@@ -29,6 +30,9 @@ export default function PagePreview({ html, css }: { html: string; css?: string 
 
   useEffect(() => {
     let cancelled = false;
+    // Ranh giới tin cậy: nội dung đến từ docx tải lên → sanitize TRƯỚC khi paged.js
+    // (và trước cả nhánh fallback innerHTML) để không có script trong DOM.
+    const safe = DOMPurify.sanitize(html);
     const timer = setTimeout(async () => {
       const host = hostRef.current;
       if (!host) return;
@@ -39,14 +43,14 @@ export default function PagePreview({ html, css }: { html: string; css?: string 
         // paged.js coi string = URL → CSS text phải đưa qua object {key: cssText}.
         // css tài liệu đứng trước, PAGE_CSS sau để khung A4 thắng.
         const flow = await new Previewer().preview(
-          html,
+          safe,
           [{ "doc-style.css": css ?? "", "a4-page.css": PAGE_CSS }],
           host,
         );
         if (!cancelled) setPages(flow.total);
       } catch {
         if (cancelled || !host) return;
-        host.innerHTML = html;
+        host.innerHTML = safe;
         setPages(0);
       }
     }, 500);
