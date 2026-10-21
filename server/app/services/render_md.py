@@ -29,6 +29,7 @@ from app.core.schemas import IMAGE_MARKER
 from app.services.ir import (
     DocumentIR, IRPageError, IR_PROMPT, llm_ir_pages, validate_ir, IRValidationError,
 )
+from app.services.layout_spec import BlockSpec, PageSpec, build_page_specs
 from app.services.runtime_settings import get_runtime_setting
 
 # marker template prefix ("**[Hình ảnh chưa trích xuất: vùng ") — dùng để
@@ -586,6 +587,106 @@ def render_page(page: Page, bands: list[Band]) -> str:
         prev = band
     return "".join(out)
 
+# ---------------------------------------------------------------- render from layout spec (phase 1b)
+VERSE_GAP_RATIO = 0.6
+VERSE_WIDTH_RATIO = 0.6
+HEADING_H1_RATIO = 2.0
+HEADING_H2_RATIO = 1.6
+FONT_FLOOR, FONT_CEIL = 10.0, 48.0
+
+def _line_font(block: BlockSpec) -> float:
+    """Font ước lượng theo TỪNG dòng — block.font_px là chiều cao cả khối,
+    sai (quá to) cho đoạn nhiều dòng → indent/căn lề méo."""
+    n = max(1, len(block.lines))
+    return min(FONT_CEIL, max(FONT_FLOOR, block.h / n))
+
+def _heading_level(block: BlockSpec, median_font: float) -> int:
+    """Label ('#' theo _HEAD_RE/_ROMAN_RE như đường heuristic cũ); spec không
+    có `h` → suy từ tỉ lệ font so với median trang."""
+    if block.kind != "text":
+        return 0
+    first = (block.lines or [""])[0].strip()
+    if _HEAD_RE.match(first) or _ROMAN_RE.match(first):
+        return 2
+    if len(block.lines) > 1:      # heading là 1 dòng; đoạn nhiều dòng thì không
+        return 0
+    ratio = _line_font(block) / median_font if median_font else 1.0
+    if ratio >= HEADING_H1_RATIO:
+        return 1
+    if ratio >= HEADING_H2_RATIO:
+        return 2
+    return 0
+
+def _spec_para(block: BlockSpec, page: PageSpec, median_font: float) -> list[str]:
+    """1 block spec → các dòng md (chưa nối paragraph)."""
+    if block.kind == "image":
+        return [IMAGE_MARKER.format(region_id=block.region_id)]
+    if block.kind == "table":
+        return _cells_md(block.cells) if block.cells else _table_md(block.html or block.text)
+    lines = list(block.lines)
+    if not lines:
+        lines = [ln.strip() for ln in block.text.splitlines() if ln.strip()]
+    if not lines:
+        return []
+    h = _heading_level(block, median_font)
+    if h:
+        lines[0] = f"{'#' * h} {lines[0]}"
+    col = page.cols[block.col_index]
+    col_w = max(1.0, col.x1 - col.x0)
+    adv = _advance_px(_line_font(block))
+    if block.align == "center":
+        spaces = int(max(0.0, (col_w - block.w) / 2.0) / adv)
+    elif block.align == "right":
+        spaces = int(max(0.0, col_w - block.w) / adv)
+    else:
+        spaces = indent_px_to_spaces(block.indent_px, _line_font(block))
+    pad = " " * spaces
+    return [pad + ln for ln in lines]
+
+def _is_spec_verse(a: BlockSpec, b: BlockSpec, col_w: float) -> bool:
+    """2 block text liền nhau CÙNG cột, sát nhau, ngắn → nối bằng 1 newline
+    (thơ / câu nối dòng), không phải đoạn mới."""
+    if a.kind != "text" or b.kind != "text":
+        return False
+    if a.col_index != b.col_index or a.align != b.align:
+        return False
+    if a.tabs or b.tabs or "\t" in a.text or "\t" in b.text:
+        return False
+    if abs(a.indent_px - b.indent_px) > X_TOL:
+        return False
+    if a.w > VERSE_WIDTH_RATIO * col_w or b.w > VERSE_WIDTH_RATIO * col_w:
+        return False
+    return (b.y0 - a.y1) <= VERSE_GAP_RATIO * min(a.h, b.h)
+
+def render_md_spec(result: dict) -> str:
+    """OCR result → Markdown qua layout spec: đọc HẾT cột trái rồi mới sang
+    cột phải (blocks đã sort col_index, y0, x0) — không trộn dòng 2 cột.
+
+    Trả "" khi không có block nào (caller fallback heuristic cũ).
+    Kết quả luôn kết thúc bằng đúng 1 newline."""
+    pages_md: list[str] = []
+    for page in build_page_specs(result):
+        fonts = [_line_font(b) for b in page.blocks if b.kind == "text"]
+        median_font = statistics.median(fonts) if fonts else FONT_FLOOR
+        chunks: list[str] = []
+        prev: BlockSpec | None = None
+        for block in page.blocks:
+            para = _spec_para(block, page, median_font)
+            if not para:
+                continue
+            if prev is not None:
+                col = page.cols[block.col_index]
+                col_w = max(1.0, col.x1 - col.x0)
+                chunks.append("\n" if _is_spec_verse(prev, block, col_w) else "\n\n")
+            chunks.append("\n".join(para))
+            prev = block
+        text = "".join(chunks).strip("\n")
+        if text:
+            pages_md.append(text)
+    if not pages_md:
+        return ""
+    return "\n\n".join(pages_md) + "\n"
+
 
 # ---------------------------------------------------------------- IR generation
 async def generate_ir(result: dict) -> dict | None:
@@ -697,7 +798,12 @@ async def build_md(
             logger.warning("HEURISTIC FALLBACK render — layout tạm: %r", exc)
             _log_fallback(exc)
 
-    # Heuristic fallback
+    # Heuristic fallback: layout spec (phase 1b) trước — cột đọc hết trái rồi
+    # phải; spec rỗng (không block) → đường band model cũ.
+    spec_md = render_md_spec(result)
+    if spec_md.strip():
+        return spec_md
+
     pages = extract_pages(result)
     page_bands = [(pg, analyze(pg)) for pg in pages]
 

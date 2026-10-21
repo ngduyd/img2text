@@ -33,6 +33,8 @@ def main(argv: list[str]) -> int:
 
     md = asyncio.run(build_md(result, use_llm=False))
     docx_bytes = render_docx_spec(result)
+    if not md.endswith("\n"):
+        md += "\n"
     (outdir / "preview.md").write_text(md, encoding="utf-8")
     (outdir / "preview.docx").write_bytes(docx_bytes)
 
@@ -44,6 +46,12 @@ def main(argv: list[str]) -> int:
     print(f"outdir    : {outdir}")
     print(f"pages     : {len(pages)}")
     print("cols/page : " + ", ".join(str(len(pg.cols)) for pg in pages))
+    for i, pg in enumerate(pages):
+        per: dict[int, int] = {}
+        for b in pg.blocks:
+            per[b.col_index] = per.get(b.col_index, 0) + 1
+        counts = " ".join(f"blocks[c{c}]={n}" for c, n in sorted(per.items()))
+        print(f"p{i} {src.stem}: cols={len(pg.cols)} {counts}")
     print(f"blocks    : {n_blocks}")
     print(f"tab stops : {n_tabs}")
     print(f"sections  : {len(doc.sections)}")

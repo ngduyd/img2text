@@ -6,6 +6,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+from app.core.schemas import IMAGE_MARKER
 from app.services.render_md import RENDER_MD_PROMPT, build_md
 
 from tests.test_export_llm_docx import FakeResponse
@@ -427,18 +428,40 @@ def _sample(name: str) -> dict:
     return json.loads((SAMPLES / f"{name}.json").read_text(encoding="utf-8"))
 
 
-async def test_build_md_spec_2col_spaces_not_tabs():
-    """Heuristic: thụt lề/căn cột bằng SPACE (không tab thô)."""
-    out = await build_md(_sample("2col"), use_llm=False)
-    assert "\t" not in out
-    assert any(ln.startswith(" ") for ln in out.splitlines())
-    assert "Cột trái đoạn 1 dòng 1." in out
-    assert "Cột phải đoạn 1 dòng 1." in out
+def md_order_left_then_right(out: str) -> bool:
+    return out.index("Ký tên: .....") < out.index("Cột phải đoạn 1 dòng 1")
 
+async def test_build_md_spec_2col_reads_left_column_first():
+    """Layout spec: đọc HẾT cột trái rồi mới sang cột phải (không trộn dòng)."""
+    out = await build_md(_sample("2col"), use_llm=False)
+    assert any(ln.startswith(" ") for ln in out.splitlines())
+    assert md_order_left_then_right(out)
+    for ln in out.splitlines():
+        assert not ("Cột trái" in ln and "Cột phải" in ln), ln
+    assert out.endswith("\n") and not out.endswith("\n\n")
+
+async def test_build_md_spec_2col_tab_only_within_tab_block():
+    """TAB chỉ trong block nhãn+giá trị (Ký tên / Trần B), không nối 2 cột."""
+    out = await build_md(_sample("2col"), use_llm=False)
+    assert [ln for ln in out.splitlines() if "\t" in ln] == [
+        " Ký tên: .....\tTrần B"   # indent_px 20 → 1 space
+    ]
 
 async def test_build_md_spec_form_keeps_dots():
-    """Form: dấu chấm '.....' giữ nguyên trong md."""
+    """Form: dấu chấm '.....' giữ nguyên + TAB giữa nhãn và giá trị."""
     out = await build_md(_sample("form"), use_llm=False)
     assert "....." in out
-    assert "Họ và tên: ........." in out
-    assert "Nguyễn Văn A" in out
+    assert "Họ và tên: .........\tNguyễn Văn A" in out
+    assert "Ngày sinh: .........\t01/01/1990" in out
+    assert "| STT | Nội dung |" in out      # table qua _cells_md
+    assert out.endswith("\n")
+
+async def test_build_md_spec_1col_center_and_heading():
+    """1 cột: dòng căn giữa có space đầu dòng, heading có '#', marker ảnh giữ."""
+    out = await build_md(_sample("1col"), use_llm=False)
+    lines = out.splitlines()
+    center = next(ln for ln in lines if "TIÊU ĐỀ GIỮA" in ln)
+    assert center.startswith("    ")
+    assert "## CHƯƠNG 1: MỞ ĐẦU" in out
+    assert IMAGE_MARKER.format(region_id="r4") in out
+    assert [ln for ln in lines if ln.strip()][0].startswith("## ")
