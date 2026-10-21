@@ -1,0 +1,11 @@
+{
+  "columns": 2,
+  "nodes": [
+    {"type": "paragraph", "ids": ["l0"]},
+    {"type": "paragraph", "ids": ["l1"]},
+    {"type": "paragraph", "ids": ["l2", "l3"]},
+    {"type": "paragraph", "ids": ["r0"]},
+    {"type": "paragraph", "ids": ["r1"]},
+    {"type": "paragraph", "ids": ["r2"]}
+  ]
+}
