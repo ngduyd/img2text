@@ -55,11 +55,24 @@ class TestOneColumn:
         assert img.lines == []          # text rỗng không bịa nội dung
 
     def test_reading_order_top_to_bottom(self, one_col):
-        assert [b.region_id for b in one_col.blocks] == ["r0", "r1", "r2", "r3", "r4"]
+        assert [b.region_id for b in one_col.blocks] == [
+            "r0", "r1", "r2", "r3", "r5", "r4",
+        ]
 
     def test_space_after_is_gap_to_next_block(self, one_col):
-        assert _by_id(one_col)["r0"].space_after_px == 20   # r1.y0 120 − r0.y1 100
+        assert _by_id(one_col)["r0"].space_after_px == 8    # r1.y0 140 − r0.y1 132
         assert _by_id(one_col)["r4"].space_after_px == 0    # block cuối
+
+    def test_font_is_per_line_estimate(self, one_col):
+        assert _by_id(one_col)["r2"].font_px == 30          # 90px / 3 dòng
+
+    def test_big_font_blocks_are_headings(self, one_col):
+        b = _by_id(one_col)
+        assert (b["r0"].type_label, b["r0"].level) == ("heading", 1)
+        assert (b["r1"].type_label, b["r1"].level) == ("heading", 2)
+        assert [b[r].type_label for r in ("r2", "r3", "r5")] == ["paragraph"] * 3
+        assert b["r4"].type_label == "figure"
+        assert b["r0"].kind == "text"      # kind cũ giữ cho renderer
 
 
 class TestTwoColumns:
@@ -106,3 +119,14 @@ class TestForm:
 
     def test_block_order_label_then_table(self, form):
         assert [b.region_id for b in form.blocks] == ["f0", "f2", "f4", "tbl"]
+
+    def test_label_value_rows_are_form_field(self, form):
+        assert [b.type_label for b in form.blocks] == [
+            "form_field", "form_field", "form_field", "table",
+        ]
+
+    def test_form_field_merges_pair_into_one_block(self, form):
+        rows = [b for b in form.blocks if b.type_label == "form_field"]
+        assert len(rows) == 3                       # 3 hàng nhãn+giá trị → 3 block
+        assert rows[0].lines == ["Họ và tên: .........\tNguyễn Văn A"]
+        assert sum(len(b.tabs) for b in rows) == 3

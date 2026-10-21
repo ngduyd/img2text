@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from app.services.ir import IRValidationError, validate_ir
-from scripts.ir_bench_score import score
+from scripts.ir_bench_score import kendall_tau, score
 
 FIXTURES = Path(__file__).parent / "fixtures" / "layout_samples"
 
@@ -35,6 +35,7 @@ def _base_ir() -> dict:
         _node("n1", "heading", ["r1"]),
         _node("n2", "paragraph", ["r2"]),
         _node("n3", "paragraph", ["r3"]),
+        _node("n5", "paragraph", ["r5"]),
         _node("n4", "figure", ["r4"]),
     ])
 
@@ -60,7 +61,7 @@ def test_swapped_regions_lower_order(result: dict, expected: dict) -> None:
     s = score(ir, expected, result)
     assert s["coverage_ok"] is True
     assert s["type_acc"] == 1.0          # đảo thứ tự không đổi type
-    assert s["order_acc"] == pytest.approx(1 - 1 / 10)  # 5 region → 10 cặp
+    assert s["order_acc"] == pytest.approx(1 - 1 / 15)  # 6 region → 15 cặp
     assert s["extra_nodes"] == 0
 
 def test_merge_tolerated_but_wrong_type_counted(result: dict, expected: dict) -> None:
@@ -69,6 +70,7 @@ def test_merge_tolerated_but_wrong_type_counted(result: dict, expected: dict) ->
         _node("n0", "heading", ["r0"]),
         _node("n1", "heading", ["r1"]),
         _node("n2", "paragraph", ["r2", "r3"]),
+        _node("n5", "paragraph", ["r5"]),
         _node("n4", "figure", ["r4"]),
     ])
     s = score(ir, expected, result)
@@ -76,7 +78,7 @@ def test_merge_tolerated_but_wrong_type_counted(result: dict, expected: dict) ->
     assert s["type_acc"] == 1.0          # cả r2 và r3 đều paragraph → đúng
     ir["pages"][0]["content"][2] = _node("n2", "heading", ["r2", "r3"])
     s = score(ir, expected, result)
-    assert s["type_acc"] == pytest.approx(3 / 5)
+    assert s["type_acc"] == pytest.approx(4 / 6)
 
 def test_node_without_region_counts_extra(result: dict, expected: dict) -> None:
     ir = _base_ir()
@@ -95,3 +97,16 @@ def test_missing_block_fails_coverage(result: dict, expected: dict) -> None:
     assert s["coverage_ok"] is False
     assert s["type_acc"] == 0.0
     assert s["order_acc"] == 0.0
+
+# ---------------------------------------------------------------- kendall_tau
+
+def test_tau_identical_and_reversed() -> None:
+    a = ["x", "y", "z"]
+    assert kendall_tau(a, a) == 1.0
+    assert kendall_tau(a, ["z", "y", "x"]) == -1.0
+
+def test_tau_one_swap_and_partial_overlap() -> None:
+    assert kendall_tau(["x", "y", "z"], ["x", "z", "y"]) == pytest.approx(1 / 3)
+    # id chỉ có ở một phía bị bỏ; 2 id chung → 1 cặp
+    assert kendall_tau(["x", "y", "q"], ["y", "x"]) == -1.0
+    assert kendall_tau(["x"], ["x", "y"]) == 1.0

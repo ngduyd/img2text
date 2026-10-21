@@ -17,7 +17,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import statistics
 import sys
 import time
 from pathlib import Path
@@ -27,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import httpx  # noqa: E402
 
 from app.services import ir, layout_spec  # noqa: E402
-from scripts.ir_bench_score import score  # noqa: E402
+from scripts.ir_bench_score import flatten_ir, kendall_tau, order_of, score  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_SAMPLES = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "layout_samples"
@@ -173,15 +172,11 @@ def _run_spec(result: dict) -> dict:
     """Baseline 0-call: IR dựng trực tiếp từ layout_spec (type heuristic)."""
     out = []
     for pi, (page, spec) in enumerate(zip(result.get("pages") or [], layout_spec.build_page_specs(result))):
-        fonts = [b.font_px for b in spec.blocks if b.kind == "text"]
-        median = statistics.median(fonts) if fonts else 0.0
         nodes = []
         for block in spec.blocks:
-            kind_type = {"table": "table", "image": "figure"}.get(block.kind)
-            heading = median and block.font_px >= 1.6 * median
             nodes.append({
                 "id": f"f{pi}_{block.region_id}",
-                "type": kind_type or ("heading" if heading else "paragraph"),
+                "type": block.type_label,
                 "source_block_ids": [block.region_id],
                 "bbox": [round(v) for v in block.bbox],
             })
@@ -216,7 +211,6 @@ def run_variant(run: Runner, variant: str, result: dict) -> dict:
         return _run_pages(run, result, lambda page, pi: _strip_md(page))
     if variant == "C":
         specs = layout_spec.build_page_specs(result)
-        pages = result.get("pages") or []
 
         def payload(page: dict, pi: int) -> dict:
             return _strip_md(page) | {"bands": _bands_payload(page, specs[pi])}
@@ -230,20 +224,22 @@ def run_variant(run: Runner, variant: str, result: dict) -> dict:
         return _run_spec(result)
     raise ValueError(f"variant lạ: {variant}")
 
-def load_samples(samples_dir: Path) -> list[tuple[str, dict, dict]]:
+def load_samples(samples_dir: Path) -> list[tuple[str, dict, dict | None]]:
+    """--samples có thể là 1 file .json hoặc 1 thư mục. Thiếu `.expected.json`
+    → vẫn chạy, chấm cover/agreement (không có type_acc/order_acc)."""
+    paths = [samples_dir] if samples_dir.is_file() else sorted(samples_dir.glob("*.json"))
     out = []
-    for path in sorted(samples_dir.glob("*.json")):
+    for path in paths:
         if path.name.endswith(".expected.json"):
             continue
         expected_path = path.with_suffix("").with_suffix(".expected.json")
-        if not expected_path.exists():
-            print(f"WARN: thiếu nhãn {expected_path.name} — bỏ {path.name}", file=sys.stderr)
-            continue
-        out.append((
-            path.stem,
-            json.loads(path.read_text(encoding="utf-8")),
-            json.loads(expected_path.read_text(encoding="utf-8")),
-        ))
+        expected = None
+        if expected_path.exists():
+            expected = json.loads(expected_path.read_text(encoding="utf-8"))
+        else:
+            print(f"WARN: thiếu nhãn {expected_path.name} — chấm cover/agreement cho {path.name}",
+                  file=sys.stderr)
+        out.append((path.stem, json.loads(path.read_text(encoding="utf-8")), expected))
     return out
 
 def _stat(values: list[float], digits: int = 2) -> str:
@@ -258,18 +254,46 @@ def _mean(reps: list[dict]) -> dict:
     def vals(key: str) -> list[float]:
         return [float(r[key]) for r in reps]
 
+    labeled = reps[0].get("type_acc") is not None
     return {
         "coverage": f"{sum(r['coverage_ok'] for r in reps)}/{len(reps)}",
-        "type_acc": _stat(vals("type_acc")),
-        "order_acc": _stat(vals("order_acc")),
-        "extra_nodes": _stat(vals("extra_nodes")),
+        "type_acc": _stat(vals("type_acc")) if labeled else "—",
+        "order_acc": _stat(vals("order_acc")) if labeled else "—",
+        "extra_nodes": _stat(vals("extra_nodes")) if labeled else "—",
+        "nodes": _stat(vals("nodes"), 0),
         "model_calls": _stat(vals("calls")),
         "ms": _stat(vals("ms"), 0),
         "chars": _stat(vals("chars"), 0),
     }
 
-def fmt(value: float) -> str:
-    return f"{value:.2f}"
+def _covers(ir_dict: dict, result: dict) -> bool:
+    """Không có nhãn → chỉ kiểm tra IR dùng được (validate_ir)."""
+    try:
+        ir.validate_ir(ir_dict, result)
+        return True
+    except ir.IRValidationError:
+        return False
+
+def _agreement(orders: dict[tuple[str, str], list[list[str]]]) -> dict[tuple[str, str], list[float]]:
+    """τ trung bình mỗi cặp variant (mọi cặp repeat của cùng sample)."""
+    by_sample: dict[str, dict[str, list[list[str]]]] = {}
+    for (sample, variant), runs in orders.items():
+        by_sample.setdefault(sample, {})[variant] = runs
+    out: dict[tuple[str, str], list[float]] = {}
+    for sample, per_variant in by_sample.items():
+        names = sorted(per_variant)
+        for i, va in enumerate(names):
+            for vb in names[i + 1:]:
+                taus = [
+                    kendall_tau(a, b)
+                    for a in per_variant[va] for b in per_variant[vb]
+                ]
+                if taus:
+                    out[(sample, f"{va}–{vb}")] = taus
+    return out
+
+def fmt(value: float | None) -> str:
+    return "—" if value is None else f"{value:.2f}"
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
@@ -290,7 +314,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"variant không hỗ trợ: {unknown}", file=sys.stderr)
         return 2
 
-    rows, errors = [], []
+    rows, errors, orders = [], [], {}
     for sample, result, expected in load_samples(args.samples):
         for variant in variants:
             reps = []
@@ -298,24 +322,35 @@ def main(argv: list[str] | None = None) -> int:
                 run = Runner(args.base_url, args.model, key)
                 try:
                     ir_dict = run_variant(run, variant, result)
-                    metrics = score(ir_dict, expected, result)
+                    nodes = flatten_ir(ir_dict)
+                    orders.setdefault((sample, variant), []).append(order_of(nodes))
+                    if expected is None:
+                        metrics = {"coverage_ok": _covers(ir_dict, result),
+                                   "type_acc": None, "order_acc": None,
+                                   "extra_nodes": None, "nodes": len(nodes)}
+                    else:
+                        m = score(ir_dict, expected, result)
+                        metrics = {"coverage_ok": m["coverage_ok"], "type_acc": m["type_acc"],
+                                   "order_acc": m["order_acc"], "extra_nodes": m["extra_nodes"],
+                                   "nodes": len(nodes)}
                     error = ""
                 except Exception as exc:  # HTTP/parse fail → ghi rõ, không bỏ im
-                    metrics = {"coverage_ok": False, "type_acc": 0.0, "order_acc": 0.0,
-                               "extra_nodes": 0, "matched_nodes": 0, "expected_nodes": 0}
+                    metrics = {"coverage_ok": False, "type_acc": None, "order_acc": None,
+                               "extra_nodes": None, "nodes": 0}
                     error = f"{type(exc).__name__}: {exc}"
                     errors.append(f"{sample}/{variant}: {error}")
                 reps.append({
                     "coverage_ok": metrics["coverage_ok"],
                     "type_acc": metrics["type_acc"], "order_acc": metrics["order_acc"],
-                    "extra_nodes": metrics["extra_nodes"], "calls": run.calls,
-                    "ms": run.ms, "chars": run.chars, "error": error,
+                    "extra_nodes": metrics["extra_nodes"], "nodes": metrics["nodes"],
+                    "calls": run.calls, "ms": run.ms, "chars": run.chars, "error": error,
                 })
                 print(
                     f"{sample:6} {variant} cover={metrics['coverage_ok']!s:5} "
-                    f"type={fmt(metrics['type_acc'])} order={fmt(metrics['order_acc'])} "
-                    f"extra={metrics['extra_nodes']} calls={run.calls} "
+                    f"nodes={metrics['nodes']} calls={run.calls} "
                     f"ms={run.ms:.0f} chars={run.chars}"
+                    + (f" type={fmt(metrics['type_acc'])} order={fmt(metrics['order_acc'])}"
+                       f" extra={metrics['extra_nodes']}" if expected is not None else "")
                     + (f" ERROR {error}" if error else ""),
                     file=sys.stderr,
                 )
@@ -329,15 +364,20 @@ def main(argv: list[str] | None = None) -> int:
         "",
         "coverage = số lần pass/N; các ô khác = mean (min–max).",
         "",
-        "| sample | variant | coverage | type_acc | order_acc | extra | model_calls | ms | chars |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| sample | variant | coverage | type_acc | order_acc | extra | nodes | model_calls | ms | chars |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for row in rows:
         lines.append(
             f"| {row['sample']} | {row['variant']} | {row['coverage']} "
             f"| {row['type_acc']} | {row['order_acc']} | {row['extra_nodes']} "
-            f"| {row['model_calls']} | {row['ms']} | {row['chars']} |"
+            f"| {row['nodes']} | {row['model_calls']} | {row['ms']} | {row['chars']} |"
         )
+    agree = _agreement(orders)
+    if agree:
+        lines += ["", "## Agreement — Kendall τ thứ tự đọc giữa các cặp variant",
+                  "", "| sample | pair | τ |", "|---|---|---|"]
+        lines += [f"| {s} | {p} | {_stat(v)} |" for (s, p), v in agree.items()]
     if errors:
         lines += ["", "## Lỗi", ""] + [f"- {e}" for e in errors]
     report = "\n".join(lines) + "\n"

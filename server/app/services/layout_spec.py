@@ -11,6 +11,7 @@ Output: list[PageSpec] — mỗi block có align/indent/tabs/spacing/font suy t�
 from __future__ import annotations
 
 import logging
+import re
 import statistics
 import unicodedata
 from dataclasses import dataclass, field
@@ -25,6 +26,10 @@ FONT_MIN, FONT_MAX = 10.0, 48.0
 FONT_FALLBACK = 16.0
 DOTS = "...."               # ≥4 chấm → tab leader DOTS
 TAB_SPACE_PX = 8.0          # px ước lượng cho 1 ký tự space khi tính first-line indent
+FORM_RE = re.compile(r"^\S.*:\s*\.{3,}")   # "Họ và tên: ....." → form field
+FORM_MAX_CHARS = 60         # cặp nhãn/giá trị dài hơn → coi là 2 block text thường
+HEADING_RATIO = 1.6         # font ≥ 1.6× median → heading
+HEADING_L1_RATIO = 2.2      # font ≥ 2.2× median → heading level 1
 
 # ---------------------------------------------------------------- dataclasses
 @dataclass
@@ -53,6 +58,8 @@ class BlockSpec:
     tabs: list[Tab] = field(default_factory=list)
     space_after_px: float = 0.0
     font_px: float = FONT_FALLBACK
+    type_label: str = "unknown"  # paragraph|heading|form_field|table|figure|unknown
+    level: int = 0               # heading level (1 = lớn nhất), 0 = không phải heading
     html: str = ""
     cells: list | None = None
     lines: list[str] = field(default_factory=list)
@@ -212,13 +219,20 @@ def _first_line_indent(block: BlockSpec) -> float:
     return max(0.0, delta * TAB_SPACE_PX)
 
 
+def _raw_font(block: BlockSpec) -> float:
+    """Font ước lượng theo TỪNG dòng, KHÔNG clamp (block.h là chiều cao cả
+    khối) — cùng công thức `render_md._render` dùng, để heading không bị nhiễu
+    bởi block nhiều dòng."""
+    return block.h / max(1, len(block.lines))
+
 def _font_px(block: BlockSpec) -> float:
-    return min(FONT_MAX, max(FONT_MIN, block.h))
+    return min(FONT_MAX, max(FONT_MIN, _raw_font(block)))
 
 
 def _attach_tabs(band: list[BlockSpec], cols: list[Col]) -> set[str]:
     """Band có ≥2 block text x-disjoint trong CÙNG cột → block trái nhất giữ
     nội dung, các block sau thành tab stop; text của chúng nối vào dòng cuối.
+    Cặp nhãn/giá trị cùng band, x-disjoint, text ngắn → form_field.
     Trả về id các block bị "nuốt" (không còn là block riêng)."""
     dropped: set[str] = set()
     by_col: dict[int, list[BlockSpec]] = {}
@@ -244,6 +258,8 @@ def _attach_tabs(band: list[BlockSpec], cols: list[Col]) -> set[str]:
                     base.lines[-1] += "\t" + value
                 else:
                     base.lines = [value]
+            if max(len(base.text.strip()), len(other.text.strip())) < FORM_MAX_CHARS:
+                base.type_label = "form_field"
             dropped.add(other.region_id)
             edge = max(edge, other.x1)
     return dropped
@@ -283,9 +299,32 @@ def _page_spec(page: dict) -> PageSpec:
         ]
         b.space_after_px = max(0.0, same_col[0].y0 - b.y1) if same_col else 0.0
 
+    _label_types(blocks)
     return PageSpec(
         width=width, height=height, margin_left=margin_left, cols=cols, blocks=blocks
     )
+
+def _label_types(blocks: list[BlockSpec]) -> None:
+    """type_label + heading level: tất định, chỉ từ font & text (không LLM).
+    Giữ `kind` cũ cho renderer."""
+    fonts = [_raw_font(b) for b in blocks if b.kind == "text"]
+    median = statistics.median(fonts) if fonts else 0.0
+    for b in blocks:
+        if b.type_label == "form_field":
+            continue
+        font = _raw_font(b)
+        if b.kind == "table":
+            b.type_label = "table"
+        elif b.kind == "image":
+            b.type_label = "figure"
+        elif FORM_RE.match(b.text.strip()):
+            b.type_label = "form_field"
+        elif median and font >= HEADING_L1_RATIO * median:
+            b.type_label, b.level = "heading", 1
+        elif median and font >= HEADING_RATIO * median:
+            b.type_label, b.level = "heading", 2
+        else:
+            b.type_label = "paragraph"
 
 
 def build_page_specs(result: dict) -> list[PageSpec]:

@@ -71,6 +71,17 @@ def order_of(nodes: list[dict]) -> list[str]:
                 out.append(rid)
     return out
 
+def kendall_tau(a: list[str], b: list[str]) -> float:
+    """τ-a giữa 2 thứ tự đọc, chỉ tính trên id chung: 1 = cùng thứ tự,
+    −1 = ngược hoàn toàn. <2 id chung → 1.0 (không đủ dữ liệu để bất đồng)."""
+    in_b = set(b)
+    common = [rid for rid in a if rid in in_b]
+    if len(common) < 2:
+        return 1.0
+    rank = {rid: i for i, rid in enumerate(b)}
+    pairs, total = _inversions([rank[rid] for rid in common])
+    return 1.0 - 2 * pairs / total
+
 def score(ir: dict, expected: dict, result: dict) -> dict:
     """coverage/type_acc/order_acc/extra_nodes. coverage fail → không chấm
     type/order (đặt 0) vì IR không dùng được."""
