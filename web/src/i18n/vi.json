@@ -269,7 +269,13 @@
     "tableInsert": "Chèn bảng {r}×{c}",
     "tablePick": "Chọn bảng (tối đa 10×10)",
     "pagesUnit": "trang",
-    "pagePreviewAria": "Xem trước trang A4"
+    "pagePreviewAria": "Xem trước trang A4",
+    "moreTools": "Thêm công cụ",
+    "paragraph": "Đoạn văn",
+    "indent": "Tăng thụt lề",
+    "outdent": "Giảm thụt lề",
+    "lineHeight": "Giãn dòng",
+    "lineHeightDefault": "Giãn dòng"
   },
   "extraction": {
     "title": "Trích xuất văn bản",

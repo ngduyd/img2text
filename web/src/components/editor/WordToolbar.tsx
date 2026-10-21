@@ -3,6 +3,9 @@ import type { ReactNode } from "react";
 import type { Editor } from "@tiptap/core";
 import { useEditorState } from "@tiptap/react";
 import {
+  IndentDecrease,
+  IndentIncrease,
+  MoreHorizontal,
   AlignCenter,
   AlignJustify,
   AlignLeft,
@@ -18,7 +21,12 @@ import {
   Undo2,
 } from "lucide-react";
 import { FONT_FAMILIES } from "../../lib/docStyle";
-import { WORD_SIZES } from "../../lib/wordEditor";
+import {
+  LINE_HEIGHTS,
+  WORD_SIZES,
+  currentIndent,
+  setBlockAttr,
+} from "../../lib/wordEditor";
 import { useT } from "../../i18n";
 import Button from "../ui/Button";
 
@@ -43,6 +51,9 @@ interface UiState {
   /** Giá trị hiện tại của mark textStyle (đã bỏ ngoặc/đơn vị) cho 2 select. */
   fontFamily: string;
   fontSize: string;
+  /** Tier B: block đang chọn đang là heading cấp nào (0 = paragraph). */
+  heading: number;
+  lineHeight: string;
 }
 
 interface Item {
@@ -213,6 +224,8 @@ export default function WordToolbar({ editor }: { editor: Editor | null }) {
   const { t } = useT();
   const rootRef = useRef<HTMLDivElement>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [indent, setIndent] = useState(0);
   const [hover, setHover] = useState<{ r: number; c: number } | null>(null);
 
   // Re-render theo transaction: active state + cụm row/col trong bảng.
@@ -238,19 +251,45 @@ export default function WordToolbar({ editor }: { editor: Editor | null }) {
         inTable: editor.isActive("table"),
         fontFamily: (style.fontFamily ?? "").replace(/["']/g, ""),
         fontSize: (style.fontSize ?? "").replace(/pt$/, ""),
+        heading: [1, 2, 3].find((l) => editor.isActive("heading", { level: l })) ?? 0,
+        lineHeight: String(editor.getAttributes("paragraph").lineHeight ?? ""),
       };
     },
   });
 
-  // Đóng grid picker khi bấm ra ngoài (Escape → blur cùng xử lý qua mousedown ngoài).
+  // Đóng grid picker / menu ▾ khi bấm ra ngoài (Escape → blur cùng xử lý qua mousedown ngoài).
   useEffect(() => {
-    if (!pickerOpen) return;
+    if (!pickerOpen && !moreOpen) return;
     const close = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) setPickerOpen(false);
+      if (rootRef.current?.contains(e.target as Node)) return;
+      setPickerOpen(false);
+      setMoreOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setPickerOpen(false);
+      setMoreOpen(false);
     };
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [pickerOpen]);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [pickerOpen, moreOpen]);
+
+  // Thụt lề hiện tại của block đầu selection (attr đọc từ editor, không state riêng).
+  useEffect(() => {
+    if (!editor) return;
+    const sync = () => setIndent(currentIndent(editor));
+    sync();
+    editor.on("selectionUpdate", sync);
+    editor.on("transaction", sync);
+    return () => {
+      editor.off("selectionUpdate", sync);
+      editor.off("transaction", sync);
+    };
+  }, [editor]);
 
   /** Áp textStyle (font/cỡ) = merge attrs hiện tại của selection — tránh mất attr kia. */
   const setTextStyle = (patch: { fontFamily?: string; fontSize?: string }) => {
@@ -330,7 +369,89 @@ export default function WordToolbar({ editor }: { editor: Editor | null }) {
           </Button>
           {divider}
           <Group items={CMD_GROUPS[4]} editor={editor} ui={ui} />
+          {divider}
+          {/* D9: phần còn lại (tier B) nằm trong ▾ — toolbar giữ 1 hàng. */}
+          <Button
+            testid="word-tb-more"
+            variant="ghost"
+            size="sm"
+            title={t("word.moreTools")}
+            aria-label={t("word.moreTools")}
+            aria-expanded={moreOpen}
+            aria-controls="word-tb-more-panel"
+            className="shrink-0"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setMoreOpen((o) => !o)}
+          >
+            <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+          </Button>
         </div>
+        {moreOpen && (
+          <div
+            id="word-tb-more-panel"
+            data-testid="word-tb-more-panel"
+            className="absolute right-0 top-full z-20 mt-1 flex w-56 flex-col gap-2 rounded-md border border-border bg-surface p-2 shadow-card"
+          >
+            <label className="flex items-center justify-between gap-2 text-sm text-muted">
+              {t("word.paragraph")}
+              <select
+                data-testid="word-tb-heading"
+                aria-label={t("word.paragraph")}
+                className={SELECT_CLS}
+                value={String(ui?.heading ?? 0)}
+                onChange={(e) => {
+                  if (!editor) return;
+                  const level = Number(e.target.value);
+                  if (level === 0) editor.chain().focus().setParagraph().run();
+                  else editor.chain().focus().setHeading({ level: level as 1 | 2 | 3 }).run();
+                }}
+              >
+                <option value="0">{t("word.paragraph")}</option>
+                <option value="1">H1</option>
+                <option value="2">H2</option>
+                <option value="3">H3</option>
+              </select>
+            </label>
+            <label className="flex items-center justify-between gap-2 text-sm text-muted">
+              {t("word.lineHeight")}
+              <select
+                data-testid="word-tb-line-height"
+                aria-label={t("word.lineHeight")}
+                className={SELECT_CLS}
+                value={ui?.lineHeight || ""}
+                onChange={(e) => editor && setBlockAttr(editor, "lineHeight", e.target.value || null)}
+              >
+                <option value="">{t("word.lineHeightDefault")}</option>
+                {LINE_HEIGHTS.map((h) => (
+                  <option key={h} value={h}>
+                    {h}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="flex items-center gap-1">
+              <CmdButton
+                editor={editor}
+                testid="word-tb-indent"
+                titleKey="word.indent"
+                run={(e) => setBlockAttr(e, "indent", `${Math.min(indent + 2, 16)}em`)}
+              >
+                <IndentIncrease className="h-4 w-4" aria-hidden="true" />
+              </CmdButton>
+              <CmdButton
+                editor={editor}
+                testid="word-tb-outdent"
+                titleKey="word.outdent"
+                run={(e) => {
+                  const next = Math.max(indent - 2, 0);
+                  setBlockAttr(e, "indent", next === 0 ? null : `${next}em`);
+                }}
+              >
+                <IndentDecrease className="h-4 w-4" aria-hidden="true" />
+              </CmdButton>
+            </div>
+          </div>
+        )}
         {/* Hàng 2: table row/col tách riêng — strip chính không quá ~15 control. */}
         {ui?.inTable && (
           <div

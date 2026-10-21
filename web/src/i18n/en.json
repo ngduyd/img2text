@@ -269,7 +269,13 @@
     "tableInsert": "Insert table {r}×{c}",
     "tablePick": "Pick a table (max 10×10)",
     "pagesUnit": "pages",
-    "pagePreviewAria": "A4 page preview"
+    "pagePreviewAria": "A4 page preview",
+    "moreTools": "More tools",
+    "paragraph": "Paragraph",
+    "indent": "Increase indent",
+    "outdent": "Decrease indent",
+    "lineHeight": "Line spacing",
+    "lineHeightDefault": "Line spacing"
   },
   "extraction": {
     "title": "Text extraction",
