@@ -183,10 +183,27 @@ def _set_section_cols(section, n: int) -> None:
     )
 
 
-def _add_spec_block(doc, blk: BlockSpec) -> None:
+def _add_image_block(doc, blk: BlockSpec, crops: dict[str, bytes]) -> None:
+    """Crop bytes cho region_id → ảnh đúng bbox width; thiếu/lỗi → placeholder."""
+    data = crops.get(blk.region_id)
+    if data:
+        try:
+            para = doc.add_paragraph()
+            para.alignment = _SPEC_ALIGN.get(blk.align, WD_ALIGN_PARAGRAPH.LEFT)
+            para.add_run().add_picture(
+                io.BytesIO(data), width=Twips(round(blk.w * TWIPS_PER_PX))
+            )
+            return
+        except Exception as exc:  # ảnh hỏng → giữ placeholder, không crash
+            logger.info("crop rid=%s lỗi: %r — placeholder", blk.region_id, exc)
+    run = doc.add_paragraph().add_run(IMAGE_PLACEHOLDER)
+    run.italic = True
+
+def _add_spec_block(
+    doc, blk: BlockSpec, crops: dict[str, bytes] | None = None
+) -> None:
     if blk.kind == "image":
-        run = doc.add_paragraph().add_run(IMAGE_PLACEHOLDER)
-        run.italic = True
+        _add_image_block(doc, blk, crops or {})
         return
     if blk.kind == "table":
         if blk.cells:
@@ -233,9 +250,15 @@ def _group_pages(pages: list[PageSpec]) -> list[list[PageSpec]]:
 
 
 def render_docx_spec(
-    result: dict, style_overrides: dict | None = None
+    result: dict,
+    style_overrides: dict | None = None,
+    crops: dict[str, bytes] | None = None,
 ) -> bytes:
-    """OCR result → DOCX qua layout spec (không LLM, không HTML, không framePr)."""
+    """OCR result → DOCX qua layout spec (không LLM, không HTML, không framePr).
+
+    crops: {region_id: bytes} — block image có id trong crops → nhúng ảnh
+    (width = bbox width px → twips); thiếu key/ảnh lỗi → placeholder [ảnh].
+    """
     pages = build_page_specs(result)
     doc = Document()
     for gi, group in enumerate(_group_pages(pages)):
@@ -244,12 +267,30 @@ def render_docx_spec(
         _set_section_cols(doc.sections[-1], len(group[0].cols))
         for pg in group:
             for blk in pg.blocks:
-                _add_spec_block(doc, blk)
+                _add_spec_block(doc, blk, crops)
     if style_overrides:
         _apply_style_overrides(doc, style_overrides)
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
+
+async def _load_crops(result: dict, crop_loader) -> dict[str, bytes] | None:
+    """Gom crop bytes cho mọi block image (gọi loader TUẦN TỰ, lỗi/None → bỏ)."""
+    if crop_loader is None:
+        return None
+    crops: dict[str, bytes] = {}
+    for pg in build_page_specs(result):
+        for blk in pg.blocks:
+            if blk.kind != "image" or blk.region_id in crops:
+                continue
+            try:
+                data = await crop_loader(blk.region_id)
+            except Exception as exc:  # partial-fail: crop thiếu → placeholder
+                logger.info("crop loader rid=%s failed: %r", blk.region_id, exc)
+                continue
+            if data:
+                crops[blk.region_id] = data
+    return crops
 
 async def build_docx(
     result: dict,
@@ -260,7 +301,10 @@ async def build_docx(
 ) -> bytes:
     """Build DOCX from OCR result — layout_spec only (0 LLM call).
 
-    ponytail: use_llm/ir_sink/crop_loader giữ cho tương thích test; xoá khi
-    test đã cập nhật. style_overrides (jobs.layout_style) áp sau cùng.
+    crop_loader: async (rid) → bytes | None — wire crop on-demand (batch
+    artifact → get_or_make_crop + storage.get); None/lỗi → placeholder.
+    ponytail: use_llm/ir_sink giữ cho tương thích test; xoá khi test cập nhật.
+    style_overrides (jobs.layout_style) áp sau cùng.
     """
-    return render_docx_spec(result, style_overrides)
+    crops = await _load_crops(result, crop_loader)
+    return render_docx_spec(result, style_overrides, crops)

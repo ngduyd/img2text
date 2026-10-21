@@ -1,5 +1,6 @@
 """Plan D Task 3: html/docx export via pandoc + reference.docx (brief tests verbatim)."""
 
+import base64
 import io
 import zipfile
 
@@ -88,3 +89,27 @@ async def test_export_docx_embeds_materialized_crop(
     body = await storage.get(f"exports/{done_job_with_marker_crop}/docx")
     with zipfile.ZipFile(io.BytesIO(body)) as z:
         assert any(n.startswith("word/media/") for n in z.namelist())
+
+# ---------------------------------------------------------------- docx-layout crop embed
+def _media_names(data: bytes) -> list[str]:
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        return [n for n in z.namelist() if n.startswith("word/media/")]
+
+_PNG_1PX = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/"
+    "q842iQAAAABJRU5ErkJggg=="
+)
+
+async def test_export_docx_layout_embeds_batch_crop(
+    auth_client, done_job_with_marker_crop, storage
+):
+    """docx-layout: crop batch exports/{id}/crops/{rid}.png → image part."""
+    await storage.put(
+        f"exports/{done_job_with_marker_crop}/crops/r1.png", _PNG_1PX
+    )
+    await auth_client.post(
+        f"/api/jobs/{done_job_with_marker_crop}/export",
+        json={"fmt": "docx-layout"},
+    )
+    body = await storage.get(f"exports/{done_job_with_marker_crop}/docx-layout")
+    assert _media_names(body)

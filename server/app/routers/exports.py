@@ -452,7 +452,23 @@ async def _llm_docx_export(
     result = dict(job.result or {})
     if not result.get("pages"):
         raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
-    return await build_docx(result, style_overrides=_job_layout_style(job))
+    crop_loader = None
+    if storage is not None:
+        async def _on_demand_crop(rid: str) -> bytes | None:
+            try:  # batch crop kernel thắng (server chỉ lưu + dùng)
+                return await storage.get(f"exports/{job_id}/crops/{rid}.png")
+            except KeyError:
+                pass
+            try:
+                key = await get_or_make_crop(job_id, rid, job, result, storage)
+                return await storage.get(key)
+            except KeyError:
+                return None
+
+        crop_loader = _on_demand_crop
+    return await build_docx(
+        result, style_overrides=_job_layout_style(job), crop_loader=crop_loader
+    )
 
 def _job_layout_style(job: Job) -> dict | None:
     """jobs.layout_style JSON → dict; broken JSON → None + warning."""

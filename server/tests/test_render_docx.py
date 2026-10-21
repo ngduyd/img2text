@@ -186,3 +186,60 @@ async def test_build_docx_spec_1col_single_section_no_cols_override():
     texts = [p.text for p in doc.paragraphs]
     assert texts[0] == "CHƯƠNG 1: MỞ ĐẦU"
     assert "[ảnh]" in texts
+
+# ---------------------------------------------------------------- crop embed
+import base64
+import zipfile
+
+from app.services.render_docx import render_docx_spec
+
+PNG_1PX = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/"
+    "q842iQAAAABJRU5ErkJggg=="
+)
+
+def _media_names(data: bytes) -> list[str]:
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        return [n for n in z.namelist() if n.startswith("word/media/")]
+
+def _image_result() -> dict:
+    """1 block image, bbox 200x100 (r1)."""
+    return {"pages": [{"index": 0, "width": 800, "height": 600, "regions": [
+        {"id": "r1", "bbox": [10, 10, 210, 110], "text": "",
+         "verdict": "image_unextractable", "placeholder": True}]}]}
+
+async def test_render_docx_spec_embeds_crop_by_bbox_width():
+    """crops có rid → 1 inline image, width = bbox w px → twips, không placeholder."""
+    from docx.shared import Twips
+
+    data = render_docx_spec(_image_result(), crops={"r1": PNG_1PX})
+    doc = Document(io.BytesIO(data))
+    assert len(doc.inline_shapes) == 1
+    assert "[ảnh]" not in "\n".join(p.text for p in doc.paragraphs)
+    expected = Twips(round(200 * 1440 / 96))  # 3000 twips = 1_905_000 EMU
+    assert abs(doc.inline_shapes[0].width - expected) <= expected * 0.05
+
+async def test_render_docx_spec_missing_crop_keeps_placeholder():
+    """crops thiếu rid → placeholder [ảnh] còn, không crash."""
+    data = render_docx_spec(_image_result(), crops={"other": PNG_1PX})
+    doc = Document(io.BytesIO(data))
+    assert not doc.inline_shapes
+    assert "[ảnh]" in "\n".join(p.text for p in doc.paragraphs)
+
+async def test_build_docx_crop_loader_embeds():
+    """build_docx crop_loader trả bytes → ảnh nhúng (media part)."""
+    async def loader(rid: str) -> bytes:
+        return PNG_1PX
+
+    data = await build_docx(_image_result(), crop_loader=loader)
+    assert _media_names(data)
+    assert len(Document(io.BytesIO(data)).inline_shapes) == 1
+
+async def test_build_docx_crop_loader_error_keeps_placeholder():
+    """loader raise → placeholder, không crash."""
+    async def loader(rid: str) -> bytes:
+        raise RuntimeError("storage down")
+
+    data = await build_docx(_image_result(), crop_loader=loader)
+    assert _media_names(data) == []
+    assert "[ảnh]" in "\n".join(p.text for p in Document(io.BytesIO(data)).paragraphs)
