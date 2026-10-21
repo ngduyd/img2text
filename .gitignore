@@ -7,6 +7,8 @@ __pycache__/
 
 .venvs/
 *.jpg
+# Ảnh sản phẩm cho Landing (scripts/landing-shots.mjs) — cần có trong build.
+!web/public/shots/*.jpg
 .codegraph
 # #15: RotatingFileHandler viết server/logs/ (settings.log_path) khi test
 logs/

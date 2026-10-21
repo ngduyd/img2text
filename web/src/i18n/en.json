@@ -606,7 +606,15 @@
     "outputLabel": "Output:",
     "colab": "Runs free on Google Colab.",
     "finalTitle": "Upload your first page",
-    "roadmapTitle": "Coming soon"
+    "roadmapTitle": "Coming soon",
+    "previewTitle": "See it in action",
+    "shot": {
+      "editor": "Editor with a live A4 page preview next to the text",
+      "jobs": "Job list with status badges",
+      "text": "Extracted text with OCR issues highlighted",
+      "jobsCaption": "Every job, one row: status, page count, and a ⋯ menu for the rest.",
+      "textCaption": "Low-confidence words are flagged in place, next to the original page."
+    }
   },
   "jobs": {
     "title": "Jobs",

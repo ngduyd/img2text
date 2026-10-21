@@ -72,12 +72,21 @@ it("reduced-motion path renders statically: no transform animation values", () =
 });
 
 // Bỏ 6 slot screenshot rỗng (ảnh chưa từng capture) → 1 mock tĩnh, không network.
-it("hero shows a static mock instead of empty screenshot slots", () => {
+it("hero + preview use real screenshots (3 ảnh, có alt, lazy)", () => {
   renderLanding();
-  expect(screen.getByTestId("landing-mock")).toBeInTheDocument();
-  expect(screen.queryByTestId("landing-gallery")).not.toBeInTheDocument();
-  expect(screen.queryAllByTestId("gallery-shot")).toHaveLength(0);
-  expect(screen.getByTestId("landing").querySelectorAll("img")).toHaveLength(0);
+  // R51: testid landing-mock giữ, giờ là <img> ảnh thật trong public/shots.
+  const hero = screen.getByTestId("landing-mock");
+  expect(hero.tagName).toBe("IMG");
+  expect(hero).toHaveAttribute("src", "/shots/editor.jpg");
+  expect(screen.getByTestId("landing-shot-jobs")).toHaveAttribute("src", "/shots/jobs.jpg");
+  expect(screen.getByTestId("landing-shot-text")).toHaveAttribute("src", "/shots/text.jpg");
+  const imgs = screen.getByTestId("landing").querySelectorAll("img");
+  expect(imgs).toHaveLength(3);
+  for (const img of imgs) {
+    expect(img).toHaveAttribute("alt");
+    expect(img.getAttribute("alt")).not.toBe("");
+    expect(img).toHaveAttribute("loading", "lazy");
+  }
 });
 
 it("rendered text contains zero em-dashes", () => {

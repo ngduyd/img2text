@@ -606,7 +606,15 @@
     "outputLabel": "Xuất ra:",
     "colab": "Chạy miễn phí trên Google Colab.",
     "finalTitle": "Tải ảnh đầu tiên của bạn",
-    "roadmapTitle": "Sắp có"
+    "roadmapTitle": "Sắp có",
+    "previewTitle": "Xem sản phẩm",
+    "shot": {
+      "editor": "Trình soạn thảo kèm xem trước trang A4 ngay bên cạnh",
+      "jobs": "Danh sách công việc với nhãn trạng thái",
+      "text": "Văn bản đã trích xuất, chỗ nghi lỗi OCR được đánh dấu",
+      "jobsCaption": "Mỗi job một hàng: trạng thái, số trang, phần còn lại trong menu ⋯.",
+      "textCaption": "Từ có độ tin cậy thấp được đánh dấu tại chỗ, cạnh trang gốc."
+    }
   },
   "jobs": {
     "title": "Công việc",

@@ -26,42 +26,29 @@ function Reveal({
   );
 }
 
-/**
- * Mock tĩnh thay cho 6 slot screenshot (ảnh chưa từng được capture → onError
- * chỉ để lại ô rỗng). Thuần div, không network, đọc được cả khi ảnh/bundle lỗi.
- */
-function Mock() {
+/** Ảnh sản phẩm thật (web/public/shots, chụp bằng scripts/landing-shots.mjs). */
+function Shot({
+  name,
+  alt,
+  testid,
+  className,
+}: {
+  name: string;
+  alt: string;
+  testid: string;
+  className?: string;
+}) {
   return (
-    <div
-      data-testid="landing-mock"
-      aria-hidden="true"
-      className="overflow-hidden rounded-card border border-border bg-surface shadow-card"
-    >
-      <div className="flex items-center gap-1.5 border-b border-border px-3 py-2">
-        <span className="h-2 w-2 rounded-full bg-border" />
-        <span className="h-2 w-2 rounded-full bg-border" />
-        <span className="h-2 w-2 rounded-full bg-border" />
-        <span className="ml-2 h-2 w-24 rounded-full bg-surface-2" />
-      </div>
-      <div className="grid grid-cols-[1fr_1fr] gap-3 p-3">
-        <div className="flex flex-col gap-2 rounded-sm border border-dashed border-border p-2">
-          <span className="h-2 w-10 rounded-full bg-surface-2" />
-          {[70, 88, 62, 80].map((w, i) => (
-            <span key={i} className="h-1.5 rounded-full bg-surface-2" style={{ width: `${w}%` }} />
-          ))}
-        </div>
-        <div className="flex flex-col gap-2 rounded-sm bg-white p-2">
-          <span className="h-1.5 w-3/4 rounded-full bg-neutral-300" />
-          {[92, 78, 86, 55].map((w, i) => (
-            <span
-              key={i}
-              className="h-1.5 rounded-full bg-neutral-200"
-              style={{ width: `${w}%` }}
-            />
-          ))}
-        </div>
-      </div>
-    </div>
+    <img
+      src={`/shots/${name}.jpg`}
+      alt={alt}
+      data-testid={testid}
+      loading="lazy"
+      decoding="async"
+      width={1280}
+      height={800}
+      className={`w-full rounded-card border border-border bg-surface shadow-card ${className ?? ""}`}
+    />
   );
 }
 
@@ -116,8 +103,25 @@ export default function Landing() {
           </div>
         </motion.div>
         <Reveal>
-          <Mock />
+          <Shot name="editor" testid="landing-mock" alt={t("landing.shot.editor")} />
         </Reveal>
+      </section>
+
+      {/* Ảnh thật: danh sách job + trang Văn bản (đối chiếu ảnh gốc / sửa lỗi OCR). */}
+      <section data-testid="landing-preview" className="border-t border-border py-16 md:py-24">
+        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
+          {t("landing.previewTitle")}
+        </h2>
+        <div className="mt-8 grid gap-6 md:grid-cols-2">
+          <figure className="flex flex-col gap-2">
+            <Shot name="jobs" testid="landing-shot-jobs" alt={t("landing.shot.jobs")} />
+            <figcaption className="text-sm text-muted">{t("landing.shot.jobsCaption")}</figcaption>
+          </figure>
+          <figure className="flex flex-col gap-2">
+            <Shot name="text" testid="landing-shot-text" alt={t("landing.shot.text")} />
+            <figcaption className="text-sm text-muted">{t("landing.shot.textCaption")}</figcaption>
+          </figure>
+        </div>
       </section>
 
       {/* #how: pipeline OCR → IR → Layout, so numbered list, verb-noun labels. */}
