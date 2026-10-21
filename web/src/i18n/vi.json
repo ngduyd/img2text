@@ -524,7 +524,7 @@
     "confirmMessage": "File cũ hơn hạn lưu sẽ bị xóa khỏi storage. Văn bản OCR, layout và các phiên bản vẫn giữ. Không thể hoàn tác.",
     "purgedToast": "Đã dọn {n} job.",
     "refreshAria": "Làm mới thống kê dung lượng",
-    "pageInfo": "Trang {page} · {total} job",
+    "pageInfo": "Trang {page} · {total} tệp",
     "empty": "Không có job nào cũ hơn hạn lưu.",
     "own": {
       "title": "Dung lượng của tôi",

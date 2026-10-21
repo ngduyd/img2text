@@ -524,7 +524,7 @@
     "confirmMessage": "Files older than the retention window are deleted from storage. OCR text, layout and versions are kept. This cannot be undone.",
     "purgedToast": "Purged {n} job(s).",
     "refreshAria": "Refresh storage stats",
-    "pageInfo": "Page {page} · {total} jobs",
+    "pageInfo": "Page {page} · {total} files",
     "empty": "No jobs older than the retention window.",
     "own": {
       "title": "My storage",

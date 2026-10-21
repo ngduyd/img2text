@@ -148,7 +148,8 @@ export default function Storage() {
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
                 {t("storage.own.purgeDue", { n: kept.length })}
               </Button>
-              <p className="text-xs text-muted">
+              {/* Dòng riêng: câu này nói về auto-purge, không phải caption của nút trên. */}
+              <p className="w-full text-xs text-muted">
                 {t("storage.own.retentionHelper", { days: RETENTION_DAYS })}
               </p>
             </div>
@@ -239,16 +240,19 @@ export default function Storage() {
                         </td>
                         <td className="px-3 py-2 text-right">
                           {!j.storage_purged_at && (
+                            // D4: mỗi hàng 1 action dạng icon (nhãn đầy đủ qua aria-label/title)
+                            // — 20 nút đỏ có chữ làm bảng nhiễu.
                             <Button
                               testid={`storage-purge-${j.id}`}
-                              variant="danger"
+                              variant="ghost"
                               size="sm"
-                              className="min-h-11" // uiux: touch target 44px như bulk CTA
+                              className="min-h-11 min-w-11"
+                              title={t("storage.own.purgeOne")}
+                              aria-label={t("storage.own.purgeOne")}
                               loading={purgeOne.isPending && confirm?.kind === "one" && confirm.id === j.id}
                               onClick={() => setConfirm({ kind: "one", id: j.id })}
                             >
-                              <Trash2 className="h-4 w-4" aria-hidden="true" />
-                              {t("storage.own.purgeOne")}
+                              <Trash2 className="h-4 w-4 text-error" aria-hidden="true" />
                             </Button>
                           )}
                         </td>

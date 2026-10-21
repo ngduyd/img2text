@@ -4,7 +4,6 @@ import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import { mapApiError } from "../lib/errors";
 import OcrBadge from "../components/OcrBadge";
-import LangSwitch from "../components/LangSwitch";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
@@ -103,7 +102,8 @@ export default function Profile() {
 
   return (
     <PageShell width="form">
-      <PageHeader title={t("profile.title")} actions={<LangSwitch testid="lang-switch-settings" />} />
+      {/* D2: đổi ngôn ngữ đã nằm trong menu avatar — bỏ switch trùng ở header. */}
+      <PageHeader title={t("profile.title")} />
       <div className="flex flex-col gap-4">
         <Card title={t("profile.infoTitle")} testid="card-profile-info">
           <div className="flex flex-col gap-2 text-sm">
