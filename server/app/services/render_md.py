@@ -453,6 +453,15 @@ async def llm_render_md(ir_doc: DocumentIR, result: dict) -> str:
 
 
 # ---------------------------------------------------------------- render from heuristic
+MAX_INDENT_SPACES = 8
+
+def _advance_px(font_px: float) -> float:
+    """Bề rộng 1 space ≈ nửa chiều cao font (font mono ước lượng)."""
+    return max(1.0, 0.5 * font_px)
+
+def indent_px_to_spaces(px: float, font_px: float, limit: int = MAX_INDENT_SPACES) -> int:
+    return max(0, min(limit, int(round(px / _advance_px(font_px)))))
+
 def _fmt_lines(b: Block) -> list[str]:
     lab = b.label
     # P1-R4a/R5: image node text rỗng → marker (ảnh sống sót qua md fallback)
@@ -531,13 +540,23 @@ def _cells_md(cells: list) -> list[str]:
     lines += ["| " + " | ".join(texts(r)) + " |" for i, r in enumerate(cells) if i != h]
     return lines
 
-def _render_band(band: Band) -> list[str]:
+def _render_band(band: Band, page: Page) -> list[str]:
     blk = band.single
     if blk is not None and blk.kind == "table":
         return _cells_md(blk.cells) if blk.cells else _table_md(blk.text)
     body = _fmt_lines(blk) if blk is not None else _render_columns(band)
-    prefix = "\t" * band.indent
-    return [prefix + ln for ln in body]
+    # md không có vị trí thật → thụt lề/căn giữa chỉ là xấp xỉ bằng space.
+    font_px = min(48.0, max(10.0, blk.h / max(1, len(blk.lines)))) if blk else 16.0
+    if blk is None:
+        spaces = indent_px_to_spaces(band.x0 - page.margin, font_px)
+        return [" " * spaces + ln for ln in body]
+    if blk.align in ("center", "right"):
+        col_spaces = int(round((page.right - page.margin) / _advance_px(font_px)))
+        pad = col_spaces - max((len(ln) for ln in body), default=0)
+        spaces = max(0, pad // 2) if blk.align == "center" else max(0, pad)
+    else:
+        spaces = indent_px_to_spaces(blk.x0 - page.margin, font_px)
+    return [" " * spaces + ln for ln in body]
 
 
 def _is_verse_pair(a: Band, b: Band, cw: float) -> bool:
@@ -558,7 +577,7 @@ def render_page(page: Page, bands: list[Band]) -> str:
     out: list[str] = []
     prev: Band | None = None
     for band in bands:
-        lines = _render_band(band)
+        lines = _render_band(band, page)
         if not lines:
             continue
         if prev is not None:

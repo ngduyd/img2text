@@ -2,6 +2,7 @@
 
 import io
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -407,3 +408,56 @@ def test_render_docx_prompt_figure_rid():
     """Prompt: figure node → img crops/{first source_block_id}.png."""
     assert "source_block_ids" in RENDER_DOCX_PROMPT
     assert "crops/" in RENDER_DOCX_PROMPT
+
+# ---------------------------------------------------------------- layout spec (phase 1)
+SAMPLES = Path(__file__).parent / "fixtures" / "layout_samples"
+
+
+def _sample(name: str) -> dict:
+    return json.loads((SAMPLES / f"{name}.json").read_text(encoding="utf-8"))
+
+
+async def test_build_docx_spec_2col_sections_and_cols():
+    """2 cột → 1 section liên tục + w:cols/@w:num=2 + indent + tab stop."""
+    import zipfile
+
+    data = await build_docx(_sample("2col"), use_llm=False)
+    doc = Document(io.BytesIO(data))
+    assert len(doc.sections) == 1
+    xml = zipfile.ZipFile(io.BytesIO(data)).read("word/document.xml").decode()
+    assert '<w:cols w:num="2"' in xml
+    indented = [p for p in doc.paragraphs if (p.paragraph_format.left_indent or 0) > 0]
+    assert indented and indented[0].text.startswith("Đoạn thụt lề")
+    tabbed = [p for p in doc.paragraphs if len(p.paragraph_format.tab_stops) == 1]
+    assert tabbed and tabbed[0].text.startswith("Ký tên:")
+    assert [p.text for p in doc.paragraphs][:3] == [
+        "Cột trái đoạn 1 dòng 1.\nCột trái đoạn 1 dòng 2.",
+        "Đoạn thụt lề dòng 1.\nĐoạn thụt lề dòng 2.",
+        "Ký tên: .....\tTrần B",
+    ]
+
+
+async def test_build_docx_spec_form_tab_leader_dots():
+    """Form → tab stop leader DOTS cho từng hàng nhãn/giá trị."""
+    from docx.enum.text import WD_TAB_LEADER
+
+    data = await build_docx(_sample("form"), use_llm=False)
+    doc = Document(io.BytesIO(data))
+    stops = [list(p.paragraph_format.tab_stops) for p in doc.paragraphs]
+    leaders = [s[0].leader for s in stops if s]
+    assert leaders == [WD_TAB_LEADER.DOTS] * 3
+    assert doc.tables and doc.tables[0].cell(0, 0).text == "STT"
+
+
+async def test_build_docx_spec_1col_single_section_no_cols_override():
+    """1 cột → 1 section, w:cols/@w:num=1, text order giữ nguyên."""
+    import zipfile
+
+    data = await build_docx(_sample("1col"), use_llm=False)
+    doc = Document(io.BytesIO(data))
+    assert len(doc.sections) == 1
+    xml = zipfile.ZipFile(io.BytesIO(data)).read("word/document.xml").decode()
+    assert '<w:cols w:num="1"' in xml
+    texts = [p.text for p in doc.paragraphs]
+    assert texts[0] == "CHƯƠNG 1: MỞ ĐẦU"
+    assert "[ảnh]" in texts

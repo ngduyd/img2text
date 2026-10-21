@@ -1,0 +1,20 @@
+{
+  "model_version": "layout-sample-1col",
+  "gpu_seconds": 0.0,
+  "warnings": [],
+  "pages": [
+    {
+      "index": 0,
+      "width": 800,
+      "height": 1100,
+      "page_flag": "ok",
+      "regions": [
+        {"id": "r0", "bbox": [80, 60, 400, 100], "text": "CHƯƠNG 1: MỞ ĐẦU", "verdict": "ok", "placeholder": false},
+        {"id": "r1", "bbox": [300, 120, 500, 150], "text": "TIÊU ĐỀ GIỮA", "verdict": "ok", "placeholder": false},
+        {"id": "r2", "bbox": [80, 180, 720, 300], "text": "Đoạn văn thứ nhất của trang.\nĐoạn văn thứ hai cùng khối.\nĐoạn văn thứ ba kết khối.", "verdict": "ok", "placeholder": false},
+        {"id": "r3", "bbox": [560, 320, 720, 350], "text": "Ngày 20 tháng 10", "verdict": "ok", "placeholder": false},
+        {"id": "r4", "bbox": [80, 400, 720, 620], "text": "", "verdict": "image_unextractable", "placeholder": true}
+      ]
+    }
+  ]
+}

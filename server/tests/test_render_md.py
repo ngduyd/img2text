@@ -1,6 +1,7 @@
 """render_md tests: IR → LLM render → markdown + fallback geometry-aware."""
 
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -417,3 +418,27 @@ def test_crop_presign_expiry_reduced():
     """P2 #19 (spec 2026-10-16): crop presign window 24h → 1h, configurable qua settings."""
     from app.core.config import settings
     assert settings.crop_presign_expires == 3600
+
+# ---------------------------------------------------------------- layout spec (phase 1)
+SAMPLES = Path(__file__).parent / "fixtures" / "layout_samples"
+
+
+def _sample(name: str) -> dict:
+    return json.loads((SAMPLES / f"{name}.json").read_text(encoding="utf-8"))
+
+
+async def test_build_md_spec_2col_spaces_not_tabs():
+    """Heuristic: thụt lề/căn cột bằng SPACE (không tab thô)."""
+    out = await build_md(_sample("2col"), use_llm=False)
+    assert "\t" not in out
+    assert any(ln.startswith(" ") for ln in out.splitlines())
+    assert "Cột trái đoạn 1 dòng 1." in out
+    assert "Cột phải đoạn 1 dòng 1." in out
+
+
+async def test_build_md_spec_form_keeps_dots():
+    """Form: dấu chấm '.....' giữ nguyên trong md."""
+    out = await build_md(_sample("form"), use_llm=False)
+    assert "....." in out
+    assert "Họ và tên: ........." in out
+    assert "Nguyễn Văn A" in out

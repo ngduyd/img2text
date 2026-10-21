@@ -136,8 +136,8 @@ async def test_build_md_table_block_keeps_md_table(monkeypatch):
     assert "| A | B |" in out and "| 1 | 2 |" in out
 
 
-async def test_build_md_same_bbox_gets_tab_indent(monkeypatch):
-    """Block thụt lề (x0 > margin) → TAB prefix."""
+async def test_build_md_same_bbox_gets_space_indent(monkeypatch):
+    """Block thụt lề (x0 > margin) → prefix SPACE (phase 1: bỏ tab thô)."""
     result = _result([
         _region("r0", [10, 20, 390, 60], "lề trái"),
         _region("r1", [100, 80, 390, 120], "thụt vào"),
@@ -145,7 +145,8 @@ async def test_build_md_same_bbox_gets_tab_indent(monkeypatch):
     fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
     out = await build_md(result, use_llm=False)
     lines = out.splitlines()
-    assert any(l.startswith("\t") for l in lines)
+    assert any(l.startswith(" ") for l in lines)
+    assert not any(l.startswith("\t") for l in lines)
 
 
 async def test_build_md_heading_from_ir(monkeypatch):

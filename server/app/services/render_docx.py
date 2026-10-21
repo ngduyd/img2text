@@ -19,11 +19,16 @@ from dataclasses import dataclass, field
 
 import httpx
 from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.section import WD_SECTION_START
+from docx.enum.text import (
+    WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER,
+)
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Inches, Pt
+from docx.shared import Inches, Pt, Twips
 from docx.table import _Cell
+
+from app.services.layout_spec import BlockSpec, PageSpec, build_page_specs
 
 from app.core.config import settings
 from app.core.db import SessionLocal
@@ -729,6 +734,114 @@ def render_from_heuristic(
     return buf.getvalue()
 
 
+# ---------------------------------------------------------------- render from layout spec
+# 96 dpi giả định (PaddleOCR-VL trả px theo ảnh gốc) — px → twips/pt.
+TWIPS_PER_PX = 1440 / 96
+PT_PER_PX = 72 / 96
+MAX_SPACE_AFTER_PT = 24.0
+MAX_SECTIONS = 8            # vượt → linearize 1 cột (file docx vụn, Word khó sửa)
+SEC_COL_SPACE_TWIPS = "720"
+
+_SPEC_ALIGN = {
+    "left": WD_ALIGN_PARAGRAPH.LEFT,
+    "center": WD_ALIGN_PARAGRAPH.CENTER,
+    "right": WD_ALIGN_PARAGRAPH.RIGHT,
+}
+_SPEC_TAB_ALIGN = {
+    "left": WD_TAB_ALIGNMENT.LEFT,
+    "center": WD_TAB_ALIGNMENT.CENTER,
+    "right": WD_TAB_ALIGNMENT.RIGHT,
+}
+_SPEC_TAB_LEADER = {
+    "none": WD_TAB_LEADER.SPACES,   # val="none" (default OOXML)
+    "dots": WD_TAB_LEADER.DOTS,
+}
+
+
+def _set_section_cols(section, n: int) -> None:
+    """w:cols — python-docx không có API; chèn đúng vị trí schema (trước
+    w:docGrid) chứ không append thô (Word có thể từ chối file)."""
+    sect_pr = section._sectPr
+    for old in sect_pr.findall(qn("w:cols")):
+        sect_pr.remove(old)
+    cols = OxmlElement("w:cols")
+    cols.set(qn("w:num"), str(max(1, n)))
+    cols.set(qn("w:space"), SEC_COL_SPACE_TWIPS)
+    sect_pr.insert_element_before(
+        cols, "w:formProt", "w:vAlign", "w:noEndnote", "w:titlePg",
+        "w:textDirection", "w:bidi", "w:rtlGutter", "w:docGrid",
+        "w:printerSettings", "w:sectPrChange",
+    )
+
+
+def _add_spec_block(doc, blk: BlockSpec) -> None:
+    if blk.kind == "image":
+        run = doc.add_paragraph().add_run(IMAGE_PLACEHOLDER)
+        run.italic = True
+        return
+    if blk.kind == "table":
+        if blk.cells:
+            _add_cells_table(doc, blk.cells)
+        else:
+            _add_html_table(doc, blk.html or blk.text)
+        return
+
+    para = doc.add_paragraph()
+    para.alignment = _SPEC_ALIGN.get(blk.align, WD_ALIGN_PARAGRAPH.LEFT)
+    pf = para.paragraph_format
+    if blk.align == "left" and blk.indent_px > 0.5:
+        pf.left_indent = Twips(round(blk.indent_px * TWIPS_PER_PX))
+    if blk.first_line_indent_px > 0.5:
+        pf.first_line_indent = Twips(round(blk.first_line_indent_px * TWIPS_PER_PX))
+    for tab in blk.tabs:
+        pf.tab_stops.add_tab_stop(
+            Twips(round(tab.pos_px * TWIPS_PER_PX)),
+            _SPEC_TAB_ALIGN.get(tab.align, WD_TAB_ALIGNMENT.LEFT),
+            _SPEC_TAB_LEADER.get(tab.leader, WD_TAB_LEADER.SPACES),
+        )
+    pf.space_before = Pt(0)   # Word cộng space_before + space_after
+    pf.space_after = Pt(
+        min(MAX_SPACE_AFTER_PT, round(blk.space_after_px * PT_PER_PX, 1))
+    )
+    # "\n" → <w:br/>, "\t" → <w:tab/> (python-docx Run.text xử lý sẵn)
+    para.add_run("\n".join(blk.lines or [blk.text]))
+
+
+def _group_pages(pages: list[PageSpec]) -> list[list[PageSpec]]:
+    """Trang liên tiếp cùng số cột → 1 section (linearize nếu quá nhiều)."""
+    groups: list[list[PageSpec]] = []
+    for pg in pages:
+        if groups and len(groups[-1][0].cols) == len(pg.cols):
+            groups[-1].append(pg)
+        else:
+            groups.append([pg])
+    if len(groups) > MAX_SECTIONS:
+        logger.warning(
+            "docx spec: %d section > %d — linearize 1 cột", len(groups), MAX_SECTIONS
+        )
+        return [pages] if pages else []
+    return groups
+
+
+def render_docx_spec(
+    result: dict, style_overrides: dict | None = None
+) -> bytes:
+    """OCR result → DOCX qua layout spec (không LLM, không HTML, không framePr)."""
+    pages = build_page_specs(result)
+    doc = Document()
+    for gi, group in enumerate(_group_pages(pages)):
+        if gi:
+            doc.add_section(WD_SECTION_START.CONTINUOUS)
+        _set_section_cols(doc.sections[-1], len(group[0].cols))
+        for pg in group:
+            for blk in pg.blocks:
+                _add_spec_block(doc, blk)
+    if style_overrides:
+        _apply_style_overrides(doc, style_overrides)
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
 # tỉ lệ heuristic fallback / tổng lần build — quan sát model free echo/envelope
 _FALLBACK_STATS = {"fallback": 0, "total": 0}
 
@@ -772,5 +885,5 @@ async def build_docx(
             logger.warning("HEURISTIC FALLBACK render — layout tạm: %r", exc)
             _log_fallback(exc)
 
-    # Heuristic fallback
-    return render_from_heuristic(result, style_overrides)
+    # Heuristic fallback → layout spec tất định
+    return render_docx_spec(result, style_overrides)
