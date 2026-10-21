@@ -267,7 +267,9 @@
     "delCol": "Xóa cột",
     "col": "Cột",
     "tableInsert": "Chèn bảng {r}×{c}",
-    "tablePick": "Chọn bảng (tối đa 10×10)"
+    "tablePick": "Chọn bảng (tối đa 10×10)",
+    "pagesUnit": "trang",
+    "pagePreviewAria": "Xem trước trang A4"
   },
   "extraction": {
     "title": "Trích xuất văn bản",

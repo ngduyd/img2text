@@ -267,7 +267,9 @@
     "delCol": "Delete column",
     "col": "column",
     "tableInsert": "Insert table {r}×{c}",
-    "tablePick": "Pick a table (max 10×10)"
+    "tablePick": "Pick a table (max 10×10)",
+    "pagesUnit": "pages",
+    "pagePreviewAria": "A4 page preview"
   },
   "extraction": {
     "title": "Text extraction",
