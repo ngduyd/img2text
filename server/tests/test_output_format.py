@@ -23,16 +23,15 @@ def _put_keys(storage_spy) -> list[str]:
 def md_llm_down(monkeypatch):
     """IR rewrite: build_md raises → auto-gen md takes the plain-md fallback path."""
     def _down(*args, **kwargs):
-        from app.services.render_md import LLMError
-        raise LLMError("LLM down (test)")
+        raise RuntimeError("render down (test)")
     monkeypatch.setattr("app.routers.exports.build_md", _down)
 
 @pytest.fixture
-def docx_llm_down(monkeypatch):
+def docx_render_down(monkeypatch):
     """build_docx raises → auto-gen docx-layout skipped (warning)."""
     def _down(*args, **kwargs):
-        from app.services.render_docx import LLMError
-        raise LLMError("LLM down (test)")
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail="render down (test)")
     monkeypatch.setattr("app.routers.exports.build_docx", _down)
 
 async def test_upload_defaults_to_md(upload, db_session):
@@ -68,7 +67,7 @@ async def test_get_job_returns_output_format(upload, auth_client, db_session):
     assert r.json()["output_format"] == "md"
 
 async def test_worker_result_auto_generates_md(
-    worker_client, seed_job, storage_spy, db_session, VALID_RESULT_JSONB, md_llm_down, docx_llm_down
+    worker_client, seed_job, storage_spy, db_session, VALID_RESULT_JSONB, md_llm_down, docx_render_down
 ):
     """POST /result → exports/{id}/md written in background; BOTH layouts
     fail (spec 2026-10-09) → job failed + failed_step="rendering" — the
@@ -89,7 +88,7 @@ async def test_worker_result_auto_generates_md(
     job = await db_session.get(Job, seed_job)
     assert job.status == "failed" and job.failed_step == "rendering"
 
-async def test_auto_docx_llm_down_warns_and_job_stays_done(
+async def test_auto_docx_render_down_warns_and_job_stays_done(
     upload,
     worker_client,
     storage_spy,
@@ -103,8 +102,8 @@ async def test_auto_docx_llm_down_warns_and_job_stays_done(
     jid = r.json()["id"]
 
     def _llm_down(*args, **kwargs):
-        from app.services.render_docx import LLMError
-        raise LLMError("LLM down")
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail="render down")
 
     async def _md_ok(*args, **kwargs):
         return "# layout md"  # the "one format OK" half of the rule
@@ -135,37 +134,7 @@ async def test_auto_docx_success_stores_docx_layout_key(
     monkeypatch,
     md_llm_down,
 ):
-    """IR rewrite: LLM bytes go to exports/{id}/docx-layout."""
-    import json
-
-    from tests.test_export_llm_docx import FakeResponse, fake_llm
-
-    ir_response = json.dumps({
-        "document_id": "doc_001",
-        "schema_version": "1.0",
-        "pages": [{
-            "page_id": "page_001",
-            "page_number": 1,
-            "header": [],
-            "content": [
-                {
-                    "id": "node_001",
-                    "type": "heading",
-                    "role": "section_heading",
-                    "text": "Xin chào",
-                    "align": "left",
-                    "indent": 0,
-                    "source_block_ids": ["r0"],
-                    "children": [],
-                }
-            ],
-            "footer": [],
-        }],
-    })
-    fake_llm(monkeypatch, [
-        FakeResponse(ir_response),
-        FakeResponse("<h2>Xin chào</h2>"),
-    ])
+    """layout_spec docx bytes go to exports/{id}/docx-layout (0 LLM)."""
     r = await upload(TEST_JPEG, "a.jpg", output_format="docx")
     jid = r.json()["id"]
     claim = await worker_client.get("/api/jobs/next")
@@ -192,40 +161,10 @@ async def test_auto_generates_both_formats(
 ):
     """User request: auto-gen writes BOTH md-layout AND docx-layout regardless
     of output_format — viewing never waits for LLM."""
-    import json
-
-    from tests.test_export_llm_docx import FakeResponse, fake_llm
-
     async def _md_ok(*args, **kwargs):
         return "# layout md"
 
-    ir_response = json.dumps({
-        "document_id": "doc_001",
-        "schema_version": "1.0",
-        "pages": [{
-            "page_id": "page_001",
-            "page_number": 1,
-            "header": [],
-            "content": [
-                {
-                    "id": "node_001",
-                    "type": "heading",
-                    "role": "section_heading",
-                    "text": "Xin chào",
-                    "align": "left",
-                    "indent": 0,
-                    "source_block_ids": ["r0"],
-                    "children": [],
-                }
-            ],
-            "footer": [],
-        }],
-    })
     monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
-    fake_llm(monkeypatch, [
-        FakeResponse(ir_response),
-        FakeResponse("<h2>Xin chào</h2>"),
-    ])
     r = await upload(TEST_JPEG, "a.jpg", output_format="md")
     jid = r.json()["id"]
     claim = await worker_client.get("/api/jobs/next")
@@ -246,7 +185,7 @@ async def test_auto_generates_both_formats(
     assert docx_data[:2] == b"PK"
 
 async def test_store_batch_result_schedules_md_export(
-    db_session, seed_job, storage_spy, VALID_RESULT_JSONB, md_llm_down, docx_llm_down
+    db_session, seed_job, storage_spy, VALID_RESULT_JSONB, md_llm_down, docx_render_down
 ):
     """Kaggle ingest path (store_batch_result) schedules the same export."""
     body = ResultBody.model_validate(VALID_RESULT_JSONB)

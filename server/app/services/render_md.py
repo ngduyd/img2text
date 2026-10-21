@@ -1,8 +1,8 @@
-"""render_md: OCR result → Markdown via LLM IR or heuristic fallback.
+"""render_md: OCR result → Markdown via layout_spec (0 LLM calls).
 
 Flow:
-  1. use_llm=True → LLM (space-bunny) → IR JSON → validate_ir() → render MD
-  2. Fallback (LLM down / use_llm=False) → heuristic geometry-aware
+  1. render_md_spec() — layout spec tất định (cột/indent/tab/heading)
+  2. spec rỗng (0 block) → heuristic band model cũ (geometry-aware)
 
 Heuristic fallback copied from llm_md.py: _build_bands, _cluster_columns,
 _render_band, _indent_of, _same_cluster.
@@ -13,7 +13,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import html
-import json
 import logging
 import re
 import statistics
@@ -27,7 +26,7 @@ from app.core.config import settings
 from app.core.db import SessionLocal
 from app.core.schemas import IMAGE_MARKER
 from app.services.ir import (
-    DocumentIR, IRPageError, IR_PROMPT, llm_ir_pages, validate_ir, IRValidationError,
+    IRPageError, llm_ir_pages, validate_ir, IRValidationError,
 )
 from app.services.layout_spec import BlockSpec, PageSpec, build_page_specs
 from app.services.runtime_settings import get_runtime_setting
@@ -50,7 +49,6 @@ TEXT_PREVIEW = 160
 _TABLE_CELL_RE = re.compile(r"<t[dh][^>]*>(.*?)</t[dh]>", re.DOTALL | re.IGNORECASE)
 _TABLE_ROW_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.DOTALL | re.IGNORECASE)
 _TAG_RE = re.compile(r"<[^>]+>")
-_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 _HEAD_RE = re.compile(r"^(câu|bài|phần|chương|mục|question|part|section)\s*[\dIVXivx]+", re.I)
 _ROMAN_RE = re.compile(r"^[IVX]+[.)]\s")
 
@@ -373,19 +371,6 @@ async def llm_ir(result: dict) -> dict:
 
 
 # ---------------------------------------------------------------- render from IR
-def _unwrap_envelope(text: str, keys: tuple[str, ...]) -> str:
-    """JSON envelope {\"output\": ...} → field string. Fail → LLMError (heuristic)."""
-    try:
-        obj, _ = json.JSONDecoder().raw_decode(text)
-    except (ValueError, TypeError) as exc:
-        raise LLMError(f"LLM render JSON hỏng: {exc}") from exc
-    if isinstance(obj, dict):
-        for key in keys:
-            val = obj.get(key)
-            if isinstance(val, str) and val.strip():
-                return val
-    raise LLMError(f"LLM render JSON thiếu field {'/'.join(keys)}")
-
 def _table_md(html_text: str) -> list[str]:
     rows: list[list[str]] = []
     for row in _TABLE_ROW_RE.findall(html_text):
@@ -405,55 +390,6 @@ def _table_md(html_text: str) -> list[str]:
     return out
 
 
-RENDER_MD_PROMPT = (
-    "You are a document layout renderer. Given a Document IR (nodes with bbox, "
-    "type, role, align, indent) and page dimensions, render Markdown.\n"
-    "Use bbox for layout: alignment, indentation, spacing.\n"
-    "Map IR type → markdown: heading → # (document_title → #, else ##), "
-    "paragraph → text, list → - item, poem → indented lines (4 spaces), "
-    "table → markdown table (parse <table> HTML), quote → >, caption → *italic*, "
-    "figure → [figure: text], formula → ```\\n...\\n```, separator → ---, "
-    "footnote → [text], form_field → [form: text], page_number → skip.\n"
-    "Empty zones (header/content/footer = []) → render NOTHING for that zone; "
-    "do NOT invent content for missing zones. A page may have only content, "
-    "only header+content, etc.\n"
-    "Output raw markdown only (no code fences).\n"
-    "Output raw only — do NOT wrap in JSON.\n\n"
-    "Pages (index → width/height): {page_dims}\n"
-    "Document IR:\n{ir_json}"
-)
-
-def _page_dims(result: dict) -> list[dict]:
-    return [
-        {"index": i, "width": pg.get("width"), "height": pg.get("height")}
-        for i, pg in enumerate(result.get("pages", []))
-    ]
-
-async def llm_render_md(ir_doc: DocumentIR, result: dict) -> str:
-    """Render DocumentIR → markdown via LLM (dùng bbox cho layout)."""
-    content = RENDER_MD_PROMPT.replace(
-        "{page_dims}", json.dumps(_page_dims(result), ensure_ascii=False)
-    ).replace("{ir_json}", ir_doc.model_dump_json())
-    raw = await _chat(content, json_mode=False)
-    text = raw.strip()
-    m = _FENCE_RE.match(text)
-    if m:
-        text = m.group(1).strip()
-    if not text:
-        raise LLMError("LLM render trả về rỗng")
-    # Model free thường bọc markdown trong JSON envelope {"output": ...}
-    # hoặc echo IR JSON → unwrap field; thiếu/parsing fail → LLMError →
-    # heuristic (markdown thô KHÔNG bao giờ bắt đầu bằng {).
-    if text.startswith("{"):
-        text = _unwrap_envelope(text, ("output", "markdown")).strip()
-        if not text:
-            raise LLMError("LLM render trả về rỗng")
-    return text
-
-
-
-
-# ---------------------------------------------------------------- render from heuristic
 MAX_INDENT_SPACES = 8
 
 def _advance_px(font_px: float) -> float:
@@ -764,40 +700,14 @@ async def embed_crop_urls(markdown: str, job_id: int, storage) -> str:
     return markdown
 
 # ---------------------------------------------------------------- main API
-# tỉ lệ heuristic fallback / tổng lần build — quan sát model free echo/envelope
-_FALLBACK_STATS = {"fallback": 0, "total": 0}
-
-
-def _log_fallback(exc: Exception) -> None:
-    _FALLBACK_STATS["fallback"] += 1
-    logger.warning(
-        "HEURISTIC FALLBACK %s — tỉ lệ %d/%d",
-        type(exc).__name__, _FALLBACK_STATS["fallback"], _FALLBACK_STATS["total"],
-    )
-
 async def build_md(
     result: dict, use_llm: bool = True, ir_sink: dict | None = None
 ) -> str:
-    """Build markdown from OCR result.
+    """Build markdown from OCR result — layout_spec only (0 LLM call).
 
-    1. use_llm=True → LLM → IR → validate → render
-    2. Fallback → heuristic geometry-aware
-
-    ir_sink: optional dict filled with the validated IR on the LLM path —
-    auto-gen reuses that single IR for job.ir_json (no extra LLM call).
+    ponytail: use_llm/ir_sink giữ cho tương thích test; xoá khi test đã cập nhật.
+    Spec rỗng (không block) → heuristic band model cũ.
     """
-    _FALLBACK_STATS["total"] += 1
-    if use_llm:
-        try:
-            ir_dict = await llm_ir(result)
-            ir_doc = validate_ir(ir_dict, result)
-            if ir_sink is not None:
-                ir_sink.update(ir_dict)
-            return await llm_render_md(ir_doc, result)
-        except (LLMError, IRValidationError) as exc:
-            logger.warning("HEURISTIC FALLBACK render — layout tạm: %r", exc)
-            _log_fallback(exc)
-
     # Heuristic fallback: layout spec (phase 1b) trước — cột đọc hết trái rồi
     # phải; spec rỗng (không block) → đường band model cũ.
     spec_md = render_md_spec(result)

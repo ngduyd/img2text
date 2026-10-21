@@ -548,9 +548,8 @@ async def test_ir_page_prompt_shape():
     assert "§1 Tiêu đề" in seen[0]
     assert "p0_b0" in seen[0]
 
-async def test_render_modules_delegate_shared_ir(monkeypatch):
-    """render_md.llm_ir + render_docx.llm_ir dùng chung llm_ir_pages (1 logic)."""
-    import app.services.render_docx as rd
+async def test_render_md_delegates_shared_ir(monkeypatch):
+    """render_md.llm_ir (dùng cho /ir on-demand) delegate llm_ir_pages (1 logic)."""
     import app.services.render_md as rm
     fake_doc = {"document_id": "d", "schema_version": "1.0", "pages": []}
     seen = {}
@@ -558,9 +557,8 @@ async def test_render_modules_delegate_shared_ir(monkeypatch):
         seen["chat"] = chat_fn
         return fake_doc
     monkeypatch.setattr(rm, "llm_ir_pages", fake_pages)
-    monkeypatch.setattr(rd, "llm_ir_pages", fake_pages)
     assert await rm.llm_ir({"pages": []}) is fake_doc
-    assert await rd.llm_ir({"pages": []}) is fake_doc
+    assert "chat" in seen
 
 
 # --- Lane S Task 6: prompt rules (S4/S3) + validator warning ---
