@@ -27,25 +27,41 @@ function Reveal({
 }
 
 /**
- * Product screenshot. File may not exist yet (capture script chua chay):
- * onError anh hien tai, chuoi caption van doc duoc (khong lo an, khong vo build).
+ * Mock tĩnh thay cho 6 slot screenshot (ảnh chưa từng được capture → onError
+ * chỉ để lại ô rỗng). Thuần div, không network, đọc được cả khi ảnh/bundle lỗi.
  */
-function Shot({ src, alt, caption }: { src: string; alt: string; caption: string }) {
+function Mock() {
   return (
-    <figure data-testid="gallery-shot" className="overflow-hidden">
-      <img
-        src={src}
-        alt={alt}
-        loading="lazy"
-        onError={(e) => {
-          e.currentTarget.style.visibility = "hidden";
-          e.currentTarget.style.aspectRatio = "16 / 10";
-          e.currentTarget.style.width = "100%";
-        }}
-        className="aspect-[16/10] w-full rounded-md border border-border bg-surface object-cover object-top"
-      />
-      <figcaption className="mt-2 text-sm text-muted">{caption}</figcaption>
-    </figure>
+    <div
+      data-testid="landing-mock"
+      aria-hidden="true"
+      className="overflow-hidden rounded-card border border-border bg-surface shadow-card"
+    >
+      <div className="flex items-center gap-1.5 border-b border-border px-3 py-2">
+        <span className="h-2 w-2 rounded-full bg-border" />
+        <span className="h-2 w-2 rounded-full bg-border" />
+        <span className="h-2 w-2 rounded-full bg-border" />
+        <span className="ml-2 h-2 w-24 rounded-full bg-surface-2" />
+      </div>
+      <div className="grid grid-cols-[1fr_1fr] gap-3 p-3">
+        <div className="flex flex-col gap-2 rounded-sm border border-dashed border-border p-2">
+          <span className="h-2 w-10 rounded-full bg-surface-2" />
+          {[70, 88, 62, 80].map((w, i) => (
+            <span key={i} className="h-1.5 rounded-full bg-surface-2" style={{ width: `${w}%` }} />
+          ))}
+        </div>
+        <div className="flex flex-col gap-2 rounded-sm bg-white p-2">
+          <span className="h-1.5 w-3/4 rounded-full bg-neutral-300" />
+          {[92, 78, 86, 55].map((w, i) => (
+            <span
+              key={i}
+              className="h-1.5 rounded-full bg-neutral-200"
+              style={{ width: `${w}%` }}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -64,75 +80,10 @@ const HOW_STEPS = [
   },
 ];
 
-type Feature = {
-  titleKey: string;
-  bodyKey: string;
-  className?: string;
-};
-
-const FEATURES: Feature[] = [
-  {
-    titleKey: "landing.features.f1.title",
-    bodyKey: "landing.features.f1.body",
-    className: "md:col-span-2",
-  },
-  {
-    titleKey: "landing.features.f2.title",
-    bodyKey: "landing.features.f2.body",
-    className: "bg-accent/10 border-accent/30",
-  },
-  {
-    titleKey: "landing.features.f3.title",
-    bodyKey: "landing.features.f3.body",
-  },
-  {
-    titleKey: "landing.features.f4.title",
-    bodyKey: "landing.features.f4.body",
-  },
-  {
-    titleKey: "landing.features.f5.title",
-    bodyKey: "landing.features.f5.body",
-  },
-];
+/** "Sắp có" — gộp nội dung trang /features cũ vào Landing (roadmap). */
+const ROADMAP = ["features.workers", "features.storage", "features.members"] as const;
 
 const INPUT_FORMATS = ["JPG", "PNG", "WebP", "PDF"];
-
-/**
- * 6 slot ảnh thật (spec §User-facing #8): hero, login, jobdetail 2 section,
- * layout preview, export, admin. File chưa capture → onError placeholder.
- */
-const GALLERY = [
-  {
-    src: "/screenshots/landing-hero.png",
-    altKey: "landing.gallery.g1.alt",
-    captionKey: "landing.gallery.g1.caption",
-  },
-  {
-    src: "/screenshots/login.png",
-    altKey: "landing.gallery.g2.alt",
-    captionKey: "landing.gallery.g2.caption",
-  },
-  {
-    src: "/screenshots/jobdetail.png",
-    altKey: "landing.gallery.g3.alt",
-    captionKey: "landing.gallery.g3.caption",
-  },
-  {
-    src: "/screenshots/layout-preview.png",
-    altKey: "landing.gallery.g4.alt",
-    captionKey: "landing.gallery.g4.caption",
-  },
-  {
-    src: "/screenshots/export-menu.png",
-    altKey: "landing.gallery.g5.alt",
-    captionKey: "landing.gallery.g5.caption",
-  },
-  {
-    src: "/screenshots/admin-users.png",
-    altKey: "landing.gallery.g6.alt",
-    captionKey: "landing.gallery.g6.caption",
-  },
-];
 
 export default function Landing() {
   const reduce = useReducedMotion();
@@ -142,7 +93,7 @@ export default function Landing() {
       {/* Hero: split, clamp typography, motion entry. */}
       <section
         data-testid="landing-hero"
-        className="grid items-center gap-10 pt-16 pb-16 md:grid-cols-[1.1fr_1fr] md:pt-24"
+        className="grid items-center gap-10 pt-16 pb-16 md:grid-cols-[3fr_2fr] md:pt-24"
       >
         <motion.div
           initial={reduce ? false : { opacity: 0, y: 24 }}
@@ -165,11 +116,7 @@ export default function Landing() {
           </div>
         </motion.div>
         <Reveal>
-          <Shot
-            src="/screenshots/landing-hero.png"
-            alt={t("landing.hero.alt")}
-            caption={t("landing.hero.caption")}
-          />
+          <Mock />
         </Reveal>
       </section>
 
@@ -191,27 +138,23 @@ export default function Landing() {
         </ol>
       </section>
 
-      {/* Features: bento, exactly 5 cells, 2-span + tinted cell for rhythm. */}
-      <section data-testid="landing-features" className="py-16 md:py-24">
-        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("landing.featuresTitle")}</h2>
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
-          {FEATURES.map((f) => (
-            <div
-              key={f.titleKey}
-              data-testid="feature-cell"
-              className={`rounded-card border border-border bg-surface p-5 ${f.className ?? ""}`}
+      {/* Roadmap "Sắp có": 3 hạng mục đang làm + dải định dạng hỗ trợ. */}
+      <section data-testid="landing-roadmap" id="roadmap" className="py-16 md:py-24">
+        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("landing.roadmapTitle")}</h2>
+        <ul className="mt-8 grid gap-4 md:grid-cols-3">
+          {ROADMAP.map((key) => (
+            <li
+              key={key}
+              data-testid="roadmap-item"
+              className="rounded-card border border-border bg-surface p-5"
             >
-              <h3 className="text-lg font-semibold">{t(f.titleKey)}</h3>
-              <p className="mt-1 text-muted">{t(f.bodyKey)}</p>
-            </div>
+              <h3 className="text-lg font-semibold">{t(`${key}.title`)}</h3>
+              <p className="mt-1 text-muted">{t(`${key}.desc`)}</p>
+            </li>
           ))}
-        </div>
-      </section>
-
-      {/* Formats strip: nhận vào / xuất ra + Colab. */}
-      <section data-testid="landing-formats" className="py-16 md:py-24">
-        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("landing.formatsTitle")}</h2>
-        <div className="mt-8 space-y-4">
+        </ul>
+        <div data-testid="landing-formats" className="mt-10 space-y-4">
+          <h3 className="text-lg font-semibold">{t("landing.formatsTitle")}</h3>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium">{t("landing.inputLabel")}</span>
             {INPUT_FORMATS.map((fmt) => (
@@ -229,16 +172,6 @@ export default function Landing() {
             ))}
           </div>
           <p className="text-muted">{t("landing.colab")}</p>
-        </div>
-      </section>
-
-      {/* Gallery: real screenshots (placeholder-friendly khi anh chua chup). */}
-      <section data-testid="landing-gallery" className="py-16 md:py-24">
-        <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("landing.galleryTitle")}</h2>
-        <div className="mt-8 grid gap-6 sm:grid-cols-2">
-          {GALLERY.map((shot) => (
-            <Shot key={shot.src} src={shot.src} alt={t(shot.altKey)} caption={t(shot.captionKey)} />
-          ))}
         </div>
       </section>
 

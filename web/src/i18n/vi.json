@@ -559,9 +559,7 @@
   "landing": {
     "hero": {
       "title": "Biến ảnh và PDF thành văn bản sửa được",
-      "sub": "Ảnh chụp đề thi, sách, tài liệu scan thành văn bản có cấu trúc. Sửa từng vùng lỗi, xuất file bạn cần.",
-      "alt": "Giao diện img2text trên nền tối",
-      "caption": "Toàn bộ trang trên nền tối."
+      "sub": "Ảnh chụp đề thi, sách, tài liệu scan thành văn bản có cấu trúc. Sửa từng vùng lỗi, xuất file bạn cần."
     },
     "cta": "Bắt đầu",
     "howLink": "Xem cách hoạt động",
@@ -607,34 +605,8 @@
     "inputLabel": "Nhận vào:",
     "outputLabel": "Xuất ra:",
     "colab": "Chạy miễn phí trên Google Colab.",
-    "galleryTitle": "Xem trước",
-    "gallery": {
-      "g1": {
-        "alt": "Trang chủ img2text trên nền tối",
-        "caption": "Trang chủ: hero và lời kêu gọi bắt đầu."
-      },
-      "g2": {
-        "alt": "Màn hình đăng nhập img2text",
-        "caption": "Đăng nhập bằng email và mật khẩu."
-      },
-      "g3": {
-        "alt": "JobDetail 2 section: Văn bản trên, Layout dưới",
-        "caption": "JobDetail 2 section: Văn bản và Layout cuộn dọc."
-      },
-      "g4": {
-        "alt": "Bản xem trước layout dựng trang có format",
-        "caption": "Layout dựng trang có format, giữ cột và canh lề gốc."
-      },
-      "g5": {
-        "alt": "Thanh xuất file với 2 nhóm Văn bản và Layout",
-        "caption": "Xuất file: nhóm Văn bản và nhóm Layout."
-      },
-      "g6": {
-        "alt": "Bảng quản trị người dùng",
-        "caption": "Admin quản trị người dùng và quota."
-      }
-    },
-    "finalTitle": "Tải ảnh đầu tiên của bạn"
+    "finalTitle": "Tải ảnh đầu tiên của bạn",
+    "roadmapTitle": "Sắp có"
   },
   "jobs": {
     "title": "Công việc",

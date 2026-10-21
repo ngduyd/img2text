@@ -325,6 +325,16 @@ it("/word and /edit redirect to / (standalone /edit page removed; R51 user instr
   }
 });
 
+// D6: trang /features gộp vào Landing → bookmark cũ redirect /#roadmap.
+it("/features redirects to / with the roadmap anchor", async () => {
+  vi.mocked(api.me).mockRejectedValue(new ApiError("Unauthorized."));
+  window.history.pushState({}, "", "/features");
+  render(<App />);
+  expect(await screen.findByTestId("landing-roadmap")).toBeInTheDocument();
+  expect(window.location.pathname).toBe("/");
+  expect(window.location.hash).toBe("#roadmap");
+});
+
 it("hamburger toggle: aria-expanded/controls/label, opens mobile menu, closes on link click", async () => {
   render(<App />);
   const toggle = screen.getByTestId("nav-menu-toggle");

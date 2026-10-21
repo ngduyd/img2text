@@ -18,7 +18,6 @@ import JobDetail from "./pages/JobDetail";
 import ExtractionPage from "./pages/ExtractionPage";
 import Jobs from "./pages/Jobs";
 import Storage from "./pages/Storage";
-import Features from "./pages/Features";
 import Landing from "./pages/Landing";
 import Signin from "./pages/Signin";
 import Profile from "./pages/Profile";
@@ -400,7 +399,8 @@ export default function App() {
             <Route path="/word" element={<Navigate to="/" replace />} />
             <Route path="/admin" element={<Admin />} />
             {/* Lane B1: trang "In the feature" — bản kế tiếp (Organizations). */}
-            <Route path="/features" element={<Features />} />
+            {/* Roadmap gộp vào Landing: bookmark cũ → /#roadmap. */}
+            <Route path="/features" element={<Navigate to="/#roadmap" replace />} />
             <Route path="/storage" element={<Storage />} />
           </Routes>
           {/* Global footer: mọi trang, dưới Routes (App không dùng Outlet). */}

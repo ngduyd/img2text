@@ -559,9 +559,7 @@
   "landing": {
     "hero": {
       "title": "Turn photos and PDFs into editable text",
-      "sub": "Scan exams, books, and documents into structured text. Fix problem areas and export the file you need.",
-      "alt": "img2text home page on a dark background",
-      "caption": "The whole page on a dark background."
+      "sub": "Scan exams, books, and documents into structured text. Fix problem areas and export the file you need."
     },
     "cta": "Get started",
     "howLink": "See how it works",
@@ -607,34 +605,8 @@
     "inputLabel": "Input:",
     "outputLabel": "Output:",
     "colab": "Runs free on Google Colab.",
-    "galleryTitle": "Preview",
-    "gallery": {
-      "g1": {
-        "alt": "img2text home page on a dark background",
-        "caption": "Home: hero and call to action."
-      },
-      "g2": {
-        "alt": "img2text sign-in screen",
-        "caption": "Sign in with email and password."
-      },
-      "g3": {
-        "alt": "JobDetail two sections: text on top, layout below",
-        "caption": "JobDetail: text and layout scroll together."
-      },
-      "g4": {
-        "alt": "Preview of a formatted layout page",
-        "caption": "Formatted layout, keeping columns and margins."
-      },
-      "g5": {
-        "alt": "Export bar with Text and Layout groups",
-        "caption": "Export: text group and layout group."
-      },
-      "g6": {
-        "alt": "Admin user table",
-        "caption": "Admin manages users and quota."
-      }
-    },
-    "finalTitle": "Upload your first page"
+    "finalTitle": "Upload your first page",
+    "roadmapTitle": "Coming soon"
   },
   "jobs": {
     "title": "Jobs",
