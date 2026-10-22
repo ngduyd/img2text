@@ -388,7 +388,11 @@ def bootstrap_venv(progress=None, parent_deps: bool = True) -> None:
     print("venv deps:\n" + _paddle_check.stdout.strip())
     notify("paddle")
 
-    bind_runtime_modules()
+    if parent_deps:
+        # Chỉ parent-phase cần globals (job chạy ngay trong kernel python).
+        # Session (parent_deps=False) xử lý job trong venv child → child tự
+        # gọi bind_runtime_modules(); kernel python 3.13 không có cv2.
+        bind_runtime_modules()
     notify("model")
 
 if __name__ == "__main__":
