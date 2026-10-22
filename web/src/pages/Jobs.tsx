@@ -298,7 +298,7 @@ export default function Jobs() {
 
       {/* Phase 4: select-all trang hiện tại — chọn đúng các hàng đang thấy. */}
       {!isLoading && items.length > 0 && (
-        <label className="mb-2 inline-flex cursor-pointer items-center gap-2 text-sm text-muted">
+        <label className="mb-2 inline-flex min-h-6 cursor-pointer items-center gap-2 text-sm text-muted">
           <input
             type="checkbox"
             data-testid="select-all-page"
@@ -306,7 +306,7 @@ export default function Jobs() {
             onChange={() =>
               setSelected(allVisibleSelected ? new Set() : new Set(visible.map((j) => j.id)))
             }
-            className="h-4 w-4 accent-accent"
+            className="h-6 w-6 accent-accent"
           />
           {t("jobs.selectAll")}
         </label>

@@ -383,7 +383,8 @@ export default function TextSection({
                       ? `suggestion-mark-${seg.sid}-${seg.occurrence}`
                       : `suggestion-mark-${seg.sid}`
                   }
-                  className="rounded-sm bg-warning/20 underline decoration-dotted underline-offset-2"
+                  /* text-text: UA stylesheet đặt mark{color:black} → chữ đen trên nền tối (1.2:1). */
+                  className="rounded-sm bg-warning/20 text-text underline decoration-dotted underline-offset-2"
                 >
                   <button
                     type="button"

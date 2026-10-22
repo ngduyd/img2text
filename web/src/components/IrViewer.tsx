@@ -34,7 +34,7 @@ export default function IrViewer({ jobId, status }: { jobId: number | string; st
         aria-expanded={open}
         aria-controls="ir-json"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full cursor-pointer items-center justify-between gap-2 text-sm font-semibold text-text focus-visible:outline-2 focus-visible:outline-accent"
+        className="flex min-h-9 w-full cursor-pointer items-center justify-between gap-2 text-sm font-semibold text-text focus-visible:outline-2 focus-visible:outline-accent"
       >
         IR (JSON)
         <ChevronDown className={`h-4 w-4 text-muted transition-transform ${open ? "rotate-180" : ""}`} aria-hidden="true" />

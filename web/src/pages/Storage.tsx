@@ -157,13 +157,14 @@ export default function Storage() {
               /* P1-2/AC13: skeleton khớp bảng — 5 cột + actions × 4 hàng. */
               <div data-testid="storage-own-table-loading" aria-hidden="true" className="space-y-2 py-2">
                 {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="grid grid-cols-6 gap-3">
+                  /* 320px: 6 cột không vừa (skeleton w-16 đẩy ~10px tràn ngang). */
+                  <div key={i} className="grid grid-cols-3 gap-3 sm:grid-cols-6">
                     <Skeleton className="h-4 w-full" />
                     <Skeleton className="h-4 w-full" />
                     <Skeleton className="h-4 w-full" />
                     <Skeleton className="h-4 w-full" />
                     <Skeleton className="h-4 w-full" />
-                    <Skeleton className="h-4 w-16" />
+                    <Skeleton className="h-4 w-full" />
                   </div>
                 ))}
               </div>
@@ -176,7 +177,7 @@ export default function Storage() {
                 action={
                   <Link
                     to="/jobs"
-                    className="text-sm font-medium text-accent-text transition duration-150 ease-out hover:underline"
+                    className="inline-flex min-h-6 items-center text-sm font-medium text-accent-text transition duration-150 ease-out hover:underline"
                   >
                     {t("jobs.emptyCta")}
                   </Link>
@@ -208,7 +209,7 @@ export default function Storage() {
                             <Link
                               to={`/jobs/${j.id}`}
                               title={j.filename}
-                              className="block truncate text-accent-text transition duration-150 ease-out hover:underline"
+                              className="flex min-h-6 items-center truncate text-accent-text transition duration-150 ease-out hover:underline"
                             >
                               {j.filename}
                             </Link>

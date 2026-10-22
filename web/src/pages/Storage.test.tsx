@@ -171,11 +171,11 @@ test("empty state composed: icon + title + body + CTA → /jobs (AC12)", async (
   expect(cta.getAttribute("href")).toBe("/jobs");
 });
 
-test("loading: skeleton khớp layout table — 6 cột × 4 hàng (AC13)", async () => {
+test("loading: skeleton khớp layout table — 4 hàng, 3 cột mobile / 6 cột ≥sm (AC13)", async () => {
   listJobs.mockReturnValue(new Promise(() => {})); // treo vô hạn
   renderPage();
   const sk = await screen.findByTestId("storage-own-table-loading");
-  expect(sk.querySelectorAll(".grid.grid-cols-6").length).toBe(4);
+  expect(sk.querySelectorAll(".grid.grid-cols-3").length).toBe(4);
   expect(screen.getByTestId("storage-own-loading")).toBeTruthy();
 });
 

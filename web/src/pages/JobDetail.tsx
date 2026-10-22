@@ -206,7 +206,12 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
           đẩy nội dung xuống ~440px; giờ nội dung bắt đầu ở ~150px. */}
       <header
         data-testid="job-header"
-        className="lg:sticky lg:top-16 z-10 -mx-4 mb-4 flex flex-wrap items-center gap-x-2 gap-y-2 border-b border-border bg-surface/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6"
+        /* overview dùng shell `data` (main có px-4) → -mx để tràn viền; text/layout
+           dùng shell `editor` (main px-0) → -mx sẽ tràn ngang 16px ở 320px. */
+        className={[
+          "lg:sticky lg:top-16 z-10 mb-4 flex flex-wrap items-center gap-x-2 gap-y-2 border-b border-border bg-surface/95 px-4 py-2 backdrop-blur sm:px-6",
+          section === "overview" ? "-mx-4 sm:-mx-6" : "",
+        ].join(" ")}
       >
         <Link
           to="/jobs"
@@ -219,13 +224,13 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
         </Link>
         <h1 className="flex min-w-0 items-center gap-2 text-base font-semibold tracking-tight">
           <span className="font-mono text-muted">#{job.id}</span>
-          <span className="max-w-[22ch] truncate">{job.filename || t("jd.title")}</span>
+          <span className="max-w-[10ch] truncate sm:max-w-[22ch]">{job.filename || t("jd.title")}</span>
         </h1>
         <Badge tone={STATUS_TONE[job.status]}>{t(STATUS_KEY[job.status])}</Badge>
         <nav
           data-testid="job-subnav"
           aria-label={t("jd.subnavAria")}
-          className="flex items-center gap-0.5 sm:ml-2"
+          className="-mx-1 flex min-w-0 max-w-full items-center gap-0.5 overflow-x-auto px-1 sm:mx-0 sm:ml-2 sm:overflow-visible sm:px-0"
         >
           {SUBPAGES.map(({ key, path, testid, labelKey }) => (
             <Link

@@ -115,7 +115,7 @@ export default function JobRow({
             checked={selected}
             onChange={() => onToggle(job.id)}
             aria-label={t("jobs.row.selectAria", { id: job.id })}
-            className="h-4 w-4 shrink-0 accent-accent"
+            className="h-6 w-6 shrink-0 accent-accent"
           />
         )}
         <span
