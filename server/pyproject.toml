@@ -7,7 +7,9 @@ dependencies = [
     "fastapi",
     # llm_docx import lúc boot — phải là main dep (không nằm test group)
     "httpx",
-    "uvicorn",
+    # [standard] = watchfiles (reload bằng inotify, không poll), uvloop,
+    # httptools — CPU thấp hơn hẳn StatReload poll cả cây source.
+    "uvicorn[standard]",
     "sqlalchemy[asyncio]",
     "asyncpg",
     "pydantic-settings",
