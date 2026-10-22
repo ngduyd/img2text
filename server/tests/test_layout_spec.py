@@ -197,3 +197,55 @@ def test_two_side_header_pair_gets_right_tab():
     tab = block.tabs[0]
     assert tab.align == "right"
     assert tab.pos_px > 0
+
+class TestGenericFixes:
+    """Các lỗi gặp trên đề thi thật (job 37) — phải tự xử lý, không sửa tay."""
+
+    def _page(self, regions, w=640, h=906):
+        from app.services.layout_spec import build_page_specs
+        return build_page_specs({"pages": [{"index": 0, "width": w, "height": h,
+                                            "page_flag": "ok", "markdown": "",
+                                            "regions": regions}]})[0]
+
+    def test_long_block_is_not_heading(self):
+        p = self._page([
+            {"id": "a", "bbox": [46, 200, 590, 236], "verdict": "ok",
+             "text": "Cho: H = 1,0; Li = 6,9; C = 12,0; N = 14,0; O = 16,0; " * 3},
+            {"id": "b", "bbox": [46, 300, 590, 330], "verdict": "ok",
+             "text": "Thân bài bình thường."},
+        ])
+        assert next(b for b in p.blocks if b.region_id == "a").type_label == "paragraph"
+
+    def test_figure_caption_not_tabbed_into_left_paragraph(self):
+        p = self._page([
+            {"id": "fig", "bbox": [345, 518, 583, 713], "verdict": "image_unextractable",
+             "placeholder": True, "text": ""},
+            {"id": "left", "bbox": [42, 714, 332, 761], "verdict": "ok",
+             "text": "3. Ngoài CO2, một số khí khác cũng gây nên hiệu ứng nhà kính"},
+            {"id": "cap", "bbox": [345, 716, 581, 746], "verdict": "ok",
+             "text": "Hình 1.1: Giản đồ MO của CO2; các mức năng lượng tương ứng"},
+        ])
+        by = {b.region_id: b for b in p.blocks}
+        assert by["left"].tabs == []
+        assert by["cap"].tabs == []
+        assert by["cap"].align == "left"
+
+    def test_math_delims_and_latex_simplified(self):
+        p = self._page([
+            {"id": "f", "bbox": [283, 381, 348, 417], "verdict": "ok",
+             "text": " $$ E_{n}=\\frac{n^{2}h^{2}}{8m_{e}L^{2}} $$ "},
+            {"id": "t", "bbox": [46, 420, 590, 450], "verdict": "ok",
+             "text": "Giá 5$ không bị cắt."},
+        ])
+        by = {b.region_id: b for b in p.blocks}
+        assert by["f"].text == "E_n=n^2h^2/8m_eL^2"
+        assert by["t"].text == "Giá 5$ không bị cắt."
+
+    def test_tiny_indent_is_snapped_to_zero(self):
+        p = self._page([
+            {"id": "body", "bbox": [46, 100, 590, 200], "verdict": "ok",
+             "text": "Dòng thân 1.\nDòng thân 2."},
+            {"id": "noise", "bbox": [62, 300, 520, 330], "verdict": "ok",
+             "text": "Dòng bị OCR lệch 16px."},
+        ])
+        assert next(b for b in p.blocks if b.region_id == "noise").indent_px == 0.0
