@@ -130,3 +130,48 @@ class TestForm:
         assert len(rows) == 3                       # 3 hàng nhãn+giá trị → 3 block
         assert rows[0].lines == ["Họ và tên: .........\tNguyễn Văn A"]
         assert sum(len(b.tabs) for b in rows) == 3
+
+def _two_col_single_line_result() -> dict:
+    """Trang 2 cột text THẬT nhưng mọi block 1 dòng (ảnh scan không tách dòng).
+
+    Đây là case đã hỏng: `_column_defining` trả rỗng → cột bị bỏ → cả trang
+    thành 1 cột, các dòng trái/phải bị ghép thành tab trên cùng 1 dòng.
+    """
+    left = [(39, 111), (37, 157), (32, 204), (26, 249), (23, 295)]
+    right = [(727, 128), (726, 173), (725, 217), (724, 262), (724, 308)]
+    regions = [
+        {"id": "h", "bbox": [26, 11, 303, 56], "text": "BAI DOC HAI COT",
+         "verdict": "ok", "placeholder": False}
+    ]
+    for i, (x, y) in enumerate(left):
+        regions.append({"id": f"l{i}", "bbox": [x, y, x + 287, y + 46],
+                        "text": f"Cot trai dong {i}.", "verdict": "ok", "placeholder": False})
+    for i, (x, y) in enumerate(right):
+        regions.append({"id": f"r{i}", "bbox": [x, y, x + 275, y + 36],
+                        "text": f"Cot phai dong {i}.", "verdict": "ok", "placeholder": False})
+    return {"pages": [{"index": 0, "width": 1240, "height": 1754,
+                       "page_flag": "ok", "markdown": "", "regions": regions}]}
+
+
+def test_two_columns_single_line_blocks_are_columns_not_tabs():
+    from app.services.layout_spec import build_page_specs
+
+    page = build_page_specs(_two_col_single_line_result())[0]
+    assert len(page.cols) == 2, [c for c in page.cols]
+    assert not any(b.tabs for b in page.blocks)      # không ghép thành tab
+    assert [b.col_index for b in page.blocks].count(1) == 5   # 5 block cột phải
+
+
+def test_thin_column_singleton_dropped_on_text_page():
+    """Header canh giữa + số trang canh phải không được thành cột thứ 2-3."""
+    from app.services.layout_spec import build_page_specs
+
+    body = [{"id": f"b{i}", "bbox": [60, 120 + i * 70, 700, 170 + i * 70],
+             "text": f"Đoạn văn số {i} nội dung dài bình thường.", "verdict": "ok",
+             "placeholder": False} for i in range(4)]
+    regions = [{"id": "num", "bbox": [740, 20, 780, 50], "text": "3",
+                "verdict": "ok", "placeholder": False}] + body
+    page = build_page_specs({"pages": [{"index": 0, "width": 800, "height": 1000,
+                                        "page_flag": "ok", "markdown": "",
+                                        "regions": regions}]})[0]
+    assert len(page.cols) == 1

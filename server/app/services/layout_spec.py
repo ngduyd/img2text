@@ -28,6 +28,7 @@ DOTS = "...."               # ≥4 chấm → tab leader DOTS
 TAB_SPACE_PX = 8.0          # px ước lượng cho 1 ký tự space khi tính first-line indent
 FORM_RE = re.compile(r"^\S.*:\s*\.{3,}")   # "Họ và tên: ....." → form field
 FORM_MAX_CHARS = 60         # cặp nhãn/giá trị dài hơn → coi là 2 block text thường
+COL_MIN_BLOCKS = 2          # cột phải có ≥2 block định nghĩa cột, thiếu → bỏ
 HEADING_RATIO = 1.6         # font ≥ 1.6× median → heading
 HEADING_L1_RATIO = 2.2      # font ≥ 2.2× median → heading level 1
 
@@ -188,6 +189,27 @@ def _column_defining(blocks: list[BlockSpec]) -> list[BlockSpec]:
     return out
 
 
+def _drop_thin_columns(
+    cols: list[Col],
+    basis: list[BlockSpec],
+    min_blocks: int = COL_MIN_BLOCKS,
+) -> list[Col]:
+    """Bỏ cột chỉ có < min_blocks block định nghĩa cột.
+
+    Trang thật hay có header canh giữa / số trang canh phải / dòng ký tên →
+    `_cluster_columns` tách thành 3-4 "cột" giả, làm docx chảy chữ vào 3-4
+    cột hẹp (đo trên UNIT 1: trang 0-3 ra 3-4 cột trong khi trang chỉ 1 cột).
+    Bỏ cột mảnh → block của nó về cột gần nhất qua `_col_index_of` (không mở
+    rộng cột chính, nên indent/align không bị lệch).
+    """
+    if len(cols) <= 1 or not basis:
+        return cols
+    counts = [0] * len(cols)
+    for b in basis:
+        counts[_col_index_of(b, cols)] += 1
+    kept = [c for c, n in zip(cols, counts) if n >= min_blocks]
+    return kept or cols[:1]
+
 def _col_index_of(block: BlockSpec, cols: list[Col]) -> int:
     """Cột chứa tâm block; ngoài mọi cột → cột gần nhất."""
     cx = (block.x0 + block.x1) / 2
@@ -265,6 +287,32 @@ def _attach_tabs(band: list[BlockSpec], cols: list[Col]) -> set[str]:
     return dropped
 
 
+_LABEL_RE = re.compile(r"[:：]\s*(\.{2,})?\s*$|\.{4,}\s*$")
+
+def _is_form_pairs(blocks: list[BlockSpec], cols: list[Col]) -> bool:
+    """Trang là FORM (nhãn ⇥ giá trị) chứ không phải 2 cột text?
+
+    Trang form có nhiều band mà block trái nhất trông như nhãn ("Họ và tên:
+     ....." / "Ngày sinh:"). Trang 2 cột text thật thì block trái là câu văn
+    → không khớp. Dùng để gộp về 1 cột cho `_attach_tabs` chạy (bug: form 1
+    dòng bị đọc thành 2 cột, mất tab stop).
+    """
+    if len(cols) < 2:
+        return False
+    paired = 0
+    labelled = 0
+    for band in _bands(blocks):
+        texts = [b for b in band if b.kind == "text"]
+        if len(texts) < 2:
+            continue
+        first = texts[0]
+        if not _LABEL_RE.search(first.text.strip()):
+            continue
+        if any(b.col_index != first.col_index for b in texts[1:]):
+            paired += 1
+            labelled += 1
+    return paired >= 2 and labelled == paired
+
 def _page_spec(page: dict) -> PageSpec:
     width = float(page.get("width") or 1000)
     height = float(page.get("height") or 1000)
@@ -274,10 +322,21 @@ def _page_spec(page: dict) -> PageSpec:
     margin_left = (
         min(b.x0 for b in text_blocks) if text_blocks else 0.0
     )
-    cols = _cluster_columns(_column_defining(blocks))
-    if not cols:  # trang chỉ có hàng form / bảng → 1 cột = toàn bề ngang
+    # Block nhiều dòng mới "định nghĩa" cột (hàng form 1 dòng không được biến
+    # trang thành 2 cột). Trang toàn block 1 dòng (scan không tách dòng) →
+    # dùng tất cả block text làm căn cứ, nếu không cột thật bị bỏ.
+    col_basis = _column_defining(blocks) or [
+        b for b in blocks if b.kind == "text"
+    ]
+    cols = _drop_thin_columns(_cluster_columns(col_basis), col_basis)
+    if not cols:  # trang chỉ có bảng/form row → 1 cột = toàn bề ngang
         right = max((b.x1 for b in blocks), default=width)
         cols = [Col(margin_left, right)]
+    # Form nhãn/value: 2 "cột" thực chất là 1 cột + tab stop → gộp lại.
+    for b in blocks:
+        b.col_index = _col_index_of(b, cols)
+    if _is_form_pairs(blocks, cols):
+        cols = [Col(margin_left, max((b.x1 for b in blocks), default=width))]
 
     tol = ALIGN_TOL_RATIO * width
     for b in blocks:
@@ -288,6 +347,8 @@ def _page_spec(page: dict) -> PageSpec:
         b.first_line_indent_px = _first_line_indent(b)
 
     dropped: set[str] = set()
+    # _attach_tabs nhóm theo col_index nên chỉ ghép tab TRONG cùng cột — an
+    # toàn cho trang nhiều cột (bug trước đây là do cột bị nhận sai thành 1).
     for band in _bands(blocks):
         dropped |= _attach_tabs(band, cols)
     blocks = [b for b in blocks if b.region_id not in dropped]
