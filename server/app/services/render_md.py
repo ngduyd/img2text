@@ -21,7 +21,12 @@ from dataclasses import dataclass, field
 from app.core.config import settings
 from app.core.schemas import IMAGE_MARKER
 from app.services.ir import spec_ir
-from app.services.layout_spec import BlockSpec, PageSpec, build_page_specs
+from app.services.layout_spec import (
+    BlockSpec,
+    PageSpec,
+    _math_inner,
+    build_page_specs,
+)
 
 # marker template prefix ("**[Hình ảnh chưa trích xuất: vùng ") — dùng để
 # quét marker trong md render (embed_crop_urls)
@@ -335,6 +340,11 @@ def indent_px_to_spaces(px: float, font_px: float, limit: int = MAX_INDENT_SPACE
 
 def _fmt_lines(b: Block) -> list[str]:
     lab = b.label
+    # công thức: giữ LaTeX trong $$ ... $$ để md render được (MathJax/KaTeX);
+    # docx đi đường OMML. Trước đây md in ra "$$ E_{n}=..." đã detex → mất.
+    inner = _math_inner(b.text)
+    if inner:
+        return ["$$", inner, "$$"]
     # P1-R4a/R5: image node text rỗng → marker (ảnh sống sót qua md fallback)
     if b.kind == "image" and not b.text.strip():
         return [IMAGE_MARKER.format(region_id=b.id)]
@@ -493,6 +503,10 @@ def _spec_para(block: BlockSpec, page: PageSpec, median_font: float) -> list[str
         return [IMAGE_MARKER.format(region_id=block.region_id)]
     if block.kind == "table":
         return _cells_md(block.cells) if block.cells else _table_md(block.html or block.text)
+    if block.latex:
+        # công thức: giữ LaTeX trong $$ ... $$ (KaTeX/MathJax render); docx
+        # đi đường OMML. Không detex ở md — detex chỉ là fallback text.
+        return ["$$", block.latex, "$$"]
     lines = list(block.lines)
     if not lines:
         lines = [ln.strip() for ln in block.text.splitlines() if ln.strip()]

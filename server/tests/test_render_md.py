@@ -189,3 +189,16 @@ async def test_build_md_spec_1col_center_and_heading():
     assert "## CHƯƠNG 1: MỞ ĐẦU" in out
     assert IMAGE_MARKER.format(region_id="r4") in out
     assert [ln for ln in lines if ln.strip()][0].startswith("## ")
+
+
+def test_formula_block_emits_dollar_math():
+    """md phải giữ LaTeX trong $$ ... $$ để KaTeX/MathJax render."""
+    from app.services.render_md import render_md_spec
+
+    result = {"pages": [{"index": 0, "width": 640, "height": 906, "page_flag": "ok",
+                         "markdown": "", "regions": [
+                             {"id": "f", "bbox": [283, 100, 348, 136], "verdict": "ok",
+                              "text": " $$ E_{n}=\\frac{n^{2}h^{2}}{8m_{e}L^{2}} $$ "},
+                         ]}]}
+    md = render_md_spec(result)
+    assert "$$\nE_{n}=\\frac{n^{2}h^{2}}{8m_{e}L^{2}}\n$$" in md

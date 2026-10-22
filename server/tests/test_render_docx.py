@@ -243,3 +243,22 @@ async def test_build_docx_crop_loader_error_keeps_placeholder():
     data = await build_docx(_image_result(), crop_loader=loader)
     assert _media_names(data) == []
     assert "[ảnh]" in "\n".join(p.text for p in Document(io.BytesIO(data)).paragraphs)
+
+
+def test_formula_block_becomes_omml_not_text():
+    """Công thức $$...$$ → OMML (Word render thật), không in LaTeX thô."""
+    import io
+    import zipfile
+
+    from app.services.render_docx import render_docx_spec
+
+    result = {"pages": [{"index": 0, "width": 640, "height": 906, "page_flag": "ok",
+                         "markdown": "", "regions": [
+                             {"id": "f", "bbox": [283, 100, 348, 136], "verdict": "ok",
+                              "text": " $$ E_{n}=\\frac{n^{2}h^{2}}{8m_{e}L^{2}} $$ "},
+                         ]}]}
+    xml = zipfile.ZipFile(io.BytesIO(render_docx_spec(result))).read(
+        "word/document.xml").decode()
+    assert "<m:oMath>" in xml
+    assert "\\frac" not in xml
+    assert "$$" not in xml

@@ -23,6 +23,9 @@ dependencies = [
     "pillow-heif",
     "python-multipart",
     "python-docx",
+    # công thức → OMML (Word render thật, không phải ảnh)
+    "latex2mathml",
+    "mathml2omml",
     "bleach",
     "weasyprint",
 ]

@@ -249,3 +249,13 @@ class TestGenericFixes:
              "text": "Dòng bị OCR lệch 16px."},
         ])
         assert next(b for b in p.blocks if b.region_id == "noise").indent_px == 0.0
+
+def test_formula_block_keeps_latex_and_detex_text():
+    page = TestGenericFixes()._page([
+        {"id": "f", "bbox": [283, 381, 348, 417], "verdict": "ok",
+         "text": " $$ E_{n}=\\frac{n^{2}h^{2}}{8m_{e}L^{2}} $$ "},
+    ])
+    blk = page.blocks[0]
+    assert blk.latex == "E_{n}=\\frac{n^{2}h^{2}}{8m_{e}L^{2}}"
+    assert blk.text == "E_n=n^2h^2/8m_eL^2"          # fallback text
+    assert blk.lines == ["E_n=n^2h^2/8m_eL^2"]

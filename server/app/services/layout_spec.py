@@ -67,6 +67,7 @@ class BlockSpec:
     font_px: float = FONT_FALLBACK
     type_label: str = "unknown"  # paragraph|heading|form_field|table|figure|unknown
     level: int = 0               # heading level (1 = lớn nhất), 0 = không phải heading
+    latex: str = ""             # LaTeX gốc nếu block là công thức ($$...$$)
     html: str = ""
     cells: list | None = None
     lines: list[str] = field(default_factory=list)
@@ -130,6 +131,12 @@ def _strip_math_delims(text: str) -> str:
     m = _MATH_WRAP_RE.match(text)
     return m.group(1).strip() if m else text
 
+
+def _math_inner(text: str) -> str:
+    """LaTeX bên trong `$$...$$` ("" nếu block không phải công thức)."""
+    m = _MATH_WRAP_RE.match(text)
+    return m.group(1).strip() if m else ""
+
 _ARG = r"((?:[^{}]|\{[^{}]*\})*)"
 _FRAC_RE = re.compile(r"\\frac\{" + _ARG + r"\}\{" + _ARG + r"\}")
 _SUB_RE = re.compile(r"([_^])\{([^{}]*)\}")
@@ -157,9 +164,9 @@ def _extract_regions(page: dict) -> list[BlockSpec]:
     out: list[BlockSpec] = []
     seen: set[str] = set()
     for region in page.get("regions", []):
-        text = _strip_math_delims(
-            unicodedata.normalize("NFC", region.get("text") or "")
-        )
+        raw_text = unicodedata.normalize("NFC", region.get("text") or "")
+        latex = _math_inner(raw_text)
+        text = _strip_math_delims(raw_text)
         kind = _kind_of(region, text)
         bbox_raw = region.get("bbox")
         if not bbox_raw or len(bbox_raw) != 4:
@@ -184,6 +191,7 @@ def _extract_regions(page: dict) -> list[BlockSpec]:
                 html=html,
                 cells=region.get("cells"),
                 lines=_lines_of(_detex(text)),
+                latex=latex,
             )
         )
     return out

@@ -15,8 +15,8 @@ from docx.enum.section import WD_SECTION_START
 from docx.enum.text import (
     WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER,
 )
-from docx.oxml import OxmlElement
-from docx.oxml.ns import qn
+from docx.oxml import OxmlElement, parse_xml
+from docx.oxml.ns import nsdecls, qn
 from docx.shared import Inches, Pt, Twips
 from docx.table import _Cell
 
@@ -200,6 +200,39 @@ def _add_image_block(doc, blk: BlockSpec, crops: dict[str, bytes]) -> None:
     run = doc.add_paragraph().add_run(IMAGE_PLACEHOLDER)
     run.italic = True
 
+def _omml_of(latex: str) -> str | None:
+    """LaTeX → OMML (Office Math). None nếu thiếu lib hoặc latex lỗi.
+
+    ponytail: chỉ block công thức ($$...$$) đi đường này; công thức inline
+    trong câu vẫn là text. Thêm inline khi thật sự cần.
+    """
+    try:
+        from latex2mathml.converter import convert as _l2m
+        from mathml2omml import convert as _m2o
+    except ImportError:      # pragma: no cover - dep là main dep
+        return None
+    try:
+        omml = _m2o(_l2m(latex))
+    except Exception as exc:  # latex lạ/không parse được → dùng text detex
+        logger.info("latex→OMML failed (%r): %r", latex[:40], exc)
+        return None
+    if not omml or "<m:oMath" not in omml:
+        return None
+    return omml
+
+
+def _add_math_block(doc, blk: BlockSpec, omml: str) -> None:
+    para = doc.add_paragraph()
+    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    pf = para.paragraph_format
+    pf.space_before = Pt(0)
+    pf.space_after = Pt(min(MAX_SPACE_AFTER_PT, round(blk.space_after_px * PT_PER_PX, 1)))
+    xml = omml if "xmlns:m=" in omml else omml.replace(
+        "<m:oMath", f"<m:oMath {nsdecls('m', 'w')}", 1
+    )
+    para._p.append(parse_xml(xml))
+
+
 def _add_spec_block(
     doc, blk: BlockSpec, crops: dict[str, bytes] | None = None
 ) -> None:
@@ -213,6 +246,11 @@ def _add_spec_block(
             _add_html_table(doc, blk.html or blk.text)
         return
 
+    if blk.latex:
+        omml = _omml_of(blk.latex)
+        if omml:
+            _add_math_block(doc, blk, omml)
+            return
     para = doc.add_paragraph()
     para.alignment = _SPEC_ALIGN.get(blk.align, WD_ALIGN_PARAGRAPH.LEFT)
     pf = para.paragraph_format
