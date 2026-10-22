@@ -19,7 +19,7 @@ from typing import Literal
 
 import bleach
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from PIL import Image
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +31,7 @@ from app.core.models import Job, User
 from app.core.schemas import IMAGE_MARKER
 from app.routers.jobs import _job_or_403, _text_bytes, bump_text_after_edit
 from app.services.render_docx import build_docx
+from app.services.render_html_spec import render_html_spec
 from app.services.render_md import build_md, embed_crop_keys, embed_crop_urls
 from app.services.doc_versions import save_version, snapshot_current_layout
 from app.services.html_to_docx import html_to_docx, CROP_SRC_RE
@@ -724,6 +725,40 @@ async def download_export(
             "Content-Range": f"bytes {start}-{start + len(chunk) - 1}/{total}"
         },
     )
+
+@router.get("/api/jobs/{id}/preview/layout.html", response_class=HTMLResponse)
+async def preview_layout_html(
+    id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> HTMLResponse:
+    """Preview Word dựng từ layout_spec (KHÔNG convert docx).
+
+    Trước: web convert docx→HTML bằng mammoth → mất tab stop, canh lề, OMML
+    (bản xem trước khác bản tải về). Đây là cùng nguồn với docx-layout nên
+    preview khớp file: công thức = MathML, header 2 bên = 2 đầu, justify giữ.
+    Ảnh: crop presigned (fallback marker khi thiếu crop).
+    """
+    job = await _job_or_403(session, id, user)
+    if job.status != "done":
+        raise HTTPException(status_code=409, detail="job not done")
+    result = job.result or {}
+    crop_urls: dict[str, str] = {}
+    for page in result.get("pages", []):
+        for region in page.get("regions", []):
+            if not (region.get("placeholder")
+                    or region.get("verdict") == "image_unextractable"):
+                continue
+            rid = str(region.get("id"))
+            try:
+                key = await get_or_make_crop(id, rid, job, result, storage)
+                crop_urls[rid] = await storage.presign_get(
+                    key, EXPORT_PRESIGN_EXPIRES_SECONDS
+                )
+            except KeyError:
+                logger.info("preview: crop %s thiếu → marker", rid)
+    return HTMLResponse(render_html_spec(result, crop_urls=crop_urls))
 
 # --- Region crops: GET /api/jobs/{id}/regions/{rid}/crop ---
 

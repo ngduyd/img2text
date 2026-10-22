@@ -74,12 +74,22 @@ export default function LayoutPreview({
         if (cached !== null) {
           setWordHtml(DOMPurify.sanitize(cached));
         } else {
-          await api.exportJob(job.id, FMT.word);
-          const blob = await api.downloadExport(job.id, FMT.word);
-          const { value } = await mammoth.convertToHtml({
-            arrayBuffer: await blob.arrayBuffer(),
-          });
-          setWordHtml(DOMPurify.sanitize(value));
+          // Preview dựng từ layout_spec (cùng nguồn với docx-layout) → khớp
+          // bản tải: MathML cho công thức, tab 2 bên, canh đều. Mammoth chỉ
+          // còn là fallback khi endpoint lỗi (mammoth bỏ tab stop + OMML).
+          const specHtml = await api
+            .getLayoutPreviewHtml(job.id)
+            .catch(() => null);
+          if (specHtml !== null && specHtml.trim() !== "") {
+            setWordHtml(DOMPurify.sanitize(specHtml));
+          } else {
+            await api.exportJob(job.id, FMT.word);
+            const blob = await api.downloadExport(job.id, FMT.word);
+            const { value } = await mammoth.convertToHtml({
+              arrayBuffer: await blob.arrayBuffer(),
+            });
+            setWordHtml(DOMPurify.sanitize(value));
+          }
         }
       }
     } catch (err) {
