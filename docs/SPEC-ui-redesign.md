@@ -36,6 +36,7 @@ Nguyên nhân chung: **không có luật bố cục / mật độ / thứ bậc 
 | D8 | **SplitPane** 3 trạng thái (Ảnh / Chia đôi / Văn bản), kéo được trên desktop, xếp dọc trên mobile |
 | D9 | **Toolbar editor**: 1 hàng + `▾` (nhóm hiếm gom vào overflow), scroll ngang trên mobile |
 | D10 | **Admin**: 5 stat → 1 hàng compact; bỏ 4 nút trùng; rail nhóm 3 cụm |
+| D11 | **1 thanh sticky / trang chi tiết**: back · `#id` + tên file · subnav · hành động. Hành động phụ vào `⋯`, không có hàng `h1` riêng, không card lồng card |
 
 ---
 

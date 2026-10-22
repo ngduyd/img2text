@@ -213,7 +213,9 @@
     "fmtMd": "Tải .md",
     "fmtHtml": "Tải .html",
     "fmtDocx": "Tải .docx",
-    "fmtPdf": "Tải .pdf"
+    "fmtPdf": "Tải .pdf",
+    "layoutGroup": "Bản dựng layout",
+    "textGroup": "Văn bản"
   },
   "editor": {
     "textAreaAria": "Soạn thảo văn bản",

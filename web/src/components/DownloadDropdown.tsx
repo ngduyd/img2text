@@ -18,17 +18,26 @@ const TEXT_FORMATS = [
   { fmt: "pdf", testid: "export-pdf", labelKey: "export.fmtPdf" },
 ] as const;
 
+/** Layout exports (bản dựng layout) — trước đây nằm trong ExportBar riêng. */
+const LAYOUT_FORMATS = [
+  { fmt: "md-layout", testid: "btn-export-md-layout", labelKey: "export.mdLayout" },
+  { fmt: "docx-layout", testid: "btn-export-docx-layout", labelKey: "export.docxLayout" },
+] as const;
+
 export default function DownloadDropdown({
   jobId,
   open,
   onToggle,
+  layoutReady = false,
 }: {
   jobId: string;
   open: boolean;
   onToggle: () => void;
+  /** Job chưa dựng layout → ẩn nhóm md-layout/docx-layout. */
+  layoutReady?: boolean;
 }) {
   const { t } = useT();
-  const download = async (fmt: (typeof TEXT_FORMATS)[number]["fmt"]) => {
+  const download = async (fmt: string) => {
     try {
       const { url } = await api.exportJob(jobId, fmt);
       const w = window.open("", "_blank");
@@ -68,6 +77,30 @@ export default function DownloadDropdown({
         hidden={!open}
         className="absolute right-0 z-20 mt-1 flex w-48 flex-col gap-1 rounded-md border border-border bg-surface p-2 shadow-card"
       >
+        {layoutReady && (
+          <>
+            <p className="px-1 pt-1 text-xs font-medium uppercase tracking-wide text-muted">
+              {t("export.layoutGroup")}
+            </p>
+            {LAYOUT_FORMATS.map(({ fmt, testid, labelKey }) => (
+              <Button
+                key={fmt}
+                testid={testid}
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  void download(fmt);
+                  if (open) onToggle();
+                }}
+              >
+                {t(labelKey)}
+              </Button>
+            ))}
+          </>
+        )}
+        <p className="px-1 pt-1 text-xs font-medium uppercase tracking-wide text-muted">
+          {t("export.textGroup")}
+        </p>
         {TEXT_FORMATS.map(({ fmt, testid, labelKey }) => (
           <Button
             key={fmt}

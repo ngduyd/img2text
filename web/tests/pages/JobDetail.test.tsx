@@ -275,17 +275,20 @@ it("done renders 3 panels: original + result + info with status badge", async ()
 });
 
 /** WS-UI item 13: Stats line DƯỚI preview (result-stats bật lại); job-meta/output badge vẫn gỡ. */
-it("done: no job-meta/output badge, stats line + ExportBar render", async () => {
+it("done: no job-meta/output badge, stats line + 1 nút Tải xuống (gộp cả layout)", async () => {
   mockJob({ ...DONE_JOB, output_format: "docx" });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("job-subnav");
   expect(screen.queryByTestId("job-meta")).not.toBeInTheDocument();
   expect(screen.queryByTestId("job-output-format")).not.toBeInTheDocument();
   expect(screen.getByTestId("result-stats")).toBeInTheDocument();
-  expect(screen.getByTestId("export-bar")).toBeInTheDocument();
-  expect(screen.getByTestId("export-layout-more")).toBeInTheDocument();
-  expect(screen.queryByTestId("export-more")).not.toBeInTheDocument();
-  expect(screen.getByTestId("btn-download")).toBeInTheDocument();
+  // Card "Xuất layout" đã bỏ: 2 định dạng layout nằm trong dropdown Tải xuống.
+  expect(screen.queryByTestId("export-bar")).not.toBeInTheDocument();
+  const user = userEvent.setup();
+  await user.click(screen.getByTestId("btn-download"));
+  expect(screen.getByTestId("btn-export-docx-layout")).toBeInTheDocument();
+  expect(screen.getByTestId("btn-export-md-layout")).toBeInTheDocument();
+  expect(screen.getByTestId("export-docx")).toBeInTheDocument();
 });
 
 it("not done shows status-only panels, ResultPanel hidden until done", async () => {
@@ -306,9 +309,9 @@ it("header: back link, title, badge, actions in one row (adjust-only)", async ()
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   expect(await screen.findByTestId("link-back-jobs")).toHaveAttribute("href", "/jobs");
-  // name scope: preview MDEditor inline (M5) cũng render heading từ md artifact
+  // D1: MỘT h1 duy nhất ở thanh sticky — số job + tên file.
   expect(
-    screen.getByRole("heading", { level: 1, name: "Job detail #5" }),
+    screen.getByRole("heading", { level: 1, name: /#5/ }),
   ).toBeInTheDocument();
   // D3: btn-edit-doc nằm ở trang /layout, không ở header Overview.
   expect(screen.queryByTestId("btn-edit-doc")).not.toBeInTheDocument();
@@ -590,7 +593,9 @@ it("renders single wrapper grid: collapsible original+info right (U4+U5 default 
   expect(screen.getByTestId("btn-toggle-info")).toHaveAttribute("aria-expanded", "true");
   await screen.findByTestId("original-pdf-frame");
   await waitFor(() => expect(api.downloadJobFile).toHaveBeenCalledTimes(1));
-  expect(screen.getByTestId("export-bar")).toBeInTheDocument();
+  // Card lồng card đã bỏ: panel nằm thẳng trong section collapsible.
+  expect(screen.getByTestId("panel-original")).toBeInTheDocument();
+  expect(screen.getByTestId("btn-download")).toBeInTheDocument();
   // Đóng → unmount + fetch không tăng (1 panel duy nhất).
   const user = userEvent.setup();
   await user.click(screen.getByTestId("btn-toggle-original"));
@@ -624,11 +629,12 @@ it("extract_only done hides layout link and export groups", async () => {
 it("D3: each section page has one h1, no duplicate tab UI", async () => {
   mockJob(DONE_JOB);
   const a = renderSection("text");
-  expect(await screen.findByRole("heading", { level: 1, name: /Text/ })).toBeInTheDocument();
+  // Tiêu đề section nằm trong thanh sticky chung → luôn đúng 1 h1 mỗi trang.
+  expect(await screen.findAllByRole("heading", { level: 1 })).toHaveLength(1);
   expect(screen.queryAllByRole("tab")).toHaveLength(0);
   a.unmount();
   renderSection("layout");
-  expect(await screen.findByRole("heading", { level: 1, name: /Layout/ })).toBeInTheDocument();
+  expect(await screen.findAllByRole("heading", { level: 1 })).toHaveLength(1);
   expect(screen.queryByRole("tablist")).toBeNull();
 });
 

@@ -5,12 +5,16 @@ export default function Card({
   testid,
   children,
   actions,
+  bare = false,
 }: {
   title?: string;
   testid?: string;
   children: ReactNode;
   actions?: ReactNode;
+  /** Đã nằm trong một card khác → chỉ render nội dung (không viền/nền/tiêu đề). */
+  bare?: boolean;
 }) {
+  if (bare) return <div data-testid={testid}>{children}</div>;
   return (
     <section data-testid={testid} className="rounded-card border border-border bg-surface p-4 shadow-card">
       {(title || actions) && (

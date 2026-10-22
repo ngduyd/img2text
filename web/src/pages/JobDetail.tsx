@@ -1,6 +1,14 @@
 import type { Query } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ChevronDown, FileQuestion, TriangleAlert } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronDown,
+  FileQuestion,
+  Image as ImageIcon,
+  Maximize2,
+  Minimize2,
+  TriangleAlert,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -10,7 +18,6 @@ import { mapApiError } from "../lib/errors";
 import { STATUS_KEY, STATUS_TONE, PENDING_STATUSES } from "../lib/status";
 import { translate, useT } from "../i18n";
 import { useJobDoneToasts } from "../hooks/useJobDoneToasts";
-import ExportBar from "../components/ExportBar";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DownloadDropdown from "../components/DownloadDropdown";
 import InfoPanel from "../components/panels/InfoPanel";
@@ -21,7 +28,6 @@ import TextSection from "../components/TextSection";
 import UnifiedEditor from "../components/UnifiedEditor";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
-import Card from "../components/ui/Card";
 import Skeleton from "../components/ui/Skeleton";
 
 /** Poll every 3s while pending (queued/extracting/rendering); stop once done/failed (binding, Task 4). */
@@ -195,129 +201,188 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
 
   return (
     <PageShell width={section === "overview" ? "data" : "editor"}>
-      {/* Header 3-4 dòng mobile — sticky che viewport đọc doc dài; chỉ sticky ≥lg (dưới AppNav h-16). */}
+      {/* D1/D4: MỘT thanh sticky duy nhất — back · tên job · subnav · hành động.
+          Trước đây 5 hàng chrome (header 3 dòng + subnav + h1 + card + toolbar)
+          đẩy nội dung xuống ~440px; giờ nội dung bắt đầu ở ~150px. */}
       <header
         data-testid="job-header"
-        className="lg:sticky lg:top-16 z-10 -mx-4 mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-border bg-surface/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6"
+        className="lg:sticky lg:top-16 z-10 -mx-4 mb-4 flex flex-wrap items-center gap-x-2 gap-y-2 border-b border-border bg-surface/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6"
       >
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-          <Link
-            to="/jobs"
-            data-testid="link-back-jobs"
-            className="inline-flex items-center gap-1 text-sm text-accent-text transition duration-150 ease-out hover:underline"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            {t("jd.backToList")}
-          </Link>
-          <h1 className="min-w-0 break-words text-xl font-bold tracking-tight sm:text-2xl">
-            {t("jd.title")} <span className="font-mono">#{job.id}</span>
-          </h1>
-          <Badge tone={STATUS_TONE[job.status]}>{t(STATUS_KEY[job.status])}</Badge>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {/* P0-D: stale_layouts > 0 → badge + đồng bộ lại (server trả [] → mất badge). */}
-          {(job.stale_layouts?.length ?? 0) > 0 && (
+        <Link
+          to="/jobs"
+          data-testid="link-back-jobs"
+          aria-label={t("jd.backToList")}
+          title={t("jd.backToList")}
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted transition duration-150 ease-out hover:bg-surface-2 hover:text-text"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        </Link>
+        <h1 className="flex min-w-0 items-center gap-2 text-base font-semibold tracking-tight">
+          <span className="font-mono text-muted">#{job.id}</span>
+          <span className="max-w-[22ch] truncate">{job.filename || t("jd.title")}</span>
+        </h1>
+        <Badge tone={STATUS_TONE[job.status]}>{t(STATUS_KEY[job.status])}</Badge>
+        <nav
+          data-testid="job-subnav"
+          aria-label={t("jd.subnavAria")}
+          className="flex items-center gap-0.5 sm:ml-2"
+        >
+          {SUBPAGES.map(({ key, path, testid, labelKey }) => (
+            <Link
+              key={key}
+              to={`/jobs/${id}${path}`}
+              data-testid={testid}
+              aria-current={section === key ? "page" : undefined}
+              className={[
+                "rounded-md px-2.5 py-1.5 text-sm transition duration-150 ease-out",
+                section === key
+                  ? "bg-surface-2 font-semibold text-text"
+                  : "text-muted hover:bg-surface-2 hover:text-text",
+              ].join(" ")}
+            >
+              {t(labelKey)}
+            </Link>
+          ))}
+        </nav>
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          {/* D4: tối đa 1 primary + 1 secondary hiện; còn lại nằm trong ⋯. */}
+          {section === "layout" && layoutReady && (
             <>
-              <Badge testid="stale-badge" tone="warning">
-                {t("jd.staleBadge")}
-              </Badge>
               <Button
-                testid="btn-resync-layout"
-                className="min-h-11"
-                variant="secondary"
-                onClick={async () => {
-                  try {
-                    await api.retryLayout(id!);
-                    toast.success(t("jd.resyncDone"));
-                    await queryClient.invalidateQueries({ queryKey: ["job", id] });
-                  } catch (err) {
-                    toast.error(mapApiError(err));
-                  }
-                }}
+                testid="btn-toggle-original-layout"
+                variant="ghost"
+                size="sm"
+                aria-pressed={showOriginal}
+                onClick={() => setShowOriginal((v) => !v)}
               >
-                {t("jd.resync")}
+                <ImageIcon className="h-4 w-4" aria-hidden="true" />
+                {t("jd.showOriginal")}
+              </Button>
+              <Button
+                testid="btn-zen"
+                variant="ghost"
+                size="sm"
+                aria-pressed={zen}
+                aria-label={zen ? t("jd.exitZen") : t("jd.zen")}
+                title={zen ? t("jd.exitZen") : t("jd.zen")}
+                onClick={() => setZen((v) => !v)}
+              >
+                {zen ? <Minimize2 className="h-4 w-4" aria-hidden="true" /> : <Maximize2 className="h-4 w-4" aria-hidden="true" />}
+              </Button>
+              <Button
+                testid="btn-edit-doc"
+                variant={editing ? "primary" : "secondary"}
+                size="sm"
+                aria-pressed={editing}
+                disabled={job.status !== "done"}
+                onClick={() => setEditing((v) => !v)}
+              >
+                {editing ? t("jd.editing") : t("jd.edit")}
               </Button>
             </>
           )}
-          {job.status === "failed" && (
-            <Button
-              testid="btn-retry-job"
-              className="min-h-11"
-              onClick={async () => {
-                setRetryError(null);
-                try {
-                  await api.retryJob(id!);
-                  toast.success(t("jobs.row.retryScheduled"));
-                  await queryClient.invalidateQueries({ queryKey: ["job", id] });
-                  await queryClient.invalidateQueries({ queryKey: ["jobs"] });
-                } catch (err) {
-                  // R51: inline retry-error kept; toast mirrors it (R59a).
-                  setRetryError(err instanceof ApiError ? err.detail : t("jd.retryFailed"));
-                  toast.error(mapApiError(err));
-                }
-              }}
-            >
-              {t("jd.retryOcr")}
-            </Button>
-          )}
-          {/* Hủy job: pending → cancelled (204); done|failed|cancelled ẩn nút. */}
-          {PENDING_STATUSES.includes(job.status) && (
-            <Button
-              testid="btn-cancel-job"
-              className="min-h-11"
-              variant="secondary"
-              onClick={async () => {
-                try {
-                  await api.cancelJob(id!);
-                  toast.success(t("jobs.row.cancelled"));
-                  await queryClient.invalidateQueries({ queryKey: ["job", id] });
-                  await queryClient.invalidateQueries({ queryKey: ["jobs"] });
-                } catch (err) {
-                  toast.error(mapApiError(err));
-                }
-              }}
-            >
-              {t("jd.cancelJob")}
-            </Button>
-          )}
-          {/* Lane I Task 6: "Vẽ lại layout" — POST retry-layout, confirm + loading + toast. */}
-          {job.status === "done" && result && (
-            <Button
-              testid="btn-retry-layout"
-              className="min-h-11"
-              variant="secondary"
-              loading={retryingLayout}
-              onClick={() => setConfirmRetry(true)}
-            >
-              {t("jd.retryLayout")}
-            </Button>
-          )}
-          {/* Lane I Task 5: download gộp 1 dropdown, dời lên cạnh "Chỉnh sửa". */}
-          <DownloadDropdown
-            jobId={id!}
-            open={downloadOpen}
-            onToggle={() => setDownloadOpen((v) => !v)}
-          />
-          {/* P0-C: lịch sử version + khôi phục (API listVersions/restoreVersion sẵn). */}
           <Button
             testid="btn-version-history"
-            className="min-h-11"
-            variant="secondary"
+            variant="ghost"
+            size="sm"
             aria-expanded={showHistory}
             aria-controls="version-history"
             onClick={() => setShowHistory((v) => !v)}
           >
             {t("jd.history")}
           </Button>
-          {/* Spec #1: Xóa job — destructive, confirm dialog → DELETE → về list. */}
-          <Button
-            testid="btn-delete-job"
-            className="min-h-11"
-            variant="danger"
-            onClick={() => setConfirmDelete(true)}
-          >
-            {t("jd.deleteJob")}
-          </Button>
+          <DownloadDropdown
+            jobId={id!}
+            layoutReady={layoutReady}
+            open={downloadOpen}
+            onToggle={() => setDownloadOpen((v) => !v)}
+          />
+          <details className="relative">
+            <summary
+              data-testid="btn-job-more"
+              aria-label={t("jobs.row.more")}
+              title={t("jobs.row.more")}
+              className="inline-flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-md text-muted transition duration-150 ease-out hover:bg-surface-2 hover:text-text [&::-webkit-details-marker]:hidden"
+            >
+              <span aria-hidden="true">⋯</span>
+            </summary>
+            <div
+              data-testid="job-more-panel"
+              className="absolute right-0 z-20 mt-1 flex w-56 flex-col rounded-md border border-border bg-surface p-1 shadow-lg"
+            >
+              {(job.stale_layouts?.length ?? 0) > 0 && (
+                <>
+                  <span className="px-3 py-1.5">
+                    <Badge testid="stale-badge" tone="warning">
+                      {t("jd.staleBadge")}
+                    </Badge>
+                  </span>
+                  <MenuBtn
+                    testid="btn-resync-layout"
+                  onClick={async () => {
+                    try {
+                      await api.retryLayout(id!);
+                      toast.success(t("jd.resyncDone"));
+                      await queryClient.invalidateQueries({ queryKey: ["job", id] });
+                    } catch (err) {
+                      toast.error(mapApiError(err));
+                    }
+                  }}
+                  >
+                    {t("jd.resync")}
+                  </MenuBtn>
+                </>
+              )}
+              {job.status === "failed" && (
+                <MenuBtn
+                  testid="btn-retry-job"
+                  onClick={async () => {
+                    setRetryError(null);
+                    try {
+                      await api.retryJob(id!);
+                      toast.success(t("jobs.row.retryScheduled"));
+                      await queryClient.invalidateQueries({ queryKey: ["job", id] });
+                      await queryClient.invalidateQueries({ queryKey: ["jobs"] });
+                    } catch (err) {
+                      setRetryError(err instanceof ApiError ? err.detail : t("jd.retryFailed"));
+                      toast.error(mapApiError(err));
+                    }
+                  }}
+                >
+                  {t("jd.retryOcr")}
+                </MenuBtn>
+              )}
+              {PENDING_STATUSES.includes(job.status) && (
+                <MenuBtn
+                  testid="btn-cancel-job"
+                  onClick={async () => {
+                    try {
+                      await api.cancelJob(id!);
+                      toast.success(t("jobs.row.cancelled"));
+                      await queryClient.invalidateQueries({ queryKey: ["job", id] });
+                      await queryClient.invalidateQueries({ queryKey: ["jobs"] });
+                    } catch (err) {
+                      toast.error(mapApiError(err));
+                    }
+                  }}
+                >
+                  {t("jd.cancelJob")}
+                </MenuBtn>
+              )}
+              {job.status === "done" && result && (
+                <MenuBtn
+                  testid="btn-retry-layout"
+                  disabled={retryingLayout}
+                  onClick={() => setConfirmRetry(true)}
+                >
+                  {t("jd.retryLayout")}
+                </MenuBtn>
+              )}
+              <MenuBtn testid="btn-delete-job" tone="danger" onClick={() => setConfirmDelete(true)}>
+                {t("jd.deleteJob")}
+              </MenuBtn>
+            </div>
+          </details>
         </div>
       </header>
       <ConfirmDialog
@@ -431,32 +496,6 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
           {retryError}
         </p>
       )}
-      {/*
-        SPEC-ui-redesign D3: 3 trang tách — Overview (mặc định) / Văn bản / Dựng layout.
-        Mỗi route chỉ render ĐÚNG section của mình, full width; không còn cột trái rỗng.
-      */}
-      <nav
-        data-testid="job-subnav"
-        aria-label={t("jd.subnavAria")}
-        className="mb-5 flex flex-wrap items-center gap-1 border-b border-border pb-2"
-      >
-        {SUBPAGES.map(({ key, path, testid, labelKey }) => (
-          <Link
-            key={key}
-            to={`/jobs/${id}${path}`}
-            data-testid={testid}
-            aria-current={section === key ? "page" : undefined}
-            className={[
-              "rounded-sm px-3 py-2 text-sm transition duration-150 ease-out",
-              section === key
-                ? "bg-surface-2 font-semibold text-text"
-                : "text-muted hover:bg-surface-2 hover:text-text",
-            ].join(" ")}
-          >
-            {t(labelKey)}
-          </Link>
-        ))}
-      </nav>
 
       {section === "overview" && (
         <div key={job.id} data-testid="detail-grid" className="grid gap-4 lg:grid-cols-12 lg:gap-6">
@@ -483,18 +522,15 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
               </p>
             )}
             {result && layoutReady && (
-              <>
-                <p data-testid="result-stats" className="text-sm text-muted">
-                  {t("jd.stats", {
-                    pages: job.page_count,
-                    gpu: result.gpu_seconds,
-                    model: result.model_version,
-                  })}
-                </p>
-                <Card testid="panel-export">
-                  <ExportBar jobId={id!} />
-                </Card>
-              </>
+              // Card "Xuất layout" bỏ: 2 định dạng layout đã gộp vào dropdown
+              // "Tải xuống" ở header (trước đây 1 card chỉ để chứa 1 nút).
+              <p data-testid="result-stats" className="text-sm text-muted">
+                {t("jd.stats", {
+                  pages: job.page_count,
+                  gpu: result.gpu_seconds,
+                  model: result.model_version,
+                })}
+              </p>
             )}
           </div>
           {/* ẢNH GỐC + Thông tin — collapsible, mặc định mở. */}
@@ -517,7 +553,7 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
                 </Button>
               </h2>
               <div id="original-panel-wrap" className={originalOpen ? "border-t border-border p-4" : "hidden"}>
-                {originalOpen && <OriginalFilePanel jobId={id!} fileType={job.file_type} />}
+                {originalOpen && <OriginalFilePanel jobId={id!} fileType={job.file_type} bare />}
               </div>
             </section>
             <section className="rounded-card border border-border bg-surface shadow-card">
@@ -538,7 +574,7 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
                 </Button>
               </h2>
               <div id="info-panel-wrap" className={infoOpen ? "border-t border-border p-4" : "hidden"}>
-                {infoOpen && <InfoPanel job={job} />}
+                {infoOpen && <InfoPanel job={job} bare />}
               </div>
             </section>
           </aside>
@@ -547,10 +583,6 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
 
       {section === "text" && (
         <div key={job.id} data-testid="detail-text" className="flex flex-col gap-4 px-4 sm:px-6">
-          <h1 className="text-2xl font-bold tracking-tight">
-            {t("jd.sectionText")}
-            <span className="ml-2 font-mono text-base font-normal text-muted">#{job.id}</span>
-          </h1>
           {textReady ? (
             <TextSection
               jobId={id!}
@@ -577,39 +609,6 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
         >
           {layoutReady && result ? (
             <>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h1 className="text-2xl font-bold tracking-tight">
-                  {t("jd.layout")}
-                  <span className="ml-2 font-mono text-base font-normal text-muted">#{job.id}</span>
-                </h1>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    testid="btn-toggle-original-layout"
-                    variant="secondary"
-                    aria-pressed={showOriginal}
-                    onClick={() => setShowOriginal((v) => !v)}
-                  >
-                    {t("jd.showOriginal")}
-                  </Button>
-                  <Button
-                    testid="btn-zen"
-                    variant="secondary"
-                    aria-pressed={zen}
-                    onClick={() => setZen((v) => !v)}
-                  >
-                    {zen ? t("jd.exitZen") : t("jd.zen")}
-                  </Button>
-                  <Button
-                    testid="btn-edit-doc"
-                    variant={editing ? "primary" : "secondary"}
-                    aria-pressed={editing}
-                    disabled={job.status !== "done"}
-                    onClick={() => setEditing((v) => !v)}
-                  >
-                    {editing ? t("jd.editing") : t("jd.edit")}
-                  </Button>
-                </div>
-              </div>
               {/* D8: ảnh gốc để đối chiếu khi sửa. Xếp DỌC chứ không chia cột:
                   3 pane (ảnh gốc | editor | A4) ở 1200px sẽ bóp cả hai bên. */}
               <div className={showOriginal ? "flex min-w-0 flex-col gap-4" : "min-w-0"}>
@@ -643,6 +642,39 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
         </div>
       )}
     </PageShell>
+  );
+}
+
+/** Item trong menu ⋯ của header — button thường, không role="menu" (pattern disclosure). */
+function MenuBtn({
+  testid,
+  onClick,
+  tone = "default",
+  disabled = false,
+  "aria-expanded": ariaExpanded,
+  children,
+}: {
+  testid: string;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  tone?: "default" | "danger";
+  disabled?: boolean;
+  "aria-expanded"?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid={testid}
+      disabled={disabled}
+      aria-expanded={ariaExpanded}
+      onClick={onClick}
+      className={[
+        "cursor-pointer rounded-sm px-3 py-2 text-left text-sm transition duration-150 ease-out hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50",
+        tone === "danger" ? "text-error" : "text-text",
+      ].join(" ")}
+    >
+      {children}
+    </button>
   );
 }
 

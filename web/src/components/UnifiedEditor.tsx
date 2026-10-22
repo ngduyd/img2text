@@ -178,8 +178,10 @@ export default function UnifiedEditor({
   return (
     /* scroll-mt-32: offset qua sticky header job khi btn-edit-doc scroll tới. */
     <section ref={hostRef} className="scroll-mt-32">
-      <Card testid="panel-editor" title={t("editor.panelTitle")}>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      {/* Bỏ title card: tiêu đề trang đã nằm ở thanh sticky, thêm 1 hàng nữa
+          chỉ đẩy nội dung xuống (D1 mật độ). */}
+      <Card testid="panel-editor">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div
             role="group"
             aria-label={t("editor.modeAria")}

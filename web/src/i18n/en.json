@@ -213,7 +213,9 @@
     "fmtMd": "Download .md",
     "fmtHtml": "Download .html",
     "fmtDocx": "Download .docx",
-    "fmtPdf": "Download .pdf"
+    "fmtPdf": "Download .pdf",
+    "layoutGroup": "Layout",
+    "textGroup": "Text"
   },
   "editor": {
     "textAreaAria": "Edit text",

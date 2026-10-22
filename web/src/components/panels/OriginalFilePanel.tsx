@@ -16,10 +16,12 @@ export default function OriginalFilePanel({
   jobId,
   fileType,
   testid = "panel-original",
+  bare = false,
 }: {
   jobId: string;
   fileType: string;
   testid?: string;
+  bare?: boolean;
 }) {
   const { t } = useT();
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
@@ -57,7 +59,7 @@ export default function OriginalFilePanel({
   };
 
   return (
-    <Card testid={testid} title={t("jd.originalFile")}>
+    <Card testid={testid} title={t("jd.originalFile")} bare={bare}>
       <div className="flex items-center gap-2">
         <Button
           testid="btn-download-original"
