@@ -62,6 +62,11 @@ HEARTBEAT_INTERVAL_S = 300.0
 CLAIM_MAX_RETRIES = int(os.environ.get("SESSION_CLAIM_MAX_RETRIES") or 5)
 CLAIM_BACKOFF_BASE_S = 2.0
 CLAIM_BACKOFF_MAX_S = 60.0
+# Queue rỗng KHÔNG exit ngay: giữ session (đã trả 3-5 phút bootstrap + chờ GPU)
+# thêm IDLE_MAX_S, poll lại mỗi IDLE_POLL_S. Đánh đổi: chiếm GPU khi ngồi không
+# (bootstrap lại ~200s + queue GPU mỗi lần respawn).
+IDLE_MAX_S = float(os.environ.get("SESSION_IDLE_MAX_S") or 900)
+IDLE_POLL_S = float(os.environ.get("SESSION_IDLE_POLL_S") or 30)
 
 EXIT_GRACEFUL = 0
 EXIT_FATAL = 1
@@ -388,6 +393,7 @@ def run_loop(base: str, key: str) -> int:
     start = time.monotonic()
     last_heartbeat = float("-inf")
     claim_retries = 0
+    idle_since: float | None = None
     while True:
         now = time.monotonic()
         if now - start > SESSION_MAX_AGE_S - BUDGET_EXIT_MARGIN_S:
@@ -413,8 +419,17 @@ def run_loop(base: str, key: str) -> int:
             return EXIT_FATAL
         claim_retries = 0
         if claim.get("empty"):
-            print("[session] queue rỗng — exit 0", flush=True)
-            return EXIT_GRACEFUL
+            idle_since = idle_since or time.monotonic()
+            idle_for = time.monotonic() - idle_since
+            if idle_for >= IDLE_MAX_S:
+                print(f"[session] queue rỗng {idle_for:.0f}s ≥ {IDLE_MAX_S:.0f}s"
+                      " — exit 0", flush=True)
+                return EXIT_GRACEFUL
+            print(f"[session] queue rỗng — idle {idle_for:.0f}/{IDLE_MAX_S:.0f}s",
+                  flush=True)
+            time.sleep(IDLE_POLL_S)
+            continue
+        idle_since = None
         if (claim.get("server_flags") or {}).get("quota_low"):
             print("[session] quota_low — exit 0", flush=True)
             return EXIT_GRACEFUL

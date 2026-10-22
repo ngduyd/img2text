@@ -85,8 +85,8 @@ def test_kernel_metadata_owner_substitution(tmp_path):
     assert meta["kernel_type"] == "notebook"
     assert meta["is_private"] is True
     tpl = json.loads((DEPLOY_DIR / "kernel" / "kernel-metadata.json").read_text())
-    assert tpl["id"] == "OWNER/img2text-worker"
-    assert tpl["dataset_sources"] == ["OWNER/img2text-worker-files"]
+    assert tpl["id"] == "OWNER/img2text-batch-v2"
+    assert tpl["dataset_sources"] == ["OWNER/img2text-wheelbuild-env"]
 
 def test_dataset_metadata_owner_substitution(tmp_path):
     out = tmp_path / "dataset-metadata.json"
