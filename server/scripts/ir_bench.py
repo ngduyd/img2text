@@ -169,27 +169,8 @@ def _run_pages(run: Runner, result: dict, payload_of) -> dict:
     return _merge_pages(out)
 
 def _run_spec(result: dict) -> dict:
-    """Baseline 0-call: IR dựng trực tiếp từ layout_spec (type heuristic)."""
-    out = []
-    for pi, (page, spec) in enumerate(zip(result.get("pages") or [], layout_spec.build_page_specs(result))):
-        nodes = []
-        for block in spec.blocks:
-            nodes.append({
-                "id": f"f{pi}_{block.region_id}",
-                "type": block.type_label,
-                "source_block_ids": [block.region_id],
-                "bbox": [round(v) for v in block.bbox],
-            })
-        seen = {b.region_id for b in spec.blocks}
-        for region in page.get("regions") or []:   # region bị layout_spec nuốt (tab-stop)
-            rid = str(region.get("id"))
-            if rid in seen or not region.get("bbox"):
-                continue
-            nodes.append({"id": f"f{pi}_{rid}", "type": "paragraph",
-                          "source_block_ids": [rid], "bbox": list(region["bbox"])})
-        out.append({"page_id": str(page.get("index", pi)), "page_number": pi + 1,
-                    "header": [], "content": nodes, "footer": []})
-    return {"document_id": "doc_001", "schema_version": "1.0", "pages": out}
+    """Baseline 0-call: dùng đúng hàm production `ir.spec_ir`."""
+    return ir.spec_ir(result)
 
 def _run_chunks(run: Runner, result: dict) -> dict:
     """Gom ≤30 region/call; trang lớn cắt giữa trang theo (y, x)."""

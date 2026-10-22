@@ -130,7 +130,7 @@ async def test_ir_on_demand_then_cached(
 
     calls: list = []
 
-    async def fake_ir(result):
+    def fake_ir(result):   # spec_ir là sync, 0 LLM call
         calls.append(result)
         return {"document_id": "d1", "schema_version": "1.0", "pages": []}
 
@@ -144,20 +144,6 @@ async def test_ir_on_demand_then_cached(
     job = await db_session.get(Job, jid)
     await db_session.refresh(job)
     assert '"d1"' in job.ir_json
-
-async def test_ir_generate_fail_404(
-    auth_client, done_job_with_result, monkeypatch
-):
-    """generate_ir fail (None) → 404 "Chưa có IR." như cũ, không cache."""
-    import app.routers.jobs as jobs_mod
-
-    async def fake_ir(result):
-        return None
-
-    monkeypatch.setattr(jobs_mod, "generate_ir", fake_ir)
-    r = await auth_client.get(f"/api/jobs/{done_job_with_result}/ir")
-    assert r.status_code == 404
-    assert r.json()["detail"] == "Chưa có IR."
 
 # --- P0-D: GET job → text_version + stale_layouts (web contract) ---
 

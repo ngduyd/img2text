@@ -10,26 +10,18 @@ _render_band, _indent_of, _same_cluster.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import html
 import logging
 import re
 import statistics
-import time
 import unicodedata
 from dataclasses import dataclass, field
 
-import httpx
-
 from app.core.config import settings
-from app.core.db import SessionLocal
 from app.core.schemas import IMAGE_MARKER
-from app.services.ir import (
-    IRPageError, llm_ir_pages, validate_ir, IRValidationError,
-)
+from app.services.ir import spec_ir
 from app.services.layout_spec import BlockSpec, PageSpec, build_page_specs
-from app.services.runtime_settings import get_runtime_setting
 
 # marker template prefix ("**[Hình ảnh chưa trích xuất: vùng ") — dùng để
 # quét marker trong md render (embed_crop_urls)
@@ -308,66 +300,8 @@ def heuristic_labels(pages: list[Page]) -> dict[str, dict]:
 
 
 # ---------------------------------------------------------------- LLM
-class LLMError(Exception):
+class LLMError(Exception):  # ponytail: chỉ còn proofread/exports dùng — xoá khi call site cuối đi
     pass
-
-
-async def _llm_config() -> tuple[str, str, str, float]:
-    model = await get_runtime_setting(SessionLocal, "ir_llm_model", settings.ir_llm_model)
-    base_url = await get_runtime_setting(SessionLocal, "llm_base_url", settings.llm_base_url)
-    api_key = await get_runtime_setting(SessionLocal, "llm_api_key", settings.llm_api_key)
-    timeout = await get_runtime_setting(SessionLocal, "llm_timeout", settings.llm_timeout)
-    return base_url, model, api_key, timeout
-
-
-async def _chat(user_content: str, json_mode: bool = True) -> str:
-    base_url, model, api_key, timeout = await _llm_config()
-    payload: dict = {
-        "model": model,
-        "messages": [{"role": "user", "content": user_content}],
-        "temperature": 0,
-    }
-    # json_mode=False (render md): KHÔNG gửi response_format — json_object
-    # ép model echo IR/bọc envelope thay vì markdown thô.
-    if json_mode:
-        payload["response_format"] = {"type": "json_object"}
-    url = base_url.rstrip("/") + "/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        for attempt in range(2):
-            started = time.perf_counter()
-            try:
-                resp = await client.post(url, json=payload, headers=headers)
-            except httpx.HTTPError as exc:
-                logger.warning("llm call failed attempt=%d: %r", attempt, exc)
-                if attempt:
-                    raise LLMError(f"LLM không phản hồi: {exc!r}") from exc
-                await asyncio.sleep(1.0)
-                continue
-            logger.info("llm called: model=%s status=%s elapsed=%.1fs",
-                        model, resp.status_code, time.perf_counter() - started)
-            if resp.status_code < 400:
-                try:
-                    return resp.json()["choices"][0]["message"]["content"]
-                except (ValueError, KeyError, IndexError, TypeError) as exc:
-                    raise LLMError(f"phản hồi thiếu content: {exc}") from exc
-            if resp.status_code in (400, 422) and json_mode:
-                payload.pop("response_format", None)
-            elif resp.status_code not in (429, 500, 502, 503, 504):
-                raise LLMError(f"LLM HTTP {resp.status_code}")
-            if attempt:
-                raise LLMError(f"LLM HTTP {resp.status_code}")
-            await asyncio.sleep(1.5)
-    raise LLMError("LLM không phản hồi")
-
-
-async def llm_ir(result: dict) -> dict:
-    """Call LLM to produce IR JSON (S2: delegate shared per-page sequential,
-    giữ 2 HTTP clients — _chat của module, 1 shared logic trong services/ir)."""
-    try:
-        return await llm_ir_pages(result, _chat)
-    except IRPageError as exc:
-        raise LLMError(str(exc)) from exc
 
 
 # ---------------------------------------------------------------- render from IR
@@ -625,15 +559,11 @@ def render_md_spec(result: dict) -> str:
 
 
 # ---------------------------------------------------------------- IR generation
-async def generate_ir(result: dict) -> dict | None:
-    """Generate IR from OCR result via LLM. Returns IR dict or None on failure."""
-    try:
-        ir_dict = await llm_ir(result)
-        validate_ir(ir_dict, result)
-        return ir_dict
-    except (LLMError, IRValidationError) as exc:
-        logger.warning("IR generation failed: %s", exc)
-        return None
+def generate_ir(result: dict) -> dict:
+    """IR từ layout_spec (tất định, 0 LLM call). LLM đã bỏ khỏi bước IR:
+    bench cho thấy model gộp 75 region → 2-3 node, coverage fail; spec giữ
+    đúng 1 node/region. Giữ tên/kiểu trả về cho caller cũ."""
+    return spec_ir(result)
 
 
 # ---------------------------------------------------------------- crop embed (WS-PIPE)

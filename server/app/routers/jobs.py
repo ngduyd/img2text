@@ -789,13 +789,11 @@ async def get_job_ir(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Get Document IR JSON for a job — sinh on-demand lần đầu (1 LLM call),
+    """Get Document IR JSON — dựng từ layout_spec (tất định, 0 LLM),
     sau đó đọc cache job.ir_json."""
     job = await _job_or_403(session, id, user)
     if not job.ir_json:
-        ir = await generate_ir(job.result or {})
-        if not ir:
-            raise HTTPException(status_code=404, detail="Chưa có IR.")
+        ir = generate_ir(job.result or {})
         job.ir_json = json.dumps(ir, ensure_ascii=False)
         await session.commit()
     try:
