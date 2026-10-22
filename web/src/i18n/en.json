@@ -55,7 +55,8 @@
     "network": "Cannot reach the server. Check that it is running.",
     "uploadFailed": "File upload failed.",
     "generic": "An error occurred.",
-    "email_limit": "Too many emails requested. Please try again later."
+    "email_limit": "Too many emails requested. Please try again later.",
+    "filePurged": "Original file was deleted by the storage retention policy."
   },
   "ocr": {
     "enabled": "OCR enabled",
@@ -192,7 +193,10 @@
     "layoutDesc": "Rebuild and edit the page layout in a browser word processor.",
     "notReadyYet": "Nothing to show yet — the job is still processing.",
     "textNotReady": "Text is not ready yet.",
-    "layoutNotReady": "Layout is not ready yet."
+    "layoutNotReady": "Layout is not ready yet.",
+    "showOriginal": "Original",
+    "zen": "Full screen",
+    "exitZen": "Exit full screen"
   },
   "info": {
     "createdAt": "Created:",

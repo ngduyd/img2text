@@ -55,7 +55,8 @@
     "network": "Không kết nối được máy chủ. Kiểm tra server đang chạy.",
     "uploadFailed": "Tải file thất bại.",
     "generic": "Đã xảy ra lỗi.",
-    "email_limit": "Đã gửi quá nhiều email. Vui lòng thử lại sau."
+    "email_limit": "Đã gửi quá nhiều email. Vui lòng thử lại sau.",
+    "filePurged": "File gốc đã bị xoá theo chính sách lưu trữ."
   },
   "ocr": {
     "enabled": "OCR đã cấp",
@@ -192,7 +193,10 @@
     "layoutDesc": "Dựng lại và chỉnh sửa bố cục trang bằng trình soạn thảo trên trình duyệt.",
     "notReadyYet": "Chưa có nội dung — job đang xử lý.",
     "textNotReady": "Văn bản chưa sẵn sàng.",
-    "layoutNotReady": "Layout chưa sẵn sàng."
+    "layoutNotReady": "Layout chưa sẵn sàng.",
+    "showOriginal": "Ảnh gốc",
+    "zen": "Toàn màn hình",
+    "exitZen": "Thoát toàn màn hình"
   },
   "info": {
     "createdAt": "Tạo lúc:",

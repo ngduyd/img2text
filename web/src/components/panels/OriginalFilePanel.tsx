@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Download } from "lucide-react";
-import { ApiError } from "../../api/client";
 import { getJobBlob } from "../../lib/blobCache";
-import { translate, useT } from "../../i18n";
+import { useT } from "../../i18n";
+import { mapApiError } from "../../lib/errors";
 import Button from "../ui/Button";
 import Card from "../ui/Card";
 import Skeleton from "../ui/Skeleton";
@@ -40,7 +40,8 @@ export default function OriginalFilePanel({
         if (alive) setObjectUrl(URL.createObjectURL(blob));
       })
       .catch((err: unknown) => {
-        if (alive) setError(err instanceof ApiError ? err.detail : translate("errors.uploadFailed"));
+        // 410 = file đã purge → thông báo thân thiện thay vì "HTTP 410".
+        if (alive) setError(mapApiError(err));
       })
       .finally(() => {
         if (alive) setLoading(false);

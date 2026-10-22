@@ -93,6 +93,10 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
   const editorHostRef = useRef<HTMLElement>(null);
   /** U4+U5: File gốc + Thông tin = collapsible, mặc định MỞ (justify-between label/chevron). */
   const [originalOpen, setOriginalOpen] = useState(true);
+  /** D8: ảnh gốc đối chiếu ngay trong trang layout (không phải sang Tổng quan). */
+  const [showOriginal, setShowOriginal] = useState(false);
+  /** Focus mode: editor chiếm trọn viewport, Escape để thoát. */
+  const [zen, setZen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(true);
   /** U1 P0: đổi :id KHÔNG remount → reset states JobDetail theo id (grid remount bằng key). */
   useEffect(() => {
@@ -105,9 +109,25 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
     setShowHistory(false);
     setOriginalOpen(true);
     setInfoOpen(true);
+    setShowOriginal(false);
+    setZen(false);
     setRetryError(null);
     // oxlint-disable-next-line react/set-state-in-effect -- reset theo id (U1)
   }, [id]);
+
+  useEffect(() => {
+    if (!zen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setZen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    // Khóa scroll nền khi editor chiếm toàn viewport.
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [zen]);
 
   /** Lane I Task 6: confirm "Vẽ lại layout" → POST retry-layout + loading + toast (R59). */
   const confirmRetryLayout = async () => {
@@ -546,7 +566,15 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
       )}
 
       {section === "layout" && (
-        <div key={job.id} data-testid="detail-layout" className="flex flex-col gap-4 px-4 sm:px-6">
+        <div
+          key={job.id}
+          data-testid="detail-layout"
+          className={
+            zen
+              ? "fixed inset-0 z-40 flex flex-col gap-4 overflow-auto bg-surface p-4"
+              : "flex flex-col gap-4 px-4 sm:px-6"
+          }
+        >
           {layoutReady && result ? (
             <>
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -554,27 +582,60 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
                   {t("jd.layout")}
                   <span className="ml-2 font-mono text-base font-normal text-muted">#{job.id}</span>
                 </h1>
-                <Button
-                  testid="btn-edit-doc"
-                  variant={editing ? "primary" : "secondary"}
-                  aria-pressed={editing}
-                  disabled={job.status !== "done"}
-                  onClick={() => setEditing((v) => !v)}
-                >
-                  {editing ? t("jd.editing") : t("jd.edit")}
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    testid="btn-toggle-original-layout"
+                    variant="secondary"
+                    aria-pressed={showOriginal}
+                    onClick={() => setShowOriginal((v) => !v)}
+                  >
+                    {t("jd.showOriginal")}
+                  </Button>
+                  <Button
+                    testid="btn-zen"
+                    variant="secondary"
+                    aria-pressed={zen}
+                    onClick={() => setZen((v) => !v)}
+                  >
+                    {zen ? t("jd.exitZen") : t("jd.zen")}
+                  </Button>
+                  <Button
+                    testid="btn-edit-doc"
+                    variant={editing ? "primary" : "secondary"}
+                    aria-pressed={editing}
+                    disabled={job.status !== "done"}
+                    onClick={() => setEditing((v) => !v)}
+                  >
+                    {editing ? t("jd.editing") : t("jd.edit")}
+                  </Button>
+                </div>
               </div>
-              {editing ? (
-                <UnifiedEditor
-                  jobId={id!}
-                  job={job}
-                  markdown={result.edited_markdown ?? result.markdown}
-                  editing={editing}
-                  hostRef={editorHostRef}
-                />
-              ) : (
-                <LayoutPreview job={job} fmt={layoutFmt} />
-              )}
+              {/* D8: ảnh gốc để đối chiếu khi sửa. Xếp DỌC chứ không chia cột:
+                  3 pane (ảnh gốc | editor | A4) ở 1200px sẽ bóp cả hai bên. */}
+              <div className={showOriginal ? "flex min-w-0 flex-col gap-4" : "min-w-0"}>
+                {showOriginal && (
+                  <div className="max-h-[45vh] min-w-0 overflow-auto">
+                    <OriginalFilePanel
+                      jobId={id!}
+                      fileType={job.file_type}
+                      testid="panel-original-layout"
+                    />
+                  </div>
+                )}
+                <div className="min-w-0">
+                  {editing ? (
+                    <UnifiedEditor
+                      jobId={id!}
+                      job={job}
+                      markdown={result.edited_markdown ?? result.markdown}
+                      editing={editing}
+                      hostRef={editorHostRef}
+                    />
+                  ) : (
+                    <LayoutPreview job={job} fmt={layoutFmt} />
+                  )}
+                </div>
+              </div>
             </>
           ) : (
             <p className="text-sm text-muted">{t("jd.layoutNotReady")}</p>

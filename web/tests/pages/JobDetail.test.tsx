@@ -848,3 +848,35 @@ it("delete job: hủy → không gọi deleteJob", async () => {
   expect(screen.queryByTestId("confirm-dialog")).not.toBeInTheDocument();
   expect(api.deleteJob).not.toHaveBeenCalled();
 });
+
+/** D8: ảnh gốc đối chiếu được ngay trong trang layout khi đang sửa. */
+it("D8: layout page toggles the original file pane", async () => {
+  mockJob(DONE_JOB);
+  const user = userEvent.setup();
+  renderSection("layout");
+  const btn = await screen.findByTestId("btn-toggle-original-layout");
+  expect(btn).toHaveAttribute("aria-pressed", "false");
+  expect(screen.queryByTestId("panel-original-layout")).not.toBeInTheDocument();
+  await user.click(btn);
+  expect(btn).toHaveAttribute("aria-pressed", "true");
+  expect(await screen.findByTestId("panel-original-layout")).toBeInTheDocument();
+  await user.click(btn);
+  expect(screen.queryByTestId("panel-original-layout")).not.toBeInTheDocument();
+});
+
+/** Focus mode: editor chiếm trọn viewport, Escape thoát. */
+it("zen: full screen toggle + Escape exits", async () => {
+  mockJob(DONE_JOB);
+  const user = userEvent.setup();
+  renderSection("layout");
+  const btn = await screen.findByTestId("btn-zen");
+  const wrap = screen.getByTestId("detail-layout");
+  expect(wrap.className).not.toContain("fixed");
+  await user.click(btn);
+  expect(wrap.className).toContain("fixed");
+  expect(wrap.className).toContain("inset-0");
+  expect(btn).toHaveAttribute("aria-pressed", "true");
+  await user.keyboard("{Escape}");
+  expect(wrap.className).not.toContain("fixed");
+  expect(btn).toHaveAttribute("aria-pressed", "false");
+});

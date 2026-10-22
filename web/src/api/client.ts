@@ -8,13 +8,21 @@ export class ApiError extends Error {
   detail: string;
   code?: string;
   params?: Record<string, string | number>;
+  /** HTTP status khi có response; undefined với lỗi mạng/upload. */
+  status?: number;
 
-  constructor(detail: string, code?: string, params?: Record<string, string | number>) {
+  constructor(
+    detail: string,
+    code?: string,
+    params?: Record<string, string | number>,
+    status?: number,
+  ) {
     super(detail);
     this.name = "ApiError";
     this.detail = detail;
     this.code = code;
     this.params = params;
+    this.status = status;
   }
 }
 
@@ -81,7 +89,7 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     if (res.status === 403 && code === "email_unverified") {
       for (const listener of unverifiedListeners) listener();
     }
-    throw new ApiError(detail, code, params);
+    throw new ApiError(detail, code, params, res.status);
   }
   // 204 = no body (Plan M PUTs) — res.json() would throw on empty payload.
   if (res.status === 204) return undefined as T;
@@ -268,7 +276,7 @@ export const api = {
     // fetch trực tiếp (request() redirect 401 → /signin): 401/403 = ẩn widget
     const res = await fetch("/api/quota/me", { credentials: "include" });
     if (res.status === 401 || res.status === 403) return null;
-    if (!res.ok) throw new ApiError(`HTTP ${res.status}`);
+    if (!res.ok) throw new ApiError(`HTTP ${res.status}`, undefined, undefined, res.status);
     return (await res.json()) as QuotaMe;
   },
   retryJob: (id: number | string) =>
@@ -330,7 +338,7 @@ export const api = {
         // non-JSON error body → keep generic detail
       }
       if (res.status === 401) window.location.assign("/signin");
-      throw new ApiError(detail);
+      throw new ApiError(detail, undefined, undefined, res.status);
     }
     return await res.text();
   },
@@ -349,7 +357,7 @@ export const api = {
         // non-JSON error body → keep generic detail
       }
       if (res.status === 401) window.location.assign("/signin");
-      throw new ApiError(detail);
+      throw new ApiError(detail, undefined, undefined, res.status);
     }
     return await res.blob();
   },
@@ -367,7 +375,7 @@ export const api = {
         // non-JSON error body → keep generic detail
       }
       if (res.status === 401) window.location.assign("/signin");
-      throw new ApiError(detail);
+      throw new ApiError(detail, undefined, undefined, res.status);
     }
     return await res.blob();
   },
