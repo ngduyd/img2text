@@ -523,7 +523,6 @@ class RuntimeSettingsPut(BaseModel):
     kaggle_mode: str | None = None
     llm_base_url: str | None = None
     llm_model: str | None = None
-    ir_llm_model: str | None = None
     proofread_llm_model: str | None = None
     llm_api_key: str | None = None
     llm_timeout: int | None = None
@@ -621,7 +620,6 @@ async def put_settings(
     for key in (
         "llm_base_url",
         "llm_model",
-        "ir_llm_model",
         "proofread_llm_model",
         "llm_api_key",
         "llm_timeout",

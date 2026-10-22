@@ -33,7 +33,6 @@ RUNTIME_SETTING_KEYS = (
     "kaggle_mode",
     "llm_base_url",
     "llm_model",
-    "ir_llm_model",
     "proofread_llm_model",
     "llm_api_key",
     "llm_timeout",

@@ -346,8 +346,6 @@
       "sectionScheduler": "Scheduler",
       "sectionLimits": "Limits",
       "sectionSmtp": "SMTP",
-      "irModel": "IR model",
-      "irModelHelp": "Model used for IR document-structure classification (docx/md export).",
       "llmApiKey": "API key (write-only)",
       "llmApiKeyHelp": "Bearer token for /chat/completions. Leave blank to keep the current key.",
       "llmTimeout": "LLM timeout (seconds)",

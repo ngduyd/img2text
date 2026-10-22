@@ -120,8 +120,6 @@ class Settings(BaseSettings):
     llm_timeout: int = Field(
         default=180, description="LLM request timeout (seconds)"
     )  # LLM free chậm — 180s (2 retry → worst ~6 phút/call)
-    # IR rewrite: LLM phân loại cấu trúc document (config: ir_llm_model)
-    ir_llm_model: str = "oc/mimo-v2.6-flash-free"
     # Proofread dùng model riêng (khác layout model) — cùng endpoint.
     proofread_llm_model: str = "oc/longcat-2.5-preview-free"
     # Bearer token for remote /v1/chat/completions; None = no Authorization

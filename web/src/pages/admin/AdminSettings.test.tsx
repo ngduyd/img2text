@@ -29,7 +29,6 @@ const DB = "db";
 const settings = () => ({
   llm_base_url: { value: "http://localhost:20128/v1", source: ENV },
   llm_model: { value: "layout-1", source: ENV },
-  ir_llm_model: { value: "ir-1", source: ENV },
   proofread_llm_model: { value: "proof-1", source: ENV },
   llm_api_key: { value: null, source: ENV },
   llm_timeout: { value: 180, source: ENV },
@@ -72,7 +71,7 @@ test("renders 5 sections with heading, fields, source badge, readonly mode", asy
   expect(await screen.findByTestId("input-max-pages")).toHaveValue(100);
   expect(screen.getByTestId("source-max-pages")).toHaveTextContent("env");
   expect(screen.getByTestId("input-smtp-host")).toHaveValue("localhost");
-  expect(screen.getByTestId("input-ir-llm-model")).toHaveValue("ir-1");
+  expect(screen.getByTestId("input-proofread-llm-model")).toHaveValue("proof-1");
   // upload_byte_limit hiển thị MB (211812352 B = 202 MB)
   expect(screen.getByTestId("input-upload-byte-limit")).toHaveValue(202);
   // write-only: ô pass không prefill mask
@@ -80,7 +79,7 @@ test("renders 5 sections with heading, fields, source badge, readonly mode", asy
   // kaggle_mode readonly
   expect(screen.getByTestId("kaggle-mode-value")).toHaveTextContent("batch");
   // nút Test cạnh mỗi ô model + reset mỗi ô
-  for (const slug of ["llm-model", "ir-llm-model", "proofread-llm-model"]) {
+  for (const slug of ["llm-model", "proofread-llm-model"]) {
     expect(screen.getByTestId(`test-${slug}`)).toBeTruthy();
   }
   expect(screen.getByTestId("reset-max-pages")).toBeTruthy();
@@ -137,20 +136,20 @@ test("Test model: ok → badge Sống + latency; fail → badge Chết", async (
   testLlmModel.mockResolvedValue({
     ok: true,
     latency_ms: 123,
-    model: "ir-1",
+    model: "proof-1",
     error: null,
   });
   renderPage();
   await screen.findByTestId("form-settings");
-  fireEvent.click(screen.getByTestId("test-ir-llm-model"));
+  fireEvent.click(screen.getByTestId("test-proofread-llm-model"));
   await waitFor(() => expect(testLlmModel).toHaveBeenCalledTimes(1));
   // P2f: gửi kèm base_url đang nhập trong form (test đúng URL admin sửa)
   expect(testLlmModel).toHaveBeenCalledWith({
-    model: "ir-1",
+    model: "proof-1",
     base_url: "http://localhost:20128/v1",
   });
   await waitFor(() =>
-    expect(screen.getByTestId("test-result-ir-llm-model")).toHaveTextContent(
+    expect(screen.getByTestId("test-result-proofread-llm-model")).toHaveTextContent(
       "Alive · 123 ms",
     ),
   );
@@ -158,17 +157,17 @@ test("Test model: ok → badge Sống + latency; fail → badge Chết", async (
   testLlmModel.mockResolvedValue({
     ok: false,
     latency_ms: 5,
-    model: "ir-1",
+    model: "proof-1",
     error: "HTTP 500: boom",
   });
-  fireEvent.click(screen.getByTestId("test-ir-llm-model"));
+  fireEvent.click(screen.getByTestId("test-proofread-llm-model"));
   await waitFor(() =>
-    expect(screen.getByTestId("test-result-ir-llm-model")).toHaveTextContent(
+    expect(screen.getByTestId("test-result-proofread-llm-model")).toHaveTextContent(
       "Dead",
     ),
   );
   expect(
-    screen.getByTestId("test-result-ir-llm-model"),
+    screen.getByTestId("test-result-proofread-llm-model"),
   ).toHaveTextContent("HTTP 500");
 });
 

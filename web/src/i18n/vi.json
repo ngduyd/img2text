@@ -346,8 +346,6 @@
       "sectionScheduler": "Lập lịch",
       "sectionLimits": "Giới hạn",
       "sectionSmtp": "SMTP",
-      "irModel": "Model IR",
-      "irModelHelp": "Model phân loại cấu trúc tài liệu khi xuất docx/md.",
       "llmApiKey": "API key (chỉ ghi)",
       "llmApiKeyHelp": "Bearer token cho /chat/completions. Để trống để giữ key hiện tại.",
       "llmTimeout": "Timeout LLM (giây)",

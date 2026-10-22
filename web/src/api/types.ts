@@ -216,7 +216,6 @@ export interface AdminSettingsPut {
   kaggle_min_gap_seconds?: number;
   llm_base_url?: string;
   llm_model?: string;
-  ir_llm_model?: string;
   proofread_llm_model?: string;
   llm_api_key?: string;
   llm_timeout?: number;
