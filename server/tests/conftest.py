@@ -143,9 +143,23 @@ async def upload_job(
     return await client.post("/api/jobs", json=body)
 
 
+def _nodb(request) -> bool:
+    """Marker `nodb`: test thuần hàm, không cần Postgres (chạy được khi DB tắt).
+
+    Function-scope: xét chính test. Session-scope: chỉ bỏ khi MỌI test thu
+    thập đều `nodb` (còn test khác cần DB thì fixture session vẫn chạy).
+    """
+    items = getattr(request.node, "items", None)
+    if not items:
+        return request.node.get_closest_marker("nodb") is not None
+    return all(i.get_closest_marker("nodb") is not None for i in items)
+
 @pytest_asyncio.fixture(scope="session", autouse=True)
-async def db_schema():
+async def db_schema(request):
     """Session-scoped: create schema ONCE against the test engine."""
+    if _nodb(request):
+        yield
+        return
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
@@ -161,8 +175,11 @@ async def db_session() -> AsyncSession:
 
 
 @pytest_asyncio.fixture(autouse=True)
-async def db_truncate():
+async def db_truncate(request):
     """Function-scoped: truncate all tables between tests."""
+    if _nodb(request):
+        yield   # async generator: nhánh bỏ qua vẫn phải yield 1 lần
+        return
     async with engine.begin() as conn:
         tables = (
             await conn.execute(
