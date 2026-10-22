@@ -434,8 +434,11 @@ def main() -> int:
     _heartbeat(base, SESSION_KEY, "session:boot")
     if os.environ.get("_IMG2TEXT_SESSION_VENV") != "1":
         try:
+            # parent_deps=False: job chạy trong venv 3.12 → cài deps vào
+            # kernel python 3.13 chỉ tốn ~40s (đo session 2026-10-22).
             kb.bootstrap_venv(
-                progress=lambda s: _heartbeat(base, SESSION_KEY, f"session:{s}")
+                progress=lambda s: _heartbeat(base, SESSION_KEY, f"session:{s}"),
+                parent_deps=False,
             )
         except (SystemExit, Exception) as exc:
             print(f"[session] bootstrap session-level fail: {exc}", flush=True)
@@ -443,6 +446,9 @@ def main() -> int:
         os.environ["_IMG2TEXT_SESSION_VENV"] = "1"
         os.execve(kb.VENV_PY, [kb.VENV_PY, __file__], os.environ)
         return EXIT_FATAL  # unreachable
+    # Child (venv) re-exec: bootstrap KHÔNG chạy → globals cv2/np/Image/fuzz
+    # chưa tồn tại (job fail `name 'cv2' is not defined`).
+    kb.bind_runtime_modules()
     _heartbeat(base, SESSION_KEY, "session:loop")
     try:
         return run_loop(base, SESSION_KEY)

@@ -290,8 +290,9 @@ def test_script_contract():
     assert 'sys.argv[1] == "--ocr"' in src
     # light kernel-python deps only (no httpx/pypdf — no server loop, pdf via pdftoppm)
     assert "httpx" not in low and "pypdf" not in low
-    assert "poppler-utils" in src and "pdftoppm" in src   # apt kept, NOT PyMuPDF
-    assert "fitz" not in low and "pymupdf" not in low
+    assert "poppler-utils" in src and "pdftoppm" in src   # batch path: pdftoppm
+    # session path rasterize PDF bằng fitz → venv PHẢI có pymupdf (bug 2026-10-22)
+    assert "pymupdf" in low and "fitz" in low
     # recursive input discovery (new mount: /kaggle/input/<owner>/<slug>/)
     assert '"/kaggle/input/**/*"' in src and "recursive=True" in src
     # standalone: no cross-import, no sys.path mount, no worker-files dataset

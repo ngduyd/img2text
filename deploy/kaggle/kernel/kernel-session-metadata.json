@@ -7,8 +7,6 @@
   "is_private": true,
   "enable_gpu": true,
   "enable_internet": true,
-  "dataset_sources": [
-    "jhandf/img2text-wheelbuild-env"
-  ],
+  "dataset_sources": [],
   "machine_shape": "NvidiaTeslaT4"
 }
