@@ -175,3 +175,25 @@ def test_thin_column_singleton_dropped_on_text_page():
                                         "page_flag": "ok", "markdown": "",
                                         "regions": regions}]})[0]
     assert len(page.cols) == 1
+
+def test_two_side_header_pair_gets_right_tab():
+    """Header 2 bên (BỘ GIÁO DỤC ... | KỲ THI ...) → tab RIGHT tại x1 của khối
+    phải, không phải tab LEFT giữa dòng (mất vị trí 2 bên như bản gốc)."""
+    from app.services.layout_spec import build_page_specs
+
+    regions = [
+        {"id": "l", "bbox": [64, 36, 241, 63], "text": "BỘ GIÁO DỤC VÀ ĐÀO TẠO",
+         "verdict": "ok", "placeholder": False},
+        {"id": "r", "bbox": [293, 43, 559, 95], "text": "KỸ THI CHỌN HỌC SINH GIỎI",
+         "verdict": "ok", "placeholder": False},
+        {"id": "body", "bbox": [48, 186, 592, 266], "text": "Nội dung đoạn văn dài.",
+         "verdict": "ok", "placeholder": False},
+    ]
+    page = build_page_specs({"pages": [{"index": 0, "width": 640, "height": 906,
+                                        "page_flag": "ok", "markdown": "",
+                                        "regions": regions}]})[0]
+    block = next(b for b in page.blocks if b.region_id in ("l", "r"))
+    assert len(block.tabs) == 1
+    tab = block.tabs[0]
+    assert tab.align == "right"
+    assert tab.pos_px > 0

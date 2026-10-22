@@ -27,7 +27,10 @@ FONT_FALLBACK = 16.0
 DOTS = "...."               # ≥4 chấm → tab leader DOTS
 TAB_SPACE_PX = 8.0          # px ước lượng cho 1 ký tự space khi tính first-line indent
 FORM_RE = re.compile(r"^\S.*:\s*\.{3,}")   # "Họ và tên: ....." → form field
-FORM_MAX_CHARS = 60         # cặp nhãn/giá trị dài hơn → coi là 2 block text thường
+FORM_MAX_CHARS = 60
+# cặp khối "hai bên" (header trái/phải): block phải sát mép phải + cách xa
+TWO_SIDE_EDGE_RATIO = 0.05
+TWO_SIDE_GAP_RATIO = 0.10         # cặp nhãn/giá trị dài hơn → coi là 2 block text thường
 COL_MIN_BLOCKS = 2          # cột phải có ≥2 block định nghĩa cột, thiếu → bỏ
 HEADING_RATIO = 1.6         # font ≥ 1.6× median → heading
 HEADING_L1_RATIO = 2.2      # font ≥ 2.2× median → heading level 1
@@ -269,9 +272,26 @@ def _attach_tabs(band: list[BlockSpec], cols: list[Col]) -> set[str]:
                 edge = max(edge, other.x1)
                 continue
             leader = "dots" if (DOTS in base.text or DOTS in other.text) else "none"
+            # 2 khối "hai bên" (header trái/phải, ký tên trái + ngày phải):
+            # block phải kết thúc sát mép phải VÀ cách xa block trái → tab
+            # RIGHT tại x1, giữ đúng vị trí như bản gốc. Cặp nhãn⇥giá trị
+            # (giá trị nằm giữa dòng) vẫn tab LEFT tại x0.
+            col = cols[ci]
+            col_w = max(1.0, col.x1 - col.x0)
+            gap = other.x0 - base.x1
+            # nhãn form ("Địa chỉ: .....") không bao giờ căn phải, kể cả khi
+            # giá trị dài chạm mép phải.
+            is_label = bool(_LABEL_RE.search(base.text.strip()))
+            # "hai bên": block trái kết thúc ở nửa trái, block phải kết thúc
+            # ở 3/4 phải của cột → căn phải tại x1 (giữ vị trí như bản gốc).
+            flush_right = (
+                not is_label
+                and base.x1 <= col.x0 + 0.5 * col_w
+                and other.x1 >= col.x0 + 0.75 * col_w
+            )
             base.tabs.append(Tab(
-                pos_px=max(0.0, other.x0 - cols[ci].x0),
-                align=other.align,
+                pos_px=max(0.0, (other.x1 if flush_right else other.x0) - col.x0),
+                align="right" if flush_right else other.align,
                 leader=leader,
             ))
             value = " ".join(other.lines) or other.text.strip()
