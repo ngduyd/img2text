@@ -3,14 +3,16 @@ import type { SelectHTMLAttributes } from "react";
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   label: string;
   testid?: string;
+  /** Label chỉ cho screen reader (toolbar cần search + sort cùng chiều cao). */
+  hideLabel?: boolean;
 }
 
 /** Label-above select (DESIGN.md §3): h-10, rounded-sm, surface fill. */
-export default function Select({ label, testid, id, className, ...rest }: SelectProps) {
+export default function Select({ label, testid, id, className, hideLabel = false, ...rest }: SelectProps) {
   const selectId = id ?? testid;
   return (
-    <div className="flex flex-col gap-1 text-sm">
-      <label htmlFor={selectId} className="text-muted">
+    <div className={`flex flex-col gap-1 text-sm ${hideLabel ? "justify-end" : ""}`}>
+      <label htmlFor={selectId} className={hideLabel ? "sr-only" : "text-muted"}>
         {label}
       </label>
       <select

@@ -196,7 +196,9 @@
     "layoutNotReady": "Layout is not ready yet.",
     "showOriginal": "Original",
     "zen": "Full screen",
-    "exitZen": "Exit full screen"
+    "exitZen": "Exit full screen",
+    "proofread": "Proofread",
+    "proofreadDone": "{n} suggestions added"
   },
   "info": {
     "createdAt": "Created:",
@@ -245,6 +247,9 @@
       "title": "Problems ({n})",
       "replacedNote": "Region text updated; markdown not replaced (original text no longer in the preview)",
       "editRegion": "Edit region"
+    },
+    "suggestions": {
+      "title": "Fixes ({n})"
     }
   },
   "word": {
@@ -401,7 +406,8 @@
       "cost": "Estimated cost (USD)",
       "emailsSent": "Emails sent",
       "emailsFailed": "Emails failed",
-      "emailsStuck": "{n} email(s) stuck in the outbox — drain job dead or SMTP hung."
+      "emailsStuck": "{n} email(s) stuck in the outbox — drain job dead or SMTP hung.",
+      "rangeHint": "Last 7 days"
     },
     "stats": {
       "date": "Date",

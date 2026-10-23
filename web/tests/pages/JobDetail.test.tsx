@@ -886,3 +886,15 @@ it("zen: full screen toggle + Escape exits", async () => {
   expect(wrap.className).not.toContain("fixed");
   expect(btn).toHaveAttribute("aria-pressed", "false");
 });
+
+/** P1 làm rơi mất nút sửa văn bản (state editingText thành dead) — giờ ở header. */
+it("text page: header có Sửa văn bản + Soát lỗi, bấm Sửa → mở editor", async () => {
+  mockJob(DONE_JOB);
+  renderSection("text");
+  const edit = await screen.findByTestId("btn-edit-text");
+  expect(screen.getByTestId("btn-proofread")).toBeInTheDocument();
+  expect(edit).toHaveAttribute("aria-pressed", "false");
+  await userEvent.setup().click(edit);
+  expect(await screen.findByTestId("text-editor")).toBeInTheDocument();
+  expect(edit).toHaveAttribute("aria-pressed", "true");
+});

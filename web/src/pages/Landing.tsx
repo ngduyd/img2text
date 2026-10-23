@@ -80,7 +80,7 @@ export default function Landing() {
       {/* Hero: split, clamp typography, motion entry. */}
       <section
         data-testid="landing-hero"
-        className="grid items-center gap-10 pt-16 pb-16 md:grid-cols-[3fr_2fr] md:pt-24"
+        className="grid items-center gap-10 pt-12 pb-12 md:grid-cols-[3fr_2fr] md:pt-16 md:pb-16"
       >
         <motion.div
           initial={reduce ? false : { opacity: 0, y: 24 }}
@@ -108,7 +108,7 @@ export default function Landing() {
       </section>
 
       {/* Ảnh thật: danh sách job + trang Văn bản (đối chiếu ảnh gốc / sửa lỗi OCR). */}
-      <section data-testid="landing-preview" className="border-t border-border py-16 md:py-24">
+      <section data-testid="landing-preview" className="border-t border-border py-12 md:py-16">
         <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
           {t("landing.previewTitle")}
         </h2>
@@ -125,7 +125,7 @@ export default function Landing() {
       </section>
 
       {/* #how: pipeline OCR → IR → Layout, so numbered list, verb-noun labels. */}
-      <section data-testid="landing-how" id="how" className="py-16 md:py-24">
+      <section data-testid="landing-how" id="how" className="border-t border-border py-12 md:py-16">
         <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("landing.howTitle")}</h2>
         <ol className="mt-8 divide-y divide-border">
           {HOW_STEPS.map((step, i) => (
@@ -143,7 +143,7 @@ export default function Landing() {
       </section>
 
       {/* Roadmap "Sắp có": 3 hạng mục đang làm + dải định dạng hỗ trợ. */}
-      <section data-testid="landing-roadmap" id="roadmap" className="py-16 md:py-24">
+      <section data-testid="landing-roadmap" id="roadmap" className="border-t border-border py-12 md:py-16">
         <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("landing.roadmapTitle")}</h2>
         <ul className="mt-8 grid gap-4 md:grid-cols-3">
           {ROADMAP.map((key) => (
@@ -180,7 +180,7 @@ export default function Landing() {
       </section>
 
       {/* Final CTA: same label "Bắt đầu" (one signup intent, one label). */}
-      <section className="py-16 text-center md:py-24">
+      <section className="border-t border-border py-12 text-center md:py-16">
         <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
           {t("landing.finalTitle")}
         </h2>

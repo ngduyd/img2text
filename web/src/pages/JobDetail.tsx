@@ -70,6 +70,7 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
   const [editing, setEditing] = useState(false);
   /** U2: nút Edit text dời ra heading row section Text (controlled xuống TextSection). */
   const [editingText, setEditingText] = useState(false);
+  const [proofreading, setProofreading] = useState(false);
   /** Lane I Task 6: dropdown "Tải xuống" ở header (gộp 4 định dạng text). */
   const [downloadOpen, setDownloadOpen] = useState(false);
   /** U7: bỏ switch MD/Word — fmt fixed init theo job.output_format. */
@@ -117,6 +118,8 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
     setInfoOpen(true);
     setShowOriginal(false);
     setZen(false);
+    setEditingText(false);
+    setProofreading(false);
     setRetryError(null);
     // oxlint-disable-next-line react/set-state-in-effect -- reset theo id (U1)
   }, [id]);
@@ -251,6 +254,42 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
         </nav>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           {/* D4: tối đa 1 primary + 1 secondary hiện; còn lại nằm trong ⋯. */}
+          {section === "text" && textReady && (
+            <>
+              <Button
+                testid="btn-edit-text"
+                variant="ghost"
+                size="sm"
+                aria-pressed={editingText}
+                onClick={() => setEditingText((v) => !v)}
+              >
+                {editingText ? t("editor.editing") : t("editor.edit")}
+              </Button>
+              <Button
+                testid="btn-proofread"
+                variant="ghost"
+                size="sm"
+                loading={proofreading}
+                onClick={() => {
+                  setProofreading(true);
+                  void (async () => {
+                    try {
+                      const { count } = await api.runProofread(id!);
+                      toast.success(t("jd.proofreadDone", { n: count }));
+                      await queryClient.invalidateQueries({ queryKey: ["suggestions", id] });
+                      await queryClient.invalidateQueries({ queryKey: ["extraction", id] });
+                    } catch (err) {
+                      toast.error(mapApiError(err));
+                    } finally {
+                      setProofreading(false);
+                    }
+                  })();
+                }}
+              >
+                {t("jd.proofread")}
+              </Button>
+            </>
+          )}
           {section === "layout" && layoutReady && (
             <>
               <Button

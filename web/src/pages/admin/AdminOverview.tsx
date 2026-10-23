@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import type { AdminStatsDay } from "../../api/types";
-import Card from "../../components/ui/Card";
 import { Stat } from "../../components/ui/Stat";
 import { useT } from "../../i18n";
 import { last7Days } from "./dateRange";
@@ -38,11 +37,17 @@ export default function AdminOverview() {
           {t("admin.overview.emailsStuck", { n: data!.emails_stuck })}
         </p>
       )}
+      <p className="mb-2 text-sm text-muted">{t("admin.overview.rangeHint")}</p>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
         {CARDS.map((c) => (
-          <Card key={c.id} testid={`stat-${c.id}`}>
+          /* p-3 + min-h: 7 card/hàng ở 1200px, label 2 dòng vẫn thẳng hàng. */
+          <div
+            key={c.id}
+            data-testid={`stat-${c.id}`}
+            className="flex min-h-20 flex-col justify-between rounded-card border border-border bg-surface p-3 shadow-card"
+          >
             <Stat label={t(c.labelKey)} value={String(days.reduce((s, d) => s + c.sum(d), 0))} />
-          </Card>
+          </div>
         ))}
       </div>
     </div>

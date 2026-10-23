@@ -176,6 +176,8 @@ export default function TextSection({
   );
 
   const openSuggestion = suggestions.find((s) => s.id === open?.sid) ?? null;
+  /** Chỉ đề xuất còn hiệu lực (accepted/rejected do server lọc theo status). */
+  const pendingSuggestions = suggestions.filter((s) => s.status === "pending");
   /** Anchor element per suggestion key — popover flip đọc rect từ đây lúc render. */
   const anchorEls = useRef(new Map<string, HTMLSpanElement>());
 
@@ -506,6 +508,55 @@ export default function TextSection({
           })}
         </article>
         </div>
+          )}
+          {/* Danh sách đề xuất proofread: trước đây chỉ có highlight inline, phải
+              bấm đúng chữ mới thấy → không biết có bao nhiêu, sửa cái gì. */}
+          {pendingSuggestions.length > 0 && (
+            <section
+              data-testid="suggestions-panel"
+              aria-labelledby="suggestions-title"
+              className="rounded-card border border-warning/40 bg-warning/5 p-4"
+            >
+              <h2 id="suggestions-title" className="text-sm font-semibold">
+                {t("editor.suggestions.title", { n: pendingSuggestions.length })}
+              </h2>
+              <ul className="mt-1 divide-y divide-border">
+                {pendingSuggestions.map((s) => (
+                  <li
+                    key={s.id}
+                    data-testid={`suggestion-${s.id}`}
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1 py-2 text-sm"
+                  >
+                    <span className="font-mono text-error line-through">{s.original}</span>
+                    <span aria-hidden="true" className="text-muted">→</span>
+                    <span className="font-mono text-success">{s.suggestion}</span>
+                    {/* Lý do xuống dòng riêng: 6 dòng liền mạch đọc như một câu. */}
+                    <span className="w-full text-xs text-muted">{s.reason}</span>
+                    <span className="ml-auto flex items-center gap-1">
+                    <Button
+                      testid={`btn-apply-inline-${s.id}`}
+                      variant="secondary"
+                      size="sm"
+                      loading={savingSid === s.id}
+                      disabled={savingSid !== null}
+                      onClick={() => handleApply(s)}
+                    >
+                      {t("editor.apply")}
+                    </Button>
+                    <Button
+                      testid={`btn-reject-inline-${s.id}`}
+                      variant="ghost"
+                      size="sm"
+                      disabled={savingSid !== null}
+                      onClick={() => void handleReject(s)}
+                    >
+                      {t("editor.reject")}
+                    </Button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
         </>
       )}

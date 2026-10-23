@@ -12,6 +12,19 @@ import Skeleton from "./ui/Skeleton";
 
 type Mode = "md" | "word";
 
+/** Server trả HTML preview kèm <style>; DOMPurify LUÔN bỏ thẻ <style> (kể cả
+ *  ADD_TAGS) ⇒ CSS mất, mọi thứ dồn 1 dòng/1 cột. Tách CSS ra trước khi
+ *  sanitize, rồi nhúng lại vào srcdoc (CSS là của server mình, không phải
+ *  nội dung người dùng). */
+function splitStyle(html: string): { css: string; body: string } {
+  const css: string[] = [];
+  const body = html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (_m, c: string) => {
+    css.push(c);
+    return "";
+  });
+  return { css: css.join("\n"), body };
+}
+
 const FMT: Record<Mode, "md-layout" | "docx-layout"> = {
   md: "md-layout",
   word: "docx-layout",
@@ -42,6 +55,7 @@ export default function LayoutPreview({
   const mode: Mode = fmt === "docx-layout" ? "word" : "md";
   const [mdHtml, setMdHtml] = useState<string | null>(null);
   const [wordHtml, setWordHtml] = useState<string | null>(null);
+  const [wordCss, setWordCss] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,7 +95,9 @@ export default function LayoutPreview({
             .getLayoutPreviewHtml(job.id)
             .catch(() => null);
           if (specHtml !== null && specHtml.trim() !== "") {
-            setWordHtml(DOMPurify.sanitize(specHtml));
+            const { css, body } = splitStyle(specHtml);
+            setWordCss(css);
+            setWordHtml(DOMPurify.sanitize(body));
           } else {
             await api.exportJob(job.id, FMT.word);
             const blob = await api.downloadExport(job.id, FMT.word);
@@ -147,11 +163,13 @@ export default function LayoutPreview({
         <iframe
           data-testid="preview-word"
           title={t("preview.wordTitle")}
-          sandbox=""
+          // allow-same-origin: ảnh crop là route API cần cookie; KHÔNG
+          // allow-scripts ⇒ nội dung preview không chạy JS.
+          sandbox="allow-same-origin"
           // docStyle (body rule) + docx.html — srcdoc cùng origin iframe, sandbox off script.
           // Iframe không inherit tokens trang → inject :root --accent-text (dark + light)
           // để link color trong docStyle render đúng cả 2 theme (contrast-safe).
-          srcDoc={`<style>:root { --accent-text: #58a6ff; }\n@media (prefers-color-scheme: light) { :root { --accent-text: #0861cf; } }</style><style>${wordBase}${docStyle}</style>${wordHtml ?? ""}`}
+          srcDoc={`<style>:root { --accent-text: #58a6ff; }\n@media (prefers-color-scheme: light) { :root { --accent-text: #0861cf; } }</style><style>${wordBase}${docStyle}</style><style>${wordCss}</style>${wordHtml ?? ""}`}
           className="h-[75vh] w-full rounded-md border border-border bg-surface"
         />
       )}

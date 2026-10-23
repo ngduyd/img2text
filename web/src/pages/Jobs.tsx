@@ -162,6 +162,7 @@ export default function Jobs() {
           </label>
           <Select
             label={t("jobs.sortLabel")}
+            hideLabel
             testid="jobs-sort"
             value={sort}
             onChange={(e) => {
