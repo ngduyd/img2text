@@ -409,7 +409,9 @@
       "emailsSent": "Email đã gửi",
       "emailsFailed": "Email gửi lỗi",
       "emailsStuck": "{n} email kẹt trong outbox — drain job chết hoặc SMTP treo.",
-      "rangeHint": "7 ngày gần nhất"
+      "rangeHint": "7 ngày gần nhất",
+      "activity": "Hoạt động 7 ngày — {done} xong, {failed} lỗi",
+      "activityAria": "Số job theo ngày, 7 ngày gần nhất: {done} xong, {failed} lỗi"
     },
     "stats": {
       "date": "Ngày",
@@ -642,7 +644,12 @@
     "sortNewest": "Mới nhất",
     "sortOldest": "Cũ nhất",
     "filter": {
-      "all": "Tất cả"
+      "all": "Tất cả",
+      "chipQueued": "Chờ",
+      "chipExtracting": "Trích xuất",
+      "chipRendering": "Dựng layout",
+      "chipDone": "Hoàn tất",
+      "chipFailed": "Thất bại"
     },
     "deniedTitle": "Chờ admin cấp quyền",
     "deniedHint": "Môi trường dev: đăng nhập tài khoản admin → mục Người dùng → bật OCR cho tài khoản này.",

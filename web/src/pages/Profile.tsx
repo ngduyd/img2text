@@ -211,7 +211,8 @@ export default function Profile() {
               </p>
             )}
             <div>
-              <Button type="submit" testid="btn-save-email" loading={emBusy}>
+              {/* 2 form trên 1 trang → chỉ form đầu giữ primary, còn lại secondary. */}
+              <Button type="submit" testid="btn-save-email" variant="secondary" loading={emBusy}>
                 {t("profile.saveEmail")}
               </Button>
             </div>

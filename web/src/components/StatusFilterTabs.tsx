@@ -1,5 +1,4 @@
 import type { JobListItem, JobStatus } from "../api/types";
-import { STATUS_KEY } from "../lib/status";
 import { useT } from "../i18n";
 import Button from "./ui/Button";
 
@@ -7,13 +6,15 @@ export type StatusFilter = "all" | JobStatus;
 
 // P2: chips share STATUS_KEY spellings with badges (one spelling per status).
 // "all" is a filter pseudo-status, not a job status — kept short.
+/* Chip là bộ lọc, không phải badge: nhãn phải NGẮN để 6 chip nằm 1 hàng
+   ("Đang trích xuất văn bản" 26 ký tự × 6 = tràn). Badge vẫn dùng STATUS_KEY. */
 const TAB_KEYS: { key: StatusFilter; labelKey: string }[] = [
   { key: "all", labelKey: "jobs.filter.all" },
-  { key: "queued", labelKey: STATUS_KEY.queued },
-  { key: "extracting", labelKey: STATUS_KEY.extracting },
-  { key: "rendering", labelKey: STATUS_KEY.rendering },
-  { key: "done", labelKey: STATUS_KEY.done },
-  { key: "failed", labelKey: STATUS_KEY.failed },
+  { key: "queued", labelKey: "jobs.filter.chipQueued" },
+  { key: "extracting", labelKey: "jobs.filter.chipExtracting" },
+  { key: "rendering", labelKey: "jobs.filter.chipRendering" },
+  { key: "done", labelKey: "jobs.filter.chipDone" },
+  { key: "failed", labelKey: "jobs.filter.chipFailed" },
 ];
 
 /** Counts computed client-side from the loaded list; default "all". */

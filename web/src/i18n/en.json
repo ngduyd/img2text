@@ -409,7 +409,9 @@
       "emailsSent": "Emails sent",
       "emailsFailed": "Emails failed",
       "emailsStuck": "{n} email(s) stuck in the outbox — drain job dead or SMTP hung.",
-      "rangeHint": "Last 7 days"
+      "rangeHint": "Last 7 days",
+      "activity": "Activity (7 days) — {done} done, {failed} failed",
+      "activityAria": "Jobs per day, last 7 days: {done} done, {failed} failed"
     },
     "stats": {
       "date": "Date",
@@ -642,7 +644,12 @@
     "sortNewest": "Newest",
     "sortOldest": "Oldest",
     "filter": {
-      "all": "All"
+      "all": "All",
+      "chipQueued": "Queued",
+      "chipExtracting": "Extract",
+      "chipRendering": "Build layout",
+      "chipDone": "Done",
+      "chipFailed": "Failed"
     },
     "deniedTitle": "Waiting for admin to grant OCR access",
     "deniedHint": "Dev environment: sign in as an admin, open Users, and enable OCR for this account.",

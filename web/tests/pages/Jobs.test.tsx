@@ -214,12 +214,12 @@ it("filter tabs show counts and click filters rows", async () => {
   renderWithRouter(<Jobs />);
   await screen.findByTestId("job-row-4");
   await waitFor(() => expect(screen.getByTestId("filter-all")).toHaveTextContent("All (6)"));
-  // P2: chip labels share STATUS_KEY spellings with badges (one spelling per status).
+  // Chip = bộ lọc → nhãn ngắn riêng (badge vẫn dùng STATUS_KEY dài).
   expect(screen.getByTestId("filter-queued")).toHaveTextContent("Queued (1)");
-  expect(screen.getByTestId("filter-extracting")).toHaveTextContent("Extracting text (1)");
-  expect(screen.getByTestId("filter-rendering")).toHaveTextContent("Rendering layout (1)");
+  expect(screen.getByTestId("filter-extracting")).toHaveTextContent("Extract (1)");
+  expect(screen.getByTestId("filter-rendering")).toHaveTextContent("Build layout (1)");
   expect(screen.getByTestId("filter-done")).toHaveTextContent("Done (2)");
-  expect(screen.getByTestId("filter-failed")).toHaveTextContent("Processing failed (1)");
+  expect(screen.getByTestId("filter-failed")).toHaveTextContent("Failed (1)");
   // New phase tabs filter to their own rows.
   await userEvent.click(screen.getByTestId("filter-extracting"));
   expect(screen.getByTestId("job-row-5")).toBeInTheDocument();

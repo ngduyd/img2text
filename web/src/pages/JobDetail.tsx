@@ -542,8 +542,32 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
       )}
 
       {section === "overview" && (
-        <div key={job.id} data-testid="detail-grid" className="grid gap-4 lg:grid-cols-12 lg:gap-6">
-          <div className="flex min-w-0 flex-col gap-6 lg:col-span-7">
+        /* D12: 2 cột CÂN bằng — trái = file gốc (ảnh, chiều cao lớn), phải =
+           việc cần làm + thông tin. Trước đây 7/5 để cột trái lửng giữa trang. */
+        <div key={job.id} data-testid="detail-grid" className="grid gap-4 lg:grid-cols-2 lg:gap-6">
+          <section className="min-w-0 self-start rounded-card border border-border bg-surface shadow-card">
+            <h2>
+              <Button
+                testid="btn-toggle-original"
+                variant="ghost"
+                aria-expanded={originalOpen}
+                aria-controls="original-panel-wrap"
+                className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-base font-semibold"
+                onClick={() => setOriginalOpen((v) => !v)}
+              >
+                {t("jd.originalFile")}
+                <ChevronDown
+                  className={`h-4 w-4 text-muted transition duration-150 ease-out ${originalOpen ? "rotate-180" : ""}`}
+                  aria-hidden="true"
+                />
+              </Button>
+            </h2>
+            <div id="original-panel-wrap" className={originalOpen ? "border-t border-border p-4" : "hidden"}>
+              {originalOpen && <OriginalFilePanel jobId={id!} fileType={job.file_type} bare />}
+            </div>
+          </section>
+
+          <aside className="flex min-w-0 flex-col gap-4 lg:self-start">
             {textReady && (
               <LinkCard
                 to={`/jobs/${id}/text`}
@@ -566,8 +590,6 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
               </p>
             )}
             {result && layoutReady && (
-              // Card "Xuất layout" bỏ: 2 định dạng layout đã gộp vào dropdown
-              // "Tải xuống" ở header (trước đây 1 card chỉ để chứa 1 nút).
               <p data-testid="result-stats" className="text-sm text-muted">
                 {t("jd.stats", {
                   pages: job.page_count,
@@ -576,30 +598,6 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
                 })}
               </p>
             )}
-          </div>
-          {/* ẢNH GỐC + Thông tin — collapsible, mặc định mở. */}
-          <aside className="flex min-w-0 flex-col gap-4 lg:col-span-5 lg:self-start">
-            <section className="rounded-card border border-border bg-surface shadow-card">
-              <h2>
-                <Button
-                  testid="btn-toggle-original"
-                  variant="ghost"
-                  aria-expanded={originalOpen}
-                  aria-controls="original-panel-wrap"
-                  className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-base font-semibold"
-                  onClick={() => setOriginalOpen((v) => !v)}
-                >
-                  {t("jd.originalFile")}
-                  <ChevronDown
-                    className={`h-4 w-4 text-muted transition duration-150 ease-out ${originalOpen ? "rotate-180" : ""}`}
-                    aria-hidden="true"
-                  />
-                </Button>
-              </h2>
-              <div id="original-panel-wrap" className={originalOpen ? "border-t border-border p-4" : "hidden"}>
-                {originalOpen && <OriginalFilePanel jobId={id!} fileType={job.file_type} bare />}
-              </div>
-            </section>
             <section className="rounded-card border border-border bg-surface shadow-card">
               <h2>
                 <Button

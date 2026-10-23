@@ -381,8 +381,8 @@ it("U6: aside sidebar lg:sticky lg:top-32", async () => {
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("detail-grid");
   const aside = document.querySelector("aside")!;
-  // D3: Overview 2 cột, aside không sticky (trang ngắn, không cần bám).
-  expect(aside.className).toContain("lg:col-span-5");
+  // D12: Overview 2 cột cân bằng (file gốc | việc cần làm + thông tin).
+  expect(document.querySelector('[data-testid="detail-grid"]')!.className).toContain("lg:grid-cols-2");
   expect(aside.className).not.toMatch(/(^|\s)sticky/);
 });
 
@@ -576,14 +576,9 @@ it("renders single wrapper grid: collapsible original+info right (U4+U5 default 
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("detail-grid");
   const grid = screen.getByTestId("detail-grid");
-  expect(grid.className).toContain("lg:grid-cols-12");
-  const colClasses = grid.className.split(/\s+/).filter((c) => c.includes("grid-cols"));
-  expect(colClasses.length).toBeGreaterThan(0);
-  expect(colClasses.every((c) => c.startsWith("lg:"))).toBe(true);
-  expect(grid.querySelector(".lg\\:col-span-7")).not.toBeNull();
+  expect(grid.className).toContain("lg:grid-cols-2");
   const aside = grid.querySelector("aside");
   expect(aside).not.toBeNull();
-  expect(aside!.className).toContain("lg:col-span-5");
   // D3: overview không sticky (trang ngắn).
   expect(aside!.className).not.toMatch(/(^|\s)sticky/);
   // U4+U5: default MỞ — panel mount ngay, aria-expanded=true.
