@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.models import Job
 from app.core.schemas import ResultBody
 from app.core.security import hash_worker_token
+from app.services.ocr_guards import check_result
 from app.services.storage import StorageDriver
 
 logger = logging.getLogger(__name__)
@@ -163,6 +164,11 @@ def _dump_result(body: ResultBody) -> dict:
                     r.pop(k, None)
     return d
 
+def _with_guards(body: ResultBody) -> dict:
+    payload = _dump_result(body)
+    payload["warnings"] = list(payload.get("warnings") or []) + check_result(payload)
+    return payload
+
 async def _store(
     session: AsyncSession,
     job_id: int,
@@ -178,7 +184,9 @@ async def _store(
             .values(
                 # wave-3: non-table region KHÔNG mang key html/cells=None
                 # (shape cũ không đổi; bbox=None vẫn giữ key nullable).
-                result=_dump_result(body),
+                # + guard OCR (tất định, 0 LLM): nối warning vào result để
+                # UI/operator thấy trang nào cần so ảnh crop / re-OCR.
+                result=_with_guards(body),
                 # spec 2026-10-09: ingest stores the result and enters the
                 # "rendering" phase; the auto-output task flips to done /
                 # failed+failed_step=rendering and stamps finished_at.

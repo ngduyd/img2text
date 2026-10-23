@@ -7,10 +7,20 @@ tests extract mã bằng regex rồi POST /api/auth/password/reset {code, passwo
 import re
 from datetime import datetime, timedelta, timezone
 
-from app.core.models import User
+from sqlalchemy import select
+
+from app.core.models import EmailSend, User
 from app.core.security import hash_password
 
 _CODE_RE = re.compile(r"code is:?\s*(\d{6})")
+
+async def _flush() -> None:
+    """Outbox: route chỉ enqueue — drain để fake send_email nhận được mail."""
+    from app.core.db import SessionLocal
+    from app.services import email_sends
+
+    async with SessionLocal() as session:
+        await email_sends.drain(session)
 
 def _capture():
     sent = []
@@ -33,6 +43,7 @@ async def _register(client, monkeypatch, email="r@x.io"):
         "/api/auth/register", json={"email": email, "password": "secret123"}
     )
     assert r.status_code == 201
+    await _flush()  # outbox → 2 email (welcome + verify_code)
     return sent
 
 async def test_forgot_unknown_email_202_no_send(client, monkeypatch):
@@ -50,6 +61,7 @@ async def test_forgot_known_email_202_code_email(client, monkeypatch, db_session
     n_first = len(sent)
     r = await client.post("/api/auth/password/forgot", json={"email": "r@x.io"})
     assert r.status_code == 202 and r.json() == {}
+    await _flush()
     to, subject, body = sent[-1]
     assert to == "r@x.io"
     code = _code_from(body)
@@ -75,6 +87,7 @@ async def test_reset_with_code_changes_password(client, monkeypatch):
     await client.post("/api/auth/login", json={"email": "q@x.io", "password": "secret123"})
     assert client.cookies.get("refresh")  # có refresh để revoke
     await client.post("/api/auth/password/forgot", json={"email": "q@x.io"})
+    await _flush()
     code = _code_from(sent[-1][2])
     r = await client.post(
         "/api/auth/password/reset",
@@ -107,6 +120,7 @@ async def test_reset_wrong_email_422(client, monkeypatch):
     """P1-3: code của user A + email user B → 422 (lookup per-user)."""
     sent = await _register(client, monkeypatch)
     await client.post("/api/auth/password/forgot", json={"email": "r@x.io"})
+    await _flush()
     code = _code_from(sent[-1][2])
     r = await client.post(
         "/api/auth/password/reset",
@@ -120,6 +134,7 @@ async def test_reset_expired_code_422(client, monkeypatch, db_session):
 
     sent = await _register(client, monkeypatch)
     await client.post("/api/auth/password/forgot", json={"email": "r@x.io"})
+    await _flush()
     code = _code_from(sent[-1][2])
     await db_session.execute(
         update(User).values(
@@ -149,13 +164,9 @@ async def test_forgot_over_email_limit_429(client, monkeypatch, db_session):
     assert body["code"] == "email_limit" and body["retry_after_seconds"] >= 1
     assert len(sent) == n  # check TRƯỚC enqueue — không gửi
 
-async def test_forgot_smtp_failure_returns_503(client, db_session, monkeypatch):
-    """#9: known email + SMTP down → 503 email_unavailable (không nuốt lỗi).
-    Unknown email vẫn 202 (test_forgot_unknown_email_202_no_send) — không
-    gửi nên không có lỗi để surface.
-
-    Seed user trực tiếp (không qua _register): _capture fake nuốt seam
-    _send_sync → boom không tới được send_email thật."""
+async def test_forgot_smtp_down_202_row_queued(client, db_session, monkeypatch):
+    """SMTP down KHÔNG còn 503: known email → 202 + row reset_code queued;
+    unknown vẫn 202 (không enqueue) — test_forgot_unknown_email_202_no_send."""
     def boom(*args, **kwargs):
         raise RuntimeError("smtp down")
 
@@ -163,5 +174,10 @@ async def test_forgot_smtp_failure_returns_503(client, db_session, monkeypatch):
     await db_session.commit()
     monkeypatch.setattr("app.services.mailer._send_sync", boom)
     r = await client.post("/api/auth/password/forgot", json={"email": "f@x.io"})
-    assert r.status_code == 503
-    assert r.json() == {"code": "email_unavailable", "retry_after_seconds": 300}
+    assert r.status_code == 202 and r.json() == {}
+    row = await db_session.scalar(
+        select(EmailSend)
+        .where(EmailSend.kind == "reset_code")
+        .execution_options(populate_existing=True)
+    )
+    assert (row.status, row.attempts) == ("queued", 0)

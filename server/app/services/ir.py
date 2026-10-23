@@ -7,58 +7,13 @@ source_block_ids map back to OCR block IDs for traceability.
 
 from __future__ import annotations
 
-import json
 import logging
-import re
-from dataclasses import dataclass, field
 from enum import Enum
 from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
-
-IR_PROMPT = (
-    "You are a document structure analyzer. Given OCR output (blocks with bbox, text), "
-    "produce a Document IR following this schema:\n"
-    '{"document_id": "...", "schema_version": "1.0", "pages": [{"page_id": "...", "page_number": 1, "header": [], "content": [], "footer": []}]}\n\n'
-    "Rules:\n"
-    "- COVERAGE: every OCR block id must appear in exactly one node's source_block_ids "
-    "(root or child). Never drop a block, never reuse a block in two nodes.\n"
-    "- GEOMETRY FIRST: group blocks by bbox BEFORE considering type — blocks with "
-    "overlapping y-range and disjoint x-range on the same page = parallel columns "
-    "(read left→right within each row band); blocks forming a regular grid (aligned "
-    "rows × columns) = table; sequential blocks with hanging indent or bullet/letter "
-    "markers = list; first block of a band = heading; image blocks = figure nodes "
-    "(keep, never drop).\n"
-    "- type is only used to LABEL the node AFTER geometry grouping. "
-    "Full type set: heading (level1..N by position/size), paragraph, list, poem, "
-    "table, figure, caption, formula, quote, footnote, page_number, form_field, "
-    "separator, unknown.\n"
-    "- header: page heading blocks at top of page (y0 < 15% page height): logo, institution, "
-    "exam title.\n"
-    "- footer: only page furniture at the bottom: page numbers, form fields (name/id boxes), "
-    "separators. If a bottom block is normal reading content (verse line, paragraph, citation), "
-    "keep it in content with its group.\n"
-    "- content: everything else\n"
-    "- type: MUST be exactly one of: heading, paragraph, list, poem, table, figure, caption, "
-    "formula, quote, footnote, page_number, form_field, separator, unknown. "
-    "CLOSED SET — NEVER invent new types (e.g. 'note', 'text', 'title'). "
-    "A block matching none of these → type='unknown'. "
-    "Role words (citation, passage, line, instruction, ...) belong in role, NEVER in type.\n"
-    "- role: document_title, section_heading, running_header, running_footer, question, answer, "
-    "passage, line, citation, instruction, prompt, form_field, ...\n"
-    "- source_block_ids: map to OCR block IDs (p1_b0, p1_b1, ...)\n"
-    "- bbox: [x1, y1, x2, y2] per node, from OCR block bbox; "
-    "many source_block_ids → union (x1=min, y1=min, x2=max, y2=max)\n"
-    "- children: group related blocks — a poem node contains ALL its consecutive verse lines "
-    "as children; a list node contains ALL its items (a., b., c., ...). The source note/citation "
-    "after a poem or passage is a separate node, never a poem line.\n"
-    "- merge only blocks that are continuations of the same sentence/paragraph; never merge "
-    "unrelated blocks (e.g. an instruction line) into a citation node.\n\n"
-    "OCR output:\n{ocr_json}"
-)
-
 
 class NodeType(str, Enum):
     HEADING = "heading"
@@ -391,196 +346,32 @@ def validate_ir(ir: dict, ocr_result: dict) -> DocumentIR:
 
     return doc
 
+def spec_ir(result: dict) -> dict:
+    """IR dựng trực tiếp từ layout_spec — tất định, 0 LLM call.
 
-# --- S3: heading anchors ≠ header trang (Lane S Task 4) ---
-
-@dataclass
-class AnchorState:
-    """Doc-level §counter + open-section stack — carry xuyên trang."""
-    counter: int = 0
-    stack: list = field(default_factory=list)
-    # child index theo parent path — sibling đếm liên tục, không reset trang
-    child_counts: dict = field(default_factory=dict)
-
-# đầu block: "1.", "1)", "1.1.1" (số cuối block) ...; whitespace bắt buộc sau
-# separator — "1)Foo" negative; "2024." bắt 4-digit year guard phía dưới
-_HEADING_ANCHOR_RE = re.compile(r"^\s*(\d+(?:\.\d+)*)(?:[.)]\s|\s|$)")
-
-def _anchor_label(state: AnchorState, level: int) -> str:
-    """Cấp k = depth k trong stack; không nhảy cấp; numbering liên tục."""
-    if level == 1:
-        state.counter += 1
-        state.stack = [state.counter]
-    else:
-        level = min(level, len(state.stack) + 1)  # clamp nhảy cóc cấp
-        key = tuple(state.stack[: level - 1])
-        n = state.child_counts.get(key, 0) + 1
-        state.child_counts[key] = n
-        state.stack = state.stack[: level - 1] + [n]
-    return "§" + ".".join(str(n) for n in state.stack)
-
-def extract_heading_anchors(
-    pages: list[dict], state: AnchorState | None = None
-) -> tuple[list[dict], AnchorState]:
-    """OCR pages → heading annotations + state.
-
-    Positive: "1. Benefit", "1) Foo" (whitespace sau [.)] bắt buộc), "1.1.1",
-    "   2.2 Indent". Negative: "2024. Năm" (4-digit guard), "Câu 1:",
-    "Bài 2", "abc 1. x" (regex anchored đầu block).
-    Header y-band 15% top + không số → type header/doc_title, không tham
-    gia §index. Số thứ tự document-level (counter carry xuyên trang).
+    1 node / block của spec; region bị layout_spec nuốt (tab-stop) vẫn giữ
+    thành node paragraph riêng để coverage không mất block.
     """
-    state = state or AnchorState()
-    out: list[dict] = []
-    for pi, pg in enumerate(pages):
-        h = float(pg.get("height") or 0)
-        regions = sorted(
-            pg.get("regions", []), key=lambda r: (r.get("bbox") or [0, 0])[1]
-        )
-        for ri, region in enumerate(regions):
-            text = region.get("text") or ""
-            m = _HEADING_ANCHOR_RE.match(text)
-            num = m.group(1) if m else ""
-            is_year = bool(num) and "." not in num and len(num) == 4
-            y0 = (region.get("bbox") or [0, 0])[1]
-            if m and not is_year:
-                level = num.count(".") + 1
-                out.append({
-                    "block_id": region["id"],
-                    "type": "heading",
-                    "label": _anchor_label(state, level),
-                    "level": level,
-                })
-            elif h and y0 < 0.15 * h:
-                out.append({
-                    "block_id": region["id"],
-                    "type": "doc_title" if (pi == 0 and ri == 0) else "header",
-                })
-    return out, state
+    from app.services.layout_spec import build_page_specs   # tránh vòng import
 
-
-# --- S2: IR per-page sequential — shared 2 path, DI chat_fn (Lane S Task 5) ---
-
-MAX_IR_PAGE_CALLS = 20
-
-class IRPageError(Exception):
-    """Per-page IR prompt/parse/merge failure → LLMError → heuristic fallback."""
-
-IR_PROMPT_PAGE = (
-    "You are a document structure analyzer. Analyze ONE page of OCR output "
-    "into a Document IR page object (same node schema as document IR): "
-    '{"page_id": "...", "page_number": N, "header": [], "content": [], "footer": []}\n'
-    "Rules (same as full document IR): geometry first (columns/tables/lists by "
-    "bbox), type labels the grouping AFTER, source_block_ids map to THIS page's "
-    "OCR block ids, bbox [x1,y1,x2,y2] from OCR, children group related blocks. "
-    "Never rewrite OCR text.\n"
-    # S4: cross-column normalize — cùng y-band + 2 cột → ép cùng type/level;
-    # block bảng (OCR text chứa <table hoặc cells grid) = ngoại lệ
-    # IR-NOTE (bug job5): LLM bịa type='note' → enum reject → ir_json NULL.
-    # Ép closed set 1-1 với NodeType (test assert), unknown khi không khớp.
-    "- type: MUST be exactly one of: heading, paragraph, list, poem, table, figure, caption, "
-    "formula, quote, footnote, page_number, form_field, separator, unknown. "
-    "CLOSED SET — NEVER invent new types (e.g. 'note', 'text', 'title'). "
-    "A block matching none of these → type='unknown'.\n"
-    "- CROSS-COLUMN: blocks sharing the same y-band in 2 side-by-side columns "
-    "MUST get the SAME type and heading level (read left→right); EXCEPTION: "
-    "table blocks (OCR text contains <table or a cells grid) keep type table.\n"
-    # S3: header y-band 15% + §anchor instruction
-    "- Header trang = top 15% y-band WITHOUT a leading sequence number "
-    "(e.g. '1.' / '1)') → role running_header / doc_title, NEVER type heading.\n"
-    "- HEADING ANCHORS: numbered headings ('1.', '1.1)') are §sections — "
-    "assign §labels in document order across pages using the running §context "
-    "below; numbering stays continuous, never restarts per page.\n"
-    "Running §context — headings already seen in EARLIER pages (keep continuity, "
-    "do NOT restart numbering):\n{running_ctx}\n\n"
-    "OCR output of this page:\n{ocr_json}"
-)
-
-_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
-
-def _parse_ir_json(text: str, what: str) -> dict:
-    """LLM raw → first JSON object (fence strip + raw_decode)."""
-    text = text.strip()
-    m = _FENCE_RE.match(text)
-    if m:
-        text = m.group(1)
-    start = text.find("{")
-    if start == -1:
-        raise IRPageError(f"{what}: không chứa JSON object")
-    try:
-        obj, _ = json.JSONDecoder().raw_decode(text[start:])
-    except (ValueError, TypeError) as exc:
-        raise IRPageError(f"{what}: không phải JSON: {exc}") from exc
-    if not isinstance(obj, dict):
-        raise IRPageError(f"{what}: không phải JSON object")
-    return obj
-
-async def _ir_page(page_ocr: dict, running_ctx: str, chat_fn) -> dict:
-    """1 trang OCR → PageIR dict. KHÔNG import httpx — chat_fn là DI seam."""
-    content = (
-        IR_PROMPT_PAGE
-        .replace("{running_ctx}", running_ctx or "(trống)")
-        .replace("{ocr_json}", json.dumps(page_ocr, ensure_ascii=False))
-    )
-    return _parse_ir_json(await chat_fn(content), "IR trang")
-
-async def _ir_full(result: dict, chat_fn) -> dict:
-    """Legacy IR_PROMPT full-result 1-call (degrade/cost-cap path, giữ nguyên)."""
-    content = IR_PROMPT.replace("{ocr_json}", json.dumps(result, ensure_ascii=False))
-    return _parse_ir_json(await chat_fn(content), "IR đầy đủ")
-
-def _ctx_from_page(page_ocr: dict, state: AnchorState) -> tuple[str, AnchorState]:
-    """§labels + text heading trang này → running context (state carry)."""
-    anns, state = extract_heading_anchors([page_ocr], state)
-    texts = {
-        r["id"]: (r.get("text") or "").strip() for r in page_ocr.get("regions", [])
-    }
-    lines = [
-        f"{a['label']} {texts.get(a['block_id'], '')}".rstrip()
-        for a in anns if a["type"] == "heading"
-    ]
-    return "\n".join(lines), state
-
-async def llm_ir_pages(result: dict, chat_fn) -> dict:
-    """S2: sequential per-page IR — render_md.llm_ir + render_docx.llm_ir delegate.
-
-    > MAX_IR_PAGE_CALLS trang → degrade 1-call full-result (cost cap, tránh
-    N×180s). Page fail → retry 1 → still fail → degrade full-result. Merge:
-    sort page_number, trùng → IRPageError (→ LLMError → heuristic fallback).
-    """
     pages = list(result.get("pages") or [])
-    if len(pages) > MAX_IR_PAGE_CALLS:
-        logger.warning(
-            "IR per-page: %d trang > %d — degrade 1-call full-result",
-            len(pages), MAX_IR_PAGE_CALLS,
-        )
-        return await _ir_full(result, chat_fn)
-    page_irs: list[dict] = []
-    state = AnchorState()
-    running_ctx = ""
-    for pi, page in enumerate(pages):
-        for attempt in range(2):
-            try:
-                page_ir = await _ir_page(page, running_ctx, chat_fn)
-                break
-            except Exception as exc:  # retry 1 → fail → degrade full-result
-                if attempt:
-                    logger.warning(
-                        "IR per-page: trang %d fail sau retry — fallback full-result: %r",
-                        pi + 1, exc,
-                    )
-                    return await _ir_full(result, chat_fn)
-                logger.warning("IR per-page: trang %d fail — retry 1: %r", pi + 1, exc)
-        if "pages" in page_ir:  # model trả full document IR — dùng nguyên
-            return page_ir
-        if "page_number" not in page_ir:
-            page_ir["page_number"] = pi + 1
-        page_irs.append(page_ir)
-        ctx, state = _ctx_from_page(page, state)
-        if ctx:
-            running_ctx = (running_ctx + "\n" + ctx).strip()
-    numbers = [p["page_number"] for p in page_irs]
-    if len(set(numbers)) != len(numbers):
-        raise IRPageError(f"page_number trùng khi merge: {numbers}")
-    page_irs.sort(key=lambda p: p["page_number"])
-    return {"document_id": "doc_001", "schema_version": "1.0", "pages": page_irs}
+    out: list[dict] = []
+    for pi, (page, spec) in enumerate(zip(pages, build_page_specs(result))):
+        nodes: list[dict] = []
+        for block in spec.blocks:
+            nodes.append({
+                "id": f"f{pi}_{block.region_id}",
+                "type": block.type_label,
+                "source_block_ids": [block.region_id],
+                "bbox": [round(v) for v in block.bbox],
+            })
+        seen = {b.region_id for b in spec.blocks}
+        for region in page.get("regions") or []:
+            rid = str(region.get("id"))
+            if rid in seen or not region.get("bbox"):
+                continue
+            nodes.append({"id": f"f{pi}_{rid}", "type": "paragraph",
+                          "source_block_ids": [rid], "bbox": list(region["bbox"])})
+        out.append({"page_id": str(page.get("index", pi)), "page_number": pi + 1,
+                    "header": [], "content": nodes, "footer": []})
+    return {"document_id": "doc_001", "schema_version": "1.0", "pages": out}

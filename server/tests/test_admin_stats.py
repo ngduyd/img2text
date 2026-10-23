@@ -4,8 +4,9 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest_asyncio
+from sqlalchemy import select
 
-from app.core.models import Job, PageView, Setting, User
+from app.core.models import EmailSend, Job, PageView, Setting, User
 
 
 def today() -> str:
@@ -77,3 +78,58 @@ async def test_stats_default_window_7d(admin_client):
 
 async def test_stats_admin_only(auth_client):
     assert (await auth_client.get("/api/admin/stats")).status_code == 403
+
+async def test_stats_email_ledger(admin_client, seeded_stats):
+    """emails_sent/failed theo ngày + emails_stuck theo lease next_attempt_at."""
+    session = seeded_stats
+    user = (await session.scalars(select(User).limit(1))).one()
+    # baseline qua API: register/login trong fixture đã tạo sẵn email_sends hôm nay
+    before = (
+        await admin_client.get(f"/api/admin/stats?from={today()}&to={today()}")
+    ).json()
+    stale = datetime.now(timezone.utc) - timedelta(minutes=30)
+    future = datetime.now(timezone.utc) + timedelta(minutes=4)
+    session.add_all([
+        EmailSend(user_id=user.id, kind="verify_code", status="sent"),
+        EmailSend(user_id=user.id, kind="verify_code", status="failed"),
+        # queued quá due 30' → stuck (drain job chết)
+        EmailSend(
+            user_id=user.id,
+            kind="verify_code",
+            status="queued",
+            created_at=stale,
+            next_attempt_at=stale,
+        ),
+        # queued cũ nhưng vừa mới due → KHÔNG stuck (created_at không còn là tiêu chí)
+        EmailSend(
+            user_id=user.id, kind="verify_code", status="queued", created_at=stale
+        ),
+        # sending còn lease → KHÔNG stuck
+        EmailSend(
+            user_id=user.id,
+            kind="verify_code",
+            status="sending",
+            next_attempt_at=future,
+        ),
+        # sending đã hết lease → stuck (crash giữa send)
+        EmailSend(
+            user_id=user.id,
+            kind="verify_code",
+            status="sending",
+            next_attempt_at=stale,
+        ),
+    ])
+    await session.commit()
+
+    r = await admin_client.get(f"/api/admin/stats?from={today()}&to={today()}")
+    payload = r.json()
+    last = payload["days"][-1]
+    assert last["emails_sent"] == before["days"][-1]["emails_sent"] + 1
+    assert last["emails_failed"] == before["days"][-1]["emails_failed"] + 1
+    assert payload["emails_stuck"] == before["emails_stuck"] + 2
+    # shape cũ giữ nguyên (client cũ không vỡ)
+    for k in (
+        "date", "users_registered", "jobs_submitted", "jobs_done",
+        "jobs_failed", "page_views", "gpu_seconds", "estimated_cost_usd",
+    ):
+        assert k in last

@@ -333,269 +333,44 @@ class TestCoverageImageRegion:
         ir["pages"][0]["content"][0]["source_block_ids"] = ["r1", "r2"]
         validate_ir(ir, _ocr_with_image())
 
-class TestGeometryFirstPrompt:
-    """Wave-4 #8: IR prompt geometry-primary — group theo bbox TRƯỚC, type SAU."""
+class TestSpecIR:
+    """IR từ layout_spec (LLM đã bỏ khỏi bước IR)."""
 
-    def _two_column_prompt(self) -> str:
-        """Fixture header 2 cột: b0/b2 trái + b3/b4 phải → build prompt."""
-        result = {
-            "pages": [{
-                "index": 0, "width": 800, "height": 600,
-                "regions": [
-                    {"id": "b0", "bbox": [10, 10, 380, 40],
-                     "text": "TRƯỜNG THPT"},
-                    {"id": "b2", "bbox": [10, 50, 380, 80],
-                     "text": "ĐỀ THI HỌC KỲ"},
-                    {"id": "b3", "bbox": [420, 10, 790, 40],
-                     "text": "Môn: Toán"},
-                    {"id": "b4", "bbox": [420, 50, 790, 80],
-                     "text": "Thời gian: 90 phút"},
-                ],
-            }]
-        }
-        import json
-        from app.services.ir import IR_PROMPT
-        return IR_PROMPT.replace("{ocr_json}", json.dumps(result, ensure_ascii=False))
+    def test_one_node_per_region_and_coverage_passes(self):
+        from app.services.ir import spec_ir, validate_ir
+        result = {"pages": [{
+            "index": 0, "width": 800, "height": 1100,
+            "regions": [
+                {"id": "r0", "bbox": [60, 50, 700, 90], "text": "BÀI 1: GIA ĐÌNH"},
+                {"id": "r1", "bbox": [60, 120, 700, 160], "text": "Nội dung đoạn văn."},
+                {"id": "r2", "bbox": [60, 200, 300, 240], "text": "Họ tên: ....."},
+                {"id": "r3", "bbox": [400, 200, 700, 240], "text": "Ngày: ....."},
+            ],
+        }]}
+        doc = spec_ir(result)
+        ids = [i for n in doc["pages"][0]["content"] for i in n["source_block_ids"]]
+        assert sorted(ids) == ["r0", "r1", "r2", "r3"], ids   # không mất region
+        validate_ir(doc, result)                              # coverage hợp lệ
 
-    def test_prompt_instructs_parallel_columns_by_geometry(self):
-        prompt = self._two_column_prompt()
-        # pin key phrases của rule geometry-first
-        assert "GEOMETRY FIRST" in prompt
-        assert "overlapping y-range and disjoint x-range" in prompt
-        assert "parallel columns" in prompt
-        assert "left" in prompt and "right" in prompt  # đọc trái→phải mỗi hàng
-        # fixture đi qua prompt build — đủ 4 block, 2 cột
-        for rid in ("b0", "b2", "b3", "b4"):
-            assert rid in prompt
+    def test_types_come_from_layout_spec(self):
+        from app.services.ir import spec_ir
+        result = {"pages": [{
+            "index": 0, "width": 800, "height": 1100,
+            "regions": [
+                {"id": "r0", "bbox": [60, 50, 700, 90], "text": "BÀI 1: GIA ĐÌNH"},
+                {"id": "r1", "bbox": [60, 120, 700, 160], "text": "Nội dung đoạn văn."},
+            ],
+        }]}
+        types = [n["type"] for n in spec_ir(result)["pages"][0]["content"]]
+        allowed = {t.value for t in NodeType}
+        assert types and set(types) <= allowed, types   # type do layout_spec quyết
 
-    def test_prompt_type_set_and_label_after_geometry(self):
-        prompt = self._two_column_prompt()
-        assert "type is only used to LABEL the node AFTER geometry grouping" in prompt
-        for t in ("heading (level1..N by position/size)", "paragraph", "list",
-                  "poem", "table", "figure", "caption", "formula", "quote",
-                  "footnote", "page_number", "form_field", "separator"):
-            assert t in prompt, t
-        # full type set liệt kê đủ unknown (đồng nhất với MUST-line) —
-        # pin riêng câu Full type set (MUST-line cũng liệt kê unknown → không pin chung)
-        full_set = prompt.split("Full type set: ", 1)[1].split("\n", 1)[0]
-        assert "unknown" in full_set, full_set
-        # geometry rule cho từng loại
-        assert "regular grid" in prompt          # table
-        assert "hanging indent" in prompt        # list
-        assert "first block of a band = heading" in prompt
-        assert "image blocks = figure nodes" in prompt
-
-
-# --- Lane S Task 4: extract_heading_anchors (S3) ---
-
-from app.services.ir import (
-    IR_PROMPT, IR_PROMPT_PAGE, AnchorState, extract_heading_anchors,
-)
-
-def _page(regions: list, height: int = 1000) -> dict:
-    return {"index": 0, "width": 800, "height": height, "regions": regions}
-
-def _blk(rid: str, text: str, y0: int) -> dict:
-    return {"id": rid, "bbox": [10, y0, 300, y0 + 30], "text": text,
-            "verdict": "ok", "placeholder": False}
-
-def _headings(anns: list) -> list:
-    return [a for a in anns if a["type"] == "heading"]
-
-def test_heading_anchor_positive_matrix():
-    texts = ["1. Benefit", "1) Foo", "1.1.1 Sub", "   2.2 Indent"]
-    regions = [_blk(f"r{i}", t, 100 + i * 50) for i, t in enumerate(texts)]
-    anns, _ = extract_heading_anchors([_page(regions)])
-    ids = {a["block_id"] for a in _headings(anns)}
-    assert ids == {"r0", "r1", "r2", "r3"}, anns
-
-def test_heading_anchor_negative_matrix():
-    # 4-digit năm, không có [.)]+space, không đầu block
-    texts = ["2024. Năm", "Câu 1:", "Bài 2", "abc 1. x", "1)Foo"]
-    regions = [_blk(f"r{i}", t, 100 + i * 50) for i, t in enumerate(texts)]
-    anns, _ = extract_heading_anchors([_page(regions)])
-    assert _headings(anns) == [], anns
-
-def test_heading_anchor_level_from_numbering():
-    regions = [_blk("r0", "1. A", 100), _blk("r1", "1.1.1 Deep", 200)]
-    anns, _ = extract_heading_anchors([_page(regions)])
-    by_id = {a["block_id"]: a for a in _headings(anns)}
-    assert by_id["r0"]["level"] == 1
-    assert by_id["r1"]["level"] == 3
-
-def test_heading_anchor_sequence_continuous_across_pages():
-    """State carry: §numbering liên tục xuyên trang, KHÔNG reset."""
-    p1 = _page([_blk("r0", "1. Mục một", 100), _blk("r1", "1.1 Gốc con", 300)])
-    p2 = _page([_blk("r2", "2. Mục hai", 100), _blk("r3", "1) Mục ba", 300)])
-    p2["index"] = 1
-    anns1, st = extract_heading_anchors([p1], None)
-    anns2, st = extract_heading_anchors([p2], st)
-    labels = [a["label"] for a in _headings(anns1 + anns2)]
-    assert labels == ["§1", "§1.1", "§2", "§3"], labels
-
-def test_heading_anchor_header_yband_15pct_excluded():
-    """Top 15% y-band + không số → header/doc_title, KHÔNG tham gia §index."""
-    regions = [
-        _blk("t0", "TRƯỜNG THCS ABC", 20),      # y=20 < 150 = 15%*1000
-        _blk("t1", "Kỳ thi học kỳ I", 60),
-        _blk("r0", "1. Benefit", 400),
-    ]
-    anns, _ = extract_heading_anchors([_page(regions)])
-    types = {a["block_id"]: a["type"] for a in anns}
-    assert types["t0"] == "doc_title"
-    assert types["t1"] == "header"
-    assert types["r0"] == "heading"
-    assert all("label" not in a for a in anns if a["block_id"].startswith("t"))
-    # y-band 15%: block dưới 150px vẫn là heading bình thường
-    low = [_blk("r9", "2. Dưới", 200)]
-    anns2, _ = extract_heading_anchors([_page(low)])
-    assert [a["type"] for a in anns2] == ["heading"]
-
-
-# --- Lane S Task 5: _ir_page sequential shared (S2) ---
-
-from app.services import ir as ir_mod
-from app.services.ir import IRPageError, MAX_IR_PAGE_CALLS, _ir_page, llm_ir_pages
-
-def _one_page_result(n: int = 1) -> dict:
-    return {
-        "pages": [
-            {"index": i, "width": 800, "height": 600,
-             "regions": [{"id": f"p{i}_b0", "bbox": [10, 100, 300, 130],
-                          "text": f"1. Trang {i} nội dung", "verdict": "ok",
-                          "placeholder": False}]}
-            for i in range(n)
-        ]
-    }
-
-def _page_ir(page_number: int, bid: str) -> dict:
-    return {
-        "page_id": f"page_{page_number:03d}",
-        "page_number": page_number,
-        "header": [],
-        "content": [{"id": f"node_{page_number}", "type": "paragraph",
-                     "role": "body", "text": f"Trang {page_number}",
-                     "align": "left", "indent": 0, "source_block_ids": [bid],
-                     "bbox": [10, 100, 300, 130], "children": []}],
-        "footer": [],
-    }
-
-async def test_ir_pages_sequential_order_and_context():
-    """2 page → đúng 2 call đúng thứ tự; page2 prompt chứa §context page1;
-    merge sort page_number, map page_id đúng trang."""
-    result = _one_page_result(2)
-    calls: list = []
-    async def chat(content: str) -> str:
-        calls.append(content)
-        n = len(calls)
-        return json.dumps(_page_ir(n, f"p{n-1}_b0"))
-    doc = await llm_ir_pages(result, chat)
-    assert len(calls) == 2, calls
-    # page1 prompt không có §context; page2 prompt chứa heading §context page1
-    assert "§1" not in calls[0]
-    assert "§1" in calls[1]
-    pages = sorted(doc["pages"], key=lambda p: p["page_number"])
-    assert [p["page_number"] for p in pages] == [1, 2]
-    assert [p["page_id"] for p in pages] == ["page_001", "page_002"]
-    assert pages[0]["content"][0]["source_block_ids"] == ["p0_b0"]
-    assert pages[1]["content"][0]["source_block_ids"] == ["p1_b0"]
-
-async def test_ir_pages_degrade_full_when_over_cap():
-    """> MAX_IR_PAGE_CALLS → degrade 1-call full-result (legacy IR_PROMPT)."""
-    result = _one_page_result(MAX_IR_PAGE_CALLS + 1)
-    calls: list = []
-    async def chat(content: str) -> str:
-        calls.append(content)
-        return json.dumps({"document_id": "d", "schema_version": "1.0",
-                           "pages": [_page_ir(1, "p0_b0")]})
-    doc = await llm_ir_pages(result, chat)
-    assert len(calls) == 1
-    assert f'"index": {MAX_IR_PAGE_CALLS}' in calls[0]  # full-result, không per-page
-    assert doc["pages"]
-
-async def test_ir_pages_page_fail_retry_then_fallback_full():
-    """Page fail → retry 1 → still fail → fallback legacy IR_PROMPT 1-call."""
-    result = _one_page_result(2)
-    calls: list = []
-    async def chat(content: str) -> str:
-        calls.append(content)
-        if len(calls) <= 2:  # page1 attempt 1 + retry đều fail
-            raise RuntimeError("LLM 5xx")
-        return json.dumps({"document_id": "d", "schema_version": "1.0",
-                           "pages": [_page_ir(i + 1, f"p{i}_b0") for i in range(2)]})
-    doc = await llm_ir_pages(result, chat)
-    assert len(calls) == 3  # 2 fail + 1 full fallback
-    assert [p["page_number"] for p in doc["pages"]] == [1, 2]
-
-async def test_ir_pages_duplicate_pagenumber_raises():
-    """Merge check: page_number trùng → IRPageError (→ LLMError → heuristic)."""
-    result = _one_page_result(2)
-    calls: list = []
-    async def chat(content: str) -> str:
-        calls.append(content)
-        return json.dumps(_page_ir(1, f"p{len(calls)-1}_b0"))  # cả 2 page_number=1
-    with pytest.raises(IRPageError):
-        await llm_ir_pages(result, chat)
-
-async def test_ir_page_prompt_shape():
-    """_ir_page: prompt = IR_PROMPT_PAGE chứa running_ctx + OCR json trang."""
-    seen: list = []
-    async def chat(content: str) -> str:
-        seen.append(content)
-        return json.dumps(_page_ir(1, "p0_b0"))
-    page_ir = await _ir_page(_one_page_result()["pages"][0], "§1 Tiêu đề", chat)
-    assert page_ir["page_number"] == 1
-    assert "§1 Tiêu đề" in seen[0]
-    assert "p0_b0" in seen[0]
-
-async def test_render_modules_delegate_shared_ir(monkeypatch):
-    """render_md.llm_ir + render_docx.llm_ir dùng chung llm_ir_pages (1 logic)."""
-    import app.services.render_docx as rd
-    import app.services.render_md as rm
-    fake_doc = {"document_id": "d", "schema_version": "1.0", "pages": []}
-    seen = {}
-    async def fake_pages(result, chat_fn):
-        seen["chat"] = chat_fn
-        return fake_doc
-    monkeypatch.setattr(rm, "llm_ir_pages", fake_pages)
-    monkeypatch.setattr(rd, "llm_ir_pages", fake_pages)
-    assert await rm.llm_ir({"pages": []}) is fake_doc
-    assert await rd.llm_ir({"pages": []}) is fake_doc
-
-
-# --- Lane S Task 6: prompt rules (S4/S3) + validator warning ---
-
-def test_ir_prompt_page_has_s4_s3_rules():
-    """IR_PROMPT_PAGE: cross-column rule + table exception + header y-band
-    15% + §anchor instruction."""
-    p = IR_PROMPT_PAGE
-    assert "y-band" in p.lower() or "y band" in p.lower()
-    assert "column" in p.lower()
-    assert "table" in p.lower() and "exempt" in p.lower() or "except" in p.lower()
-    assert "15%" in p
-    assert "§" in p  # §anchor instruction
-
-def test_legacy_ir_prompt_unchanged_snapshot():
-    """Legacy IR_PROMPT (degrade path) không đổi — snapshot guard."""
-    assert "produce a Document IR following this schema" in IR_PROMPT
-    assert "COVERAGE: every OCR block id" in IR_PROMPT
-    assert "y0 < 15% page height" in IR_PROMPT
-    # IR_PROMPT_PAGE rules KHÔNG lọt vào legacy prompt (degrade path giữ behavior)
-    assert "y-band" not in IR_PROMPT
-    assert "§" not in IR_PROMPT
-
-def test_prompt_closed_type_set_matches_enum():
-    """Lane IR-NOTE: cả IR_PROMPT lẫn IR_PROMPT_PAGE ép closed set —
-    list type trong prompt khớp enum NodeType 1-1 (không thiếu/không thừa)."""
-    import re
-    enum_types = {t.value for t in NodeType}
-    for prompt in (IR_PROMPT, IR_PROMPT_PAGE):
-        assert "MUST be exactly one of" in prompt
-        assert "NEVER invent new types" in prompt
-        listed = prompt.split("MUST be exactly one of: ", 1)[1].split(".", 1)[0]
-        assert set(re.findall(r"[a-z_]+", listed)) == enum_types, listed
-    # negative examples có mặt — LLM hay bịa 'note' (bug dev job5)
-    assert "'note'" in IR_PROMPT and "'note'" in IR_PROMPT_PAGE
+    def test_deterministic_same_input_same_output(self):
+        from app.services.ir import spec_ir
+        result = {"pages": [{"index": 0, "width": 800, "height": 1100,
+                             "regions": [{"id": "r0", "bbox": [0, 0, 50, 20],
+                                          "text": "x"}]}]}
+        assert spec_ir(result) == spec_ir(result)
 
 def _col_ocr(left_type_text: str = "Cột trái đoạn văn", right_text: str = "Cột phải") -> dict:
     """2 cột x-disjoint, cùng y-band: r_left + r_right."""

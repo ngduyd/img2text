@@ -97,10 +97,10 @@ it("omits duration when timestamps missing (server list omits them)", () => {
   expect(screen.getByTestId("job-row-7")).not.toHaveTextContent("10s");
 });
 
-it("view button navigates to detail", async () => {
+// D4: mở job = link ở tên job (không còn nút "Xem" thứ 5 trong hàng action).
+it("job name links to detail", () => {
   renderRow(job());
-  await userEvent.click(screen.getByTestId("btn-view-7"));
-  expect(mockNavigate).toHaveBeenCalledWith("/jobs/7");
+  expect(screen.getByTestId("btn-view-7")).toHaveAttribute("href", "/jobs/7");
 });
 
 it("dl-original downloads same-origin blob via downloadJobFile + anchor", async () => {
@@ -204,12 +204,15 @@ it("renders row-select checkbox and fires onToggle with the job id", async () =>
   expect(onToggle).toHaveBeenCalledWith(7);
 });
 
-it("cụm actions flex-wrap + nút Tải bản gốc icon-only <sm (aria-label)", () => {
+// D4: hàng chỉ còn badge + nút ⋯; thao tác phụ nằm trong panel của details.
+it("row actions collapse into a ⋯ menu", () => {
   renderRow(job({ status: "done" }));
-  const dl = screen.getByTestId("btn-dl-original-7");
-  expect(dl).toHaveAttribute("aria-label", "Download original");
-  expect(dl.querySelector("svg")).not.toBeNull();
-  expect(dl.parentElement).toHaveClass("flex-wrap", "justify-end");
+  const actions = screen.getByTestId("row-menu-7").parentElement!;
+  expect(actions).toHaveClass("flex-wrap", "justify-end");
+  expect(screen.getByTestId("btn-menu-7")).toHaveAttribute("aria-label", "More actions");
+  const menu = screen.getByTestId("row-menu-panel-7");
+  expect(menu).toContainElement(screen.getByTestId("btn-dl-original-7"));
+  expect(menu).toContainElement(screen.getByTestId("btn-delete-job-7"));
 });
 
 // Spec #1: nút Xóa → confirm dialog → deleteJob + invalidate; hủy → không gọi.

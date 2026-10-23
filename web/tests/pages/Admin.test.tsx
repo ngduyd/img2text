@@ -66,6 +66,8 @@ it("renders 7 tabs, default overview with summed stat cards", async () => {
         jobs_done: 3,
         jobs_failed: 1,
         page_views: 10,
+        emails_sent: 0,
+        emails_failed: 0,
         gpu_seconds: 100.5,
         estimated_cost_usd: 1.25,
       },
@@ -76,10 +78,13 @@ it("renders 7 tabs, default overview with summed stat cards", async () => {
         jobs_done: 2,
         jobs_failed: 0,
         page_views: 5,
+        emails_sent: 0,
+        emails_failed: 0,
         gpu_seconds: 50,
         estimated_cost_usd: 2.5,
       },
     ],
+    emails_stuck: 0,
   });
   renderWithRouter(<Admin />, { route: "/admin" });
   expect(screen.getByTestId("tab-overview")).toBeInTheDocument();
@@ -103,19 +108,32 @@ it("renders 7 tabs, default overview with summed stat cards", async () => {
   expect(screen.getByText("Estimated cost (USD)")).toBeInTheDocument();
 });
 
-it("overview quick links navigate to other tabs", async () => {
+it("overview shows stuck-email warning only when emails_stuck > 0", async () => {
   vi.mocked(api.me).mockResolvedValue(adminMe);
-  vi.mocked(api.adminStats).mockResolvedValue({ days: [] });
-  vi.mocked(api.adminListUsers).mockResolvedValue({ items: [], total: 0 });
+  vi.mocked(api.adminStats).mockResolvedValue({ days: [], emails_stuck: 3 });
+  renderWithRouter(<Admin />, { route: "/admin" });
+  await screen.findByTestId("stat-users");
+  const status = await screen.findByRole("status");
+  expect(status).toHaveTextContent("3");
+});
+
+it("overview hides stuck-email warning when emails_stuck is 0", async () => {
+  vi.mocked(api.me).mockResolvedValue(adminMe);
+  vi.mocked(api.adminStats).mockResolvedValue({ days: [], emails_stuck: 0 });
+  renderWithRouter(<Admin />, { route: "/admin" });
+  await screen.findByTestId("stat-users");
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+
+/** D10: 4 nút "đi tới tab" đã bỏ — rail (3 cụm) là đường điều hướng duy nhất. */
+it("overview has no duplicate quick-link buttons", async () => {
+  vi.mocked(api.me).mockResolvedValue(adminMe);
+  vi.mocked(api.adminStats).mockResolvedValue({ days: [], emails_stuck: 0 });
   renderWithRouter(<Admin />);
-  const user = userEvent.setup();
-  await user.click(await screen.findByTestId("btn-goto-users"));
-  // ui-ux redo: empty users list → empty state box (table hidden); tab mounted
-  expect(await screen.findByText("No users yet")).toBeInTheDocument();
-  expect(screen.queryByTestId("stat-users")).not.toBeInTheDocument();
-  await user.click(screen.getByTestId("tab-overview"));
-  await user.click(await screen.findByTestId("btn-goto-api"));
-  expect(screen.getByTestId("api-activity-table")).toBeInTheDocument();
+  await screen.findByTestId("stat-users");
+  for (const tab of ["users", "api", "logs", "stats"]) {
+    expect(screen.queryByTestId(`btn-goto-${tab}`)).not.toBeInTheDocument();
+  }
 });
 
 it("api tab aggregates paths client-side, collapsing numeric segments", async () => {
@@ -204,10 +222,13 @@ it("stats tab renders cost column", async () => {
         jobs_done: 1,
         jobs_failed: 1,
         page_views: 9,
+        emails_sent: 0,
+        emails_failed: 0,
         gpu_seconds: 10800,
         estimated_cost_usd: 7.5,
       },
     ],
+    emails_stuck: 0,
   });
   renderWithRouter(<Admin />);
   const user = userEvent.setup();
@@ -274,7 +295,7 @@ it("logs tab filters by ip", async () => {
 
 it("admin home has no jobs board, no dropzone (absence asserts)", async () => {
   vi.mocked(api.me).mockResolvedValue(adminMe);
-  vi.mocked(api.adminStats).mockResolvedValue({ days: [] });
+  vi.mocked(api.adminStats).mockResolvedValue({ days: [], emails_stuck: 0 });
   renderWithRouter(<Admin />, { route: "/admin" });
   await screen.findByTestId("stat-users"); // admin content rendered
   expect(screen.queryAllByTestId((id: string) => id.startsWith("job-row"))).toHaveLength(0);
@@ -284,13 +305,17 @@ it("admin home has no jobs board, no dropzone (absence asserts)", async () => {
 
 it("admin sub-rail renders 7 items; active item has aria-current=page", async () => {
   vi.mocked(api.me).mockResolvedValue(adminMe);
-  vi.mocked(api.adminStats).mockResolvedValue({ days: [] });
+  vi.mocked(api.adminStats).mockResolvedValue({ days: [], emails_stuck: 0 });
   renderWithRouter(<Admin />, { route: "/admin" });
   await screen.findByTestId("stat-users"); // admin content rendered
   const rail = screen.getByTestId("admin-rail");
   // V3: one responsive nav (mobile scroll / desktop vertical), 8 items with icons
   // (wave-5 S6: +Feedbacks B2, +storage B3).
   expect(within(rail).getAllByRole("button")).toHaveLength(8);
+  // D10: rail gom 3 cụm (Tổng quan / Dữ liệu / Hệ thống).
+  for (const g of ["overview", "data", "system"]) {
+    expect(within(rail).getByTestId(`rail-group-${g}`)).toBeInTheDocument();
+  }
   expect(within(rail).getByTestId("tab-overview")).toHaveAttribute("aria-current", "page");
   expect(within(rail).getByTestId("tab-users")).not.toHaveAttribute("aria-current");
 });

@@ -189,8 +189,16 @@ export interface AdminStatsDay {
   jobs_done: number;
   jobs_failed: number;
   page_views: number;
+  emails_sent: number;
+  emails_failed: number;
   gpu_seconds: number;
   estimated_cost_usd: number;
+}
+
+/** GET /api/admin/stats — days[] + email outbox rows kẹt (lease quá hạn). */
+export interface AdminStatsResponse {
+  days: AdminStatsDay[];
+  emails_stuck: number;
 }
 
 /** Plan S: admin runtime settings — effective value + source (Setting row vs env). */
@@ -208,7 +216,6 @@ export interface AdminSettingsPut {
   kaggle_min_gap_seconds?: number;
   llm_base_url?: string;
   llm_model?: string;
-  ir_llm_model?: string;
   proofread_llm_model?: string;
   llm_api_key?: string;
   llm_timeout?: number;

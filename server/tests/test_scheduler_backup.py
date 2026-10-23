@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 
 import pytest
+from sqlalchemy import func, select
 
 from app.core.db import backup_database
 
@@ -37,6 +38,16 @@ async def test_backup_db_job_registered_daily_0400(app):
     assert fields["hour"] == "4" and fields["minute"] == "0"
     # cùng tick với daily-prune (03:00) — không dẫm nhau: job id riêng
     assert job.id == "backup-db"
+
+
+async def test_scheduler_registers_email_outbox_and_daily_prune(app):
+    """QA P3: 2 job wave-5 (flush-email-outbox, daily-prune) phải có id đã đăng ký."""
+    from app.services.scheduler import init_scheduler
+
+    init_scheduler(app)
+    ids = {j.id for j in app.state.scheduler.get_jobs()}
+    assert "flush-email-outbox" in ids
+    assert "daily-prune" in ids
 
 
 def test_backup_database_writes_gzipped_dump(tmp_path, monkeypatch):
@@ -110,3 +121,30 @@ async def test_backup_db_reschedules_only_on_real_cron_change(app, monkeypatch):
     await job.func()
     assert len(calls) == 1
     assert "hour='5'" in str(job.trigger)
+
+async def test_prune_all_commits_deletes(app):
+    """QA P2: `prune_all` chạy 4 prune trong 1 session — thiếu commit thì
+    `session.close()` rollback sạch, daily-prune không xoá gì (bug cũ áp cho
+    cả request_logs/page_views/refresh_tokens, không riêng email_sends)."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.core.models import EmailSend, RequestLog, User
+    from app.services.scheduler import init_scheduler
+
+    old = datetime.now(timezone.utc) - timedelta(days=200)
+    async with app.state.session_factory() as session:
+        user = User(email="prune@test.io", password_hash="x", role="user")
+        session.add(user)
+        await session.flush()
+        session.add_all([
+            RequestLog(method="GET", path="/old", status=200, ip="127.0.0.1", ts=old),
+            EmailSend(user_id=user.id, kind="welcome", created_at=old),
+        ])
+        await session.commit()
+
+    scheduler = init_scheduler(app)
+    await scheduler.get_job("daily-prune").func()
+
+    async with app.state.session_factory() as session:
+        assert (await session.execute(select(func.count()).select_from(RequestLog))).scalar_one() == 0
+        assert (await session.execute(select(func.count()).select_from(EmailSend))).scalar_one() == 0

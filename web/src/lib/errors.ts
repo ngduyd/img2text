@@ -5,6 +5,8 @@ import { translate } from "../i18n";
  *  Spec S2: server {code, params} (S1/S5) → dict key errors.<code>; fallback = raw detail. */
 export function mapApiError(e: unknown): string {
   if (e instanceof ApiError) {
+    // 410 = file gốc đã bị purge theo chính sách lưu trữ (trạng thái bình thường, không phải lỗi).
+    if (e.status === 410) return translate("errors.filePurged");
     if (e.code && translate(`errors.${e.code}`) !== `errors.${e.code}`)
       return translate(`errors.${e.code}`, e.params);
     return e.detail;

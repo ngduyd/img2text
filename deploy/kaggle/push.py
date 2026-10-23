@@ -85,8 +85,25 @@ def _sub_owner(obj, owner):
 
 
 def build_kernel_metadata(owner, accelerator, dest):
-    meta = json.loads((DEPLOY_DIR / "kernel" / "kernel-metadata.json").read_text(encoding="utf-8"))
-    meta = _sub_owner(meta, owner)
+    # Metadata notebook RIÊNG — KHÔNG dùng template batch (code_file
+    # img2text_batch.py / kernel_type script) → kernels_push tìm sai file.
+    # dataset_sources mount dataset files → notebook import pipeline/verdict.
+    meta = {
+        "id": f"{owner}/{KERNEL_SLUG}",
+        "title": KERNEL_SLUG,
+        "code_file": "img2text_worker.ipynb",
+        "language": "python",
+        "kernel_type": "notebook",
+        "is_private": True,
+        "enable_gpu": True,
+        "enable_tpu": False,
+        "enable_internet": True,
+        "dataset_sources": [f"{owner}/{DATASET_SLUG}"],
+        "competition_sources": [],
+        "kernel_sources": [],
+        "model_sources": [],
+        "category_ids": ["data-processing"],
+    }
     meta["machine_shape"] = accelerator
     meta["accelerator"] = accelerator
     dest = Path(dest)

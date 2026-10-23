@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Download } from "lucide-react";
-import { ApiError } from "../../api/client";
 import { getJobBlob } from "../../lib/blobCache";
-import { translate, useT } from "../../i18n";
+import { useT } from "../../i18n";
+import { mapApiError } from "../../lib/errors";
 import Button from "../ui/Button";
 import Card from "../ui/Card";
 import Skeleton from "../ui/Skeleton";
@@ -16,10 +16,12 @@ export default function OriginalFilePanel({
   jobId,
   fileType,
   testid = "panel-original",
+  bare = false,
 }: {
   jobId: string;
   fileType: string;
   testid?: string;
+  bare?: boolean;
 }) {
   const { t } = useT();
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
@@ -40,7 +42,8 @@ export default function OriginalFilePanel({
         if (alive) setObjectUrl(URL.createObjectURL(blob));
       })
       .catch((err: unknown) => {
-        if (alive) setError(err instanceof ApiError ? err.detail : translate("errors.uploadFailed"));
+        // 410 = file đã purge → thông báo thân thiện thay vì "HTTP 410".
+        if (alive) setError(mapApiError(err));
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -56,7 +59,7 @@ export default function OriginalFilePanel({
   };
 
   return (
-    <Card testid={testid} title={t("jd.originalFile")}>
+    <Card testid={testid} title={t("jd.originalFile")} bare={bare}>
       <div className="flex items-center gap-2">
         <Button
           testid="btn-download-original"

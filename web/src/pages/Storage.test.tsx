@@ -104,7 +104,7 @@ test("page shell: main#main + h1 + subtitle (AC5, AC7)", async () => {
   await screen.findByTestId("storage-own-kept-files");
   const main = document.querySelector("main#main");
   expect(main).toBeTruthy();
-  expect(main!.className).toContain("max-w-6xl");
+  expect(main!.className).toContain("max-w-[1200px]");
   expect(screen.getByRole("heading", { level: 1, name: "My storage" })).toBeTruthy();
   expect(screen.getByText("Manage your stored files")).toBeTruthy();
   expect(document.querySelector(".grid.grid-cols-1.sm\\:grid-cols-3")).toBeTruthy(); // AC7
@@ -171,11 +171,11 @@ test("empty state composed: icon + title + body + CTA → /jobs (AC12)", async (
   expect(cta.getAttribute("href")).toBe("/jobs");
 });
 
-test("loading: skeleton khớp layout table — 6 cột × 4 hàng (AC13)", async () => {
+test("loading: skeleton khớp layout table — 4 hàng, 3 cột mobile / 6 cột ≥sm (AC13)", async () => {
   listJobs.mockReturnValue(new Promise(() => {})); // treo vô hạn
   renderPage();
   const sk = await screen.findByTestId("storage-own-table-loading");
-  expect(sk.querySelectorAll(".grid.grid-cols-6").length).toBe(4);
+  expect(sk.querySelectorAll(".grid.grid-cols-3").length).toBe(4);
   expect(screen.getByTestId("storage-own-loading")).toBeTruthy();
 });
 

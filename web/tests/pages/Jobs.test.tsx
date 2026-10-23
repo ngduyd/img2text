@@ -90,7 +90,9 @@ it("banner and disabled Gửi/input when ocr_enabled false", async () => {
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Jobs />);
   expect(await screen.findByTestId("banner-no-access")).toHaveTextContent("Waiting for admin to grant OCR access");
-  expect(screen.getByTestId("muf-submit")).toBeDisabled();
+  // D5: chưa có file → chỉ còn CTA chọn file (nút Gửi chỉ hiện khi có file).
+  expect(screen.queryByTestId("muf-submit")).not.toBeInTheDocument();
+  expect(screen.getByTestId("muf-pick")).toBeDisabled();
   expect(screen.getByTestId("muf-input")).toBeDisabled();
 });
 
@@ -212,12 +214,12 @@ it("filter tabs show counts and click filters rows", async () => {
   renderWithRouter(<Jobs />);
   await screen.findByTestId("job-row-4");
   await waitFor(() => expect(screen.getByTestId("filter-all")).toHaveTextContent("All (6)"));
-  // P2: chip labels share STATUS_KEY spellings with badges (one spelling per status).
+  // Chip = bộ lọc → nhãn ngắn riêng (badge vẫn dùng STATUS_KEY dài).
   expect(screen.getByTestId("filter-queued")).toHaveTextContent("Queued (1)");
-  expect(screen.getByTestId("filter-extracting")).toHaveTextContent("Extracting text (1)");
-  expect(screen.getByTestId("filter-rendering")).toHaveTextContent("Rendering layout (1)");
+  expect(screen.getByTestId("filter-extracting")).toHaveTextContent("Extract (1)");
+  expect(screen.getByTestId("filter-rendering")).toHaveTextContent("Build layout (1)");
   expect(screen.getByTestId("filter-done")).toHaveTextContent("Done (2)");
-  expect(screen.getByTestId("filter-failed")).toHaveTextContent("Processing failed (1)");
+  expect(screen.getByTestId("filter-failed")).toHaveTextContent("Failed (1)");
   // New phase tabs filter to their own rows.
   await userEvent.click(screen.getByTestId("filter-extracting"));
   expect(screen.getByTestId("job-row-5")).toBeInTheDocument();
@@ -387,7 +389,7 @@ it("toolbar shows filter tabs without an output-format select", async () => {
   expect(screen.getByTestId("filter-done")).toBeInTheDocument();
   // Format picker cũ trên toolbar đã chuyển vào SubmitModal (spec U3).
   expect(screen.queryByTestId("btn-format-toggle")).not.toBeInTheDocument();
-  expect(screen.getByTestId("muf-submit")).toBeInTheDocument();
+  expect(screen.getByTestId("muf-pick")).toBeInTheDocument();
 });
 
 it("empty state shows CTA hint", async () => {

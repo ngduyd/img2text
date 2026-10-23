@@ -32,7 +32,10 @@
     "skip": "Skip to content",
     "ariaMain": "Main navigation",
     "features": "Features",
-    "storage": "Storage"
+    "storage": "Storage",
+    "language": "Language",
+    "theme": "Appearance",
+    "ocr": "OCR"
   },
   "status": {
     "queued": "Queued",
@@ -52,7 +55,8 @@
     "network": "Cannot reach the server. Check that it is running.",
     "uploadFailed": "File upload failed.",
     "generic": "An error occurred.",
-    "email_limit": "Too many emails requested. Please try again later."
+    "email_limit": "Too many emails requested. Please try again later.",
+    "filePurged": "Original file was deleted by the storage retention policy."
   },
   "ocr": {
     "enabled": "OCR enabled",
@@ -182,7 +186,19 @@
     "originalFile": "Original file",
     "infoTitle": "Info",
     "layoutToggleAria": "Toggle layout panel",
-    "layout": "Layout"
+    "layout": "Layout",
+    "subnavAria": "Job sections",
+    "overview": "Overview",
+    "textDesc": "Read the extracted text and fix OCR errors against the original page.",
+    "layoutDesc": "Rebuild and edit the page layout in a browser word processor.",
+    "notReadyYet": "Nothing to show yet — the job is still processing.",
+    "textNotReady": "Text is not ready yet.",
+    "layoutNotReady": "Layout is not ready yet.",
+    "showOriginal": "Original",
+    "zen": "Full screen",
+    "exitZen": "Exit full screen",
+    "proofread": "Proofread",
+    "proofreadDone": "{n} suggestions added"
   },
   "info": {
     "createdAt": "Created:",
@@ -199,7 +215,9 @@
     "fmtMd": "Download .md",
     "fmtHtml": "Download .html",
     "fmtDocx": "Download .docx",
-    "fmtPdf": "Download .pdf"
+    "fmtPdf": "Download .pdf",
+    "layoutGroup": "Layout",
+    "textGroup": "Text"
   },
   "editor": {
     "textAreaAria": "Edit text",
@@ -229,6 +247,9 @@
       "title": "Problems ({n})",
       "replacedNote": "Region text updated; markdown not replaced (original text no longer in the preview)",
       "editRegion": "Edit region"
+    },
+    "suggestions": {
+      "title": "Fixes ({n})"
     }
   },
   "word": {
@@ -257,7 +278,15 @@
     "delCol": "Delete column",
     "col": "column",
     "tableInsert": "Insert table {r}×{c}",
-    "tablePick": "Pick a table (max 10×10)"
+    "tablePick": "Pick a table (max 10×10)",
+    "pagesUnit": "pages",
+    "pagePreviewAria": "A4 page preview",
+    "moreTools": "More tools",
+    "paragraph": "Paragraph",
+    "indent": "Increase indent",
+    "outdent": "Decrease indent",
+    "lineHeight": "Line spacing",
+    "lineHeightDefault": "Line spacing"
   },
   "extraction": {
     "title": "Text extraction",
@@ -274,7 +303,9 @@
     "copied": "IR copied"
   },
   "preview": {
-    "wordTitle": "Word layout preview"
+    "wordTitle": "Word layout preview",
+    "layoutNote": "Markdown is a plain text flow — columns and positions are not shown.",
+    "showLayout": "Show layout view (DOCX)"
   },
   "region": {
     "textAria": "Text of region {id}"
@@ -328,8 +359,6 @@
       "sectionScheduler": "Scheduler",
       "sectionLimits": "Limits",
       "sectionSmtp": "SMTP",
-      "irModel": "IR model",
-      "irModelHelp": "Model used for IR document-structure classification (docx/md export).",
       "llmApiKey": "API key (write-only)",
       "llmApiKeyHelp": "Bearer token for /chat/completions. Leave blank to keep the current key.",
       "llmTimeout": "LLM timeout (seconds)",
@@ -376,7 +405,13 @@
       "jobsDone": "Jobs done",
       "jobsFailed": "Jobs failed",
       "gpuTotal": "Total GPU (seconds)",
-      "cost": "Estimated cost (USD)"
+      "cost": "Estimated cost (USD)",
+      "emailsSent": "Emails sent",
+      "emailsFailed": "Emails failed",
+      "emailsStuck": "{n} email(s) stuck in the outbox — drain job dead or SMTP hung.",
+      "rangeHint": "Last 7 days",
+      "activity": "Activity (7 days) — {done} done, {failed} failed",
+      "activityAria": "Jobs per day, last 7 days: {done} done, {failed} failed"
     },
     "stats": {
       "date": "Date",
@@ -385,6 +420,8 @@
       "done": "Done",
       "failed": "Failed",
       "views": "Views",
+      "emailsSent": "Emails sent",
+      "emailsFailed": "Emails failed",
       "gpu": "GPU (seconds)",
       "cost": "Estimated cost",
       "from": "From",
@@ -443,6 +480,11 @@
       "empty": "No feedback yet.",
       "anonymous": "unknown",
       "page": "{page}/{pages}"
+    },
+    "group": {
+      "overview": "Overview",
+      "data": "Data",
+      "system": "System"
     }
   },
   "profile": {
@@ -496,7 +538,7 @@
     "confirmMessage": "Files older than the retention window are deleted from storage. OCR text, layout and versions are kept. This cannot be undone.",
     "purgedToast": "Purged {n} job(s).",
     "refreshAria": "Refresh storage stats",
-    "pageInfo": "Page {page} · {total} jobs",
+    "pageInfo": "Page {page} · {total} files",
     "empty": "No jobs older than the retention window.",
     "own": {
       "title": "My storage",
@@ -531,9 +573,7 @@
   "landing": {
     "hero": {
       "title": "Turn photos and PDFs into editable text",
-      "sub": "Scan exams, books, and documents into structured text. Fix problem areas and export the file you need.",
-      "alt": "img2text home page on a dark background",
-      "caption": "The whole page on a dark background."
+      "sub": "Scan exams, books, and documents into structured text. Fix problem areas and export the file you need."
     },
     "cta": "Get started",
     "howLink": "See how it works",
@@ -579,34 +619,16 @@
     "inputLabel": "Input:",
     "outputLabel": "Output:",
     "colab": "Runs free on Google Colab.",
-    "galleryTitle": "Preview",
-    "gallery": {
-      "g1": {
-        "alt": "img2text home page on a dark background",
-        "caption": "Home: hero and call to action."
-      },
-      "g2": {
-        "alt": "img2text sign-in screen",
-        "caption": "Sign in with email and password."
-      },
-      "g3": {
-        "alt": "JobDetail two sections: text on top, layout below",
-        "caption": "JobDetail: text and layout scroll together."
-      },
-      "g4": {
-        "alt": "Preview of a formatted layout page",
-        "caption": "Formatted layout, keeping columns and margins."
-      },
-      "g5": {
-        "alt": "Export bar with Text and Layout groups",
-        "caption": "Export: text group and layout group."
-      },
-      "g6": {
-        "alt": "Admin user table",
-        "caption": "Admin manages users and quota."
-      }
-    },
-    "finalTitle": "Upload your first page"
+    "finalTitle": "Upload your first page",
+    "roadmapTitle": "Coming soon",
+    "previewTitle": "See it in action",
+    "shot": {
+      "editor": "Editor with a live A4 page preview next to the text",
+      "jobs": "Job list with status badges",
+      "text": "Extracted text with OCR issues highlighted",
+      "jobsCaption": "Every job, one row: status, page count, and a ⋯ menu for the rest.",
+      "textCaption": "Low-confidence words are flagged in place, next to the original page."
+    }
   },
   "jobs": {
     "title": "Jobs",
@@ -622,7 +644,12 @@
     "sortNewest": "Newest",
     "sortOldest": "Oldest",
     "filter": {
-      "all": "All"
+      "all": "All",
+      "chipQueued": "Queued",
+      "chipExtracting": "Extract",
+      "chipRendering": "Build layout",
+      "chipDone": "Done",
+      "chipFailed": "Failed"
     },
     "deniedTitle": "Waiting for admin to grant OCR access",
     "deniedHint": "Dev environment: sign in as an admin, open Users, and enable OCR for this account.",
@@ -650,13 +677,14 @@
       "selectAria": "Select job {id}",
       "image": "Image",
       "pages": "pages",
-      "view": "View",
       "downloadOriginal": "Download original",
       "retry": "Retry",
       "cancel": "Cancel",
       "delete": "Delete",
       "deleteTitle": "Delete job #{id}?",
-      "deleteMessage": "All data (original file, results, versions) will be permanently deleted. This cannot be undone."
+      "deleteMessage": "All data (original file, results, versions) will be permanently deleted. This cannot be undone.",
+      "pageOne": "page",
+      "more": "More actions"
     }
   },
   "feedback": {

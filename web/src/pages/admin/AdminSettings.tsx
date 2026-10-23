@@ -48,8 +48,6 @@ const FIELDS: FieldDef[] = [
     labelKey: "admin.settings.llmBaseUrl", helperKey: "admin.settings.llmBaseUrlHelp" },
   { key: "llm_model", slug: "llm-model", section: "llm", kind: "str",
     labelKey: "admin.settings.llmModel", helperKey: "admin.settings.llmModelHelp", testModel: true },
-  { key: "ir_llm_model", slug: "ir-llm-model", section: "llm", kind: "str",
-    labelKey: "admin.settings.irModel", helperKey: "admin.settings.irModelHelp", testModel: true },
   { key: "proofread_llm_model", slug: "proofread-llm-model", section: "llm", kind: "str",
     labelKey: "admin.settings.proofreadModel", helperKey: "admin.settings.proofreadModelHelp", testModel: true },
   { key: "llm_api_key", slug: "llm-api-key", section: "llm", kind: "str", secret: true,

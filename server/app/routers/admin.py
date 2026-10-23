@@ -14,13 +14,21 @@ from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from httpx import AsyncClient
 from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
-from sqlalchemy import Date, Float, case, cast, func, select
+from sqlalchemy import Date, Float, and_, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import get_current_user, require_admin
-from app.core.models import Job, PageView, RequestLog, Setting, User, WorkerHeartbeat
+from app.core.models import (
+    EmailSend,
+    Job,
+    PageView,
+    RequestLog,
+    Setting,
+    User,
+    WorkerHeartbeat,
+)
 from app.routers.auth import revoke_all_refresh
 from app.services.kaggle_quota import kaggle_quota_payload
 from app.services.purge import purge_due_jobs, purge_retention_days
@@ -276,6 +284,9 @@ async def stats(
     """Per-day activity + gpu cost estimate; dates inclusive, UTC days.
 
     Default window: last 7 days (to=today). Gap days zero-filled.
+    emails_sent/emails_failed = ledger email theo ngày; emails_stuck = row còn
+    queued quá due 15' (drain job chết) hoặc row sending đã hết lease
+    (next_attempt_at là lease deadline khi đang gửi → crash giữa send).
     """
     today = datetime.now(timezone.utc).date()
     end = to or today
@@ -306,6 +317,33 @@ async def stats(
     )
     views = await _grouped(session, PageView, PageView.created_at,
                            (PageView.created_at >= lo, PageView.created_at < hi))
+    emails = await _grouped(
+        session, EmailSend, EmailSend.created_at,
+        (EmailSend.created_at >= lo, EmailSend.created_at < hi),
+        {
+            "sent": func.sum(case((EmailSend.status == "sent", 1), else_=0)),
+            "failed": func.sum(case((EmailSend.status == "failed", 1), else_=0)),
+        },
+    )
+    now = datetime.now(timezone.utc)
+    emails_stuck = (
+        await session.scalar(
+            select(func.count())
+            .select_from(EmailSend)
+            .where(
+                or_(
+                    and_(
+                        EmailSend.status == "queued",
+                        EmailSend.next_attempt_at < now - timedelta(minutes=15),
+                    ),
+                    and_(
+                        EmailSend.status == "sending",
+                        EmailSend.next_attempt_at < now,  # lease hết hạn
+                    ),
+                )
+            )
+        )
+    ) or 0
 
     days: list[dict] = []
     cur = start
@@ -313,6 +351,7 @@ async def stats(
         u = (users.get(cur) or (0,))[0]
         j = jobs.get(cur) or (0, 0, 0, 0.0)
         v = (views.get(cur) or (0,))[0]
+        e = emails.get(cur) or (0, 0, 0)
         gpu = float(j[3])
         days.append({
             "date": cur.isoformat(),
@@ -321,11 +360,13 @@ async def stats(
             "jobs_done": int(j[1]),
             "jobs_failed": int(j[2]),
             "page_views": v,
+            "emails_sent": int(e[1]),
+            "emails_failed": int(e[2]),
             "gpu_seconds": gpu,
             "estimated_cost_usd": round(gpu / 3600 * rate, 4),
         })
         cur += timedelta(days=1)
-    return {"days": days}
+    return {"days": days, "emails_stuck": int(emails_stuck)}
 
 # --- Lane K: Kaggle GPU/TPU quota (admin card) ---
 # Parse + HTTP mapping (503/502, response shape) tách
@@ -482,7 +523,6 @@ class RuntimeSettingsPut(BaseModel):
     kaggle_mode: str | None = None
     llm_base_url: str | None = None
     llm_model: str | None = None
-    ir_llm_model: str | None = None
     proofread_llm_model: str | None = None
     llm_api_key: str | None = None
     llm_timeout: int | None = None
@@ -580,7 +620,6 @@ async def put_settings(
     for key in (
         "llm_base_url",
         "llm_model",
-        "ir_llm_model",
         "proofread_llm_model",
         "llm_api_key",
         "llm_timeout",

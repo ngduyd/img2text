@@ -87,6 +87,7 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
             prune_refresh_tokens,
             prune_request_logs,
         )
+        from app.services import email_sends
 
         async with app.state.session_factory() as session:
             results: dict[str, int] = {}
@@ -94,16 +95,22 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
                 ("request_logs", prune_request_logs),
                 ("page_views", prune_page_views),
                 ("refresh_tokens", prune_refresh_tokens),
+                ("email_sends", email_sends.prune),
             ):
                 try:
                     results[label] = await prune(session)
                 except Exception:  # one failing prune must not skip the others
                     logger.exception("daily prune: %s failed", label)
+            # P2: prune helpers chỉ execute DELETE — thiếu commit thì
+            # session.close() rollback sạch, daily-prune không xoá gì.
+            await session.commit()
         logger.info(
-            "daily prune: request_logs=%s page_views=%s refresh_tokens=%s",
+            "daily prune: request_logs=%s page_views=%s refresh_tokens=%s "
+            "email_sends=%s",
             results.get("request_logs"),
             results.get("page_views"),
             results.get("refresh_tokens"),
+            results.get("email_sends"),
         )
 
     scheduler.add_job(prune_all, trigger="cron", hour=3, minute=0, id="daily-prune")
@@ -164,6 +171,25 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
 
     scheduler.add_job(
         flush_logs, trigger="interval", seconds=30, id="flush-request-logs"
+    )
+
+    async def flush_email_outbox() -> None:
+        """2026-10-20: drain DB email outbox (route chỉ enqueue).
+        ponytail: interval 20s cố định — chưa cần runtime override."""
+        from app.core.db import SessionLocal
+        from app.services import email_sends
+
+        try:
+            async with SessionLocal() as session:
+                sent, failed = await email_sends.drain(session)
+        except Exception:  # one failing pass must not kill the job
+            logger.warning("flush-email-outbox failed", exc_info=True)
+            return
+        if sent or failed:
+            logger.info("flush-email-outbox: sent=%d failed=%d", sent, failed)
+
+    scheduler.add_job(
+        flush_email_outbox, trigger="interval", seconds=20, id="flush-email-outbox"
     )
 
     async def backup_db() -> None:

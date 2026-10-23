@@ -5,6 +5,10 @@
    Token values flip via html:not(.dark) in tokens.css — no dark: variants needed. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Native control rendering (checkbox, select, scrollbar) theo theme. */
+html.dark { color-scheme: dark; }
+html:not(.dark) { color-scheme: light; }
+
 /* Semantic token utilities: bg-bg, bg-surface, bg-surface-2, text-text,
    text-muted, text-accent-text, text-accent-contrast, bg-accent,
    border-border, text-success/warning/error, shadow-card,

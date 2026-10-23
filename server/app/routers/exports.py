@@ -19,19 +19,20 @@ from typing import Literal
 
 import bleach
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from PIL import Image
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.convert import PANDOC_BIN, REFERENCE_DOCX
-from app.core.db import SessionLocal, get_session
+from app.core.db import get_session
 from app.core.deps import get_current_user
 from app.core.models import Job, User
 from app.core.schemas import IMAGE_MARKER
 from app.routers.jobs import _job_or_403, _text_bytes, bump_text_after_edit
-from app.services.render_docx import LLMError as DocxLLMError, build_docx
-from app.services.render_md import LLMError, build_md, embed_crop_keys, embed_crop_urls
+from app.services.render_docx import build_docx
+from app.services.render_html_spec import render_html_spec
+from app.services.render_md import build_md, embed_crop_keys, embed_crop_urls
 from app.services.doc_versions import save_version, snapshot_current_layout
 from app.services.html_to_docx import html_to_docx, CROP_SRC_RE
 from app.services.storage import StorageDriver, get_storage
@@ -442,45 +443,33 @@ async def patch_content(
 # --- Export generation + download: POST /export, GET /export/{fmt}/download ---
 
 async def _llm_docx_export(
-    job_id: int, job: Job, ir_sink: dict | None = None,
-    storage: StorageDriver | None = None,
+    job_id: int, job: Job, storage: StorageDriver | None = None,
 ) -> bytes:
-    """IR rewrite: result → LLM IR → docx bytes (never caches errors).
+    """Layout-spec rewrite: result → docx bytes (0 LLM call, deterministic).
 
-    Missing result → 409 "Chưa có kết quả OCR."; LLM unreachable/timeout
-    → 502 "Không kết nối LLM máy chủ." (raised before storage.put).
-    Plan M: jobs.layout_style applied over the IR render (user wins).
-    storage (S1b): figure marker → crop bytes (batch exports/{id}/crops/
-    {rid}.png → on-demand get_or_make_crop); thiếu → placeholder [ảnh].
+    Missing result → 409 "Chưa có kết quả OCR.".
+    Plan M: jobs.layout_style applied over the spec render (user wins).
     """
     result = dict(job.result or {})
     if not result.get("pages"):
         raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
     crop_loader = None
     if storage is not None:
-        async def crop_loader(rid: str) -> bytes | None:
-            try:
+        async def _on_demand_crop(rid: str) -> bytes | None:
+            try:  # batch crop kernel thắng (server chỉ lưu + dùng)
                 return await storage.get(f"exports/{job_id}/crops/{rid}.png")
             except KeyError:
                 pass
             try:
                 key = await get_or_make_crop(job_id, rid, job, result, storage)
                 return await storage.get(key)
-            except (KeyError, HTTPException) as exc:
-                logger.info("docx-layout: crop %s on-demand fail: %s", rid, exc)
+            except KeyError:
                 return None
-    try:
-        return await build_docx(
-            result,
-            style_overrides=_job_layout_style(job),
-            ir_sink=ir_sink,
-            crop_loader=crop_loader,
-        )
-    except DocxLLMError as exc:
-        logger.warning("docx-layout LLM failure job=%s: %s", job_id, exc)
-        raise HTTPException(
-            status_code=502, detail="Không kết nối LLM máy chủ."
-        ) from exc
+
+        crop_loader = _on_demand_crop
+    return await build_docx(
+        result, style_overrides=_job_layout_style(job), crop_loader=crop_loader
+    )
 
 def _job_layout_style(job: Job) -> dict | None:
     """jobs.layout_style JSON → dict; broken JSON → None + warning."""
@@ -494,38 +483,31 @@ def _job_layout_style(job: Job) -> dict | None:
     return style if isinstance(style, dict) else None
 
 async def _llm_md_export(
-    job_id: int, job: Job, ir_sink: dict | None = None,
-    storage: StorageDriver | None = None,
+    job_id: int, job: Job, storage: StorageDriver | None = None,
 ) -> bytes:
-    """IR rewrite: result → LLM IR → markdown bytes (never caches errors).
+    """Layout-spec rewrite: result → markdown bytes (0 LLM call, deterministic).
 
-    Missing result → 409 "Chưa có kết quả OCR."; LLM unreachable/timeout
-    → 502 "Không kết nối LLM máy chủ." — raised BEFORE storage.put.
+    Missing result → 409 "Chưa có kết quả OCR."
     storage (WS-PIPE): figure marker → presigned crop URL 24h nếu crop
-    artifact đã ingest; thiếu → giữ marker.
+    artifact đã ingest; thiếu → on-demand crop → data-URI; loader fail →
+    giữ marker.
     """
     result = dict(job.result or {})
     if not result.get("pages"):
         raise HTTPException(status_code=409, detail="Chưa có kết quả OCR.")
-    try:
-        md = await build_md(result, ir_sink=ir_sink)
-        if storage is not None:
-            # render: relative crops/{f} key (presigned 24h hết hạn → chết);
-            # crop artifact thiếu → on-demand crop (route /regions/{rid}/crop
-            # logic) → data-URI self-contained (wave-4 #9)
-            async def _on_demand_crop(rid: str) -> bytes:
-                key = await get_or_make_crop(job_id, rid, job, result, storage)
-                return await storage.get(key)
+    md = await build_md(result)
+    if storage is not None:
+        # render: relative crops/{f} key (presigned 24h hết hạn → chết);
+        # crop artifact thiếu → on-demand crop (route /regions/{rid}/crop
+        # logic) → data-URI self-contained (wave-4 #9)
+        async def _on_demand_crop(rid: str) -> bytes:
+            key = await get_or_make_crop(job_id, rid, job, result, storage)
+            return await storage.get(key)
 
-            md = await embed_crop_keys(
-                md, job_id, storage, crop_loader=_on_demand_crop
-            )
-        return md.encode("utf-8")
-    except LLMError as exc:
-        logger.warning("md-layout LLM failure job=%s: %s", job_id, exc)
-        raise HTTPException(
-            status_code=502, detail="Không kết nối LLM máy chủ."
-        ) from exc
+        md = await embed_crop_keys(
+            md, job_id, storage, crop_loader=_on_demand_crop
+        )
+    return md.encode("utf-8")
 
 async def _docx_html_export(
     job_id: int, job: Job, storage: StorageDriver
@@ -564,8 +546,8 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
     written — the spec 2026-10-09 completion rule the caller applies:
     at least one OK → done, both fail → failed + failed_step="rendering"
     (the plain-md fallback is a degraded artifact, not a layout success).
-    The IR from either build (single LLM call each) fills job.ir_json
-    for GET /api/jobs/{id}/ir — no separate generate_ir round-trip.
+    Render là layout_spec (0 LLM call); GET /api/jobs/{id}/ir sinh
+    on-demand (job.ir_json NULL → generate_ir lần đầu, sau đó cache DB).
     Reuses the export_job internals (NO HTTP round-trip); scheduled
     fire-and-forget by job_results AFTER the result commit.
     Phase 5: extract_only jobs return False immediately — no layout
@@ -574,22 +556,21 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
     """
     if job.mode == "extract_only":
         return False
-    ir_sink: dict = {}
     md_ok = False
-    # md-layout (LLM) — failure → warning + fallback plain md at exports/{id}/md
+    # md-layout (spec) — failure → warning + fallback plain md at exports/{id}/md
     try:
-        data = await _llm_md_export(job.id, job, ir_sink, storage)
-        # P1-3: LLM overwrite must not wipe unsnapshotted artifact bytes
+        data = await _llm_md_export(job.id, job, storage)
+        # P1-3: overwrite must not wipe unsnapshotted artifact bytes
         await snapshot_current_layout(storage, None, job.id, "md-layout", job.text_version)
         # P0-A: S3Driver.put dedupes existing keys → delete first, else
         # retry-layout/auto-gen can never overwrite the stale artifact
         await storage.delete_prefix(f"exports/{job.id}/md-layout")
         await storage.put(f"exports/{job.id}/md-layout", data)
         md_ok = True
-    except HTTPException as exc:
+    except Exception as exc:  # HTTPException 409 hoặc lỗi render bất ngờ → fallback
         logger.warning(
             "md-layout auto-gen failed job=%s: %s — fallback plain md",
-            job.id, exc.detail,
+            job.id, getattr(exc, "detail", exc),
         )
         markdown = current_markdown(job.result or {})
         # same md branch as export_job: crops materialized before encode
@@ -598,11 +579,11 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
                 job.id, markdown, job, storage, Path(td)
             )
         await storage.put(f"exports/{job.id}/md", markdown.encode("utf-8"))
-    # docx-layout (LLM) — failure → warning (independent of md above)
+    # docx-layout (spec) — failure → warning (independent of md above)
     docx_ok = False
     try:
-        data = await _llm_docx_export(job.id, job, ir_sink, storage)
-        # P2-4: LLM overwrite must not wipe unsnapshotted artifact bytes
+        data = await _llm_docx_export(job.id, job, storage)
+        # P2-4: overwrite must not wipe unsnapshotted artifact bytes
         # (trước đây chỉ md-layout snapshot — docx-layout mất bản cũ)
         await snapshot_current_layout(
             storage, None, job.id, "docx-layout", job.text_version
@@ -612,20 +593,11 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
         await storage.delete_prefix(f"exports/{job.id}/docx-layout")
         await storage.put(f"exports/{job.id}/docx-layout", data)
         docx_ok = True
-    except HTTPException as exc:
+    except Exception as exc:  # độc lập với md ở trên; lỗi bất kỳ → chỉ warning
         logger.warning(
-            "docx-layout auto-gen failed job=%s: %s", job.id, exc.detail
+            "docx-layout auto-gen failed job=%s: %s", job.id,
+            getattr(exc, "detail", exc),
         )
-    # IR produced by either build → job.ir_json (own session: task outlives request)
-    if ir_sink:
-        try:
-            async with SessionLocal() as session:
-                db_job = await session.get(Job, job.id)
-                if db_job is not None:
-                    db_job.ir_json = json.dumps(ir_sink, ensure_ascii=False)
-                    await session.commit()
-        except Exception as exc:
-            logger.warning("IR save failed job=%s: %s", job.id, exc)
     return md_ok or docx_ok
 
 @router.post("/api/jobs/{id}/export")
@@ -644,7 +616,7 @@ async def export_job(
         if body.fmt == "docx-layout":
             data = await _llm_docx_export(id, job, storage=storage)
         elif body.fmt == "md-layout":
-            data = await _llm_md_export(id, job, storage=storage)  # LLM errors → 502, no put
+            data = await _llm_md_export(id, job, storage=storage)
         elif body.fmt == "docx" and (
             data := await _docx_html_export(id, job, storage)
         ) is not None:
@@ -753,6 +725,40 @@ async def download_export(
             "Content-Range": f"bytes {start}-{start + len(chunk) - 1}/{total}"
         },
     )
+
+@router.get("/api/jobs/{id}/preview/layout.html", response_class=HTMLResponse)
+async def preview_layout_html(
+    id: int,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> HTMLResponse:
+    """Preview Word dựng từ layout_spec (KHÔNG convert docx).
+
+    Trước: web convert docx→HTML bằng mammoth → mất tab stop, canh lề, OMML
+    (bản xem trước khác bản tải về). Đây là cùng nguồn với docx-layout nên
+    preview khớp file: công thức = MathML, header 2 bên = 2 đầu, justify giữ.
+    Ảnh: crop presigned (fallback marker khi thiếu crop).
+    """
+    job = await _job_or_403(session, id, user)
+    if job.status != "done":
+        raise HTTPException(status_code=409, detail="job not done")
+    result = job.result or {}
+    crop_urls: dict[str, str] = {}
+    for page in result.get("pages", []):
+        for region in page.get("regions", []):
+            if not (region.get("placeholder")
+                    or region.get("verdict") == "image_unextractable"):
+                continue
+            rid = str(region.get("id"))
+            try:
+                key = await get_or_make_crop(id, rid, job, result, storage)
+                crop_urls[rid] = await storage.presign_get(
+                    key, EXPORT_PRESIGN_EXPIRES_SECONDS
+                )
+            except KeyError:
+                logger.info("preview: crop %s thiếu → marker", rid)
+    return HTMLResponse(render_html_spec(result, crop_urls=crop_urls))
 
 # --- Region crops: GET /api/jobs/{id}/regions/{rid}/crop ---
 

@@ -1,0 +1,10 @@
+import { chromium } from 'playwright';
+const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'] });
+const ctx = await browser.newContext({ viewport: { width: 1500, height: 1100 } });
+await ctx.request.post('http://localhost:5173/api/auth/login', { data: { email: 'admin@dev.local', password: 'admin123' } });
+const page = await ctx.newPage();
+await page.goto('http://localhost:5173/jobs/37', { waitUntil: 'networkidle' });
+await page.waitForTimeout(4000);
+const els = await page.$$eval('button, a, [role]', (list) => list.slice(0, 40).map((e) => `${e.tagName}[${e.getAttribute('role') || ''}][${e.getAttribute('data-testid') || ''}] ${(e.textContent || '').trim().slice(0, 24)}`));
+console.log(els.join('\n'));
+await browser.close();

@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services import email_sends, mailer
+from app.services import email_sends
 from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user
@@ -35,14 +35,6 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 _REFRESH_TTL = timedelta(days=30)
 # S5: mã verify/reset 6 số TTL 5 phút (single active code/user, ghi đè)
 _EMAIL_CODE_TTL = timedelta(minutes=5)
-
-def _email_unavailable() -> JSONResponse:
-    """#9: SMTP down → 503 (khác 429 email_limit = rate limit) — client
-    retry sau; body flat như EmailLimitExceeded handler."""
-    return JSONResponse(
-        status_code=503,
-        content={"code": "email_unavailable", "retry_after_seconds": 300},
-    )
 
 
 # Deviation from plan Task 3 interface: refresh minting is a private 3-tuple
@@ -154,8 +146,8 @@ async def register(
     User vừa tạo → 2 kind đều là lần #1 trong window, quota không thể
     vượt — bỏ check, record rồi commit chung.
 
-    #9: gửi INLINE (không background) — SMTP down → 503 email_unavailable
-    thay vì 201 im lặng; user đã commit nên duplicate register vẫn 201.
+    queue: route không gửi inline — SMTP fail → row retry/backoff trong
+    scheduler, không còn 503 email_unavailable; duplicate vẫn 201.
     #11: password >72 byte → 400 password_too_long TRƯỚC khi hash."""
     if password_too_long(creds.password):
         return JSONResponse(
@@ -171,10 +163,12 @@ async def register(
     code = generate_email_code()
     user.email_verify_code_hash = hash_email_code(user.email, code)
     user.email_verify_expires_at = datetime.now(timezone.utc) + _EMAIL_CODE_TTL
-    email_sends.record(session, user.id, "welcome")
-    email_sends.record(session, user.id, "verify_code")
-    await session.commit()
-    ok, _err = await mailer.send_email(
+    # queue: route không gửi inline — SMTP fail → row retry/backoff, không
+    # còn 503 email_unavailable
+    email_sends.enqueue(
+        session,
+        user.id,
+        "welcome",
         user.email,
         "Welcome to img2text",
         "Welcome to img2text.\n\n"
@@ -183,15 +177,11 @@ async def register(
         "password-reset endpoints work.\n\n"
         "If you did not create this account, ignore this email.\n",
     )
-    if not ok:
-        return _email_unavailable()
-    ok, _err = await mailer.send_email(
-        user.email,
-        "Verify your email",
+    email_sends.enqueue(
+        session, user.id, "verify_code", user.email, "Verify your email",
         _verify_email_body(code),
     )
-    if not ok:
-        return _email_unavailable()
+    await session.commit()
     return {"status": "ok"}
 
 def _verify_email_body(code: str) -> str:
@@ -242,7 +232,8 @@ async def verify_resend(
     P2 review: đã verified → 400 {code:"already_verified"}, KHÔNG gửi
     email (không dùng resend làm kênh email-bomb).
 
-    #9: gửi inline — SMTP down → 503 email_unavailable (khác 429 limit)."""
+    queue: route không gửi inline — SMTP fail → row retry/backoff, không
+    còn 503 email_unavailable."""
     if user.is_verified:
         return JSONResponse(
             status_code=400, content={"code": "already_verified"}
@@ -251,13 +242,11 @@ async def verify_resend(
     code = generate_email_code()
     user.email_verify_code_hash = hash_email_code(user.email, code)
     user.email_verify_expires_at = datetime.now(timezone.utc) + _EMAIL_CODE_TTL
-    email_sends.record(session, user.id, "verify_code")
-    await session.commit()
-    ok, _err = await mailer.send_email(
-        user.email, "Verify your email", _verify_email_body(code)
+    email_sends.enqueue(
+        session, user.id, "verify_code", user.email, "Verify your email",
+        _verify_email_body(code),
     )
-    if not ok:
-        return _email_unavailable()
+    await session.commit()
     return {}
 
 
@@ -403,8 +392,8 @@ async def forgot(
     — ghi đè), qua per-kind email limit — check TRƯỚC enqueue; vượt →
     429 email_limit (leak tồn tại chấp nhận để chặn spam).
 
-    #9: known + SMTP down → 503 email_unavailable (không nuốt lỗi);
-    unknown vẫn 202 — không gửi nên không có lỗi để surface."""
+    queue: route không gửi inline — SMTP fail → row retry/backoff, không
+    còn 503 email_unavailable; unknown vẫn 202 (không enqueue gì)."""
     user = await session.scalar(select(User).where(User.email == body.email))
     if user is None:
         return {}
@@ -412,17 +401,17 @@ async def forgot(
     code = generate_email_code()
     user.password_reset_code = hash_email_code(user.email, code)
     user.password_reset_expires_at = datetime.now(timezone.utc) + _EMAIL_CODE_TTL
-    email_sends.record(session, user.id, "reset_code")
-    await session.commit()
-    ok, _err = await mailer.send_email(
+    email_sends.enqueue(
+        session,
+        user.id,
+        "reset_code",
         user.email,
         "Reset your password",
         f"Your password reset code is: {code}\n\n"
         "It expires in 5 minutes. If you did not request this, "
         "ignore this email.\n",
     )
-    if not ok:
-        return _email_unavailable()
+    await session.commit()
     return {}
 
 

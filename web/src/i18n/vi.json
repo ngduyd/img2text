@@ -32,7 +32,10 @@
     "skip": "Bỏ qua điều hướng",
     "ariaMain": "Điều hướng chính",
     "features": "Tính năng",
-    "storage": "Dung lượng"
+    "storage": "Dung lượng",
+    "language": "Ngôn ngữ",
+    "theme": "Giao diện",
+    "ocr": "OCR"
   },
   "status": {
     "queued": "Đang lập lịch",
@@ -52,7 +55,8 @@
     "network": "Không kết nối được máy chủ. Kiểm tra server đang chạy.",
     "uploadFailed": "Tải file thất bại.",
     "generic": "Đã xảy ra lỗi.",
-    "email_limit": "Đã gửi quá nhiều email. Vui lòng thử lại sau."
+    "email_limit": "Đã gửi quá nhiều email. Vui lòng thử lại sau.",
+    "filePurged": "File gốc đã bị xoá theo chính sách lưu trữ."
   },
   "ocr": {
     "enabled": "OCR đã cấp",
@@ -182,7 +186,19 @@
     "originalFile": "File gốc",
     "infoTitle": "Thông tin",
     "layoutToggleAria": "Thu gọn/mở panel Layout",
-    "layout": "Layout"
+    "layout": "Layout",
+    "subnavAria": "Các mục của job",
+    "overview": "Tổng quan",
+    "textDesc": "Đọc văn bản đã trích xuất và sửa lỗi OCR đối chiếu với trang gốc.",
+    "layoutDesc": "Dựng lại và chỉnh sửa bố cục trang bằng trình soạn thảo trên trình duyệt.",
+    "notReadyYet": "Chưa có nội dung — job đang xử lý.",
+    "textNotReady": "Văn bản chưa sẵn sàng.",
+    "layoutNotReady": "Layout chưa sẵn sàng.",
+    "showOriginal": "Ảnh gốc",
+    "zen": "Toàn màn hình",
+    "exitZen": "Thoát toàn màn hình",
+    "proofread": "Soát lỗi",
+    "proofreadDone": "Đã thêm {n} đề xuất"
   },
   "info": {
     "createdAt": "Tạo lúc:",
@@ -199,7 +215,9 @@
     "fmtMd": "Tải .md",
     "fmtHtml": "Tải .html",
     "fmtDocx": "Tải .docx",
-    "fmtPdf": "Tải .pdf"
+    "fmtPdf": "Tải .pdf",
+    "layoutGroup": "Bản dựng layout",
+    "textGroup": "Văn bản"
   },
   "editor": {
     "textAreaAria": "Soạn thảo văn bản",
@@ -229,6 +247,9 @@
       "title": "Vấn đề ({n})",
       "replacedNote": "Văn bản vùng đã cập nhật; markdown chưa thay thế (text gốc không còn trong bản xem trước)",
       "editRegion": "Sửa vùng"
+    },
+    "suggestions": {
+      "title": "Đề xuất sửa ({n})"
     }
   },
   "word": {
@@ -257,7 +278,15 @@
     "delCol": "Xóa cột",
     "col": "Cột",
     "tableInsert": "Chèn bảng {r}×{c}",
-    "tablePick": "Chọn bảng (tối đa 10×10)"
+    "tablePick": "Chọn bảng (tối đa 10×10)",
+    "pagesUnit": "trang",
+    "pagePreviewAria": "Xem trước trang A4",
+    "moreTools": "Thêm công cụ",
+    "paragraph": "Đoạn văn",
+    "indent": "Tăng thụt lề",
+    "outdent": "Giảm thụt lề",
+    "lineHeight": "Giãn dòng",
+    "lineHeightDefault": "Giãn dòng"
   },
   "extraction": {
     "title": "Trích xuất văn bản",
@@ -274,7 +303,9 @@
     "copied": "Đã sao chép IR"
   },
   "preview": {
-    "wordTitle": "Xem trước layout Word"
+    "wordTitle": "Xem trước layout Word",
+    "layoutNote": "Markdown chỉ là dòng chảy văn bản — không hiện cột/vị trí.",
+    "showLayout": "Xem bản có layout (DOCX)"
   },
   "region": {
     "textAria": "Văn bản vùng {id}"
@@ -328,8 +359,6 @@
       "sectionScheduler": "Lập lịch",
       "sectionLimits": "Giới hạn",
       "sectionSmtp": "SMTP",
-      "irModel": "Model IR",
-      "irModelHelp": "Model phân loại cấu trúc tài liệu khi xuất docx/md.",
       "llmApiKey": "API key (chỉ ghi)",
       "llmApiKeyHelp": "Bearer token cho /chat/completions. Để trống để giữ key hiện tại.",
       "llmTimeout": "Timeout LLM (giây)",
@@ -376,7 +405,13 @@
       "jobsDone": "Job hoàn tất",
       "jobsFailed": "Job thất bại",
       "gpuTotal": "Tổng GPU (giây)",
-      "cost": "Chi phí ước tính (USD)"
+      "cost": "Chi phí ước tính (USD)",
+      "emailsSent": "Email đã gửi",
+      "emailsFailed": "Email gửi lỗi",
+      "emailsStuck": "{n} email kẹt trong outbox — drain job chết hoặc SMTP treo.",
+      "rangeHint": "7 ngày gần nhất",
+      "activity": "Hoạt động 7 ngày — {done} xong, {failed} lỗi",
+      "activityAria": "Số job theo ngày, 7 ngày gần nhất: {done} xong, {failed} lỗi"
     },
     "stats": {
       "date": "Ngày",
@@ -385,6 +420,8 @@
       "done": "Hoàn tất",
       "failed": "Thất bại",
       "views": "Lượt xem",
+      "emailsSent": "Email đã gửi",
+      "emailsFailed": "Email lỗi",
       "gpu": "GPU (giây)",
       "cost": "Chi phí ước tính",
       "from": "Từ",
@@ -443,6 +480,11 @@
       "empty": "Chưa có góp ý nào.",
       "anonymous": "không rõ",
       "page": "{page}/{pages}"
+    },
+    "group": {
+      "overview": "Tổng quan",
+      "data": "Dữ liệu",
+      "system": "Hệ thống"
     }
   },
   "profile": {
@@ -496,7 +538,7 @@
     "confirmMessage": "File cũ hơn hạn lưu sẽ bị xóa khỏi storage. Văn bản OCR, layout và các phiên bản vẫn giữ. Không thể hoàn tác.",
     "purgedToast": "Đã dọn {n} job.",
     "refreshAria": "Làm mới thống kê dung lượng",
-    "pageInfo": "Trang {page} · {total} job",
+    "pageInfo": "Trang {page} · {total} tệp",
     "empty": "Không có job nào cũ hơn hạn lưu.",
     "own": {
       "title": "Dung lượng của tôi",
@@ -531,9 +573,7 @@
   "landing": {
     "hero": {
       "title": "Biến ảnh và PDF thành văn bản sửa được",
-      "sub": "Ảnh chụp đề thi, sách, tài liệu scan thành văn bản có cấu trúc. Sửa từng vùng lỗi, xuất file bạn cần.",
-      "alt": "Giao diện img2text trên nền tối",
-      "caption": "Toàn bộ trang trên nền tối."
+      "sub": "Ảnh chụp đề thi, sách, tài liệu scan thành văn bản có cấu trúc. Sửa từng vùng lỗi, xuất file bạn cần."
     },
     "cta": "Bắt đầu",
     "howLink": "Xem cách hoạt động",
@@ -579,34 +619,16 @@
     "inputLabel": "Nhận vào:",
     "outputLabel": "Xuất ra:",
     "colab": "Chạy miễn phí trên Google Colab.",
-    "galleryTitle": "Xem trước",
-    "gallery": {
-      "g1": {
-        "alt": "Trang chủ img2text trên nền tối",
-        "caption": "Trang chủ: hero và lời kêu gọi bắt đầu."
-      },
-      "g2": {
-        "alt": "Màn hình đăng nhập img2text",
-        "caption": "Đăng nhập bằng email và mật khẩu."
-      },
-      "g3": {
-        "alt": "JobDetail 2 section: Văn bản trên, Layout dưới",
-        "caption": "JobDetail 2 section: Văn bản và Layout cuộn dọc."
-      },
-      "g4": {
-        "alt": "Bản xem trước layout dựng trang có format",
-        "caption": "Layout dựng trang có format, giữ cột và canh lề gốc."
-      },
-      "g5": {
-        "alt": "Thanh xuất file với 2 nhóm Văn bản và Layout",
-        "caption": "Xuất file: nhóm Văn bản và nhóm Layout."
-      },
-      "g6": {
-        "alt": "Bảng quản trị người dùng",
-        "caption": "Admin quản trị người dùng và quota."
-      }
-    },
-    "finalTitle": "Tải ảnh đầu tiên của bạn"
+    "finalTitle": "Tải ảnh đầu tiên của bạn",
+    "roadmapTitle": "Sắp có",
+    "previewTitle": "Xem sản phẩm",
+    "shot": {
+      "editor": "Trình soạn thảo kèm xem trước trang A4 ngay bên cạnh",
+      "jobs": "Danh sách công việc với nhãn trạng thái",
+      "text": "Văn bản đã trích xuất, chỗ nghi lỗi OCR được đánh dấu",
+      "jobsCaption": "Mỗi job một hàng: trạng thái, số trang, phần còn lại trong menu ⋯.",
+      "textCaption": "Từ có độ tin cậy thấp được đánh dấu tại chỗ, cạnh trang gốc."
+    }
   },
   "jobs": {
     "title": "Công việc",
@@ -622,7 +644,12 @@
     "sortNewest": "Mới nhất",
     "sortOldest": "Cũ nhất",
     "filter": {
-      "all": "Tất cả"
+      "all": "Tất cả",
+      "chipQueued": "Chờ",
+      "chipExtracting": "Trích xuất",
+      "chipRendering": "Dựng layout",
+      "chipDone": "Hoàn tất",
+      "chipFailed": "Thất bại"
     },
     "deniedTitle": "Chờ admin cấp quyền",
     "deniedHint": "Môi trường dev: đăng nhập tài khoản admin → mục Người dùng → bật OCR cho tài khoản này.",
@@ -650,13 +677,14 @@
       "selectAria": "Chọn job {id}",
       "image": "Ảnh",
       "pages": "trang",
-      "view": "Xem",
       "downloadOriginal": "Tải bản gốc",
       "retry": "Chạy lại",
       "cancel": "Hủy",
       "delete": "Xóa",
       "deleteTitle": "Xóa job #{id}?",
-      "deleteMessage": "Toàn bộ dữ liệu (file gốc, kết quả, phiên bản) sẽ bị xóa vĩnh viễn. Không thể hoàn tác."
+      "deleteMessage": "Toàn bộ dữ liệu (file gốc, kết quả, phiên bản) sẽ bị xóa vĩnh viễn. Không thể hoàn tác.",
+      "pageOne": "trang",
+      "more": "Thao tác khác"
     }
   },
   "feedback": {

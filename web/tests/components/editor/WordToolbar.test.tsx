@@ -169,3 +169,28 @@ it("caret ngoài table (không có table): ẩn cụm row/col", () => {
     expect(screen.queryByTestId(testid)).toBeNull();
   }
 });
+
+/** D9: tier B nằm trong ▾ — toolbar chính vẫn 1 hàng. */
+it("D9: ▾ mở panel tier B; thụt lề + giãn dòng + heading áp lên block", () => {
+  const editor = makeEditor("<p>Đoạn một</p>");
+  renderToolbar(editor);
+  const more = screen.getByTestId("word-tb-more");
+  expect(more).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByTestId("word-tb-more-panel")).not.toBeInTheDocument();
+  fireEvent.click(more);
+  expect(more).toHaveAttribute("aria-expanded", "true");
+
+  editor.commands.selectAll();
+  fireEvent.click(screen.getByTestId("word-tb-indent"));
+  expect(editor.getHTML()).toContain("margin-left: 2em");
+  fireEvent.click(screen.getByTestId("word-tb-outdent"));
+  expect(editor.getHTML()).not.toContain("margin-left");
+
+  editor.commands.selectAll();
+  fireEvent.change(screen.getByTestId("word-tb-line-height"), { target: { value: "1.5" } });
+  expect(editor.getHTML()).toContain("line-height: 1.5");
+
+  editor.commands.selectAll();
+  fireEvent.change(screen.getByTestId("word-tb-heading"), { target: { value: "2" } });
+  expect(editor.getHTML()).toContain("<h2");
+});

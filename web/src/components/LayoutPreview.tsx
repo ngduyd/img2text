@@ -7,6 +7,7 @@ import type { Job } from "../api/types";
 import { buildLayoutStyleCss, buildPreviewDocCss } from "../lib/docStyle";
 import { mapApiError } from "../lib/errors";
 import { useT } from "../i18n";
+import { splitStyle } from "../lib/splitStyle";
 import Button from "./ui/Button";
 import Skeleton from "./ui/Skeleton";
 
@@ -23,14 +24,6 @@ function renderMdHtml(mdText: string): string {
   return DOMPurify.sanitize(md.render(mdText));
 }
 
-/**
- * WS-UI Section "Layout": XEM TRƯỚC read-only (spec 2026-10-13).
- * - word: iframe sandbox srcDoc = docx.html + <style>{docStyle}</style>
- * - md: md → HTML (markdown-it) + docStyle scope .layout-preview → DOMPurify
- * Lane I Task 4: bỏ editing/textarea wave-3 G — sửa tay qua UnifiedEditor (btn-edit-doc).
- * U7: bỏ preview toggle — mode CONTROLLED bởi fmt prop của JobDetail (fixed init
- * job.output_format; switch MD/Word đã gỡ khỏi cả header + preview).
- */
 export default function LayoutPreview({
   job,
   fmt,
@@ -39,9 +32,13 @@ export default function LayoutPreview({
   fmt: "md-layout" | "docx-layout";
 }) {
   const { t } = useT();
-  const mode: Mode = fmt === "docx-layout" ? "word" : "md";
+  /** md-layout là text thuần (không cột/vị trí) → cho phép xem bản layout
+   *  dựng từ spec (docx-layout) ngay tại chỗ, khỏi đổi output_format. */
+  const [forceWord, setForceWord] = useState(false);
+  const mode: Mode = fmt === "docx-layout" || forceWord ? "word" : "md";
   const [mdHtml, setMdHtml] = useState<string | null>(null);
   const [wordHtml, setWordHtml] = useState<string | null>(null);
+  const [wordCss, setWordCss] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -74,12 +71,24 @@ export default function LayoutPreview({
         if (cached !== null) {
           setWordHtml(DOMPurify.sanitize(cached));
         } else {
-          await api.exportJob(job.id, FMT.word);
-          const blob = await api.downloadExport(job.id, FMT.word);
-          const { value } = await mammoth.convertToHtml({
-            arrayBuffer: await blob.arrayBuffer(),
-          });
-          setWordHtml(DOMPurify.sanitize(value));
+          // Preview dựng từ layout_spec (cùng nguồn với docx-layout) → khớp
+          // bản tải: MathML cho công thức, tab 2 bên, canh đều. Mammoth chỉ
+          // còn là fallback khi endpoint lỗi (mammoth bỏ tab stop + OMML).
+          const specHtml = await api
+            .getLayoutPreviewHtml(job.id)
+            .catch(() => null);
+          if (specHtml !== null && specHtml.trim() !== "") {
+            const { css, body } = splitStyle(specHtml);
+            setWordCss(css);
+            setWordHtml(DOMPurify.sanitize(body));
+          } else {
+            await api.exportJob(job.id, FMT.word);
+            const blob = await api.downloadExport(job.id, FMT.word);
+            const { value } = await mammoth.convertToHtml({
+              arrayBuffer: await blob.arrayBuffer(),
+            });
+            setWordHtml(DOMPurify.sanitize(value));
+          }
         }
       }
     } catch (err) {
@@ -131,17 +140,30 @@ export default function LayoutPreview({
           className="layout-preview max-h-[75vh] overflow-auto rounded-md border border-border p-4 leading-[1.7] text-text"
         >
           <style>{mdBase + mdStyle}</style>
+          <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-muted">
+            <span>{t("preview.layoutNote")}</span>
+            <Button
+              testid="btn-preview-word"
+              variant="secondary"
+              size="sm"
+              onClick={() => setForceWord(true)}
+            >
+              {t("preview.showLayout")}
+            </Button>
+          </div>
           {mdHtml !== null && <div dangerouslySetInnerHTML={{ __html: mdHtml }} />}
         </div>
       ) : (
         <iframe
           data-testid="preview-word"
           title={t("preview.wordTitle")}
-          sandbox=""
+          // allow-same-origin: ảnh crop là route API cần cookie; KHÔNG
+          // allow-scripts ⇒ nội dung preview không chạy JS.
+          sandbox="allow-same-origin"
           // docStyle (body rule) + docx.html — srcdoc cùng origin iframe, sandbox off script.
           // Iframe không inherit tokens trang → inject :root --accent-text (dark + light)
           // để link color trong docStyle render đúng cả 2 theme (contrast-safe).
-          srcDoc={`<style>:root { --accent-text: #58a6ff; }\n@media (prefers-color-scheme: light) { :root { --accent-text: #0861cf; } }</style><style>${wordBase}${docStyle}</style>${wordHtml ?? ""}`}
+          srcDoc={`<style>:root { --accent-text: #58a6ff; }\n@media (prefers-color-scheme: light) { :root { --accent-text: #0861cf; } }</style><style>${wordBase}${docStyle}</style><style>${wordCss}</style>${wordHtml ?? ""}`}
           className="h-[75vh] w-full rounded-md border border-border bg-surface"
         />
       )}

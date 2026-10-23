@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../../src/api/client";
 import { mapApiError } from "../../src/lib/errors";
+import { translate } from "../../src/i18n";
 
 describe("mapApiError (R59)", () => {
   it("ApiError → e.detail verbatim", () => {
     expect(mapApiError(new ApiError("Đã đạt giới hạn upload hôm nay."))).toBe(
       "Đã đạt giới hạn upload hôm nay.",
+    );
+  });
+
+  it("410 → thông báo file gốc đã bị purge (không phải lỗi)", () => {
+    expect(mapApiError(new ApiError("HTTP 410", undefined, undefined, 410))).toBe(
+      translate("errors.filePurged"),
     );
   });
 

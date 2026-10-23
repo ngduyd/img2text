@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { Briefcase, HardDrive, IdCard, LogOut, Menu, ShieldCheck, Sparkles } from "lucide-react";
+import { Briefcase, HardDrive, IdCard, LogOut, Menu, ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Toaster, toast } from "sonner";
@@ -7,7 +7,6 @@ import { api } from "./api/client";
 import type { User } from "./api/types";
 import ThemeToggle from "./components/ThemeToggle";
 import OcrBadge from "./components/OcrBadge";
-import QuotaBadge from "./components/QuotaBadge";
 import LangSwitch from "./components/LangSwitch";
 import SiteFooter from "./components/SiteFooter";
 import VerifyGate from "./components/VerifyGate";
@@ -19,7 +18,6 @@ import JobDetail from "./pages/JobDetail";
 import ExtractionPage from "./pages/ExtractionPage";
 import Jobs from "./pages/Jobs";
 import Storage from "./pages/Storage";
-import Features from "./pages/Features";
 import Landing from "./pages/Landing";
 import Signin from "./pages/Signin";
 import Profile from "./pages/Profile";
@@ -34,14 +32,36 @@ import { I18nProvider, useT } from "./i18n";
 // per test (fresh mount must not inherit another test's ["me"] resolution).
 export const queryClient = new QueryClient();
 
-/** RIGHT auth zone: logged-out btn-login+btn-register; logged-in badge+avatar-menu (profile+logout). */
+/** RIGHT auth zone — SPEC-ui-redesign D2: nav chỉ còn 3 link + quota chip + avatar.
+ *  Logged-out: theme + lang + Sign in/Up (không có avatar để chứa menu).
+ *  Logged-in : quota chip + cảnh báo OCR (nếu tắt) + avatar → menu (quota, lang,
+ *              theme, OCR, Profile, Logout). */
 export function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () => void }) {
+  const { t } = useT();
+  if (me) return <NavUser me={me} onLogout={onLogout} />;
+  return (
+    <div data-testid="auth-zone" className="flex items-center gap-2">
+      <ThemeToggle />
+      <LangSwitch testid="lang-switch-nav" />
+      <Link to="/signin" data-testid="btn-login" className={buttonClasses("primary", "sm")}>
+        {t("nav.signIn")}
+      </Link>
+      <Link to="/signup" data-testid="btn-register" className={buttonClasses("ghost", "sm")}>
+        {t("nav.signUp")}
+      </Link>
+    </div>
+  );
+}
+
+/** Logged-in cluster: quota chip + (OCR warning) + avatar dropdown. */
+function NavUser({ me, onLogout }: { me: User; onLogout: () => void }) {
   const { t } = useT();
   const [menuOpen, setMenuOpen] = useState(false);
   const userRef = useRef<HTMLDivElement>(null);
-  const name = me?.email || me?.role || "";
+  const name = me.email || me.role || "";
+  const { data: quota } = useQuery({ queryKey: ["quota"], queryFn: api.getMyQuota, retry: false });
 
-  // User dropdown: close on outside click (same pattern as AppNav navRef).
+  // Dropdown: close on outside click (same pattern as AppNav navRef).
   useEffect(() => {
     if (!menuOpen) return;
     function onDocClick(e: MouseEvent) {
@@ -51,80 +71,94 @@ export function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () 
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [menuOpen]);
 
-  // P2: logout sets me=undefined; without reset, re-login auto-opens stale menu.
-  // Render-time adjust (React docs pattern) — avoids setState-in-effect lint.
-  const [prevMe, setPrevMe] = useState(me);
-  if (prevMe !== me) {
-    setPrevMe(me);
-    if (!me) setMenuOpen(false);
-  }
+  const quotaText = quota
+    ? t("quota.remaining", {
+        dUsed: quota.daily_remaining,
+        dLimit: quota.daily_limit,
+        wUsed: quota.weekly_remaining,
+        wLimit: quota.weekly_limit,
+      })
+    : "";
 
   return (
     <div data-testid="auth-zone" className="flex items-center gap-2">
-      <ThemeToggle />
-      {/* Spec S2: VI/EN switch — Nav (covers Landing header too: Landing renders under AppNav). */}
-      <LangSwitch testid="lang-switch-nav" />
-      {me ? (
-        <>
-          <OcrBadge enabled={me.ocr_enabled} />
-          <div ref={userRef} className="relative flex items-center">
-            <button
-              type="button"
-              data-testid="nav-avatar"
-              title={name}
-              aria-label={name}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((o) => !o)}
-              className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-border bg-surface text-xs font-semibold"
-            >
-              {(me.email ?? "").slice(0, 2).toUpperCase() || "?"}
-            </button>
-            {menuOpen && (
-              <div
-                data-testid="nav-user-menu"
-                role="menu"
-                className="absolute right-0 top-full z-30 mt-2 min-w-fit max-w-[calc(100vw-2rem)] rounded-card border border-border bg-surface p-2 text-right shadow-card"
-              >
-                <div className="px-2 py-1">
-                  <div className="font-medium text-text">{me.email}</div>
-                  <div className="text-muted">{me.role}</div>
-                </div>
-                <div className="my-1 border-t border-border" />
-                <Link
-                  to="/profile"
-                  data-testid="btn-profile"
-                  role="menuitem"
-                  onClick={() => setMenuOpen(false)}
-                  className={`${buttonClasses("ghost", "sm")} w-full justify-end`}
-                >
-                  <IdCard className="h-4 w-4" aria-hidden="true" />
-                  {t("nav.profile")}
-                </Link>
-                <Button
-                  variant="danger"
-                  size="sm"
-                  testid="btn-logout"
-                  onClick={onLogout}
-                  className="w-full justify-end"
-                >
-                  <LogOut className="h-4 w-4" aria-hidden="true" />
-                  {t("nav.logout")}
-                </Button>
-              </div>
-            )}
-          </div>
-        </>
-      ) : (
-        <>
-          <Link to="/signin" data-testid="btn-login" className={buttonClasses("primary", "sm")}>
-            {t("nav.signIn")}
-          </Link>
-          <Link to="/signup" data-testid="btn-register" className={buttonClasses("ghost", "sm")}>
-            {t("nav.signUp")}
-          </Link>
-        </>
+      {/* Chip gọn: chỉ số ngày; text đầy đủ nằm trong menu (title = tooltip). */}
+      {quota && (
+        <span
+          data-testid="quota-chip"
+          title={quotaText}
+          className="hidden rounded-full border border-border px-2 py-0.5 text-xs tabular-nums text-muted sm:inline"
+        >
+          {quota.daily_remaining}/{quota.daily_limit}
+        </span>
       )}
+      {/* Cảnh báo khi OCR chưa được cấp — trạng thái actionable duy nhất cần thấy ngay. */}
+      {!me.ocr_enabled && <OcrBadge enabled={false} />}
+      <div ref={userRef} className="relative flex items-center">
+        <button
+          type="button"
+          data-testid="nav-avatar"
+          title={name}
+          aria-label={name}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((o) => !o)}
+          className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-border bg-surface text-xs font-semibold"
+        >
+          {(me.email ?? "").slice(0, 2).toUpperCase() || "?"}
+        </button>
+        {menuOpen && (
+          <div
+            data-testid="nav-user-menu"
+            role="menu"
+            className="absolute right-0 top-full z-30 mt-2 w-64 rounded-card border border-border bg-surface p-2 text-left shadow-card"
+          >
+            <div className="px-2 py-1">
+              <div className="truncate font-medium text-text">{me.email}</div>
+              <div className="text-muted">{me.role}</div>
+            </div>
+            {quota && (
+              <p data-testid="quota-remaining" className="px-2 py-1 text-xs text-muted">
+                {quotaText}
+              </p>
+            )}
+            <div className="my-1 border-t border-border" />
+            <div className="flex items-center justify-between gap-2 px-2 py-1 text-sm">
+              <span className="text-muted">{t("nav.language")}</span>
+              <LangSwitch testid="lang-switch-nav" />
+            </div>
+            <div className="flex items-center justify-between gap-2 px-2 py-1 text-sm">
+              <span className="text-muted">{t("nav.theme")}</span>
+              <ThemeToggle />
+            </div>
+            <div className="flex items-center justify-between gap-2 px-2 py-1 text-sm">
+              <span className="text-muted">{t("nav.ocr")}</span>
+              <OcrBadge enabled={me.ocr_enabled} testid="badge-ocr-menu" />
+            </div>
+            <div className="my-1 border-t border-border" />
+            <Link
+              to="/profile"
+              data-testid="btn-profile"
+              role="menuitem"
+              onClick={() => setMenuOpen(false)}
+              className={`${buttonClasses("ghost", "sm")} w-full justify-start`}
+            >
+              <IdCard className="h-4 w-4" aria-hidden="true" />
+              {t("nav.profile")}
+            </Link>
+            <Button
+              variant="danger"
+              size="sm"
+              testid="btn-logout"
+              onClick={onLogout}
+              className="w-full justify-start"
+            >
+              <LogOut className="h-4 w-4" aria-hidden="true" />
+              {t("nav.logout")}
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -202,7 +236,6 @@ function AppNav() {
 
   const isAdmin = me?.role === "admin";
   const jobsActive = pathname === "/jobs";
-  const featuresActive = pathname === "/features";
   const storageActive = pathname === "/storage";
   const adminActive = pathname.startsWith("/admin");
 
@@ -232,15 +265,6 @@ function AppNav() {
             {t("nav.jobs")}
           </NavAnchor>
           <NavAnchor
-            to="/features"
-            testid="nav-link-features"
-            icon={Sparkles}
-            active={featuresActive}
-            onClick={() => setMenuOpen(false)}
-          >
-            {t("nav.features")}
-          </NavAnchor>
-          <NavAnchor
             to="/storage"
             testid="nav-link-storage"
             icon={HardDrive}
@@ -262,8 +286,6 @@ function AppNav() {
           )}
         </div>
         <div className="ml-auto hidden items-center gap-2 md:flex">
-          {/* Spec #6: QuotaBadge ở header — 401/403 → ẩn (null). */}
-          <QuotaBadge />
           <AuthZone me={me} onLogout={onLogout} />
         </div>
         <button
@@ -294,15 +316,6 @@ function AppNav() {
               onClick={() => setMenuOpen(false)}
             >
               {t("nav.jobs")}
-            </NavAnchor>
-            <NavAnchor
-              to="/features"
-              testid="nav-link-features"
-              icon={Sparkles}
-              active={featuresActive}
-              onClick={() => setMenuOpen(false)}
-            >
-              {t("nav.features")}
             </NavAnchor>
             <NavAnchor
               to="/storage"
@@ -375,6 +388,9 @@ export default function App() {
             <Route path="/landing" element={<Navigate to="/" replace />} />
             <Route path="/jobs" element={<Jobs />} />
             <Route path="/jobs/:id" element={<JobDetail />} />
+            {/* SPEC-ui-redesign D3: 2 trang con tách khỏi JobDetail. */}
+            <Route path="/jobs/:id/text" element={<JobDetail section="text" />} />
+            <Route path="/jobs/:id/layout" element={<JobDetail section="layout" />} />
             {/* Phase 2 (Sub-system B): trang trích xuất — highlight + click-fix + save-sync. */}
             <Route path="/jobs/:id/extraction" element={<ExtractionPage />} />
             {/* R51 exception (user: "không tách /edit nữa"): standalone /edit page
@@ -383,7 +399,8 @@ export default function App() {
             <Route path="/word" element={<Navigate to="/" replace />} />
             <Route path="/admin" element={<Admin />} />
             {/* Lane B1: trang "In the feature" — bản kế tiếp (Organizations). */}
-            <Route path="/features" element={<Features />} />
+            {/* Roadmap gộp vào Landing: bookmark cũ → /#roadmap. */}
+            <Route path="/features" element={<Navigate to="/#roadmap" replace />} />
             <Route path="/storage" element={<Storage />} />
           </Routes>
           {/* Global footer: mọi trang, dưới Routes (App không dùng Outlet). */}

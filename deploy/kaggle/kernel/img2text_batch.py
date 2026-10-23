@@ -250,7 +250,36 @@ def _find_wheelhouse() -> str | None:
             return d
     return hits[0] if hits else None
 
-def bootstrap_venv(progress=None) -> None:
+def bind_runtime_modules() -> None:
+    """Bind cv2/np/Image/fuzz module globals.
+
+    bootstrap_venv gọi cuối parent-phase; venv CHILD (re-exec --ocr) KHÔNG
+    chạy bootstrap → phải gọi hàm này, nếu không job fail
+    `name 'cv2' is not defined` (đúng lỗi session 2026-10-22 job 37).
+    """
+    global cv2, np, Image, fuzz  # noqa: PLW0603 — module-level side effect
+    import cv2 as _cv2
+    import numpy as _np
+    from PIL import Image as _Image
+    from rapidfuzz import fuzz as _fuzz
+
+    cv2, np, Image, fuzz = _cv2, _np, _Image, _fuzz
+
+def _install_venv_from_network() -> None:
+    """Cài venv từ network với ĐÚNG bộ WHEELHOUSE_DEPS.
+
+    Trước đây nhánh này chỉ cài paddle stack → venv thiếu pymupdf/opencv/
+    numpy → job fail `No module named 'fitz'` / `name 'cv2' is not defined`
+    (pipeline chạy trong venv qua re-exec, không phải kernel python).
+    """
+    for cmd in (
+        ["uv", "pip", "install", "--python", VENV_PY,
+         "paddlepaddle-gpu==3.2.1", "--extra-index-url", PADDLE_PPU_INDEX],
+        ["uv", "pip", "install", "--python", VENV_PY, *WHEELHOUSE_DEPS],
+    ):
+        subprocess.run(cmd, check=False)
+
+def bootstrap_venv(progress=None, parent_deps: bool = True) -> None:
     """Parent-phase bootstrap (Kaggle kernel Python; pip/apt errors
     check=False — verify after, never let install noise kill the script).
     Script/re-exec ONLY — callers invoke this as __main__ flow; importing
@@ -275,16 +304,24 @@ def bootstrap_venv(progress=None) -> None:
     if _local_bin not in os.environ.get("PATH", "").split(os.pathsep):
         os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + _local_bin
     notify("uv")
-    subprocess.run(["apt-get", "-qq", "update"], check=False)
-    subprocess.run(
-        [
-            sys.executable, "-m", "pip", "install", "-q",
-            "pillow", "numpy", "opencv-python-headless", "rapidfuzz", "PyMuPDF",
-            "rembg[cpu]",  # WS-PIPE: crop remove-background (u2net, model cache U2NET_HOME)
-            "pillow-heif",  # review r1 P0-2: rasterize ở PARENT phase — heic/heif decode
-        ],
-        check=False,
-    )
+    # parent_deps=False (session): job chạy trong venv 3.12 → cài
+    # pillow/numpy/cv2/rembg vào kernel python 3.13 là ~40s vô ích.
+    if parent_deps:
+        subprocess.run(["apt-get", "-qq", "update"], check=False)
+        # pdftoppm cho batch path (default_pdftoppm); session path rasterize bằng
+        # fitz (pymupdf) — cả 2 đều cần, thiếu → job pdf fail.
+        subprocess.run(
+            ["apt-get", "-qq", "install", "-y", "poppler-utils"], check=False
+        )
+        subprocess.run(
+            [
+                sys.executable, "-m", "pip", "install", "-q",
+                "pillow", "numpy", "opencv-python-headless", "rapidfuzz", "PyMuPDF",
+                "rembg[cpu]",  # WS-PIPE: crop remove-background (u2net, model cache U2NET_HOME)
+                "pillow-heif",  # review r1 P0-2: rasterize ở PARENT phase — heic/heif decode
+            ],
+            check=False,
+        )
     notify("deps")
 
     # Idempotent: venv đã có → bỏ qua cài (notebook pattern), chỉ verify import.
@@ -307,30 +344,10 @@ def bootstrap_venv(progress=None) -> None:
                 [VENV_PY, "-c", "import paddle, paddleocr, rembg, pillow_heif"], capture_output=True
             ).returncode != 0:
                 print("[batch] wheelhouse thiếu deps — repair full recipe từ network", flush=True)
-                for cmd in (
-                    ["uv", "pip", "install", "--python", VENV_PY,
-                     "paddlepaddle-gpu==3.2.1", "--extra-index-url", PADDLE_PPU_INDEX],
-                    ["uv", "pip", "install", "--python", VENV_PY,
-                     "paddleocr[doc-parser]>=3.6.0", "safetensors", "pillow-heif",
-                     "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
-                     "rembg[cpu]"],
-                ):
-                    subprocess.run(cmd, check=False)
+                _install_venv_from_network()
         else:
-            # fallback: wheel dataset chưa mount → pip network như cũ
-            for cmd in (
-                [
-                    "uv", "pip", "install", "--python", VENV_PY,
-                    "paddlepaddle-gpu==3.2.1", "--extra-index-url", PADDLE_PPU_INDEX,
-                ],
-                [
-                    "uv", "pip", "install", "--python", VENV_PY,
-                    "paddleocr[doc-parser]>=3.6.0", "safetensors", "pillow-heif",
-                    "tokenizers==0.22.2", "huggingface-hub>=0.25.0,<1.0",
-                    "rembg[cpu]",
-                ],
-            ):
-                subprocess.run(cmd, check=False)
+            # fallback: wheel dataset chưa mount → pip network
+            _install_venv_from_network()
     notify("venv")
 
     if not os.path.exists(VENV_PY):
@@ -340,26 +357,42 @@ def bootstrap_venv(progress=None) -> None:
             "internet=true trong kernel Settings"
         )
 
+    # Verify bằng METADATA, không import: `import paddle` nguội = ~75s (đo
+    # session 2026-10-22). Metadata vẫn bắt đúng failure mode "thiếu gói"
+    # (fitz/cv2/numpy/PIL/rapidfuzz) mà không trả giá import.
+    _verify_src = (
+        "from importlib.metadata import version, PackageNotFoundError\n"
+        "need = ['paddlepaddle-gpu', 'paddleocr', 'pymupdf', 'numpy',\n"
+        "        'pillow', 'rapidfuzz', 'rembg', 'pillow-heif']\n"
+        "missing = []\n"
+        "for n in need:\n"
+        "    try:\n"
+        "        print(n, version(n))\n"
+        "    except PackageNotFoundError:\n"
+        "        missing.append(n)\n"
+        "print('MISSING', missing)\n"
+        "raise SystemExit(1 if missing else 0)\n"
+    )
     _paddle_check = subprocess.run(
-        [VENV_PY, "-c", "import paddle, paddleocr, rembg, pillow_heif; print(paddle.__version__, paddle.device.is_compiled_with_cuda())"],
-        check=False,
-        capture_output=True,
-        text=True,
+        [VENV_PY, "-c", _verify_src], check=False, capture_output=True, text=True
     )
     if _paddle_check.returncode != 0:
         # hiện stderr thật — cài đặt OK nhưng import fail là lỗi khác hẳn
         # (driver/CUDA/lib missing); message chung chung khiến log mù nguyên nhân.
-        detail = (_paddle_check.stderr or "").strip()[-1500:] or _paddle_check.stdout.strip()[-1500:]
+        detail = (_paddle_check.stdout or "").strip()[-1500:]
+        if not detail:
+            detail = (_paddle_check.stderr or "").strip()[-1500:]
         raise SystemExit(
-            "venv py3.12/paddle: import FAIL (đã cài xong) — stderr:\n" + detail
+            "venv py3.12: thiếu gói runtime — chi tiết:\n" + detail
         )
-    print(f"venv paddle: {_paddle_check.stdout.strip()} (version, cuda_build)")
+    print("venv deps:\n" + _paddle_check.stdout.strip())
     notify("paddle")
 
-    import cv2  # noqa: E402
-    import numpy as np  # noqa: E402
-    from PIL import Image  # noqa: E402
-    from rapidfuzz import fuzz  # noqa: E402
+    if parent_deps:
+        # Chỉ parent-phase cần globals (job chạy ngay trong kernel python).
+        # Session (parent_deps=False) xử lý job trong venv child → child tự
+        # gọi bind_runtime_modules(); kernel python 3.13 không có cv2.
+        bind_runtime_modules()
     notify("model")
 
 if __name__ == "__main__":

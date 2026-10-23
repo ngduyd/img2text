@@ -1,0 +1,41 @@
+{
+  "columns": 1,
+  "nodes": [
+    {
+      "type": "heading",
+      "ids": [
+        "r0"
+      ]
+    },
+    {
+      "type": "heading",
+      "ids": [
+        "r1"
+      ]
+    },
+    {
+      "type": "paragraph",
+      "ids": [
+        "r2"
+      ]
+    },
+    {
+      "type": "paragraph",
+      "ids": [
+        "r3"
+      ]
+    },
+    {
+      "type": "paragraph",
+      "ids": [
+        "r5"
+      ]
+    },
+    {
+      "type": "figure",
+      "ids": [
+        "r4"
+      ]
+    }
+  ]
+}

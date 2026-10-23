@@ -133,22 +133,19 @@ export default function Jobs() {
   };
 
   return (
-    <PageShell>
-      <PageHeader
-        title={t("jobs.title")}
-        subtitle={t("jobs.subtitle")}
-        actions={
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Stat testid="stats-total" label={t("jobs.stats.total")} value={String(jobs?.total ?? items.length)} />
-            <Stat testid="stats-pending" label={t("jobs.stats.pending")} value={String(pending)} valueClassName="text-warning" />
-            <Stat testid="stats-done" label={t("jobs.stats.done")} value={String(done)} valueClassName="text-success" />
-          </div>
-        }
-      />
+    <PageShell width="data">
+      <PageHeader title={t("jobs.title")} subtitle={t("jobs.subtitle")} />
+
+      {/* D10: 3 số liệu trên MỘT hàng, không chen vào header. */}
+      <div className="mb-4 grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-3">
+        <Stat testid="stats-total" label={t("jobs.stats.total")} value={String(jobs?.total ?? items.length)} />
+        <Stat testid="stats-pending" label={t("jobs.stats.pending")} value={String(pending)} valueClassName="text-warning" />
+        <Stat testid="stats-done" label={t("jobs.stats.done")} value={String(done)} valueClassName="text-success" />
+      </div>
 
       {/* Toolbar: search + sort + filter tabs — spec #3 (q/sort/status server-side). */}
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-1 flex-wrap items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+        <div className="flex flex-1 flex-wrap items-end gap-2">
           <label className="relative min-w-40 flex-1 sm:max-w-xs">
             <span className="sr-only">{t("jobs.searchLabel")}</span>
             <input
@@ -165,6 +162,7 @@ export default function Jobs() {
           </label>
           <Select
             label={t("jobs.sortLabel")}
+            hideLabel
             testid="jobs-sort"
             value={sort}
             onChange={(e) => {
@@ -301,7 +299,7 @@ export default function Jobs() {
 
       {/* Phase 4: select-all trang hiện tại — chọn đúng các hàng đang thấy. */}
       {!isLoading && items.length > 0 && (
-        <label className="mb-2 inline-flex cursor-pointer items-center gap-2 text-sm text-muted">
+        <label className="mb-2 inline-flex min-h-6 cursor-pointer items-center gap-2 text-sm text-muted">
           <input
             type="checkbox"
             data-testid="select-all-page"
@@ -309,7 +307,7 @@ export default function Jobs() {
             onChange={() =>
               setSelected(allVisibleSelected ? new Set() : new Set(visible.map((j) => j.id)))
             }
-            className="h-4 w-4 accent-accent"
+            className="h-6 w-6 accent-accent"
           />
           {t("jobs.selectAll")}
         </label>

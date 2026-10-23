@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import MDEditor from "@uiw/react-md-editor";
 import DOMPurify from "dompurify";
 import * as mammoth from "mammoth";
+import { splitStyle } from "../lib/splitStyle";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RefObject } from "react";
 import { toast } from "sonner";
@@ -82,6 +83,19 @@ export default function UnifiedEditor({
         if (cachedHtml !== null) {
           setDocxHtml(DOMPurify.sanitize(cachedHtml));
         } else {
+          if (m === "word") {
+            // Cùng nguồn với preview (layout spec) → sửa và xem khớp nhau.
+            // mammoth chỉ còn fallback: nó bỏ tab stop/cột/OMML nên nội dung
+            // sửa được sẽ khác bản tải về.
+            const specHtml = await api.getLayoutPreviewHtml(jobId).catch(() => null);
+            if (specHtml !== null && specHtml.trim() !== "") {
+              const { css, body } = splitStyle(specHtml);
+              setWordCss(css);
+              setDocxHtml(DOMPurify.sanitize(body));
+              setLoaded((prev) => ({ ...prev, [m]: true }));
+              return;
+            }
+          }
           await api.exportJob(jobId, FMT[m]);
           const blob = await api.downloadExport(jobId, FMT[m]);
           if (m === "md") {
@@ -178,8 +192,10 @@ export default function UnifiedEditor({
   return (
     /* scroll-mt-32: offset qua sticky header job khi btn-edit-doc scroll tới. */
     <section ref={hostRef} className="scroll-mt-32">
-      <Card testid="panel-editor" title={t("editor.panelTitle")}>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      {/* Bỏ title card: tiêu đề trang đã nằm ở thanh sticky, thêm 1 hàng nữa
+          chỉ đẩy nội dung xuống (D1 mật độ). */}
+      <Card testid="panel-editor">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <div
             role="group"
             aria-label={t("editor.modeAria")}

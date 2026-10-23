@@ -1,4 +1,4 @@
-# img2text dev stack — one command: Postgres + LocalStack S3 (+ bucket init) + hot-reload server.
+# img2text dev stack — one command: Postgres + LocalStack S3 (+ bucket init) + server.
 #   cp deploy/.env.dev.example deploy/.env.dev
 #   docker compose -f deploy/docker-compose.dev.yml up -d --build
 # Web dev server stays on the host: cd web && npm run dev (Vite :5173, proxies /api → :8010).
@@ -77,6 +77,11 @@ services:
     environment:
       # Compose service name — NOT localhost (container-to-container DNS).
       DATABASE_URL: postgresql+asyncpg://img2text:img2text@postgres:5432/img2text_dev
+      # Plan K2/K5: chỉ giữ giá trị cố định trong container (đọc từ env_file
+      # cho phần còn lại). PYTHONDONTWRITEBYTECODE: .pyc sinh trong app/ nằm
+      # Không ghi .pyc vào bind-mount (rác trên host, import chậm hơn do I/O).
+      KAGGLE_STAGE_SRC: /app/deploy/kaggle
+      PYTHONDONTWRITEBYTECODE: "1"
       # Storage endpoint: dev dùng R2 THẬT từ env_file .env.dev (mode B).
       # Gỡ override localstack (R2_ENDPOINT/STORAGE_PUBLIC_ENDPOINT) — compose
       # `environment` đè env_file nên 2 dòng dưới đây từng nuốt R2 creds.
@@ -87,16 +92,14 @@ services:
       # máy có DNAT hỏng — đó là lý do override cũ tồn tại.
       # Plan K2/K5: KAGGLE_* KHÔNG liệt kê ở đây — đọc từ env_file .env.dev
       # (khi có `environment:` key → đè env_file → ${...:-} trống nuốt config).
-      # Chỉ giữ giá trị cố định trong container:
-      KAGGLE_STAGE_SRC: /app/deploy/kaggle
     # host.docker.internal/extra_hosts dropped: nothing in the container uses
     # it anymore (presigned URLs the browser fetches use
     # STORAGE_PUBLIC_ENDPOINT http://localhost:4566 — forward port 4566 in
     # VSCode when viewing images/preview from another host).
     volumes:
-      # Hot reload: image has PYTHONPATH=/app/server, so `app` imports fresh
-      # source from the mount; third-party deps stay in site-packages
-      # (pip install /app/server baked at build time).
+      # Source mount: image has PYTHONPATH=/app/server, so `app` imports fresh
+      # source from the mount (sửa code → restart container, không rebuild);
+      # third-party deps stay in site-packages (baked at build time).
       - ../server:/app/server
       # Boot migrations: lifespan applies /app/docs/migrations/*.sql (read-only).
       - ../docs:/app/docs:ro
@@ -109,7 +112,19 @@ services:
       s3-init:
         condition: service_completed_successfully
     # Single uvicorn worker by design — in-process rate limits assume it.
-    command: ["uvicorn", "app.main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+    #
+    # KHÔNG dùng --reload trong container: reloader là tiến trình riêng phải
+    # watch cây source (bind-mount có .venv 8.3k file .py) — đo được 15.6%
+    # 1 core khi idle, và mỗi lần app ghi .pyc/log là 1 lần restart thật. Dev
+    # ở đây sửa code xong restart là xong (mount source, không cần rebuild):
+    #   docker compose -f deploy/docker-compose.dev.yml restart server
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8000"
 
 volumes:
   pgdata:

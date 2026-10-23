@@ -29,7 +29,6 @@ KEYS = (
     "proofread_llm_model",
     "llm_api_key",
     "llm_timeout",
-    "ir_llm_model",
     "smtp_host",
     "smtp_port",
     "smtp_user",
@@ -228,7 +227,6 @@ async def test_put_quota_and_ir_and_smtp_string_keys(admin_client):
         json={
             "daily_page_limit": 10,
             "weekly_page_limit": 50,
-            "ir_llm_model": "oc/new-ir-model",
             "smtp_host": "smtp.example",
             "smtp_from": "noreply@example.com",
             "smtp_user": "bot",
@@ -238,7 +236,6 @@ async def test_put_quota_and_ir_and_smtp_string_keys(admin_client):
     body = r.json()
     assert body["daily_page_limit"] == {"value": 10, "source": "db"}
     assert body["weekly_page_limit"] == {"value": 50, "source": "db"}
-    assert body["ir_llm_model"] == {"value": "oc/new-ir-model", "source": "db"}
     assert body["smtp_host"] == {"value": "smtp.example", "source": "db"}
     assert body["smtp_from"] == {"value": "noreply@example.com", "source": "db"}
     assert body["smtp_user"] == {"value": "bot", "source": "db"}

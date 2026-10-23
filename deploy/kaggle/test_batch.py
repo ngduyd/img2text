@@ -290,10 +290,11 @@ def test_script_contract():
     assert 'sys.argv[1] == "--ocr"' in src
     # light kernel-python deps only (no httpx/pypdf — no server loop, pdf via pdftoppm)
     assert "httpx" not in low and "pypdf" not in low
-    assert "poppler-utils" in src and "pdftoppm" in src   # apt kept, NOT PyMuPDF
-    assert "fitz" not in low and "pymupdf" not in low
+    assert "poppler-utils" in src and "pdftoppm" in src   # batch path: pdftoppm
+    # session path rasterize PDF bằng fitz → venv PHẢI có pymupdf (bug 2026-10-22)
+    assert "pymupdf" in low and "fitz" in low
     # recursive input discovery (new mount: /kaggle/input/<owner>/<slug>/)
-    assert '"/kaggle/input/**/*"' in src and "recursive=True" in src
+    assert '"/kaggle/input/**/*"' in src or 'glob.glob("/kaggle/input/**/wheels"' in src
     # standalone: no cross-import, no sys.path mount, no worker-files dataset
     assert "from pipeline import" not in src
     assert "from verdict import" not in src
@@ -312,7 +313,7 @@ def test_script_contract():
     assert '"/kaggle/working"' in src
     assert '"/kaggle/outputs"' in src
     assert "def _write_outputs" in src
-    assert '"result.json"' in src and '"result.md"' in src
+    assert "_result.json" in src and "_result.md" in src
     # pinned PaddleOCRVL init (notebook user-proven flags)
     assert 'pipeline_version=PIPELINE_VERSION' in src
     assert 'VL_MODEL = "PaddleOCR-VL-1.5-0.9B"' in src
@@ -328,8 +329,8 @@ def test_wheelhouse_deps_include_rembg():
     ImportError → crops={} im im."""
     src = BATCH_SCRIPT.read_text(encoding="utf-8")
     m = re.search(r"WHEELHOUSE_DEPS = \[(.*?)\n\]", src, re.S)  # ,*? dừng ở ']' trong 'doc-parser]'
-    assert m and '"rembg"' in m.group(1)
-    assert "import paddle, paddleocr, rembg" in src  # repair/verify check
+    assert m and '"rembg[cpu]"' in m.group(1)
+    assert "paddlepaddle-gpu" in src  # verify dùng metadata (không import nguội)
 
 def test_script_module_docstring_ceiling():
     doc = BATCH_SCRIPT.read_text(encoding="utf-8").lstrip('"')

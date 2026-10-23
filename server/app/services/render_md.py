@@ -1,8 +1,8 @@
-"""render_md: OCR result → Markdown via LLM IR or heuristic fallback.
+"""render_md: OCR result → Markdown via layout_spec (0 LLM calls).
 
 Flow:
-  1. use_llm=True → LLM (space-bunny) → IR JSON → validate_ir() → render MD
-  2. Fallback (LLM down / use_llm=False) → heuristic geometry-aware
+  1. render_md_spec() — layout spec tất định (cột/indent/tab/heading)
+  2. spec rỗng (0 block) → heuristic band model cũ (geometry-aware)
 
 Heuristic fallback copied from llm_md.py: _build_bands, _cluster_columns,
 _render_band, _indent_of, _same_cluster.
@@ -10,26 +10,23 @@ _render_band, _indent_of, _same_cluster.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import html
-import json
 import logging
 import re
 import statistics
-import time
 import unicodedata
 from dataclasses import dataclass, field
 
-import httpx
-
 from app.core.config import settings
-from app.core.db import SessionLocal
 from app.core.schemas import IMAGE_MARKER
-from app.services.ir import (
-    DocumentIR, IRPageError, IR_PROMPT, llm_ir_pages, validate_ir, IRValidationError,
+from app.services.ir import spec_ir
+from app.services.layout_spec import (
+    BlockSpec,
+    PageSpec,
+    _math_inner,
+    build_page_specs,
 )
-from app.services.runtime_settings import get_runtime_setting
 
 # marker template prefix ("**[Hình ảnh chưa trích xuất: vùng ") — dùng để
 # quét marker trong md render (embed_crop_urls)
@@ -49,7 +46,6 @@ TEXT_PREVIEW = 160
 _TABLE_CELL_RE = re.compile(r"<t[dh][^>]*>(.*?)</t[dh]>", re.DOTALL | re.IGNORECASE)
 _TABLE_ROW_RE = re.compile(r"<tr[^>]*>(.*?)</tr>", re.DOTALL | re.IGNORECASE)
 _TAG_RE = re.compile(r"<[^>]+>")
-_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 _HEAD_RE = re.compile(r"^(câu|bài|phần|chương|mục|question|part|section)\s*[\dIVXivx]+", re.I)
 _ROMAN_RE = re.compile(r"^[IVX]+[.)]\s")
 
@@ -309,82 +305,11 @@ def heuristic_labels(pages: list[Page]) -> dict[str, dict]:
 
 
 # ---------------------------------------------------------------- LLM
-class LLMError(Exception):
+class LLMError(Exception):  # ponytail: chỉ còn proofread/exports dùng — xoá khi call site cuối đi
     pass
 
 
-async def _llm_config() -> tuple[str, str, str, float]:
-    model = await get_runtime_setting(SessionLocal, "ir_llm_model", settings.ir_llm_model)
-    base_url = await get_runtime_setting(SessionLocal, "llm_base_url", settings.llm_base_url)
-    api_key = await get_runtime_setting(SessionLocal, "llm_api_key", settings.llm_api_key)
-    timeout = await get_runtime_setting(SessionLocal, "llm_timeout", settings.llm_timeout)
-    return base_url, model, api_key, timeout
-
-
-async def _chat(user_content: str, json_mode: bool = True) -> str:
-    base_url, model, api_key, timeout = await _llm_config()
-    payload: dict = {
-        "model": model,
-        "messages": [{"role": "user", "content": user_content}],
-        "temperature": 0,
-    }
-    # json_mode=False (render md): KHÔNG gửi response_format — json_object
-    # ép model echo IR/bọc envelope thay vì markdown thô.
-    if json_mode:
-        payload["response_format"] = {"type": "json_object"}
-    url = base_url.rstrip("/") + "/chat/completions"
-    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        for attempt in range(2):
-            started = time.perf_counter()
-            try:
-                resp = await client.post(url, json=payload, headers=headers)
-            except httpx.HTTPError as exc:
-                logger.warning("llm call failed attempt=%d: %r", attempt, exc)
-                if attempt:
-                    raise LLMError(f"LLM không phản hồi: {exc!r}") from exc
-                await asyncio.sleep(1.0)
-                continue
-            logger.info("llm called: model=%s status=%s elapsed=%.1fs",
-                        model, resp.status_code, time.perf_counter() - started)
-            if resp.status_code < 400:
-                try:
-                    return resp.json()["choices"][0]["message"]["content"]
-                except (ValueError, KeyError, IndexError, TypeError) as exc:
-                    raise LLMError(f"phản hồi thiếu content: {exc}") from exc
-            if resp.status_code in (400, 422) and json_mode:
-                payload.pop("response_format", None)
-            elif resp.status_code not in (429, 500, 502, 503, 504):
-                raise LLMError(f"LLM HTTP {resp.status_code}")
-            if attempt:
-                raise LLMError(f"LLM HTTP {resp.status_code}")
-            await asyncio.sleep(1.5)
-    raise LLMError("LLM không phản hồi")
-
-
-async def llm_ir(result: dict) -> dict:
-    """Call LLM to produce IR JSON (S2: delegate shared per-page sequential,
-    giữ 2 HTTP clients — _chat của module, 1 shared logic trong services/ir)."""
-    try:
-        return await llm_ir_pages(result, _chat)
-    except IRPageError as exc:
-        raise LLMError(str(exc)) from exc
-
-
 # ---------------------------------------------------------------- render from IR
-def _unwrap_envelope(text: str, keys: tuple[str, ...]) -> str:
-    """JSON envelope {\"output\": ...} → field string. Fail → LLMError (heuristic)."""
-    try:
-        obj, _ = json.JSONDecoder().raw_decode(text)
-    except (ValueError, TypeError) as exc:
-        raise LLMError(f"LLM render JSON hỏng: {exc}") from exc
-    if isinstance(obj, dict):
-        for key in keys:
-            val = obj.get(key)
-            if isinstance(val, str) and val.strip():
-                return val
-    raise LLMError(f"LLM render JSON thiếu field {'/'.join(keys)}")
-
 def _table_md(html_text: str) -> list[str]:
     rows: list[list[str]] = []
     for row in _TABLE_ROW_RE.findall(html_text):
@@ -404,57 +329,22 @@ def _table_md(html_text: str) -> list[str]:
     return out
 
 
-RENDER_MD_PROMPT = (
-    "You are a document layout renderer. Given a Document IR (nodes with bbox, "
-    "type, role, align, indent) and page dimensions, render Markdown.\n"
-    "Use bbox for layout: alignment, indentation, spacing.\n"
-    "Map IR type → markdown: heading → # (document_title → #, else ##), "
-    "paragraph → text, list → - item, poem → indented lines (4 spaces), "
-    "table → markdown table (parse <table> HTML), quote → >, caption → *italic*, "
-    "figure → [figure: text], formula → ```\\n...\\n```, separator → ---, "
-    "footnote → [text], form_field → [form: text], page_number → skip.\n"
-    "Empty zones (header/content/footer = []) → render NOTHING for that zone; "
-    "do NOT invent content for missing zones. A page may have only content, "
-    "only header+content, etc.\n"
-    "Output raw markdown only (no code fences).\n"
-    "Output raw only — do NOT wrap in JSON.\n\n"
-    "Pages (index → width/height): {page_dims}\n"
-    "Document IR:\n{ir_json}"
-)
+MAX_INDENT_SPACES = 8
 
-def _page_dims(result: dict) -> list[dict]:
-    return [
-        {"index": i, "width": pg.get("width"), "height": pg.get("height")}
-        for i, pg in enumerate(result.get("pages", []))
-    ]
+def _advance_px(font_px: float) -> float:
+    """Bề rộng 1 space ≈ nửa chiều cao font (font mono ước lượng)."""
+    return max(1.0, 0.5 * font_px)
 
-async def llm_render_md(ir_doc: DocumentIR, result: dict) -> str:
-    """Render DocumentIR → markdown via LLM (dùng bbox cho layout)."""
-    content = RENDER_MD_PROMPT.replace(
-        "{page_dims}", json.dumps(_page_dims(result), ensure_ascii=False)
-    ).replace("{ir_json}", ir_doc.model_dump_json())
-    raw = await _chat(content, json_mode=False)
-    text = raw.strip()
-    m = _FENCE_RE.match(text)
-    if m:
-        text = m.group(1).strip()
-    if not text:
-        raise LLMError("LLM render trả về rỗng")
-    # Model free thường bọc markdown trong JSON envelope {"output": ...}
-    # hoặc echo IR JSON → unwrap field; thiếu/parsing fail → LLMError →
-    # heuristic (markdown thô KHÔNG bao giờ bắt đầu bằng {).
-    if text.startswith("{"):
-        text = _unwrap_envelope(text, ("output", "markdown")).strip()
-        if not text:
-            raise LLMError("LLM render trả về rỗng")
-    return text
+def indent_px_to_spaces(px: float, font_px: float, limit: int = MAX_INDENT_SPACES) -> int:
+    return max(0, min(limit, int(round(px / _advance_px(font_px)))))
 
-
-
-
-# ---------------------------------------------------------------- render from heuristic
 def _fmt_lines(b: Block) -> list[str]:
     lab = b.label
+    # công thức: giữ LaTeX trong $$ ... $$ để md render được (MathJax/KaTeX);
+    # docx đi đường OMML. Trước đây md in ra "$$ E_{n}=..." đã detex → mất.
+    inner = _math_inner(b.text)
+    if inner:
+        return ["$$", inner, "$$"]
     # P1-R4a/R5: image node text rỗng → marker (ảnh sống sót qua md fallback)
     if b.kind == "image" and not b.text.strip():
         return [IMAGE_MARKER.format(region_id=b.id)]
@@ -531,13 +421,23 @@ def _cells_md(cells: list) -> list[str]:
     lines += ["| " + " | ".join(texts(r)) + " |" for i, r in enumerate(cells) if i != h]
     return lines
 
-def _render_band(band: Band) -> list[str]:
+def _render_band(band: Band, page: Page) -> list[str]:
     blk = band.single
     if blk is not None and blk.kind == "table":
         return _cells_md(blk.cells) if blk.cells else _table_md(blk.text)
     body = _fmt_lines(blk) if blk is not None else _render_columns(band)
-    prefix = "\t" * band.indent
-    return [prefix + ln for ln in body]
+    # md không có vị trí thật → thụt lề/căn giữa chỉ là xấp xỉ bằng space.
+    font_px = min(48.0, max(10.0, blk.h / max(1, len(blk.lines)))) if blk else 16.0
+    if blk is None:
+        spaces = indent_px_to_spaces(band.x0 - page.margin, font_px)
+        return [" " * spaces + ln for ln in body]
+    if blk.align in ("center", "right"):
+        col_spaces = int(round((page.right - page.margin) / _advance_px(font_px)))
+        pad = col_spaces - max((len(ln) for ln in body), default=0)
+        spaces = max(0, pad // 2) if blk.align == "center" else max(0, pad)
+    else:
+        spaces = indent_px_to_spaces(blk.x0 - page.margin, font_px)
+    return [" " * spaces + ln for ln in body]
 
 
 def _is_verse_pair(a: Band, b: Band, cw: float) -> bool:
@@ -558,7 +458,7 @@ def render_page(page: Page, bands: list[Band]) -> str:
     out: list[str] = []
     prev: Band | None = None
     for band in bands:
-        lines = _render_band(band)
+        lines = _render_band(band, page)
         if not lines:
             continue
         if prev is not None:
@@ -567,17 +467,117 @@ def render_page(page: Page, bands: list[Band]) -> str:
         prev = band
     return "".join(out)
 
+# ---------------------------------------------------------------- render from layout spec (phase 1b)
+VERSE_GAP_RATIO = 0.6
+VERSE_WIDTH_RATIO = 0.6
+HEADING_H1_RATIO = 2.0
+HEADING_H2_RATIO = 1.6
+FONT_FLOOR, FONT_CEIL = 10.0, 48.0
+
+def _line_font(block: BlockSpec) -> float:
+    """Font ước lượng theo TỪNG dòng — block.font_px là chiều cao cả khối,
+    sai (quá to) cho đoạn nhiều dòng → indent/căn lề méo."""
+    n = max(1, len(block.lines))
+    return min(FONT_CEIL, max(FONT_FLOOR, block.h / n))
+
+def _heading_level(block: BlockSpec, median_font: float) -> int:
+    """Label ('#' theo _HEAD_RE/_ROMAN_RE như đường heuristic cũ); spec không
+    có `h` → suy từ tỉ lệ font so với median trang."""
+    if block.kind != "text":
+        return 0
+    first = (block.lines or [""])[0].strip()
+    if _HEAD_RE.match(first) or _ROMAN_RE.match(first):
+        return 2
+    if len(block.lines) > 1:      # heading là 1 dòng; đoạn nhiều dòng thì không
+        return 0
+    ratio = _line_font(block) / median_font if median_font else 1.0
+    if ratio >= HEADING_H1_RATIO:
+        return 1
+    if ratio >= HEADING_H2_RATIO:
+        return 2
+    return 0
+
+def _spec_para(block: BlockSpec, page: PageSpec, median_font: float) -> list[str]:
+    """1 block spec → các dòng md (chưa nối paragraph)."""
+    if block.kind == "image":
+        return [IMAGE_MARKER.format(region_id=block.region_id)]
+    if block.kind == "table":
+        return _cells_md(block.cells) if block.cells else _table_md(block.html or block.text)
+    if block.latex:
+        # công thức: giữ LaTeX trong $$ ... $$ (KaTeX/MathJax render); docx
+        # đi đường OMML. Không detex ở md — detex chỉ là fallback text.
+        return ["$$", block.latex, "$$"]
+    lines = list(block.lines)
+    if not lines:
+        lines = [ln.strip() for ln in block.text.splitlines() if ln.strip()]
+    if not lines:
+        return []
+    h = _heading_level(block, median_font)
+    if h:
+        lines[0] = f"{'#' * h} {lines[0]}"
+    col = page.cols[block.col_index]
+    col_w = max(1.0, col.x1 - col.x0)
+    adv = _advance_px(_line_font(block))
+    if block.align == "center":
+        spaces = int(max(0.0, (col_w - block.w) / 2.0) / adv)
+    elif block.align == "right":
+        spaces = int(max(0.0, col_w - block.w) / adv)
+    else:
+        spaces = indent_px_to_spaces(block.indent_px, _line_font(block))
+    pad = " " * spaces
+    return [pad + ln for ln in lines]
+
+def _is_spec_verse(a: BlockSpec, b: BlockSpec, col_w: float) -> bool:
+    """2 block text liền nhau CÙNG cột, sát nhau, ngắn → nối bằng 1 newline
+    (thơ / câu nối dòng), không phải đoạn mới."""
+    if a.kind != "text" or b.kind != "text":
+        return False
+    if a.col_index != b.col_index or a.align != b.align:
+        return False
+    if a.tabs or b.tabs or "\t" in a.text or "\t" in b.text:
+        return False
+    if abs(a.indent_px - b.indent_px) > X_TOL:
+        return False
+    if a.w > VERSE_WIDTH_RATIO * col_w or b.w > VERSE_WIDTH_RATIO * col_w:
+        return False
+    return (b.y0 - a.y1) <= VERSE_GAP_RATIO * min(a.h, b.h)
+
+def render_md_spec(result: dict) -> str:
+    """OCR result → Markdown qua layout spec: đọc HẾT cột trái rồi mới sang
+    cột phải (blocks đã sort col_index, y0, x0) — không trộn dòng 2 cột.
+
+    Trả "" khi không có block nào (caller fallback heuristic cũ).
+    Kết quả luôn kết thúc bằng đúng 1 newline."""
+    pages_md: list[str] = []
+    for page in build_page_specs(result):
+        fonts = [_line_font(b) for b in page.blocks if b.kind == "text"]
+        median_font = statistics.median(fonts) if fonts else FONT_FLOOR
+        chunks: list[str] = []
+        prev: BlockSpec | None = None
+        for block in page.blocks:
+            para = _spec_para(block, page, median_font)
+            if not para:
+                continue
+            if prev is not None:
+                col = page.cols[block.col_index]
+                col_w = max(1.0, col.x1 - col.x0)
+                chunks.append("\n" if _is_spec_verse(prev, block, col_w) else "\n\n")
+            chunks.append("\n".join(para))
+            prev = block
+        text = "".join(chunks).strip("\n")
+        if text:
+            pages_md.append(text)
+    if not pages_md:
+        return ""
+    return "\n\n".join(pages_md) + "\n"
+
 
 # ---------------------------------------------------------------- IR generation
-async def generate_ir(result: dict) -> dict | None:
-    """Generate IR from OCR result via LLM. Returns IR dict or None on failure."""
-    try:
-        ir_dict = await llm_ir(result)
-        validate_ir(ir_dict, result)
-        return ir_dict
-    except (LLMError, IRValidationError) as exc:
-        logger.warning("IR generation failed: %s", exc)
-        return None
+def generate_ir(result: dict) -> dict:
+    """IR từ layout_spec (tất định, 0 LLM call). LLM đã bỏ khỏi bước IR:
+    bench cho thấy model gộp 75 region → 2-3 node, coverage fail; spec giữ
+    đúng 1 node/region. Giữ tên/kiểu trả về cho caller cũ."""
+    return spec_ir(result)
 
 
 # ---------------------------------------------------------------- crop embed (WS-PIPE)
@@ -644,41 +644,20 @@ async def embed_crop_urls(markdown: str, job_id: int, storage) -> str:
     return markdown
 
 # ---------------------------------------------------------------- main API
-# tỉ lệ heuristic fallback / tổng lần build — quan sát model free echo/envelope
-_FALLBACK_STATS = {"fallback": 0, "total": 0}
-
-
-def _log_fallback(exc: Exception) -> None:
-    _FALLBACK_STATS["fallback"] += 1
-    logger.warning(
-        "HEURISTIC FALLBACK %s — tỉ lệ %d/%d",
-        type(exc).__name__, _FALLBACK_STATS["fallback"], _FALLBACK_STATS["total"],
-    )
-
 async def build_md(
     result: dict, use_llm: bool = True, ir_sink: dict | None = None
 ) -> str:
-    """Build markdown from OCR result.
+    """Build markdown from OCR result — layout_spec only (0 LLM call).
 
-    1. use_llm=True → LLM → IR → validate → render
-    2. Fallback → heuristic geometry-aware
-
-    ir_sink: optional dict filled with the validated IR on the LLM path —
-    auto-gen reuses that single IR for job.ir_json (no extra LLM call).
+    ponytail: use_llm/ir_sink giữ cho tương thích test; xoá khi test đã cập nhật.
+    Spec rỗng (không block) → heuristic band model cũ.
     """
-    _FALLBACK_STATS["total"] += 1
-    if use_llm:
-        try:
-            ir_dict = await llm_ir(result)
-            ir_doc = validate_ir(ir_dict, result)
-            if ir_sink is not None:
-                ir_sink.update(ir_dict)
-            return await llm_render_md(ir_doc, result)
-        except (LLMError, IRValidationError) as exc:
-            logger.warning("HEURISTIC FALLBACK render — layout tạm: %r", exc)
-            _log_fallback(exc)
+    # Heuristic fallback: layout spec (phase 1b) trước — cột đọc hết trái rồi
+    # phải; spec rỗng (không block) → đường band model cũ.
+    spec_md = render_md_spec(result)
+    if spec_md.strip():
+        return spec_md
 
-    # Heuristic fallback
     pages = extract_pages(result)
     page_bands = [(pg, analyze(pg)) for pg in pages]
 

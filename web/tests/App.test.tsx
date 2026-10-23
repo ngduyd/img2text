@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ApiError, api } from "../src/api/client";
@@ -110,9 +111,9 @@ it("logged-in user at / still sees the Landing (trang chủ)", async () => {
     ocr_enabled: true,
   } as User);
   render(<App />);
-  // Settle authed first: badge-ocr only renders once me resolves.
+  // Settle authed first: nav-avatar only renders once me resolves.
   // (Old code redirects in the same commit → landing-hero gone → this fails.)
-  expect(await screen.findByTestId("badge-ocr")).toHaveTextContent("OCR enabled");
+  await userEvent.click(await screen.findByTestId("nav-avatar"));
   expect(screen.getByTestId("landing-hero")).toBeInTheDocument();
   expect(screen.queryByTestId("empty-state")).not.toBeInTheDocument();
   expect(window.location.pathname).toBe("/");
@@ -141,7 +142,6 @@ it("logged-in user sees badge-ocr success + avatar + profile + logout in auth-zo
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   render(<App />);
   const zone = within(await screen.findByTestId("auth-zone"));
-  expect(await screen.findByTestId("badge-ocr")).toHaveTextContent("OCR enabled");
   const avatar = await screen.findByTestId("nav-avatar");
   expect(avatar).toHaveTextContent("US");
   expect(avatar).toHaveAttribute("title", "user@x.io");
@@ -155,6 +155,8 @@ it("logged-in user sees badge-ocr success + avatar + profile + logout in auth-zo
   const menu = screen.getByTestId("nav-user-menu");
   expect(menu).toHaveTextContent("user@x.io");
   expect(menu).toHaveTextContent("user");
+  // OCR status chuyển từ nav bar vào menu (SPEC-ui-redesign D2).
+  expect(within(menu).getByTestId("badge-ocr-menu")).toHaveTextContent("OCR enabled");
   expect(within(menu).getByTestId("btn-profile")).toHaveTextContent("Profile");
   expect(within(menu).getByTestId("btn-logout")).toHaveTextContent("Sign out");
   expect(zone.queryByTestId("btn-login")).not.toBeInTheDocument();
@@ -178,6 +180,8 @@ it("header renders quota-remaining when quota resolves; hidden when null", async
     weekly_remaining: 110,
   });
   render(<App />);
+  // Quota đầy đủ nằm trong avatar menu; nav bar chỉ còn chip gọn.
+  await userEvent.click(await screen.findByTestId("nav-avatar"));
   const badge = await screen.findByTestId("quota-remaining");
   expect(badge).toHaveTextContent("15/25 pages left today");
   expect(badge).toHaveTextContent("110/150 this week");
@@ -292,25 +296,20 @@ it("clicking nav-avatar again closes the dropdown (toggle)", async () => {
 // P2: me → undefined (logout) must reset menuOpen; re-login must not auto-open menu.
 it("AuthZone: logout (me=undefined) resets menu open state for re-login", async () => {
   const meUser = { id: 1, email: "user@x.io", role: "user", ocr_enabled: true } as User;
-  const { rerender } = render(
-    <MemoryRouter>
-      <AuthZone me={meUser} onLogout={() => {}} />
-    </MemoryRouter>,
+  const wrap = (me: User | undefined) => (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <AuthZone me={me} onLogout={() => {}} />
+      </MemoryRouter>
+    </QueryClientProvider>
   );
+  const { rerender } = render(wrap(meUser));
   await userEvent.click(screen.getByTestId("nav-avatar"));
   expect(screen.getByTestId("nav-user-menu")).toBeInTheDocument();
   // Logout: me → undefined.
-  rerender(
-    <MemoryRouter>
-      <AuthZone me={undefined} onLogout={() => {}} />
-    </MemoryRouter>,
-  );
+  rerender(wrap(undefined));
   // Re-login: menu must NOT auto-open (stale menuOpen reset by effect).
-  rerender(
-    <MemoryRouter>
-      <AuthZone me={meUser} onLogout={() => {}} />
-    </MemoryRouter>,
-  );
+  rerender(wrap(meUser));
   expect(screen.getByTestId("nav-avatar")).toBeInTheDocument();
   expect(screen.queryByTestId("nav-user-menu")).not.toBeInTheDocument();
 });
@@ -324,6 +323,16 @@ it("/word and /edit redirect to / (standalone /edit page removed; R51 user instr
     expect(window.location.pathname).toBe("/");
     view.unmount();
   }
+});
+
+// D6: trang /features gộp vào Landing → bookmark cũ redirect /#roadmap.
+it("/features redirects to / with the roadmap anchor", async () => {
+  vi.mocked(api.me).mockRejectedValue(new ApiError("Unauthorized."));
+  window.history.pushState({}, "", "/features");
+  render(<App />);
+  expect(await screen.findByTestId("landing-roadmap")).toBeInTheDocument();
+  expect(window.location.pathname).toBe("/");
+  expect(window.location.hash).toBe("#roadmap");
 });
 
 it("hamburger toggle: aria-expanded/controls/label, opens mobile menu, closes on link click", async () => {

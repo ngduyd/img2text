@@ -1,0 +1,22 @@
+{
+  "model_version": "layout-sample-2col",
+  "gpu_seconds": 0.0,
+  "warnings": [],
+  "pages": [
+    {
+      "index": 0,
+      "width": 800,
+      "height": 1100,
+      "page_flag": "ok",
+      "regions": [
+        {"id": "l0", "bbox": [80, 80, 380, 200], "text": "Cột trái đoạn 1 dòng 1.\nCột trái đoạn 1 dòng 2.", "verdict": "ok", "placeholder": false},
+        {"id": "r0", "bbox": [420, 80, 720, 200], "text": "Cột phải đoạn 1 dòng 1.\nCột phải đoạn 1 dòng 2.", "verdict": "ok", "placeholder": false},
+        {"id": "l1", "bbox": [100, 220, 340, 300], "text": "Đoạn thụt lề dòng 1.\nĐoạn thụt lề dòng 2.", "verdict": "ok", "placeholder": false},
+        {"id": "r1", "bbox": [420, 220, 720, 300], "text": "Cột phải đoạn 2 dòng 1.\nCột phải đoạn 2 dòng 2.", "verdict": "ok", "placeholder": false},
+        {"id": "l2", "bbox": [100, 320, 240, 350], "text": "Ký tên: .....", "verdict": "ok", "placeholder": false},
+        {"id": "l3", "bbox": [260, 320, 360, 350], "text": "Trần B", "verdict": "ok", "placeholder": false},
+        {"id": "r2", "bbox": [420, 320, 720, 400], "text": "Cột phải đoạn 3 dòng 1.\nCột phải đoạn 3 dòng 2.", "verdict": "ok", "placeholder": false}
+      ]
+    }
+  ]
+}

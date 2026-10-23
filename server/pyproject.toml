@@ -7,7 +7,8 @@ dependencies = [
     "fastapi",
     # llm_docx import lúc boot — phải là main dep (không nằm test group)
     "httpx",
-    "uvicorn",
+    # [standard] = uvloop + httptools (nhanh hơn event loop/HTTP mặc định).
+    "uvicorn[standard]",
     "sqlalchemy[asyncio]",
     "asyncpg",
     "pydantic-settings",
@@ -23,6 +24,9 @@ dependencies = [
     "pillow-heif",
     "python-multipart",
     "python-docx",
+    # công thức → OMML (Word render thật, không phải ảnh)
+    "latex2mathml",
+    "mathml2omml",
     "bleach",
     "weasyprint",
 ]

@@ -9,7 +9,8 @@
     "lint": "oxlint",
     "test": "vitest run",
     "preview": "vite preview",
-    "capture": "node scripts/capture.mjs"
+    "capture": "node scripts/capture.mjs",
+    "audit:a11y": "node scripts/audit-a11y.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.1",
@@ -30,6 +31,7 @@
     "mammoth": "^1.13.0",
     "marked": "^18.1.1",
     "motion": "^14.0.0",
+    "pagedjs": "^0.4.3",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.4.299",
     "react": "^19.2.8",

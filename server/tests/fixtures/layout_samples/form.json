@@ -1,0 +1,34 @@
+{
+  "model_version": "layout-sample-form",
+  "gpu_seconds": 0.0,
+  "warnings": [],
+  "pages": [
+    {
+      "index": 0,
+      "width": 800,
+      "height": 1100,
+      "page_flag": "ok",
+      "regions": [
+        {"id": "f0", "bbox": [80, 80, 300, 110], "text": "Họ và tên: .........", "verdict": "ok", "placeholder": false},
+        {"id": "f1", "bbox": [400, 80, 600, 110], "text": "Nguyễn Văn A", "verdict": "ok", "placeholder": false},
+        {"id": "f2", "bbox": [80, 130, 300, 160], "text": "Ngày sinh: .........", "verdict": "ok", "placeholder": false},
+        {"id": "f3", "bbox": [400, 130, 600, 160], "text": "01/01/1990", "verdict": "ok", "placeholder": false},
+        {"id": "f4", "bbox": [80, 180, 300, 210], "text": "Địa chỉ: .........", "verdict": "ok", "placeholder": false},
+        {"id": "f5", "bbox": [400, 180, 700, 210], "text": "Số 1, đường ABC", "verdict": "ok", "placeholder": false},
+        {
+          "id": "tbl",
+          "bbox": [80, 260, 720, 420],
+          "verdict": "ok",
+          "placeholder": false,
+          "text": "STT | Nội dung\n1 | A\n2 | B",
+          "html": "<table><tr><td>STT</td><td>Nội dung</td></tr><tr><td>1</td><td>A</td></tr><tr><td>2</td><td>B</td></tr></table>",
+          "cells": [
+            [{"text": "STT", "rowspan": 1, "colspan": 1, "header": true}, {"text": "Nội dung", "rowspan": 1, "colspan": 1, "header": true}],
+            [{"text": "1", "rowspan": 1, "colspan": 1, "header": false}, {"text": "A", "rowspan": 1, "colspan": 1, "header": false}],
+            [{"text": "2", "rowspan": 1, "colspan": 1, "header": false}, {"text": "B", "rowspan": 1, "colspan": 1, "header": false}]
+          ]
+        }
+      ]
+    }
+  ]
+}

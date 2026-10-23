@@ -36,10 +36,13 @@ it("renders landing shell, H1, and CTA 'Get started' to /signin", () => {
   expect(cta).toHaveAttribute("href", "/signin");
 });
 
-it("bento features section has exactly 5 cells", () => {
+// D6: roadmap gộp trang /features cũ (workers/storage/members) vào #roadmap.
+it("roadmap section lists 3 coming-soon items", () => {
   renderLanding();
-  expect(screen.getByTestId("landing-features")).toBeInTheDocument();
-  expect(screen.getAllByTestId("feature-cell")).toHaveLength(5);
+  const roadmap = screen.getByTestId("landing-roadmap");
+  expect(roadmap).toHaveAttribute("id", "roadmap");
+  expect(within(roadmap).getAllByTestId("roadmap-item")).toHaveLength(3);
+  expect(roadmap).toHaveTextContent("Org-level storage");
 });
 
 it("formats strip contains DOCX and the Colab free note", () => {
@@ -68,20 +71,22 @@ it("reduced-motion path renders statically: no transform animation values", () =
   }
 });
 
-it("gallery shows exactly 6 screenshot slots (hero, login, jobdetail, layout, export, admin)", () => {
+// Bỏ 6 slot screenshot rỗng (ảnh chưa từng capture) → 1 mock tĩnh, không network.
+it("hero + preview use real screenshots (3 ảnh, có alt, lazy)", () => {
   renderLanding();
-  const gallery = screen.getByTestId("landing-gallery");
-  const shots = within(gallery).getAllByTestId("gallery-shot");
-  expect(shots).toHaveLength(6);
-  const srcs = shots.map((s) => s.querySelector("img")?.getAttribute("src"));
-  expect(srcs).toEqual([
-    "/screenshots/landing-hero.png",
-    "/screenshots/login.png",
-    "/screenshots/jobdetail.png",
-    "/screenshots/layout-preview.png",
-    "/screenshots/export-menu.png",
-    "/screenshots/admin-users.png",
-  ]);
+  // R51: testid landing-mock giữ, giờ là <img> ảnh thật trong public/shots.
+  const hero = screen.getByTestId("landing-mock");
+  expect(hero.tagName).toBe("IMG");
+  expect(hero).toHaveAttribute("src", "/shots/editor.jpg");
+  expect(screen.getByTestId("landing-shot-jobs")).toHaveAttribute("src", "/shots/jobs.jpg");
+  expect(screen.getByTestId("landing-shot-text")).toHaveAttribute("src", "/shots/text.jpg");
+  const imgs = screen.getByTestId("landing").querySelectorAll("img");
+  expect(imgs).toHaveLength(3);
+  for (const img of imgs) {
+    expect(img).toHaveAttribute("alt");
+    expect(img.getAttribute("alt")).not.toBe("");
+    expect(img).toHaveAttribute("loading", "lazy");
+  }
 });
 
 it("rendered text contains zero em-dashes", () => {

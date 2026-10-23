@@ -55,6 +55,7 @@ from app.services.job_results import (
 )
 from app.services.purge import purge_binary, purge_due_jobs, purge_retention_days
 from app.services.quota import ensure_bytes_quota, ensure_quota, quota_me
+from app.services.render_md import generate_ir
 from app.services.layout_sync import (
     DOCX_HTML_KEY,
     DOCX_LAYOUT_KEY,
@@ -788,10 +789,13 @@ async def get_job_ir(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
-    """Get Document IR JSON for a job (if LLM produced one)."""
+    """Get Document IR JSON — dựng từ layout_spec (tất định, 0 LLM),
+    sau đó đọc cache job.ir_json."""
     job = await _job_or_403(session, id, user)
     if not job.ir_json:
-        raise HTTPException(status_code=404, detail="Chưa có IR.")
+        ir = generate_ir(job.result or {})
+        job.ir_json = json.dumps(ir, ensure_ascii=False)
+        await session.commit()
     try:
         return json.loads(job.ir_json)
     except (ValueError, TypeError) as exc:

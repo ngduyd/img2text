@@ -1,0 +1,9 @@
+{
+  "columns": 1,
+  "nodes": [
+    {"type": "form_field", "ids": ["f0", "f1"]},
+    {"type": "form_field", "ids": ["f2", "f3"]},
+    {"type": "form_field", "ids": ["f4", "f5"]},
+    {"type": "table", "ids": ["tbl"]}
+  ]
+}

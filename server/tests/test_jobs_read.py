@@ -120,6 +120,31 @@ async def test_detail_owner_ok(auth_client, seed_job):
 async def test_detail_other_user_403(auth_client, other_client, seed_job):
     assert (await other_client.get(f"/api/jobs/{seed_job}")).status_code == 403
 
+# --- /ir sinh on-demand (auto-gen không còn IR eager) ---
+
+async def test_ir_on_demand_then_cached(
+    auth_client, done_job_with_result, db_session, monkeypatch
+):
+    """/ir: ir_json NULL → lần 1 sinh (generate_ir) + lưu; lần 2 đọc cache DB."""
+    import app.routers.jobs as jobs_mod
+
+    calls: list = []
+
+    def fake_ir(result):   # spec_ir là sync, 0 LLM call
+        calls.append(result)
+        return {"document_id": "d1", "schema_version": "1.0", "pages": []}
+
+    monkeypatch.setattr(jobs_mod, "generate_ir", fake_ir)
+    jid = done_job_with_result
+    r1 = await auth_client.get(f"/api/jobs/{jid}/ir")
+    assert r1.status_code == 200 and r1.json()["document_id"] == "d1"
+    r2 = await auth_client.get(f"/api/jobs/{jid}/ir")
+    assert r2.status_code == 200 and r2.json()["document_id"] == "d1"
+    assert len(calls) == 1  # lần 2 cache DB, không gọi lại
+    job = await db_session.get(Job, jid)
+    await db_session.refresh(job)
+    assert '"d1"' in job.ir_json
+
 # --- P0-D: GET job → text_version + stale_layouts (web contract) ---
 
 async def test_detail_stale_layouts_when_based_on_behind(

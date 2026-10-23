@@ -71,7 +71,7 @@ export default function Storage() {
   const keptBytes = sumKeptBytes(kept);
 
   return (
-    <PageShell width="wide">
+    <PageShell width="data">
       <PageHeader title={t("storage.own.title")} subtitle={t("storage.own.subtitle")} />
       {isError ? (
         /* P0-1: composed error + retry — thay toàn bộ body, hết skeleton vĩnh viễn. */
@@ -148,7 +148,8 @@ export default function Storage() {
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
                 {t("storage.own.purgeDue", { n: kept.length })}
               </Button>
-              <p className="text-xs text-muted">
+              {/* Dòng riêng: câu này nói về auto-purge, không phải caption của nút trên. */}
+              <p className="w-full text-xs text-muted">
                 {t("storage.own.retentionHelper", { days: RETENTION_DAYS })}
               </p>
             </div>
@@ -156,13 +157,14 @@ export default function Storage() {
               /* P1-2/AC13: skeleton khớp bảng — 5 cột + actions × 4 hàng. */
               <div data-testid="storage-own-table-loading" aria-hidden="true" className="space-y-2 py-2">
                 {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="grid grid-cols-6 gap-3">
+                  /* 320px: 6 cột không vừa (skeleton w-16 đẩy ~10px tràn ngang). */
+                  <div key={i} className="grid grid-cols-3 gap-3 sm:grid-cols-6">
                     <Skeleton className="h-4 w-full" />
                     <Skeleton className="h-4 w-full" />
                     <Skeleton className="h-4 w-full" />
                     <Skeleton className="h-4 w-full" />
                     <Skeleton className="h-4 w-full" />
-                    <Skeleton className="h-4 w-16" />
+                    <Skeleton className="h-4 w-full" />
                   </div>
                 ))}
               </div>
@@ -175,7 +177,7 @@ export default function Storage() {
                 action={
                   <Link
                     to="/jobs"
-                    className="text-sm font-medium text-accent-text transition duration-150 ease-out hover:underline"
+                    className="inline-flex min-h-6 items-center text-sm font-medium text-accent-text transition duration-150 ease-out hover:underline"
                   >
                     {t("jobs.emptyCta")}
                   </Link>
@@ -207,7 +209,7 @@ export default function Storage() {
                             <Link
                               to={`/jobs/${j.id}`}
                               title={j.filename}
-                              className="block truncate text-accent-text transition duration-150 ease-out hover:underline"
+                              className="flex min-h-6 items-center truncate text-accent-text transition duration-150 ease-out hover:underline"
                             >
                               {j.filename}
                             </Link>
@@ -239,16 +241,19 @@ export default function Storage() {
                         </td>
                         <td className="px-3 py-2 text-right">
                           {!j.storage_purged_at && (
+                            // D4: mỗi hàng 1 action dạng icon (nhãn đầy đủ qua aria-label/title)
+                            // — 20 nút đỏ có chữ làm bảng nhiễu.
                             <Button
                               testid={`storage-purge-${j.id}`}
-                              variant="danger"
+                              variant="ghost"
                               size="sm"
-                              className="min-h-11" // uiux: touch target 44px như bulk CTA
+                              className="min-h-11 min-w-11"
+                              title={t("storage.own.purgeOne")}
+                              aria-label={t("storage.own.purgeOne")}
                               loading={purgeOne.isPending && confirm?.kind === "one" && confirm.id === j.id}
                               onClick={() => setConfirm({ kind: "one", id: j.id })}
                             >
-                              <Trash2 className="h-4 w-4" aria-hidden="true" />
-                              {t("storage.own.purgeOne")}
+                              <Trash2 className="h-4 w-4 text-error" aria-hidden="true" />
                             </Button>
                           )}
                         </td>

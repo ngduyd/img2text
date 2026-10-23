@@ -12,13 +12,13 @@ function fmt(iso: string | null | undefined): string | null {
 }
 
 /** Task 2: job metadata Card — status badge + timestamps + counts. */
-export default function InfoPanel({ job }: { job: Job }) {
+export default function InfoPanel({ job, bare = false }: { job: Job; bare?: boolean }) {
   const { t } = useT();
   const created = fmt(job.created_at);
   const started = fmt(job.started_at);
   const finished = fmt(job.finished_at);
   return (
-    <Card testid="panel-info" title={t("jd.infoTitle")}>
+    <Card testid="panel-info" title={t("jd.infoTitle")} bare={bare}>
       <Badge
         tone={STATUS_TONE[job.status]}
         testid={`status-${job.id}`}

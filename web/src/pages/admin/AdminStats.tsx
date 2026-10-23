@@ -13,6 +13,8 @@ const HEADERS = [
   "admin.stats.done",
   "admin.stats.failed",
   "admin.stats.views",
+  "admin.stats.emailsSent",
+  "admin.stats.emailsFailed",
   "admin.stats.gpu",
   "admin.stats.cost",
 ] as const;
@@ -65,6 +67,8 @@ export default function AdminStats() {
                 <td className="px-3 py-2 font-mono tabular-nums">{d.jobs_done}</td>
                 <td className="px-3 py-2 font-mono tabular-nums">{d.jobs_failed}</td>
                 <td className="px-3 py-2 font-mono tabular-nums">{d.page_views}</td>
+                <td className="px-3 py-2 font-mono tabular-nums">{d.emails_sent}</td>
+                <td className="px-3 py-2 font-mono tabular-nums">{d.emails_failed}</td>
                 <td className="px-3 py-2 font-mono tabular-nums">{d.gpu_seconds}</td>
                 <td className="px-3 py-2 font-mono tabular-nums">{d.estimated_cost_usd}</td>
               </tr>

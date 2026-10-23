@@ -100,7 +100,7 @@ export default function DocStyleTools({
             data-testid="tool-index-toggle"
             checked={indexOn}
             onChange={(e) => setIndexOn(e.target.checked)}
-            className="h-4 w-4 accent-accent"
+            className="h-6 w-6 accent-accent"
           />
           {t("docStyle.indexHeading")}
         </label>
@@ -154,7 +154,7 @@ export default function DocStyleTools({
           data-testid="tool-table-borders"
           checked={tableBorders}
           onChange={(e) => setTableBorders(e.target.checked)}
-          className="h-4 w-4 accent-accent"
+          className="h-6 w-6 accent-accent"
         />
         {t("docStyle.tableBorders")}
       </label>

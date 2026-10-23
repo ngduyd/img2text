@@ -1,78 +1,24 @@
-"""md-layout export via LLM IR (services/render_md) + auto-gen md.
+"""md-layout export via layout_spec (services/render_md, 0 LLM) + auto-gen md.
 
-No live LLM: httpx.AsyncClient is monkeypatched to canned responses.
 Covers: happy path (storage key + download Content-Type), geometry indent,
-HTML table → md table, LLM IR (heading/paragraph), LLM ConnectError → fallback,
-auto-gen md = md-layout on success / plain-md fallback on failure,
-missing result 409, other-user 403.
+HTML table → md table, auto-gen md = md-layout on success / plain-md fallback
+on failure, missing result 409, other-user 403, crop embed (relative key /
+on-demand data-URI).
 """
 
 import json
 
-import httpx
 import pytest
 from sqlalchemy import select
 
-from app.core.config import settings
 from app.core.models import Job, User
-from app.services.render_md import LLMError, build_md
+from app.services.render_md import build_md
 
-from tests.test_export_llm_docx import FakeResponse  # canned LLM responses
 from tests.test_jobs_read import other_client  # noqa: F401
 
 MD_CONTENT_TYPE = "text/markdown; charset=utf-8"
 
 GOOD_MD = "# Xin chào"
-
-
-def fake_llm(monkeypatch, responses: list) -> list:
-    """Patch httpx.AsyncClient as render_md sees it; returns recorded calls."""
-    calls: list = []
-
-    class Client:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *exc):
-            return False
-
-        async def post(self, url, json=None, headers=None):
-            calls.append((url, dict(json or {}), dict(headers or {})))
-            resp = responses.pop(0)
-            if isinstance(resp, Exception):
-                raise resp
-            return resp
-
-    monkeypatch.setattr(httpx, "AsyncClient", Client)
-    return calls
-
-
-def _ir_response() -> FakeResponse:
-    return FakeResponse(json.dumps({
-        "document_id": "doc_001",
-        "schema_version": "1.0",
-        "pages": [{
-            "page_id": "page_001",
-            "page_number": 1,
-            "header": [],
-            "content": [
-                {
-                    "id": "node_001",
-                    "type": "heading",
-                    "role": "section_heading",
-                    "text": "Xin chào",
-                    "align": "left",
-                    "indent": 0,
-                    "source_block_ids": ["r0"],
-                    "children": [],
-                }
-            ],
-            "footer": [],
-        }],
-    }))
 
 
 def _result(regions: list[dict]) -> dict:
@@ -107,117 +53,27 @@ GEOM_RESULT = _result([
 
 # --- build_md unit ---
 
-async def test_build_md_happy(monkeypatch, VALID_RESULT_JSONB, caplog):
-    caplog.set_level("INFO", logger="render_md")
-    calls = fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
-    out = await build_md(VALID_RESULT_JSONB)
-    assert "Xin chào" in out
-    url, payload, _ = calls[0]
-    assert url.endswith("/chat/completions")
-    assert payload["model"] == settings.ir_llm_model
-    assert payload["temperature"] == 0
-    assert payload["response_format"] == {"type": "json_object"}
-    prompt = payload["messages"][0]["content"]
-    assert '"Xin chào"' in prompt
-    info = [r.getMessage() for r in caplog.records if r.levelname == "INFO"]
-    assert any(m.startswith("llm called: model=") for m in info), info
-    assert not any(GOOD_MD in m for m in info)
-
-
-async def test_build_md_table_block_keeps_md_table(monkeypatch):
-    """HTML table → real md table '| ... |'."""
-    fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
+async def test_build_md_uses_spec_no_llm():
+    """build_md không gọi LLM: bảng HTML trong OCR → md table (spec path)."""
     out = await build_md(TABLE_RESULT)
-    # IR response has heading "Xin chào" but table is in OCR — fallback handles it
-    # Actually with use_llm=True and valid IR, it renders from IR
-    # The IR response above doesn't include table, so this tests fallback
-    # Let me use use_llm=False for pure heuristic
-    out = await build_md(TABLE_RESULT, use_llm=False)
     assert "| A | B |" in out and "| 1 | 2 |" in out
 
-
-async def test_build_md_same_bbox_gets_tab_indent(monkeypatch):
-    """Block thụt lề (x0 > margin) → TAB prefix."""
+async def test_build_md_same_bbox_gets_space_indent():
+    """Block thụt lề (x0 > margin) → prefix SPACE (phase 1: bỏ tab thô)."""
     result = _result([
         _region("r0", [10, 20, 390, 60], "lề trái"),
         _region("r1", [100, 80, 390, 120], "thụt vào"),
     ])
-    fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
-    out = await build_md(result, use_llm=False)
-    lines = out.splitlines()
-    assert any(l.startswith("\t") for l in lines)
-
-
-async def test_build_md_heading_from_ir(monkeypatch):
-    """IR heading → '## ' prefix (section_heading = level 2)."""
-    result = _result([_region("r0", [1, 2, 3, 4], "Xin chào")])
-    fake_llm(monkeypatch, [_ir_response(), FakeResponse("## Xin chào")])
     out = await build_md(result)
-    assert out.startswith("## ")
-
-
-async def test_build_md_llm_down_warns_not_raises(monkeypatch, VALID_RESULT_JSONB, caplog):
-    """LLM down → warning + heuristic fallback (no raise)."""
-    caplog.set_level("WARNING", logger="render_md")
-    fake_llm(
-        monkeypatch,
-        # S2: 3×_chat (page + retry + full-fallback), mỗi _chat retry 1 → 6
-        [httpx.ConnectError("refused")] * 6,
-    )
-    out = await build_md(VALID_RESULT_JSONB)
-    assert out
-    assert any("HEURISTIC FALLBACK" in r.getMessage() for r in caplog.records)
-
-
-async def test_build_md_retries_without_response_format(
-    monkeypatch, VALID_RESULT_JSONB
-):
-    calls = fake_llm(
-        monkeypatch,
-        [
-            FakeResponse(status_code=400, text="response_format unsupported"),
-            _ir_response(),
-            FakeResponse("## Xin chào"),
-        ],
-    )
-    await build_md(VALID_RESULT_JSONB)
-    assert "response_format" in calls[0][1]
-    assert "response_format" not in calls[1][1]
-
-
-async def test_build_md_bearer_header_key_set(monkeypatch, VALID_RESULT_JSONB, caplog):
-    """Key set → Authorization: Bearer on BOTH attempts; key never in logs."""
-    caplog.set_level("INFO", logger="app.services.render_md")
-    monkeypatch.setattr(settings, "llm_api_key", "sk-test-2")
-    calls = fake_llm(
-        monkeypatch,
-        [
-            FakeResponse(status_code=400, text="response_format unsupported"),
-            _ir_response(),
-            FakeResponse("## Xin chào"),
-        ],
-    )
-    await build_md(VALID_RESULT_JSONB)
-    assert all(
-        c[2] == {"Authorization": "Bearer sk-test-2"} for c in calls
-    )
-    assert not any("sk-test-2" in r.getMessage() for r in caplog.records)
-
-
-async def test_build_md_no_auth_header_key_empty(monkeypatch, VALID_RESULT_JSONB):
-    """Empty key → no Authorization header."""
-    monkeypatch.setattr(settings, "llm_api_key", "")
-    calls = fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
-    await build_md(VALID_RESULT_JSONB)
-    assert "Authorization" not in calls[0][2]
-
+    lines = out.splitlines()
+    assert any(l.startswith(" ") for l in lines)
+    assert not any(l.startswith("\t") for l in lines)
 
 # --- export route ---
 
 async def test_export_md_layout_happy(
     auth_client, done_job_with_result, storage, monkeypatch
 ):
-    fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
     r = await auth_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "md-layout"}
     )
@@ -230,7 +86,6 @@ async def test_export_md_layout_happy(
 async def test_export_md_layout_download_content_type(
     auth_client, done_job_with_result, storage, monkeypatch
 ):
-    fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
     r = await auth_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "md-layout"}
     )
@@ -246,11 +101,6 @@ async def test_export_md_layout_llm_down_falls_back(
     auth_client, done_job_with_result, storage, monkeypatch
 ):
     """LLM down → heuristic fallback (no 502, file still written)."""
-    fake_llm(
-        monkeypatch,
-        # S2: 3×_chat (page + retry + full-fallback), mỗi _chat retry 1 → 6
-        [httpx.ConnectError("refused")] * 6,
-    )
     r = await auth_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "md-layout"}
     )
@@ -283,7 +133,6 @@ async def test_export_md_layout_missing_result_409(auth_client, db_session):
 async def test_export_md_layout_other_user_403(
     auth_client, other_client, done_job_with_result, monkeypatch
 ):
-    fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
     r = await other_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "md-layout"}
     )
@@ -299,11 +148,9 @@ async def test_auto_md_llm_ok_stores_md_layout(
     from app.services.job_results import drain_auto_output
 
     async def _docx_down(*args, **kwargs):
-        from app.services.render_docx import LLMError as DocxLLMError
-        raise DocxLLMError("LLM down (test)")
+        raise RuntimeError("render down (test)")
 
     monkeypatch.setattr("app.routers.exports.build_docx", _docx_down)
-    fake_llm(monkeypatch, [_ir_response(), FakeResponse("# Xin chào")])
     claim = await worker_client.get("/api/jobs/next")
     tok = claim.json()["worker_token"]
     r = await worker_client.post(
@@ -333,11 +180,10 @@ async def test_auto_md_llm_down_falls_back_to_plain_md(
     from app.services.job_results import drain_auto_output
 
     def _down(*args, **kwargs):
-        raise LLMError("LLM down (test)")
+        raise RuntimeError("render down (test)")
 
     async def _docx_down(*args, **kwargs):
-        from app.services.render_docx import LLMError as DocxLLMError
-        raise DocxLLMError("LLM down (test)")
+        raise RuntimeError("render down (test)")
 
     monkeypatch.setattr("app.routers.exports.build_md", _down)
     monkeypatch.setattr("app.routers.exports.build_docx", _docx_down)
@@ -362,16 +208,19 @@ async def test_auto_md_llm_down_falls_back_to_plain_md(
 def test_heuristic_extract_keeps_empty_image_block():
     """P1-R4a: image region text rỗng → node image KHÔNG bị drop
     (cả 2 renderer: render_md + render_docx)."""
-    import importlib
     result = _result([
         _region("r0", [1, 2, 30, 40], "Nội dung"),
         {"id": "r1", "bbox": [5, 6, 70, 80], "text": "",
          "verdict": "image_unextractable", "placeholder": True},
     ])
-    for modname in ("app.services.render_md", "app.services.render_docx"):
-        mod = importlib.import_module(modname)
-        blocks = mod.extract_pages(result)[0].blocks
-        assert any(b.kind == "image" for b in blocks), modname
+    # render_docx giờ đi layout_spec (không còn extract_pages riêng);
+    # pin: md block model + spec block model đều giữ block image.
+    from app.services import layout_spec, render_md
+
+    blocks = render_md.extract_pages(result)[0].blocks
+    assert any(b.kind == "image" for b in blocks), "render_md"
+    spec_blocks = layout_spec.build_page_specs(result)[0].blocks
+    assert any(b.kind == "image" for b in spec_blocks), "layout_spec"
 
 async def test_export_md_layout_fallback_keeps_image_marker(
     auth_client, db_session, storage, monkeypatch
@@ -387,11 +236,6 @@ async def test_export_md_layout_fallback_keeps_image_marker(
          "text": ""},
     ]}]}
     job_id = await _seed_done(db_session, adapt_batch_document(doc))
-    fake_llm(
-        monkeypatch,
-        # S2: 3×_chat (page + retry + full-fallback), mỗi _chat retry 1 → 6
-        [httpx.ConnectError("refused")] * 6,
-    )
     r = await auth_client.post(
         f"/api/jobs/{job_id}/export", json={"fmt": "md-layout"}
     )
@@ -407,10 +251,9 @@ async def test_md_layout_artifact_relative_key_download_fresh_url(
 ):
     from app.core.schemas import IMAGE_MARKER
 
-    rid = "p1_b3"
-    marker = IMAGE_MARKER.format(region_id=rid)
+    rid = "r1"  # VALID_RESULT_JSONB: image region → IMAGE_MARKER trong spec md
+    assert IMAGE_MARKER.format(region_id=rid)
     await storage_spy.put(f"exports/{done_job_with_result}/crops/{rid}.png", b"\x89PNG\r\n\x1a\nx")
-    fake_llm(monkeypatch, [_ir_response(), FakeResponse(f"# X\n\n{marker}")])
     r = await auth_client.post(
         f"/api/jobs/{done_job_with_result}/export", json={"fmt": "md-layout"}
     )
@@ -434,13 +277,12 @@ async def test_md_layout_artifact_relative_key_download_fresh_url(
     n = storage_spy.presign_get.await_count
     assert n >= 2  # ≥1 call/serve
 
-# --- Wave-4 #8: coverage fail → giữ heuristic render + ir_json cũ (không stub) ---
+# --- auto-gen không còn sinh IR eager (job.ir_json do /ir on-demand) ---
 
-async def test_auto_gen_coverage_fail_keeps_heuristic_and_old_ir(
+async def test_auto_gen_keeps_old_ir(
     app, done_job_with_result, db_session, monkeypatch
 ):
-    """COVERAGE fail cả2 build → md-layout = heuristic content (KHÔNG stub
-    0 blocks 'xóa đầu ra'); job.ir_json GIỮ giá trị cũ (không overwrite)."""
+    """auto-gen (md+docx) không ghi job.ir_json — IR sinh on-demand ở /ir."""
     from app.routers import exports
 
     jid = done_job_with_result
@@ -449,24 +291,11 @@ async def test_auto_gen_coverage_fail_keeps_heuristic_and_old_ir(
     job.ir_json = '{"document_id": "old", "schema_version": "1.0", "pages": []}'
     await db_session.commit()
 
-    # IR thiếu r1 (image exempt) + r0? cover r0 only → thiếu... VALID có r0 text
-    # + r1 image. LLM cover r0 → coverage OK; để FAIL phải bỏ r0:
-    bad_ir = {
-        "document_id": "doc_001", "schema_version": "1.0",
-        "pages": [{
-            "page_id": "p1", "page_number": 1, "header": [], "content": [],
-            "footer": [],
-        }],
-    }
-    fake_llm(monkeypatch, [
-        FakeResponse(json.dumps(bad_ir)), FakeResponse("# nope"),
-        FakeResponse(json.dumps(bad_ir)), FakeResponse("<p>nope</p>"),
-    ])
     assert await exports.auto_generate_output(job, st) is True
-    # md-layout có nội dung heuristic từ OCR (r0 "Xin chào"), không rỗng/stub
+    # md-layout có nội dung spec từ OCR (r0 "Xin chào"), không rỗng
     md = (await st.get(f"exports/{jid}/md-layout")).decode()
     assert "Xin chào" in md
-    # ir_json giữ nguyên cũ — stub 0-block không ghi đè
+    # ir_json giữ nguyên cũ — auto-gen không sinh IR eager
     await db_session.refresh(job)
     assert json.loads(job.ir_json)["document_id"] == "old"
 
@@ -491,11 +320,6 @@ async def test_export_md_layout_ondemand_crop_embeds_data_uri(
     rid = "r1"  # VALID_RESULT_JSONB: verdict image_unextractable, bbox [5,6,70,80]
     from app.core.schemas import IMAGE_MARKER
     marker = IMAGE_MARKER.format(region_id=rid)
-    fake_llm(
-        monkeypatch,
-        # S2: 3×_chat (page + retry + full-fallback), mỗi _chat retry 1 → 6
-        [httpx.ConnectError("refused")] * 6,
-    )
     r = await auth_client.post(
         f"/api/jobs/{jid}/export", json={"fmt": "md-layout"}
     )
@@ -524,11 +348,6 @@ async def test_export_md_layout_batch_crop_wins_relative_key(
     )
     await st.put(f"exports/{jid}/crops/r1.png", png)
 
-    fake_llm(
-        monkeypatch,
-        # S2: 3×_chat (page + retry + full-fallback), mỗi _chat retry 1 → 6
-        [httpx.ConnectError("refused")] * 6,
-    )
     r = await auth_client.post(
         f"/api/jobs/{jid}/export", json={"fmt": "md-layout"}
     )
