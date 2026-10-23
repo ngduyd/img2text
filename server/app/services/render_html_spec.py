@@ -28,7 +28,7 @@ CSS = """<style>
 body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
      font-size:15px;line-height:1.5;color:#111;margin:0;padding:12px;
      max-width:none;width:auto}
-.pg{margin:0 auto 24px;max-width:100%;overflow-wrap:break-word}
+.pg{margin:0 auto 24px;overflow-wrap:break-word}
 /* cột đặt theo VỊ TRÍ thật trên trang: grid 100 track = 1% bề ngang trang */
 .cols{display:grid;grid-template-columns:repeat(100,minmax(0,1fr))}
 .col{min-width:0}
@@ -218,7 +218,11 @@ def render_html_spec(
         if crop_prefix:
             for blk in pg.blocks:
                 urls.setdefault(blk.region_id, f"{crop_prefix}{blk.region_id}/crop")
-        parts.append(f'<div class="pg" data-page="{pi}">')
+        # giữ đúng bề ngang trang gốc: nếu kéo full iframe thì xuống dòng
+        # khác bản gốc (trang 640 px mà khung 1150 px → 2 dòng thành 1)
+        page_px = round(min(pg.width, 2000.0)) if pg.width else 0
+        style = f' style="max-width:{page_px}px"' if page_px else ""
+        parts.append(f'<div class="pg" data-page="{pi}"{style}>')
         parts.append(_page_body(pg, urls))
         parts.append("</div>")
     return "".join(parts)
