@@ -4,6 +4,8 @@ bcrypt used directly (not passlib): bcrypt 5.x + passlib 1.7.4 log a
 `__about__` AttributeError that pollutes test output.
 """
 
+import os
+
 import hashlib
 import warnings
 from datetime import datetime, timedelta, timezone
@@ -17,7 +19,8 @@ from fastapi import Response
 from app.core.config import settings
 from app.core.deps import ACCESS_COOKIE, REFRESH_COOKIE
 
-_BCRYPT_ROUNDS = 12
+# 12 = production; test hạ xuống 4 qua env BCRYPT_ROUNDS (hash 0,25 s → 5 ms).
+_BCRYPT_ROUNDS = int(os.environ.get("BCRYPT_ROUNDS", "12"))
 # #11: bcrypt truncates tại 72 byte — cap phải sống cạnh rounds (một chỗ cho
 # mọi consumer; API boundary đọc cùng constant)
 BCRYPT_MAX_BYTES = 72

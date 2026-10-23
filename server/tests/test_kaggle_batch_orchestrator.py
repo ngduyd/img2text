@@ -264,7 +264,7 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
     assert len(pushes) == 1
     _method, _path, meta, files = pushes[0]
     assert meta["id"] == "testuser/img2text-batch"
-    assert meta["dataset_sources"] == ["testuser/img2text-input", "jhandf/img2text-wheelbuild-env"]  # input + wheelhouse
+    assert meta["dataset_sources"] == ["testuser/img2text-input", "jhandf/img2text-wheelbuild-env"]  # input + wheelhouse (batch legacy)
     assert meta["kernel_type"] == "script"
     assert meta["enable_gpu"] is True
     assert "img2text_batch.py" in files and "kernel-metadata.json" in files
@@ -297,7 +297,9 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
     res = job.result
     assert res["model_version"] == orch.BATCH_MODEL_VERSION
     assert res["gpu_seconds"] == 0.0
-    assert res["warnings"] == []
+    # ocr_guards: fixture có region verdict≠ok → cảnh báo phải LỘ RA (trước đây
+    # mất text im lặng); không còn là []
+    assert res["warnings"] == ["p0:low_conf:1/4 region verdict≠ok"]
     assert len(res["pages"]) == 2
     p1 = res["pages"][0]
     assert p1["index"] == 1 and p1["width"] == 800 and p1["height"] == 600

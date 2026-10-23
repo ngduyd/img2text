@@ -9,6 +9,8 @@ Pattern A (supervisor 2026-10-16 — checklist/test mẫu không tồn tại):
 
 import hashlib
 import os
+
+from app.core.config import settings
 from pathlib import Path
 
 import asyncpg
@@ -31,7 +33,7 @@ async def _apply_migration() -> None:
     """asyncpg simple query (no args) — psql-equivalent: multi-statement
     script + DO block không chạy được qua prepared statement (extended
     query protocol). DSN tách khỏi SQLAlchemy URL postgresql+asyncpg://."""
-    dsn = os.environ["DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://", 1)
+    dsn = os.environ.get("DATABASE_URL", str(settings.database_url)).replace("postgresql+asyncpg://", "postgresql://", 1)
     conn = await asyncpg.connect(dsn)
     try:
         await conn.execute(MIGRATION.read_text())

@@ -205,6 +205,9 @@ async def test_session_kernel_loop_contract(monkeypatch):
     monkeypatch.setattr(sess, "process_job_session", fake_process)
     monkeypatch.setattr(sess.kb, "fetch_input", fake_fetch)
     monkeypatch.setattr(sess, "HEARTBEAT_INTERVAL_S", 10**9)  # không heartbeat
+    # IDLE_MAX_S thật = 900 s: queue rỗng → loop ngủ 30 s × 30 lần (test treo
+    # 15 phút, CI timeout). Contract ở đây là "empty → exit 0" ngay.
+    monkeypatch.setattr(sess, "IDLE_MAX_S", 0.0)
 
     rc = sess.run_loop("http://base", "k")
 
@@ -311,6 +314,9 @@ def test_claim_429_backoff_then_success(monkeypatch):
     monkeypatch.setattr(sess, "HEARTBEAT_INTERVAL_S", 10**9)
     monkeypatch.setattr(sess, "CLAIM_BACKOFF_BASE_S", 0.0)
     monkeypatch.setattr(sess.time, "sleep", lambda s: sleeps.append(s))
+    # sleep bị patch → nếu chưa tới IDLE_MAX_S (900 s) thì loop quay TÍT
+    # (busy-loop 15 phút thật) chứ không ngủ. Contract: empty → exit ngay.
+    monkeypatch.setattr(sess, "IDLE_MAX_S", 0.0)
 
     assert sess.run_loop("http://base", "k") == sess.EXIT_GRACEFUL
     assert calls["n"] == 2  # 1× 429 → retry → empty
@@ -385,7 +391,7 @@ def test_main_boot_heartbeat_before_bootstrap(monkeypatch):
     monkeypatch.setenv("BASE_URL", "http://base")
     monkeypatch.delenv("_IMG2TEXT_SESSION_VENV", raising=False)
 
-    def fake_bootstrap(progress=None):
+    def fake_bootstrap(progress=None, parent_deps=True):
         events.append(("bootstrap",))
         for lbl in ("uv", "deps", "venv", "paddle", "model"):
             progress(lbl)

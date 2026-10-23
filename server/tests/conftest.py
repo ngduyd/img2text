@@ -20,6 +20,13 @@ from uuid import uuid4
 # point its cache at a tempdir (v70 removed the cache dir, kept for safety)
 os.environ.setdefault("WEASYPRINT_CACHE_DIR", tempfile.gettempdir())
 
+# botocore dò EC2 instance metadata (169.254.169.254) mỗi lần boto3.client():
+# 2 lần × 1 s timeout ⇒ create_app() 2 s. Fixture `app` tạo app MỖI test ⇒
+# 944 × 2 s = 31 phút (CI timeout). Tắt hẳn IMDS.
+os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
+# bcrypt rounds thật (12) ~0,25 s/hash; test chỉ cần hash hợp lệ.
+os.environ.setdefault("BCRYPT_ROUNDS", "4")
+
 import boto3
 import httpx
 import pytest
@@ -190,13 +197,37 @@ async def db_truncate(request):
             )
         ).scalars().all()
         if tables:
-            await conn.execute(
-                text(
-                    "TRUNCATE "
-                    + ", ".join(tables)
-                    + " RESTART IDENTITY CASCADE"
+            # KHÔNG dùng TRUNCATE: mỗi bảng ~0,2 s trên docker volume (tạo
+            # relfilenode mới + fsync) ⇒ 2,4 s/lần × 944 test = 38 phút, CI
+            # timeout. DELETE + reset sequence: 0,03 s. replica role để khỏi
+            # phụ thuộc thứ tự FK (thiếu quyền superuser → fallback TRUNCATE).
+            try:
+                await conn.execute(
+                    text("SET LOCAL session_replication_role = replica")
                 )
-            )
+                for table in tables:
+                    await conn.execute(text(f'DELETE FROM "{table}"'))
+                seqs = (
+                    await conn.execute(
+                        text(
+                            "SELECT sequencename FROM pg_sequences "
+                            "WHERE schemaname = 'public'"
+                        )
+                    )
+                ).scalars().all()
+                for seq in seqs:
+                    await conn.execute(
+                        text(f'ALTER SEQUENCE "{seq}" RESTART WITH 1')
+                    )
+            except Exception:
+                await conn.rollback()
+                await conn.execute(
+                    text(
+                        "TRUNCATE "
+                        + ", ".join(tables)
+                        + " RESTART IDENTITY CASCADE"
+                    )
+                )
     yield
 
 

@@ -9,6 +9,7 @@ on:
 jobs:
   server:
     runs-on: ubuntu-latest
+    timeout-minutes: 20   # guard: suite ~4 phút; treo thì fail sớm, không 39 phút
     services:
       postgres:
         image: postgres:16-alpine
