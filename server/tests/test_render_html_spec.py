@@ -52,3 +52,17 @@ def test_heading_gets_class_and_text_escaped():
          "text": "a < b & c"},
     ]))
     assert "a &lt; b &amp; c" in out
+
+
+def test_two_columns_page_renders_two_column_flex():
+    """Trang 2 cột phải ra 2 khối .col (trước: render phẳng = 1 cột)."""
+    import json
+    from pathlib import Path
+
+    fixture = Path(__file__).parent / "fixtures" / "layout_samples" / "2col.json"
+    result = json.loads(fixture.read_text(encoding="utf-8"))
+    out = render_html_spec(result)
+    assert out.count('class="col"') == 2
+    first, second = out.split('class="col" style="flex:0 0 ')[1:3]
+    assert first.split("</div>")[0].strip() != ""
+    assert second.split("</div>")[0].strip() != ""

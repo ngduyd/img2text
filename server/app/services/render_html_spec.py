@@ -26,8 +26,11 @@ CSS = """<style>
 body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
      font-size:15px;line-height:1.5;color:#111;margin:0;padding:12px}
 .pg{margin:0 auto 24px;max-width:100%;overflow-wrap:break-word}
+.cols{display:flex;gap:24px;align-items:flex-start}
+.col{min-width:0}
 .pg+.pg{border-top:1px dashed #ccc;padding-top:12px}
 .row{display:flex;align-items:baseline;gap:1em;margin:0 0 .5em}
+.row>.l{flex:0 0 auto;white-space:nowrap}
 .row .r{margin-left:auto;text-align:right;white-space:pre-wrap}
 p{margin:0 0 .5em}
 .math{text-align:center;margin:.7em 0;overflow-x:auto}
@@ -82,19 +85,31 @@ def _line_html(line: str, style: str) -> str:
     if right.strip() and (left.rstrip().endswith(".") or "...." in left):
         # nhãn form: "Địa chỉ: ........." + giá trị → giữ kiểu leader chấm
         return (
-            f'<div class="row" style="{style}"><span>{_esc(left)}</span>'
+            f'<div class="row" style="{style}"><span class="l">{_esc(left)}</span>'
             f'<span class="lead"></span><span class="r">{_esc(right)}</span></div>'
         )
     return (
-        f'<div class="row" style="{style}"><span>{_esc(left)}</span>'
+        f'<div class="row" style="{style}"><span class="l">{_esc(left)}</span>'
         f'<span class="r">{_esc(right)}</span></div>'
     )
 
 
-def _block_html(blk: BlockSpec, crop_url: str | None) -> str:
+def _image_box(blk: BlockSpec, pg: PageSpec) -> str:
+    """Ảnh giữ đúng bề ngang + vị trí tương đối trong cột (figure bên phải
+    không được kéo full-width như bản preview cũ)."""
+    col = pg.cols[min(blk.col_index, len(pg.cols) - 1)]
+    col_w = max(1.0, col.x1 - col.x0)
+    width = min(100.0, 100.0 * max(1.0, blk.x1 - blk.x0) / col_w)
+    left = max(0.0, min(100.0 - width, 100.0 * (blk.x0 - col.x0) / col_w))
+    return f'width:{width:.1f}%;margin-left:{left:.1f}%'
+
+
+def _block_html(blk: BlockSpec, crop_url: str | None,
+                pg: PageSpec | None = None) -> str:
     if blk.kind == "image":
         if crop_url:
-            return f'<img src="{crop_url}" alt="">'
+            box = _image_box(blk, pg) if pg is not None else ""
+            return f'<img src="{crop_url}" style="{box}" alt="">'
         return f'<p class="ph">[ảnh {_esc(blk.region_id)}]</p>'
     if blk.kind == "table":
         return _table_html(blk)
@@ -103,7 +118,9 @@ def _block_html(blk: BlockSpec, crop_url: str | None) -> str:
         if mathml:
             return f'<div class="math">{mathml}</div>'
     styles = [f"text-align:{blk.align}"]
-    if blk.indent_px > 0.5:
+    # giống render_docx: indent chỉ áp cho canh trái (canh phải/giữa mà cộng
+    # margin-left sẽ đẩy chữ ra ngoài trang — footer "Trang 1/5" từng mất)
+    if blk.align == "left" and blk.indent_px > 0.5:
         styles.append(f"margin-left:{round(blk.indent_px)}px")
     if blk.first_line_indent_px > 0.5:
         styles.append(f"text-indent:{round(blk.first_line_indent_px)}px")
@@ -113,6 +130,35 @@ def _block_html(blk: BlockSpec, crop_url: str | None) -> str:
         inner = "".join(_line_html(ln, style) for ln in lines)
         return f'<div class="h{min(2, blk.level)}" style="{style}">{inner}</div>'
     return "".join(_line_html(line, style) for line in lines)
+
+
+def _page_body(pg: PageSpec, crop_urls: dict[str, str] | None) -> str:
+    """Blocks của 1 trang; nhiều cột → flex 2+ cột đúng tỉ lệ bề ngang gốc.
+
+    Trước: render phẳng theo thứ tự block → trang 2 cột hiện thành 1 cột (bản
+    xem trước sai, dù docx đã có <w:cols num="2">).
+    """
+    def one(blk: BlockSpec) -> str:
+        crop_url = (crop_urls or {}).get(blk.region_id)
+        return _block_html(blk, crop_url, pg)
+
+    if len(pg.cols) <= 1:
+        return "".join(one(b) for b in pg.blocks)
+
+    span = max(1.0, pg.cols[-1].x1 - pg.cols[0].x0)
+    by_col: dict[int, list[BlockSpec]] = {}
+    for blk in pg.blocks:
+        by_col.setdefault(blk.col_index, []).append(blk)
+    parts = ['<div class="cols">']
+    for ci, col in enumerate(pg.cols):
+        width = 100.0 * max(1.0, col.x1 - col.x0) / span
+        parts.append(
+            f'<div class="col" style="flex:0 0 {width:.1f}%">'
+            + "".join(one(b) for b in by_col.get(ci, []))
+            + "</div>"
+        )
+    parts.append("</div>")
+    return "".join(parts)
 
 
 def render_html_spec(
@@ -128,11 +174,11 @@ def render_html_spec(
     page_specs: list[PageSpec] = build_page_specs(result)
     parts = [CSS]
     for pi, pg in enumerate(page_specs):
+        urls = dict(crop_urls or {})
+        if crop_prefix:
+            for blk in pg.blocks:
+                urls.setdefault(blk.region_id, f"{crop_prefix}{blk.region_id}/crop")
         parts.append(f'<div class="pg" data-page="{pi}">')
-        for blk in pg.blocks:
-            crop_url = (crop_urls or {}).get(blk.region_id)
-            if crop_url is None and crop_prefix:
-                crop_url = f"{crop_prefix}{blk.region_id}/crop"
-            parts.append(_block_html(blk, crop_url))
+        parts.append(_page_body(pg, urls))
         parts.append("</div>")
     return "".join(parts)
