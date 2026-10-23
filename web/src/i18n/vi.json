@@ -303,7 +303,9 @@
     "copied": "Đã sao chép IR"
   },
   "preview": {
-    "wordTitle": "Xem trước layout Word"
+    "wordTitle": "Xem trước layout Word",
+    "layoutNote": "Markdown chỉ là dòng chảy văn bản — không hiện cột/vị trí.",
+    "showLayout": "Xem bản có layout (DOCX)"
   },
   "region": {
     "textAria": "Văn bản vùng {id}"

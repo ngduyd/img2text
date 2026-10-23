@@ -303,7 +303,9 @@
     "copied": "IR copied"
   },
   "preview": {
-    "wordTitle": "Word layout preview"
+    "wordTitle": "Word layout preview",
+    "layoutNote": "Markdown is a plain text flow — columns and positions are not shown.",
+    "showLayout": "Show layout view (DOCX)"
   },
   "region": {
     "textAria": "Text of region {id}"
