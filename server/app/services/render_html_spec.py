@@ -23,10 +23,14 @@ import html as _html
 from app.services.layout_spec import BlockSpec, PageSpec, build_page_specs
 
 CSS = """<style>
+/* docStyle của app (prose 65ch) bóp trang còn ~580px → cột 24% chỉ còn
+   130px, chữ gãy dòng. Preview layout phải dùng HẾT bề ngang iframe. */
 body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-     font-size:15px;line-height:1.5;color:#111;margin:0;padding:12px}
+     font-size:15px;line-height:1.5;color:#111;margin:0;padding:12px;
+     max-width:none;width:auto}
 .pg{margin:0 auto 24px;max-width:100%;overflow-wrap:break-word}
-.cols{display:flex;gap:24px;align-items:flex-start}
+/* cột đặt theo VỊ TRÍ thật trên trang: grid 100 track = 1% bề ngang trang */
+.cols{display:grid;grid-template-columns:repeat(100,minmax(0,1fr))}
 .col{min-width:0}
 .pg+.pg{border-top:1px dashed #ccc;padding-top:12px}
 .row{display:flex;align-items:baseline;gap:1em;margin:0 0 .5em}
@@ -77,10 +81,28 @@ def _table_html(blk: BlockSpec) -> str:
     return "<table>" + "".join(rows) + "</table>"
 
 
-def _line_html(line: str, style: str) -> str:
-    """1 dòng: có tab → 2 đầu (trái/phải); không tab → <p>."""
+def _line_html(line: str, style: str, tab_pos_px: float | None = None,
+               tab_align: str = "left", col_w: float | None = None) -> str:
+    """1 dòng: có tab → 2 đầu (trái/phải); không tab → <p>.
+
+    Dòng bắt đầu bằng tab (dòng nối của khối bị gộp tab) phải canh theo ĐÚNG
+    tab stop: mép phải của text = tab pos (right tab) — không phải mép phải
+    trang như flex space-between.
+    """
     if "\t" not in line:
         return f'<p style="{style}">{_esc(line)}</p>'
+    if line.startswith("\t") and tab_pos_px is not None and col_w:
+        pct = max(0.0, min(100.0, 100.0 * tab_pos_px / col_w))
+        # KHÔNG dùng lại style của block (margind-left + text-align:left sẽ
+        # cộng dồn → tràn dòng); dòng tab có hệ toạ độ riêng.
+        if tab_align == "right":
+            st = f"width:{pct:.1f}%;text-align:right;margin:0 0 .3em 0"
+        else:
+            st = (
+                f"margin:0 0 .3em {pct:.1f}%;"
+                f"width:{max(0.0, 100.0 - pct):.1f}%;text-align:left"
+            )
+        return f'<p style="{st}">{_esc(line[1:])}</p>'
     left, _, right = line.partition("\t")
     if right.strip() and (left.rstrip().endswith(".") or "...." in left):
         # nhãn form: "Địa chỉ: ........." + giá trị → giữ kiểu leader chấm
@@ -126,10 +148,24 @@ def _block_html(blk: BlockSpec, crop_url: str | None,
         styles.append(f"text-indent:{round(blk.first_line_indent_px)}px")
     style = ";".join(styles)
     lines = blk.lines or ([blk.text] if blk.text else [])
+    col_w = None
+    if pg is not None and len(pg.cols) > blk.col_index:
+        col = pg.cols[blk.col_index]
+        col_w = max(1.0, col.x1 - col.x0)
+    tab = blk.tabs[0] if blk.tabs else None
+
+    def line_html(ln: str) -> str:
+        return _line_html(
+            ln, style,
+            tab_pos_px=tab.pos_px if tab else None,
+            tab_align=tab.align if tab else "left",
+            col_w=col_w,
+        )
+
     if blk.type_label == "heading" and blk.level:
-        inner = "".join(_line_html(ln, style) for ln in lines)
+        inner = "".join(line_html(ln) for ln in lines)
         return f'<div class="h{min(2, blk.level)}" style="{style}">{inner}</div>'
-    return "".join(_line_html(line, style) for line in lines)
+    return "".join(line_html(line) for line in lines)
 
 
 def _page_body(pg: PageSpec, crop_urls: dict[str, str] | None) -> str:
@@ -145,15 +181,19 @@ def _page_body(pg: PageSpec, crop_urls: dict[str, str] | None) -> str:
     if len(pg.cols) <= 1:
         return "".join(one(b) for b in pg.blocks)
 
-    span = max(1.0, pg.cols[-1].x1 - pg.cols[0].x0)
+    # đặt cột theo x0/x1 thật của trang (grid 100 track = 1% bề ngang) —
+    # flex trước đây dồn 2 cột sát nhau, lệch vị trí so với bản gốc
+    span = max(1.0, pg.width or (pg.cols[-1].x1 - pg.cols[0].x0))
     by_col: dict[int, list[BlockSpec]] = {}
     for blk in pg.blocks:
         by_col.setdefault(blk.col_index, []).append(blk)
     parts = ['<div class="cols">']
     for ci, col in enumerate(pg.cols):
-        width = 100.0 * max(1.0, col.x1 - col.x0) / span
+        start = round(100.0 * max(0.0, col.x0) / span)
+        width = max(1, round(100.0 * max(1.0, col.x1 - col.x0) / span))
+        width = min(width, 100 - min(start, 99))
         parts.append(
-            f'<div class="col" style="flex:0 0 {width:.1f}%">'
+            f'<div class="col" style="grid-column:{start + 1} / span {width}">'
             + "".join(one(b) for b in by_col.get(ci, []))
             + "</div>"
         )

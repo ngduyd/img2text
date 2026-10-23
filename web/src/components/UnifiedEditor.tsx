@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import MDEditor from "@uiw/react-md-editor";
 import DOMPurify from "dompurify";
 import * as mammoth from "mammoth";
+import { splitStyle } from "../lib/splitStyle";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RefObject } from "react";
 import { toast } from "sonner";
@@ -82,6 +83,19 @@ export default function UnifiedEditor({
         if (cachedHtml !== null) {
           setDocxHtml(DOMPurify.sanitize(cachedHtml));
         } else {
+          if (m === "word") {
+            // Cùng nguồn với preview (layout spec) → sửa và xem khớp nhau.
+            // mammoth chỉ còn fallback: nó bỏ tab stop/cột/OMML nên nội dung
+            // sửa được sẽ khác bản tải về.
+            const specHtml = await api.getLayoutPreviewHtml(jobId).catch(() => null);
+            if (specHtml !== null && specHtml.trim() !== "") {
+              const { css, body } = splitStyle(specHtml);
+              setWordCss(css);
+              setDocxHtml(DOMPurify.sanitize(body));
+              setLoaded((prev) => ({ ...prev, [m]: true }));
+              return;
+            }
+          }
           await api.exportJob(jobId, FMT[m]);
           const blob = await api.downloadExport(jobId, FMT[m]);
           if (m === "md") {

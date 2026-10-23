@@ -366,12 +366,19 @@ def _attach_tabs(
                 align="right" if flush_right else other.align,
                 leader=leader,
             ))
-            value = " ".join(other.lines) or other.text.strip()
-            if value:
-                if base.lines:
-                    base.lines[-1] += "\t" + value
-                else:
-                    base.lines = [value]
+            # GIỮ xuống dòng của khối bị gộp: trước đây nối bằng " " nên
+            # block 4 dòng ("Môn: …\nThời gian: …\nNgày thi: …") dồn thành 1
+            # dòng, mất 3 dấu xuống dòng có trong OCR. Dòng đầu nối sau tab,
+            # các dòng còn lại thành dòng riêng bắt đầu bằng tab (tab stop
+            # right vẫn canh đúng mép phải).
+            other_lines = other.lines or [other.text.strip()]
+            other_lines = [ln for ln in other_lines if ln.strip()]
+            if other_lines:
+                if not base.lines:
+                    base.lines = [""]
+                base.lines[-1] += "\t" + other_lines[0]
+                for extra in other_lines[1:]:
+                    base.lines.append("\t" + extra)
             if max(len(base.text.strip()), len(other.text.strip())) < FORM_MAX_CHARS:
                 base.type_label = "form_field"
             dropped.add(other.region_id)

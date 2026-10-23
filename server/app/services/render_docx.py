@@ -146,6 +146,10 @@ def _apply_style_overrides(doc, ov: dict) -> None:
 # ---------------------------------------------------------------- render from layout spec
 # 96 dpi giả định (PaddleOCR-VL trả px theo ảnh gốc) — px → twips/pt.
 TWIPS_PER_PX = 1440 / 96
+# Bề ngang vùng chữ của trang Letter mặc định (12240 − 1800×2 twips). Toạ độ
+# của spec là px trên ảnh scan (640…1500 px) → phải scale về twips theo đúng
+# tỉ lệ này, nếu không indent/tab/cột rộng gấp ~1.8 lần và Word bóp méo.
+TEXT_WIDTH_TWIPS = 8640.0
 PT_PER_PX = 72 / 96
 MAX_SPACE_AFTER_PT = 24.0
 MAX_SECTIONS = 8            # vượt → linearize 1 cột (file docx vụn, Word khó sửa)
@@ -168,23 +172,48 @@ _SPEC_TAB_LEADER = {
 }
 
 
-def _set_section_cols(section, n: int) -> None:
+def _scale_for(page_width: float) -> float:
+    """px (bề ngang trang scan) → twips (vùng chữ docx)."""
+    return TEXT_WIDTH_TWIPS / max(1.0, page_width * TWIPS_PER_PX)
+
+
+def _set_section_cols(
+    section, cols: list, n: int | None = None, scale: float = 1.0
+) -> None:
     """w:cols — python-docx không có API; chèn đúng vị trí schema (trước
-    w:docGrid) chứ không append thô (Word có thể từ chối file)."""
+    w:docGrid) chứ không append thô (Word có thể từ chối file).
+
+    Cột không đều bề ngang (2 cột scan thật: 23-326 | 724-1009) phải khai
+    báo từng `w:col w:w` + equalWidth=0, nếu chỉ `w:num="2"` Word chia đều →
+    bản docx lệch vị trí so với bản gốc.
+    """
     sect_pr = section._sectPr
-    for old in sect_pr.findall(qn("w:cols")):
-        sect_pr.remove(old)
-    cols = OxmlElement("w:cols")
-    cols.set(qn("w:num"), str(max(1, n)))
-    cols.set(qn("w:space"), SEC_COL_SPACE_TWIPS)
+    for old_el in sect_pr.findall(qn("w:cols")):
+        sect_pr.remove(old_el)
+    cols_el = OxmlElement("w:cols")
+    count = max(1, n if n is not None else len(cols))
+    cols_el.set(qn("w:num"), str(count))
+    widths = [max(1, round((c.x1 - c.x0) * TWIPS_PER_PX * scale)) for c in cols]
+    if count > 1 and len(widths) == count and max(widths) - min(widths) > 40:
+        cols_el.set(qn("w:equalWidth"), "0")
+        for i, (col, width) in enumerate(zip(cols, widths)):
+            col_el = OxmlElement("w:col")
+            col_el.set(qn("w:w"), str(width))
+            if i < count - 1:      # w:space = khoảng cách SAU cột này
+                gap = max(0, round((cols[i + 1].x0 - col.x1) * TWIPS_PER_PX * scale))
+                col_el.set(qn("w:space"), str(gap if gap > 0 else SEC_COL_SPACE_TWIPS))
+            cols_el.append(col_el)
+    else:
+        cols_el.set(qn("w:space"), SEC_COL_SPACE_TWIPS)
     sect_pr.insert_element_before(
-        cols, "w:formProt", "w:vAlign", "w:noEndnote", "w:titlePg",
+        cols_el, "w:formProt", "w:vAlign", "w:noEndnote", "w:titlePg",
         "w:textDirection", "w:bidi", "w:rtlGutter", "w:docGrid",
         "w:printerSettings", "w:sectPrChange",
     )
 
-
-def _add_image_block(doc, blk: BlockSpec, crops: dict[str, bytes]) -> None:
+def _add_image_block(
+    doc, blk: BlockSpec, crops: dict[str, bytes], scale: float = 1.0
+) -> None:
     """Crop bytes cho region_id → ảnh đúng bbox width; thiếu/lỗi → placeholder."""
     data = crops.get(blk.region_id)
     if data:
@@ -192,7 +221,7 @@ def _add_image_block(doc, blk: BlockSpec, crops: dict[str, bytes]) -> None:
             para = doc.add_paragraph()
             para.alignment = _SPEC_ALIGN.get(blk.align, WD_ALIGN_PARAGRAPH.LEFT)
             para.add_run().add_picture(
-                io.BytesIO(data), width=Twips(round(blk.w * TWIPS_PER_PX))
+                io.BytesIO(data), width=Twips(round(blk.w * TWIPS_PER_PX * scale))
             )
             return
         except Exception as exc:  # ảnh hỏng → giữ placeholder, không crash
@@ -234,10 +263,11 @@ def _add_math_block(doc, blk: BlockSpec, omml: str) -> None:
 
 
 def _add_spec_block(
-    doc, blk: BlockSpec, crops: dict[str, bytes] | None = None
+    doc, blk: BlockSpec, crops: dict[str, bytes] | None = None,
+    scale: float = 1.0,
 ) -> None:
     if blk.kind == "image":
-        _add_image_block(doc, blk, crops or {})
+        _add_image_block(doc, blk, crops or {}, scale)
         return
     if blk.kind == "table":
         if blk.cells:
@@ -255,12 +285,14 @@ def _add_spec_block(
     para.alignment = _SPEC_ALIGN.get(blk.align, WD_ALIGN_PARAGRAPH.LEFT)
     pf = para.paragraph_format
     if blk.align == "left" and blk.indent_px > 0.5:
-        pf.left_indent = Twips(round(blk.indent_px * TWIPS_PER_PX))
+        pf.left_indent = Twips(round(blk.indent_px * TWIPS_PER_PX * scale))
     if blk.first_line_indent_px > 0.5:
-        pf.first_line_indent = Twips(round(blk.first_line_indent_px * TWIPS_PER_PX))
+        pf.first_line_indent = Twips(
+            round(blk.first_line_indent_px * TWIPS_PER_PX * scale)
+        )
     for tab in blk.tabs:
         pf.tab_stops.add_tab_stop(
-            Twips(round(tab.pos_px * TWIPS_PER_PX)),
+            Twips(round(tab.pos_px * TWIPS_PER_PX * scale)),
             _SPEC_TAB_ALIGN.get(tab.align, WD_TAB_ALIGNMENT.LEFT),
             _SPEC_TAB_LEADER.get(tab.leader, WD_TAB_LEADER.SPACES),
         )
@@ -303,10 +335,13 @@ def render_docx_spec(
     for gi, group in enumerate(_group_pages(pages)):
         if gi:
             doc.add_section(WD_SECTION_START.CONTINUOUS)
-        _set_section_cols(doc.sections[-1], len(group[0].cols))
+        _set_section_cols(
+            doc.sections[-1], group[0].cols, scale=_scale_for(group[0].width)
+        )
         for pg in group:
+            page_scale = _scale_for(pg.width)
             for blk in pg.blocks:
-                _add_spec_block(doc, blk, crops)
+                _add_spec_block(doc, blk, crops, page_scale)
     if style_overrides:
         _apply_style_overrides(doc, style_overrides)
     buf = io.BytesIO()

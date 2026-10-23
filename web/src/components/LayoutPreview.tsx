@@ -7,23 +7,11 @@ import type { Job } from "../api/types";
 import { buildLayoutStyleCss, buildPreviewDocCss } from "../lib/docStyle";
 import { mapApiError } from "../lib/errors";
 import { useT } from "../i18n";
+import { splitStyle } from "../lib/splitStyle";
 import Button from "./ui/Button";
 import Skeleton from "./ui/Skeleton";
 
 type Mode = "md" | "word";
-
-/** Server trả HTML preview kèm <style>; DOMPurify LUÔN bỏ thẻ <style> (kể cả
- *  ADD_TAGS) ⇒ CSS mất, mọi thứ dồn 1 dòng/1 cột. Tách CSS ra trước khi
- *  sanitize, rồi nhúng lại vào srcdoc (CSS là của server mình, không phải
- *  nội dung người dùng). */
-function splitStyle(html: string): { css: string; body: string } {
-  const css: string[] = [];
-  const body = html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (_m, c: string) => {
-    css.push(c);
-    return "";
-  });
-  return { css: css.join("\n"), body };
-}
 
 const FMT: Record<Mode, "md-layout" | "docx-layout"> = {
   md: "md-layout",
@@ -36,14 +24,6 @@ function renderMdHtml(mdText: string): string {
   return DOMPurify.sanitize(md.render(mdText));
 }
 
-/**
- * WS-UI Section "Layout": XEM TRƯỚC read-only (spec 2026-10-13).
- * - word: iframe sandbox srcDoc = docx.html + <style>{docStyle}</style>
- * - md: md → HTML (markdown-it) + docStyle scope .layout-preview → DOMPurify
- * Lane I Task 4: bỏ editing/textarea wave-3 G — sửa tay qua UnifiedEditor (btn-edit-doc).
- * U7: bỏ preview toggle — mode CONTROLLED bởi fmt prop của JobDetail (fixed init
- * job.output_format; switch MD/Word đã gỡ khỏi cả header + preview).
- */
 export default function LayoutPreview({
   job,
   fmt,

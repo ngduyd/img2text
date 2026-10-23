@@ -54,8 +54,8 @@ def test_heading_gets_class_and_text_escaped():
     assert "a &lt; b &amp; c" in out
 
 
-def test_two_columns_page_renders_two_column_flex():
-    """Trang 2 cột phải ra 2 khối .col (trước: render phẳng = 1 cột)."""
+def test_two_columns_placed_by_real_x_position():
+    """Cột phải đặt theo x0/x1 thật (grid 100 track), không dồn sát nhau."""
     import json
     from pathlib import Path
 
@@ -63,6 +63,8 @@ def test_two_columns_page_renders_two_column_flex():
     result = json.loads(fixture.read_text(encoding="utf-8"))
     out = render_html_spec(result)
     assert out.count('class="col"') == 2
-    first, second = out.split('class="col" style="flex:0 0 ')[1:3]
-    assert first.split("</div>")[0].strip() != ""
-    assert second.split("</div>")[0].strip() != ""
+    spans = __import__("re").findall(r'grid-column:(\d+) / span (\d+)', out)
+    assert len(spans) == 2
+    (start1, w1), (start2, w2) = [(int(a), int(b)) for a, b in spans]
+    assert start2 > start1 + w1          # cột 2 nằm sau cột 1, không chồng
+    assert start2 >= 50                  # cột phải ở nửa phải trang

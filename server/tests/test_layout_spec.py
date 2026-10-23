@@ -259,3 +259,17 @@ def test_formula_block_keeps_latex_and_detex_text():
     assert blk.latex == "E_{n}=\\frac{n^{2}h^{2}}{8m_{e}L^{2}}"
     assert blk.text == "E_n=n^2h^2/8m_eL^2"          # fallback text
     assert blk.lines == ["E_n=n^2h^2/8m_eL^2"]
+
+def test_tab_merge_keeps_line_breaks_of_merged_block():
+    """Block phải 4 dòng (Môn/Thời gian/Ngày thi/Đề thi gồm) bị gộp tab:
+    trước đây nối bằng ' ' → mất 3 dấu xuống dòng có trong OCR."""
+    page = TestGenericFixes()._page([
+        {"id": "l", "bbox": [85, 107, 224, 126], "verdict": "ok",
+         "text": "ĐỀ THI CHÍNH THỨC"},
+        {"id": "r", "bbox": [284, 108, 541, 173], "verdict": "ok",
+         "text": "Môn: HÓA HỌC\nThời gian: 180 phút\nNgày thi: 25/12/2024\n05 trang"},
+    ])
+    blk = page.blocks[0]
+    assert len(blk.lines) == 4
+    assert blk.lines[0] == "ĐỀ THI CHÍNH THỨC\tMôn: HÓA HỌC"
+    assert blk.lines[1] == "\tThời gian: 180 phút"

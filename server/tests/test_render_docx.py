@@ -216,8 +216,14 @@ async def test_render_docx_spec_embeds_crop_by_bbox_width():
     doc = Document(io.BytesIO(data))
     assert len(doc.inline_shapes) == 1
     assert "[ảnh]" not in "\n".join(p.text for p in doc.paragraphs)
-    expected = Twips(round(200 * 1440 / 96))  # 3000 twips = 1_905_000 EMU
-    assert abs(doc.inline_shapes[0].width - expected) <= expected * 0.05
+    # Toạ độ px của spec được scale về đúng bề ngang vùng chữ docx
+    # (8640 twips): pages 640 px → 9600 twips ⇒ scale 0.9.
+    from app.services.render_docx import TEXT_WIDTH_TWIPS, _scale_for
+    page = _image_result()["pages"][0]
+    scale = _scale_for(page["width"])
+    assert abs(scale * page["width"] * 1440 / 96 - TEXT_WIDTH_TWIPS) < 1
+    expected = Twips(round(200 * 1440 / 96 * scale))
+    assert abs(doc.inline_shapes[0].width - expected) <= expected * 0.02
 
 async def test_render_docx_spec_missing_crop_keeps_placeholder():
     """crops thiếu rid → placeholder [ảnh] còn, không crash."""
