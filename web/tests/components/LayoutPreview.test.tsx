@@ -87,7 +87,11 @@ it("word mode renders sandboxed iframe with docStyle in srcDoc", async () => {
   renderPreview({ ...JOB, output_format: "docx", layout_cache: { md: true, docx: true, docx_html: true } }, "docx-layout");
   // fmt="docx-layout" (review r1 P0: controlled prop, không còn internal state) → word mode.
   const frame = await screen.findByTestId("preview-word");
-  expect(frame).toHaveAttribute("sandbox", "");
+  // allow-same-origin để ảnh crop (route API cần cookie) tải được; KHÔNG
+  // allow-scripts → nội dung preview không chạy JS. Cặp same-origin + scripts
+  // mới là lỗ hổng, nên test chặn đúng cặp đó.
+  expect(frame.getAttribute("sandbox")).toBe("allow-same-origin");
+  expect(frame.getAttribute("sandbox")).not.toContain("allow-scripts");
   const src = frame.getAttribute("srcdoc") ?? "";
   expect(src).toContain("Noi dung");
   expect(src).toContain("font-size: 18px");
