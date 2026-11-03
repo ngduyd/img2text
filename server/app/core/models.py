@@ -262,7 +262,7 @@ class Job(Base):
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     # WS-SERVER queue: text save khi rendering / sync targeted-fail →
     # finalize render lại tối đa 1 lần (loop guard 2). ALTER-only migration:
-    #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS rerender_requested BOOLEAN DEFAULT false;
+    #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS rerender_requested BOOLEAN NOT NULL DEFAULT false;
     # Readers: run-mutable — không cache qua request.
     rerender_requested: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")

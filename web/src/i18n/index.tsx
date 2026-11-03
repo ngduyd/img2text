@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import en from "./en.json";
 import viDict from "./vi.json";
 
@@ -57,6 +57,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(LANG_KEY, l);
     setLangState(l);
   }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
+
   return <I18nContext.Provider value={{ lang, setLang }}>{children}</I18nContext.Provider>;
 }
 

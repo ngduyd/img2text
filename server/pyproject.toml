@@ -12,7 +12,6 @@ dependencies = [
     "sqlalchemy[asyncio]",
     "asyncpg",
     "pydantic-settings",
-    "alembic",
     "bcrypt>=4",
     "PyJWT",
     "apscheduler",

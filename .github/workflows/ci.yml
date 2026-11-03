@@ -67,6 +67,22 @@ jobs:
           PANDOC_BIN: /usr/bin/pandoc
         run: pytest -q
 
+# Worker tests chỉ dùng mock transport (httpx), numpy, PIL, cv2 —
+# không cần Postgres, GPU hay kết nối mạng thật.
+  worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20   # guard: suite ~20 giây; treo thì fail sớm, không kéo dài
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: worker/pyproject.toml
+      - run: pip install -e "./worker[test]"
+      - run: pytest -q
+        working-directory: worker
+
   web:
     runs-on: ubuntu-latest
     steps:
@@ -79,6 +95,8 @@ jobs:
       - run: npm ci
         working-directory: web
       - run: npx tsc -b --force
+        working-directory: web
+      - run: npx oxlint
         working-directory: web
       - run: npx vitest run
         working-directory: web

@@ -251,12 +251,15 @@ npx oxlint          # exit 0
 ---
 
 ## 10. Thứ tự thực thi
-- [ ] P0 Shell + Nav
+- [x] P0 Shell + Nav
 - [ ] P1 JobDetail → 3 route (Overview trước, Text, Layout)
-- [ ] P2 Editor extension + toolbar + PagePreview
-- [ ] P3 Jobs list
-- [ ] P4 Admin
-- [ ] P5 Profile / Storage / Landing
+- [x] P2 Editor extension + toolbar + PagePreview
+- [x] P3 Jobs list
+- [x] P4 Admin
+- [x] P5 Profile / Storage / Landing
+
+> Đã ship (verify 2026-11-03: route + page trong web/src/App.tsx) — trừ P1.
+> P1 chưa ship như §3.1: 3 route có trong `web/src/App.tsx` nhưng render duy nhất một `JobDetail` qua `section` prop, không phải 3 component `JobOverview`/`JobText`/`JobLayout`.
 
 ## 11. Câu hỏi chưa chốt
 (không còn — đã chốt: Features gộp vào Landing dạng section "Sắp có"; Landing thay Preview bằng 1 mock tĩnh)

@@ -67,6 +67,17 @@ describe("useT", () => {
     expect(localStorage.getItem("lang")).toBe("vi");
   });
 
+  it("document lang follows active language", async () => {
+    render(
+      <I18nProvider>
+        <Probe />
+      </I18nProvider>,
+    );
+    expect(document.documentElement.lang).toBe("en");
+    await userEvent.click(screen.getByTestId("btn-vi"));
+    expect(document.documentElement.lang).toBe("vi");
+  });
+
   it("interpolates {n} params", () => {
     render(<Probe />);
     expect(screen.getByTestId("interp")).toHaveTextContent("3 pages");
