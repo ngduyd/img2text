@@ -393,7 +393,7 @@ export default function TextSection({
                     aria-expanded={
                       open?.sid === seg.sid && open?.occ === seg.occurrence
                     }
-                    className="cursor-pointer bg-transparent px-0 text-inherit"
+                    className="cursor-pointer bg-transparent px-0 py-0.5 text-inherit"
                     onClick={() =>
                       setOpen(
                         open?.sid === seg.sid && open?.occ === seg.occurrence

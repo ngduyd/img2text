@@ -92,7 +92,10 @@ for (const size of SIZES) {
         const b = el.getBoundingClientRect();
         if (b.width < 24 || b.height < 24)
           out.smallTargets.push(`${Math.round(b.width)}x${Math.round(b.height)} ${el.tagName} "${(el.textContent || el.getAttribute("aria-label") || "").trim().slice(0, 20)}"`);
-        const name = (el.getAttribute("aria-label") || el.textContent || "").trim();
+        // Accessible name thật: aria-label → <label> liên kết (el.labels) → textContent.
+        // `<input>` có textContent RỖNG nên chỉ dùng textContent sẽ báo sai mọi input có <label>.
+        const labelText = el.labels ? [...el.labels].map((l) => l.textContent).join(" ") : "";
+        const name = (el.getAttribute("aria-label") || labelText || el.textContent || "").trim();
         if (!name && !el.getAttribute("title")) out.iconNoLabel.push(el.outerHTML.slice(0, 70));
       }
       for (const img of document.querySelectorAll("img")) if (!img.hasAttribute("alt")) out.noAlt.push(img.src.slice(-40));
