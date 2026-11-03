@@ -25,7 +25,7 @@ import OriginalFilePanel from "../components/panels/OriginalFilePanel";
 import LayoutPreview from "../components/LayoutPreview";
 import PageShell from "../components/PageShell";
 import TextSection from "../components/TextSection";
-import UnifiedEditor from "../components/UnifiedEditor";
+import UnifiedEditor, { type LayoutMode } from "../components/UnifiedEditor";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import Skeleton from "../components/ui/Skeleton";
@@ -48,8 +48,12 @@ const SUBPAGES = [
   { key: "layout", path: "/layout", testid: "subnav-layout", labelKey: "jd.layout" },
 ] as const;
 
-/** SPEC-ui-redesign D3: mỗi route render ĐÚNG 1 section (overview | text | layout). */
-export default function JobDetail({ section = "overview" }: { section?: JobSection } = {}) {
+/** SPEC-ui-redesign D3: mỗi route render ĐÚNG 1 section (overview | text | layout).
+ *  Lane 1 (spec 2026-11-03): `mode` = layout mode lấy từ URL (/layout/md|word). */
+export default function JobDetail({
+  section = "overview",
+  mode,
+}: { section?: JobSection; mode?: LayoutMode } = {}) {
   const { t } = useT();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -73,8 +77,9 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
   const [proofreading, setProofreading] = useState(false);
   /** Lane I Task 6: dropdown "Tải xuống" ở header (gộp 4 định dạng text). */
   const [downloadOpen, setDownloadOpen] = useState(false);
-  /** U7: bỏ switch MD/Word — fmt fixed init theo job.output_format. */
-  const layoutFmt = job?.output_format === "docx" ? "docx-layout" : "md-layout";
+  /** U7: bỏ switch MD/Word — fmt init theo mode URL, vắng mode → job.output_format (AC3). */
+  const layoutMode: LayoutMode = mode ?? (job?.output_format === "docx" ? "word" : "md");
+  const layoutFmt = layoutMode === "word" ? "docx-layout" : "md-layout";
   const [retryingLayout, setRetryingLayout] = useState(false);
   const [confirmRetry, setConfirmRetry] = useState(false);
   /** P0-C: panel "Lịch sử" — list lazy-fetch khi mở (queryKey "versions" để invalidate). */
@@ -542,9 +547,11 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
       )}
 
       {section === "overview" && (
-        /* D12: 2 cột CÂN bằng — trái = file gốc (ảnh, chiều cao lớn), phải =
-           việc cần làm + thông tin. Trước đây 7/5 để cột trái lửng giữa trang. */
-        <div key={job.id} data-testid="detail-grid" className="grid gap-4 lg:grid-cols-2 lg:gap-6">
+        /* D12 (2026-10-13): 2 cột CÂN bằng thay cho 7/5 — cột trái lửng giữa trang.
+           2026-11-03: cột phải là rail metadata (Text/Layout/Info) nên đổi sang bề
+           ngang CỐ ĐỊNH 22rem; cột trái (file gốc) nhận hết phần dư nên không còn
+           phụ thuộc chiều cao ảnh — job nhiều trang đảo ngược tỉ lệ so với job 1 trang. */
+        <div key={job.id} data-testid="detail-grid" className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-6">
           <section className="min-w-0 self-start rounded-card border border-border bg-surface shadow-card">
             <h2>
               <Button
@@ -671,6 +678,7 @@ export default function JobDetail({ section = "overview" }: { section?: JobSecti
                       markdown={result.edited_markdown ?? result.markdown}
                       editing={editing}
                       hostRef={editorHostRef}
+                      mode={layoutMode}
                     />
                   ) : (
                     <LayoutPreview job={job} fmt={layoutFmt} />

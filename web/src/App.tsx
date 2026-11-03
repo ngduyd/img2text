@@ -391,6 +391,13 @@ export default function App() {
             {/* SPEC-ui-redesign D3: 2 trang con tách khỏi JobDetail. */}
             <Route path="/jobs/:id/text" element={<JobDetail section="text" />} />
             <Route path="/jobs/:id/layout" element={<JobDetail section="layout" />} />
+            {/* Lane 1 AC1–AC3 (spec 2026-11-03): layout mode addressable in URL.
+                /layout canonical giữ nguyên (AC4 — resolve theo output_format). */}
+            <Route path="/jobs/:id/layout/md" element={<JobDetail section="layout" mode="md" />} />
+            <Route
+              path="/jobs/:id/layout/word"
+              element={<JobDetail section="layout" mode="word" />}
+            />
             {/* Phase 2 (Sub-system B): trang trích xuất — highlight + click-fix + save-sync. */}
             <Route path="/jobs/:id/extraction" element={<ExtractionPage />} />
             {/* R51 exception (user: "không tách /edit nữa"): standalone /edit page

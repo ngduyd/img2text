@@ -1,13 +1,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
 import { useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import * as mammoth from "mammoth";
 import { toast } from "sonner";
 import { ApiError, api } from "../../src/api/client";
 import type { Job } from "../../src/api/types";
-import UnifiedEditor from "../../src/components/UnifiedEditor";
+import UnifiedEditor, { type LayoutMode } from "../../src/components/UnifiedEditor";
 
 vi.mock("mammoth", () => ({
   convertToHtml: vi.fn(),
@@ -55,7 +56,9 @@ const JOB: Job = {
   text_version: 1,
 };
 
-/** Harness có state editing thật (btn-edit-doc header toggle như JobDetail control). */
+/** Harness có state editing thật (btn-edit-doc header toggle như JobDetail control).
+ * Mode đến từ URL (single source of truth) → cần router thật: switch-mode-* navigate.
+ */
 function Harness({
   job,
   markdown = "# Artifact",
@@ -71,16 +74,40 @@ function Harness({
   const [client] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
   );
+  const initialMode = job.output_format === "docx" ? "word" : "md";
   return (
     <QueryClientProvider client={client}>
-      <UnifiedEditor
-        jobId={String(job.id)}
-        job={job}
-        markdown={markdown}
-        hostRef={hostRef}
-        editing={editing}
-      />
+      <MemoryRouter initialEntries={[`/jobs/${job.id}/layout/${initialMode}`]}>
+        <Routes>
+          <Route
+            path="/jobs/:id/layout/:mode"
+            element={
+              <EditorRoute job={job} markdown={markdown} hostRef={hostRef} editing={editing} />
+            }
+          />
+        </Routes>
+      </MemoryRouter>
     </QueryClientProvider>
+  );
+}
+
+/** Route → props như App.tsx/JobDetail: mode đọc từ param URL. */
+function EditorRoute({ job, markdown, hostRef, editing }: {
+  job: Job;
+  markdown: string;
+  hostRef?: { current: HTMLElement | null };
+  editing: boolean;
+}) {
+  const { mode } = useParams<{ mode: LayoutMode }>();
+  return (
+    <UnifiedEditor
+      jobId={String(job.id)}
+      job={job}
+      markdown={markdown}
+      editing={editing}
+      hostRef={hostRef}
+      mode={mode!}
+    />
   );
 }
 

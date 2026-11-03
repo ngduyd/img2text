@@ -381,8 +381,8 @@ it("U6: aside sidebar lg:sticky lg:top-32", async () => {
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("detail-grid");
   const aside = document.querySelector("aside")!;
-  // D12: Overview 2 cột cân bằng (file gốc | việc cần làm + thông tin).
-  expect(document.querySelector('[data-testid="detail-grid"]')!.className).toContain("lg:grid-cols-2");
+  // D12: Overview 2 cột — 2026-11-03: cột phải rail cố định 22rem, trái nhận phần dư.
+  expect(document.querySelector('[data-testid="detail-grid"]')!.className).toContain("lg:grid-cols-[minmax(0,1fr)_22rem]");
   expect(aside.className).not.toMatch(/(^|\s)sticky/);
 });
 
@@ -576,7 +576,8 @@ it("renders single wrapper grid: collapsible original+info right (U4+U5 default 
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("detail-grid");
   const grid = screen.getByTestId("detail-grid");
-  expect(grid.className).toContain("lg:grid-cols-2");
+  // 2026-11-03: rail phải cố định 22rem thay vì 2 cột cân bằng.
+  expect(grid.className).toContain("lg:grid-cols-[minmax(0,1fr)_22rem]");
   const aside = grid.querySelector("aside");
   expect(aside).not.toBeNull();
   // D3: overview không sticky (trang ngắn).

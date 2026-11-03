@@ -5,6 +5,7 @@ import * as mammoth from "mammoth";
 import { splitStyle } from "../lib/splitStyle";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { RefObject } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "../api/client";
 import type { Job, LayoutStyle } from "../api/types";
@@ -18,9 +19,12 @@ import Button from "./ui/Button";
 import Card from "./ui/Card";
 import Skeleton from "./ui/Skeleton";
 
-type Mode = "md" | "word";
+export type LayoutMode = "md" | "word";
 
-const FMT: Record<Mode, "md-layout" | "docx-layout"> = { md: "md-layout", word: "docx-layout" };
+const FMT: Record<LayoutMode, "md-layout" | "docx-layout"> = {
+  md: "md-layout",
+  word: "docx-layout",
+};
 
 /**
  * Plan M region "Soạn thảo" (gộp card "Tài liệu" + MarkdownEditor cũ; R51:
@@ -33,6 +37,9 @@ const FMT: Record<Mode, "md-layout" | "docx-layout"> = { md: "md-layout", word: 
  * một đường duy nhất cho cả 2 nhánh. ponytail: nếu sau này cần chặn request
  * khi cache-hit thì mới tách nhánh theo job.layout_cache (lúc đó badge cũng
  * thôi là nguồn sự thật).
+ *
+ * Mode = prop `mode` (route /jobs/:id/layout/md|word, spec 2026-11-03 AC1–AC3);
+ * không còn state — switch-mode-* navigate nên reload/back/forward giữ mode.
  */
 export default function UnifiedEditor({
   jobId,
@@ -40,24 +47,25 @@ export default function UnifiedEditor({
   markdown,
   editing,
   hostRef,
+  mode,
 }: {
   jobId: string;
   job: Job;
   markdown: string;
   editing: boolean;
   hostRef?: RefObject<HTMLElement | null>;
+  mode: LayoutMode;
 }) {
   const { t } = useT();
   const queryClient = useQueryClient();
-  // Binding: default mode theo output_format chọn lúc upload.
-  const [mode, setMode] = useState<Mode>(job.output_format === "docx" ? "word" : "md");
+  const navigate = useNavigate();
   // Plan M3: docx.html cache (PUT html lần trước) → load thẳng, bỏ mammoth/export.
   const docxHtmlCached = job.layout_cache?.docx_html === true;
   // md text = artifact md-layout; markdown prop chỉ là nội dung tạm trước khi artifact về.
   const [mdText, setMdText] = useState(markdown);
   const [docxHtml, setDocxHtml] = useState<string | null>(null);
   const [loaded, setLoaded] = useState({ md: false, word: false });
-  const [error, setError] = useState<{ mode: Mode; message: string } | null>(null);
+  const [error, setError] = useState<{ mode: LayoutMode; message: string } | null>(null);
   // Word style: css bắn vào iframe sống, styleMap là bản PUT layout-style.
   const [baseCss, setBaseCss] = useState("");
   const [wordCss, setWordCss] = useState("");
@@ -75,7 +83,7 @@ export default function UnifiedEditor({
   );
 
   const runFlow = useCallback(
-    async (m: Mode) => {
+    async (m: LayoutMode) => {
       try {
         // Plan M3: word content đã lưu (layout_cache.docx_html) → GET docx.html,
         // không exportJob (không tốn LLM) + không mammoth; 404 → fallback bên dưới.
@@ -118,11 +126,10 @@ export default function UnifiedEditor({
   );
 
   /*
-   * btn-edit-doc (header) = entry duy nhất để vào sửa nguồn: luôn hiện md mode.
-   * Derive thay vì setState-in-effect (oxlint set-state-in-effect): editing=true
-   * → activeMode md, không cần effect ép mode.
+   * URL mode = nguồn sự thật duy nhất; JobDetail resolve `mode ?? output_format`
+   * nên component này không đoán mode từ job.
    */
-  const activeMode: Mode = mode;
+  const activeMode: LayoutMode = mode;
   const displayError = error?.mode === activeMode ? error.message : null;
   // Loading derived: chưa load xong cho mode hiện tại và không có error đang hiện.
   const loading = !loaded[activeMode] && displayError === null;
@@ -145,11 +152,11 @@ export default function UnifiedEditor({
     if (editing) hostRef?.current?.querySelector("textarea")?.focus();
   });
 
-  const switchMode = (m: Mode) => {
+  /** AC2: đổi mode = điều hướng URL (reload/back/forward giữ mode). */
+  const switchMode = (m: LayoutMode) => {
     if (m === activeMode) return;
-    setMode(m);
-    // FIX: GIỮ editing khi sang word — WordEditor mount trong editor (trước: đóng
-    // editing → word chỉ còn preview, không có tools/editor).
+    // Route đổi param, cùng element JobDetail → editor không remount, editing giữ nguyên.
+    void navigate(`/jobs/${jobId}/layout/${m}`);
   };
 
   const saveLayout = async () => {
