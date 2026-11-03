@@ -126,9 +126,10 @@ Số liệu lấy từ `MEMORY.md` được ghi rõ nguồn và đánh dấu **c
 | # | Fact | Tag |
 |---|---|---|
 | J1 | `audit-a11y.mjs` phủ 8 route × {1440, 320} và kiểm contrast / target <24px / alt / control không tên / >1 h1 / overflow-x. `web/scripts/audit-a11y.mjs:11`, `web/scripts/audit-a11y.mjs:12`. | spec-backed (`web/AGENTS.md` §1) |
-| J2 | `audit-a11y.mjs` **luôn exit 0** kể cả khi có finding → gate phải đọc dòng `DONE N routes with findings`. Nguồn: `MEMORY.md` (2026-11-03), **chưa xác minh lại** trong session này. | observed-only |
-| J3 | Lần chạy gần nhất ghi trong `MEMORY.md` (2026-11-03): còn **4 route** có finding, trong đó `jobs-search` (`/jobs`) và `input-current-password` (`/profile`) thiếu label — pre-existing. **chưa xác minh lại**. | observed-only |
-| J4 | `Jobs.tsx` **đã có** `<span className="sr-only">` cho `jobs-search` (`web/src/pages/Jobs.tsx:150`) và `Input` component sinh `<label htmlFor>` cho `input-current-password` → finding J3 nhiều khả năng đã cũ, cần chạy lại để xác nhận. `web/src/components/ui/Input.tsx:18`. | observed-only |
+| J2 | `audit-a11y.mjs` **luôn exit 0** kể cả khi có finding → gate phải đọc dòng `DONE N routes with findings`. Xác nhận 2026-11-04: script in finding rồi vẫn exit 0. | observed-only |
+| J3 | Chạy lại 2026-11-04 **sau khi sửa checker**: **`DONE 2 routes with findings`** — cả 2 là `/jobs/5/text` @1440 và @320, cùng một lỗi: nút `<mark>` gợi ý sửa OCR cao **23,8px** < 24px (`small targets: 88x24 BUTTON "precifications" | …`). Không phải lỗi label như run trước. `web/src/components/TextSection.tsx:393`. | observed-only |
+| J4 | 4 dòng "unlabeled" của run trước là **false positive của script**, không phải lỗi a11y thật: accessible name kiểm bằng `locator.ariaSnapshot()` trong Chromium trả `searchbox "Search by filename"` và `textbox "Current password"`. Nguyên nhân: checker lấy tên bằng `aria-label \|\| textContent`, `<input>` có `textContent` rỗng → input gắn `<label>` vẫn bị báo "unlabeled". Đã sửa 2026-11-04: dùng `el.labels`. `web/scripts/audit-a11y.mjs:95`, `web/src/pages/Jobs.tsx:150`, `web/src/components/ui/Input.tsx:18`. | observed-only |
+| J4b | ~~Nút `<mark>` gợi ý sửa OCR cao 23,8px~~ **đã sửa 2026-11-04**: thêm `py-0.5` → đo lại trong Chromium **27,80px**, audit về `DONE 0 routes`. Vẫn dưới 44px của `web/DESIGN.md` §7 nhưng đạt 24px của WCAG 2.5.8 vì là control inline trong câu văn. `web/src/components/TextSection.tsx:393`. | observed-only |
 | J5 | Nhiều nút `size="sm"` cao ~28px (`py-1` + text-sm) < 44px mà `web/DESIGN.md` §7 yêu cầu cho "primary interactive elements"; chỉ Storage/admin icon-button có `min-h-11`. `web/src/components/ui/Button.tsx:18`. | spec-backed (`web/DESIGN.md` §7) |
 | J6 | `role="alertdialog"` + `aria-modal` ở `ConfirmDialog` (đúng), nhưng `useDialogA11y` **không trap focus** — Tab đi được ra sau dialog. `web/src/components/ui/useDialogA11y.ts:26`. | observed-only |
 
@@ -204,6 +205,7 @@ Mỗi mục: file đích cụ thể, chỉ dùng dependency đã có trong `web/
 24. **Nhóm extension tier B** (E9): `web/src/lib/wordEditor.ts:106`. Chỉ làm được phần dùng dependency hiện có: `Color` qua `TextStyle` (đã cài), `pageBreak` custom node, zoom CSS, `CharacterCount` tự viết bằng handler `onUpdate`. Phần Highlight / Link / TaskList / Image / CodeBlockLowlight / Placeholder / Find&Replace **không thể làm trọn §4.1** vì thiếu package tương ứng — ghi nhận là finding, không đề xuất cài thêm.
 25. **Toolbar không nhảy chiều cao khi ở trong bảng** (E7): `web/src/components/editor/WordToolbar.tsx:457` — đưa `word-tb-table-controls` vào panel `word-tb-more` thay vì hàng 2.
 26. **Focus trap cho dialog** (J6): `web/src/components/ui/useDialogA11y.ts:26` — thêm vòng Tab trong `panelRef` (native DOM, không cần lib).
+27. ~~Nút gợi ý sửa OCR cao 23,8px~~ (J4b) **đã làm 2026-11-04**: `web/src/components/TextSection.tsx:393` thêm `py-0.5` → 27,80px. Không còn trong danh sách remediation.
 
 ---
 
@@ -222,7 +224,7 @@ Không suy đoán ý định; chỉ ghi nhận.
 8. **Admin là in-page state, không route** — không tài liệu nào nói tab Admin phải addressable qua URL. `web/src/pages/Admin.tsx:55`.
 9. **`AdminLogs` hard-code `"vi-VN"`** — SPEC và DESIGN đều nói một locale chung nhưng không có rule chặn hard-code locale. `web/src/pages/admin/AdminLogs.tsx:153`.
 10. **`audit-a11y.mjs` luôn exit 0** — nguồn `MEMORY.md` 2026-11-03, **chưa xác minh lại**. Script không kiểm focus-visible bằng bàn phím, không kiểm aria-state sau tương tác, không kiểm click flow nhiều bước (đã ghi ở `web/AGENTS.md` §Playwright MCP).
-11. **Finding a11y `/jobs` `jobs-search` + `/profile` `input-current-password` thiếu label** — nguồn `MEMORY.md` 2026-11-03, **chưa xác minh lại**; source hiện tại **có** label (`web/src/pages/Jobs.tsx:150`, `web/src/components/ui/Input.tsx:18`) → nhiều khả năng đã lỗi thời, cần chạy lại `npm run audit:a11y` để chốt.
+11. **Finding a11y `/jobs` `jobs-search` + `/profile` `input-current-password` thiếu label** — run 2026-11-04 in 4 dòng (`DONE 4 routes with findings`) nhưng `ariaSnapshot()` cho thấy cả hai **có** accessible name → lỗi của checker, **đã sửa** (`web/scripts/audit-a11y.mjs:95` dùng `el.labels`). Sửa xong lộ ra J4b (nút inline 23,8px), **cũng đã sửa**. Gate hiện tại: `DONE 0 routes with findings`.
 12. **Nút `size="sm"` cao ~28px dưới ngưỡng 44px của `web/DESIGN.md` §7** — DESIGN nói "primary interactive elements", không định nghĩa "primary"; `audit-a11y.mjs` chỉ gate 24px nên lọt. `web/src/components/ui/Button.tsx:18`.
 13. **`useDialogA11y` không trap focus** — `CropDialog`, `PageSelectDialog`, `SubmitModal`, `ConfirmDialog` dùng chung hook này; không tài liệu nào yêu cầu focus trap tường minh. `web/src/components/ui/useDialogA11y.ts:26`.
 14. **State rò giữa 3 section của `JobDetail`** — route đổi không remount nên `editing`/`editingText` sống qua điều hướng. Đây là hệ quả của deviation P1, nhưng *hành vi mong muốn* (giữ hay reset) không được spec nào định nghĩa. `web/src/pages/JobDetail.tsx:114`.

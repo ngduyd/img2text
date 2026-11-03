@@ -1,6 +1,14 @@
 # MEMORY
 
 ## Now
+- 2026-11-04 · Xong bộ skill `pi-flow` ở `.agents/skills/flow*` (7 skill, 412 dòng): `flow` (điều phối)
+  → `flow-grill` (pha 1–4) → `flow-spec` (5) → `flow-coldread` (6) → `flow-execute` (7) →
+  `flow-verify` (8) → `flow-ship` (9, thêm mới: commit/PR/deploy + đường lùi + đóng flow).
+  Chưa chạy end-to-end một flow thật; chưa có extension `flow-gate` chặn `edit`/`write`.
+- 2026-11-04 · Xong `docs/REVIEW-ui-current-state.md` (review-only, 230 dòng): 4 section bắt buộc,
+  80 tag spec-backed/observed-only, 27 citation `web/src/`. Chờ user chọn hướng fix từ §Prioritized
+  remediation (P0 = gộp 3 nút lưu layout + dirty-state). Mâu thuẫn cần user chốt: SPEC §3.4
+  "bỏ tab MD/Word" ↔ spec route-split AC1–AC2 "mode phải addressable".
 - 2026-11-03 · Xong spec+plan+implement+2 vòng review cho audit drift (xem
   `docs/superpowers/specs/2026-11-03-audit-drift-hardening-design.md` +
   `plans/2026-11-03-plan-audit-drift-hardening.md`). 5 lane song song bằng subagent,
@@ -12,6 +20,8 @@
   `design-taste-frontend` định hướng fix + §14 pre-flight → chụp lại so before/after.
 
 ## Decisions
+- 2026-11-04 · Review UI dừng ở mức tài liệu, không sửa code · constraint của task; mọi finding
+  phải có `file:line` đọc trực tiếp, số liệu từ MEMORY.md cũ phải đánh dấu "chưa xác minh lại".
 - 2026-11-03 · Tắt agentmemory bằng project override `.pi/mcp.json` thay vì sửa `~/.pi/agent/mcp.json`
   · chỉ ảnh hưởng repo này, bật lại bằng cách đổi `enabled: true` hoặc xoá file.
 - 2026-11-03 · Thêm `typescript` vào `.serena/project.yml` (trước chỉ `python`) · web/ có 144 file
@@ -19,6 +29,20 @@
   `web/src/api/types.ts` chạy được.
 
 ## Measured
+- 2026-11-04 · discovery skill: `pi -p -t read "list skill flow*"` → **7/7 tên đúng**, nên `.agents/skills/`
+  trong project root được pi load (không cần `~/.pi/agent/skills/`). Lưu ý: `--no-tools` làm pi **bỏ
+  luôn skills hint** khỏi system prompt → probe bằng `-p --no-tools` cho kết quả sai "None".
+- 2026-11-04 · frontmatter 7 `SKILL.md`: name==tên thư mục, desc 197–316 ký tự, không lỗi spec
+- 2026-11-04 · `audit-a11y.mjs:95` báo sai mọi `<input>` có `<label>` → **đã sửa**: dùng `el.labels`
+  thay `textContent` (sau khi kiểm `ariaSnapshot()` chứng minh 2 input có tên thật).
+- 2026-11-04 · `npm run audit:a11y` **sau khi sửa checker** · `DONE 4` → `DONE 2` → (sửa J4b) `DONE 0`.
+  2 route trung gian là cùng 1 lỗi J4b (nút inline 23,8px), không phải lỗi label.
+- 2026-11-04 · `npm test` sau khi sửa `scripts/audit-a11y.mjs` · **450 pass / 60 file** (script không nằm trong suite)
+- 2026-11-04 · `cd web && npm test` sau khi viết review doc · **450 pass / 60 file**, 57.7s
+  (khớp baseline trong MEMORY, không có test nào bị task này đụng)
+- 2026-11-04 · i18n parity vi↔en · **569 key mỗi bên, lệch 0** (script `node -e` duyệt dict)
+- 2026-11-04 · component §8 SPEC không tồn tại trong repo: `SplitPane.tsx`, `StatBar`,
+  `RowActionMenu`, `EditorToolbar` — **0/4 có mặt**; testid `panel-export` cũng không còn
 - 2026-11-03 · jobdetail route split · vitest **450 pass/60 file** (+6 test mới), tsc + oxlint sạch
 - 2026-11-03 · Overview rail · `gridTemplateColumns` @1440 **564px+564px → 776px+352px**;
   320 giữ nguyên (ảnh before/after byte-identical)
@@ -53,6 +77,12 @@
   /jobs/5/layout, /storage, /profile, /admin (8 route).
 
 ## Dead ends
+- 2026-11-04 · `audit-a11y.mjs` login **401** với `admin@dev.local` / `Audit-2024-pw` (password khác
+  trong DB seed hiện tại) → dùng `SHOT_EMAIL=audit-1793684235751@example.com` (role user) là được.
+- 2026-11-04 · login **429** sau ~2 lần gọi curl → `docker compose -f deploy/docker-compose.dev.yml
+  restart server` (limiter trong RAM) · sau restart API cần ~5s mới lên, `:8010` trả 000 trong lúc chờ.
+- 2026-11-04 · chạy audit bằng user role **user** → `/admin` redirect `/` nên kết quả route admin
+  thực chất là landing; muốn audit /admin phải dùng admin thật.
 - 2026-11-03 · `audit-shots.mjs shoot` không chụp `/jobs/:id` (chỉ 8 route list) → phải viết script
   riêng; và `audit-a11y.mjs` login bị **429** sau ~3 lần chạy (limiter RAM trong container API) →
   fix: `docker compose -f deploy/docker-compose.dev.yml restart server`.
@@ -68,6 +98,12 @@
   rồi cat.
 
 ## Next
+- Chạy thử `flow-grill` một lần trên vấn đề nhỏ (1 file, `lite: true`) và ghi lại chỗ agent nhảy pha.
+- Cân nhắc extension `~/.pi/agent/extensions/flow-gate.ts` (`tool_call` → block `edit`/`write`
+  ngoài `.pi-flow/` khi `state.md` phase < execute) — ngoài project root, cần user cho phép.
+- 2026-11-04 · J4b **đã sửa**: `TextSection.tsx` nút `<mark>` thêm `py-0.5` → đo lại trong Chromium
+  **27,80px** (từ 23,8px); `npm run audit:a11y` → **`DONE 0 routes with findings`**. `npm test` 450/60.
+  Còn dưới 44px của DESIGN §7 — chấp nhận vì là control inline trong câu văn.
 - Serena onboarding chưa chạy (`.serena/memories/` rỗng) — chạy nếu muốn serena tự ghi memory dài hạn.
 - 2026-11-03 audit: 8 bảng + 3 cột trong `models.py` không có file `.sql` (users.ocr_enabled,
   jobs.preprocess/output_format/layout_style, worker_heartbeats chỉ có .md) → DB cũ thiếu.
