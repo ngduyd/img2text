@@ -294,36 +294,63 @@ def bootstrap_venv(progress=None, parent_deps: bool = True) -> None:
     kernel bắt → exit 90 (spec session worker T7, AC10)."""
     global cv2, np, Image, fuzz  # noqa: PLW0603 — bootstrap side effect
     notify = progress if progress is not None else (lambda *_a: None)
-    # ===================================================================
-    # pip/apt errors check=False — verify after, never let install noise
-    # kill the script.
-    # ===================================================================
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "uv"], check=False)
+    # parent_deps=False (session): job chạy trong venv 3.12 → cài
+    # pillow/numpy/cv2/rembg vào kernel python 3.13 là ~40s vô ích.
+    if parent_deps:
+        install_parent_deps(progress)
+    else:
+        ensure_uv(notify)
+        notify("deps")
+
+    _bootstrap_venv_packages(notify)
+
+    if parent_deps:
+        # Chỉ parent-phase cần globals (job chạy ngay trong kernel python).
+        # Session (parent_deps=False) xử lý job trong venv child → child tự
+        # gọi bind_runtime_modules(); kernel python 3.13 không có cv2.
+        bind_runtime_modules()
+    notify("model")
+
+
+def ensure_uv(notify) -> None:
+    """`uv` có sẵn trong image Kaggle (đo 2026-11-04) → chỉ cài khi thiếu."""
+    if shutil.which("uv") is None:
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "uv"],
+                       check=False)
     # pip --user uv lands in ~/.local/bin — make sure the `uv` name resolves.
     _local_bin = os.path.expanduser("~/.local/bin")
     if _local_bin not in os.environ.get("PATH", "").split(os.pathsep):
         os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + _local_bin
     notify("uv")
-    # parent_deps=False (session): job chạy trong venv 3.12 → cài
-    # pillow/numpy/cv2/rembg vào kernel python 3.13 là ~40s vô ích.
-    if parent_deps:
-        subprocess.run(["apt-get", "-qq", "update"], check=False)
-        # pdftoppm cho batch path (default_pdftoppm); session path rasterize bằng
-        # fitz (pymupdf) — cả 2 đều cần, thiếu → job pdf fail.
-        subprocess.run(
-            ["apt-get", "-qq", "install", "-y", "poppler-utils"], check=False
-        )
-        subprocess.run(
-            [
-                sys.executable, "-m", "pip", "install", "-q",
-                "pillow", "numpy", "opencv-python-headless", "rapidfuzz", "PyMuPDF",
-                "rembg[cpu]",  # WS-PIPE: crop remove-background (u2net, model cache U2NET_HOME)
-                "pillow-heif",  # review r1 P0-2: rasterize ở PARENT phase — heic/heif decode
-            ],
-            check=False,
-        )
+
+
+def install_parent_deps(progress=None) -> None:
+    """Phần NGẮN của bootstrap, chỉ cần cho kernel python: uv + apt + deps nhẹ
+    (~25 s đo được). Tách khỏi `bootstrap_venv` để session kernel chạy được
+    stage-1 (rasterize/preprocess/u2net) SONG SONG với phần cài paddle (~186 s)."""
+    notify = progress if progress is not None else (lambda *_a: None)
+    ensure_uv(notify)
+    subprocess.run(["apt-get", "-qq", "update"], check=False)
+    # pdftoppm cho batch path (default_pdftoppm); session path rasterize bằng
+    # fitz (pymupdf) — cả 2 đều cần, thiếu → job pdf fail.
+    subprocess.run(
+        ["apt-get", "-qq", "install", "-y", "poppler-utils"], check=False
+    )
+    subprocess.run(
+        [
+            sys.executable, "-m", "pip", "install", "-q",
+            "pillow", "numpy", "opencv-python-headless", "rapidfuzz", "PyMuPDF",
+            "rembg[cpu]",  # WS-PIPE: crop remove-background (u2net, model cache U2NET_HOME)
+            "pillow-heif",  # review r1 P0-2: rasterize ở PARENT phase — heic/heif decode
+        ],
+        check=False,
+    )
     notify("deps")
 
+
+def _bootstrap_venv_packages(notify) -> None:
+    """Cài/verify venv py3.12 (paddle + paddleocr + runtime deps) rồi notify
+    venv/paddle. Tách khỏi `bootstrap_venv` để chạy được trong thread."""
     # Idempotent: venv đã có → bỏ qua cài (notebook pattern), chỉ verify import.
     if not os.path.exists(VENV_PY):
         subprocess.run(["uv", "venv", VENV_DIR, "--python", "3.12"], check=False)
@@ -387,13 +414,6 @@ def bootstrap_venv(progress=None, parent_deps: bool = True) -> None:
         )
     print("venv deps:\n" + _paddle_check.stdout.strip())
     notify("paddle")
-
-    if parent_deps:
-        # Chỉ parent-phase cần globals (job chạy ngay trong kernel python).
-        # Session (parent_deps=False) xử lý job trong venv child → child tự
-        # gọi bind_runtime_modules(); kernel python 3.13 không có cv2.
-        bind_runtime_modules()
-    notify("model")
 
 if __name__ == "__main__":
     # --ocr re-exec dispatch (OCR phase, venv) — BEFORE the heavy bootstrap
@@ -1032,7 +1052,50 @@ def _to_original_bbox(bbox, scale):
     x0, y0, x1, y1 = bbox
     return [x0 * scale, y0 * scale, x1 * scale, y1 * scale]
 
-def extract_crops(input_path: str, pages_out: list, remove=None) -> dict[str, bytes]:
+def rembg_session():
+    """rembg u2net session, dùng lại cho mọi crop trong job.
+
+    Lần đầu tải `u2net.onnx` (~176 MB) = 94 s (đo 2026-11-04). Session kernel gọi
+    hàm này SỚM, song song với cài venv, để chi phí đó không rơi vào job đầu tiên.
+    Cache `u2net.onnx` trong dataset bị bỏ: copy qua FUSE 175 s > tải 94 s.
+    """
+    from rembg import new_session  # noqa: PLC0415 (lazy - import test cheap)
+    return new_session()
+
+
+def page_rgba(input_path: str, page_no: int = 1, session=None) -> bytes | None:
+    """Trang `page_no` render 144 dpi (Matrix(2,2)) -> rembg CA TRANG -> PNG RGBA.
+
+    Đo 2026-11-04: rembg luôn resize input về 320x320 rồi phóng mask lại, nên giá
+    ~25-34 s KHÔNG phụ thuộc kích thước. Vì vậy 1 lần/trang (34 s) rẻ hơn n lần/vùng
+    (25 s x n); đổi lại biên alpha thô hơn ~3,3x trên vùng nhỏ (mask-px/ảnh-px
+    0,21 vs 0,70). None khi lỗi -> caller giữ đường rembg từng vùng như cũ.
+    """
+    try:
+        import fitz  # noqa: PLC0415
+        from PIL import Image as _Image  # noqa: PLC0415
+        from rembg import remove  # noqa: PLC0415
+
+        doc = fitz.open(input_path)
+        try:
+            if not (1 <= page_no <= doc.page_count):
+                return None
+            pix = doc[page_no - 1].get_pixmap(matrix=fitz.Matrix(2, 2))
+            raw = pix.tobytes("png")
+        finally:
+            doc.close()
+        out = remove(raw, session=session)
+        if not isinstance(out, bytes):
+            return None
+        _Image.open(io.BytesIO(out)).verify()
+        return out
+    except Exception as exc:  # partial-fail: không kill job
+        print(f"[batch] page_rgba p{page_no} lỗi: {exc}", flush=True)
+        return None
+
+
+def extract_crops(input_path: str, pages_out: list, remove=None,
+                  rgba_pages: dict[int, bytes] | None = None) -> dict[str, bytes]:
     """WS-PIPE: image blocks (type==\"image\", có bbox) → PyMuPDF
     page.get_pixmap(clip=bbox px→pt) → PNG → rembg.remove → {rid: png_bytes}.
 
@@ -1042,23 +1105,30 @@ def extract_crops(input_path: str, pages_out: list, remove=None) -> dict[str, by
     rembg lazy (kernel phase); test inject stub. Partial-fail: 1 crop lỗi →
     log + bỏ region đó, không kill job (run_batch đã catch ở mức job)."""
     import fitz
+    from PIL import Image as _Image
+    rgba_pages = rgba_pages or {}
     if remove is None:
-        # u2net.onnx cache trong wheelbuild dataset (task 1) → rembg không tải
-        hits = glob.glob("/kaggle/input/**/u2net.onnx", recursive=True)
-        if hits:
-            os.environ.setdefault("U2NET_HOME", os.path.dirname(hits[0]))
-        from rembg import remove as remove  # noqa: PLC0415 (lazy — import test cheap)
+        # KHÔNG dùng cache u2net.onnx trong dataset: đọc FUSE 175 s > tải mạng 94 s.
+        from rembg import remove as remove  # noqa: PLC0415 (lazy - import test cheap)
     doc = fitz.open(input_path)
     try:
         crops: dict[str, bytes] = {}
         for pg in pages_out:
             w_px = pg.get("width") or 0
-            if not w_px or not (1 <= int(pg.get("page") or 0) <= doc.page_count):
+            page_no = int(pg.get("page") or 0)
+            if not w_px or not (1 <= page_no <= doc.page_count):
                 continue
-            page = doc[int(pg["page"]) - 1]
+            page = doc[page_no - 1]
             # bbox = px ảnh preprocess (OCR đọc bản đó) → trang gốc:
             # scale = original rect / preprocessed size (PDF pt, image px)
             scale = page.rect.width / w_px
+            rgba = rgba_pages.get(page_no)
+            mask_im = None
+            if rgba:
+                try:
+                    mask_im = _Image.open(io.BytesIO(rgba)).convert("RGBA")
+                except Exception as exc:
+                    print(f"[batch] crop p{page_no} RGBA hỏng: {exc}", flush=True)
             for b in pg.get("blocks") or []:
                 if b.get("type") != "image" or not b.get("bbox"):
                     continue
@@ -1067,9 +1137,17 @@ def extract_crops(input_path: str, pages_out: list, remove=None) -> dict[str, by
                 clip = fitz.Rect(x0, y0, x1, y1)
                 try:
                     # 72dpi mặc định → crop mờ; Matrix(2,2) = 144dpi đủ sharp
-                    pix = page.get_pixmap(clip=clip, matrix=fitz.Matrix(2, 2))
-                    png = pix.tobytes("png")
-                    crops[rid] = remove(png)
+                    if mask_im is not None:
+                        # RGBA render 2xpt -> bbox (đã ở pt) nhân 2
+                        box = (round(x0 * 2), round(y0 * 2),
+                               round(x1 * 2), round(y1 * 2))
+                        buf = io.BytesIO()
+                        mask_im.crop(box).save(buf, "PNG")
+                        crops[rid] = buf.getvalue()
+                    else:
+                        pix = page.get_pixmap(clip=clip,
+                                              matrix=fitz.Matrix(2, 2))
+                        crops[rid] = remove(pix.tobytes("png"))
                 except Exception as exc:  # partial-fail 1 crop
                     print(f"[batch] crop {rid} lỗi: {exc}", flush=True)
         return crops

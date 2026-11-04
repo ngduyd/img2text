@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -153,6 +154,42 @@ def get_pipeline():
         print("[session] nạp model xong (1×/session)", flush=True)
     return _pipeline
 
+_rembg_session = None
+
+
+def get_rembg_session():
+    """u2net session dùng chung cho cả session (tải model 1 lần)."""
+    global _rembg_session
+    if _rembg_session is None:
+        _rembg_session = kb.rembg_session()
+        print("[session] rembg u2net sẵn sàng", flush=True)
+    return _rembg_session
+
+
+def prewarm_rembg() -> None:
+    """Tải u2net.onnx trong lúc venv/paddle đang cài (đo: 94 s, ẩn hoàn toàn).
+
+    Session kernel (kernel python, KHÔNG phải venv) cần rembg → tự cài rembg[cpu]
+    trước; chi phí này nằm trong cửa sổ song song với `uv pip install paddle`.
+    Lỗi mạng không được kill session — job vẫn chạy được, chỉ chậm hơn.
+    """
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return  # pytest: không cài gói / không tải model (pattern scheduler)
+    import subprocess as _sp
+    try:
+        try:
+            import rembg  # noqa: F401,PLC0415
+        except ImportError:
+            # venv chưa tồn tại ở thời điểm này (bootstrap đang chạy song song) →
+            # cài vào kernel python, KHÔNG đụng VENV_PY (đo 2026-11-04: gọi
+            # VENV_PY ở đây nổ FileNotFoundError và bỏ luôn phần prewarm).
+            _sp.run([sys.executable, "-m", "pip", "install", "-q", "rembg[cpu]",
+                     "onnxruntime"], check=False)
+        get_rembg_session()
+    except Exception as exc:
+        print(f"[session] prewarm rembg lỗi (bỏ qua): {exc}", flush=True)
+
+
 def process_job_session(job_id: int, input_path: str, preprocess_spec, cancel_check):
     """kb.process_job flow với OCR IN-PROCESS (model singleton — không re-exec
     subprocess per job); per-page resume = ocr_raw json cache; SIGALRM watchdog
@@ -189,6 +226,24 @@ def process_job_session(job_id: int, input_path: str, preprocess_spec, cancel_ch
         pre_info[name] = kb.preprocess(p, os.path.join(pre_dir, name))
         ready.append(os.path.join(pre_dir, name))
 
+    # ponytail: rembg 1 lần/trang chỉ cho trang ĐẦU (34 s đo được), chạy SONG SONG
+    # với predict. Trang thứ 2+ rơi về rembg từng vùng (25 s/vùng). Nâng lên
+    # "mọi trang" khi gặp job nhiều trang + nhiều hình thật.
+    rgba_pages: dict[int, bytes] = {}
+    rgba_thread = None
+    if ready:
+        _first = os.path.basename(ready[0])
+        _first_no = int(_first.split("_")[1].split(".")[0])
+
+        def _prep_rgba():
+            png = kb.page_rgba(input_path, _first_no, session=get_rembg_session())
+            if png:
+                rgba_pages[_first_no] = png
+                print(f"[session] rembg cả trang {_first_no} xong", flush=True)
+
+        rgba_thread = threading.Thread(target=_prep_rgba, daemon=True)
+        rgba_thread.start()
+
     def to_jsonable(o):
         return o.tolist() if hasattr(o, "tolist") else str(o)
 
@@ -220,8 +275,10 @@ def process_job_session(job_id: int, input_path: str, preprocess_spec, cancel_ch
     pages_out, problems = kb.normalize(
         raw_paths_p, pre_info, ocr_raw_dir, pre_dir
     )
+    if rgba_thread is not None:
+        rgba_thread.join()
     try:
-        crops = kb.extract_crops(input_path, pages_out)
+        crops = kb.extract_crops(input_path, pages_out, rgba_pages=rgba_pages)
     except Exception as exc:
         crops = {}
         print(f"[session] job {job_id} crop extract lỗi: {exc}", flush=True)
@@ -451,10 +508,25 @@ def main() -> int:
         try:
             # parent_deps=False: job chạy trong venv 3.12 → cài deps vào
             # kernel python 3.13 chỉ tốn ~40s (đo session 2026-10-22).
-            kb.bootstrap_venv(
-                progress=lambda s: _heartbeat(base, SESSION_KEY, f"session:{s}"),
-                parent_deps=False,
-            )
+            # Đo 2026-11-04: cài paddle 186 s, tải u2net 94 s → chạy SONG SONG.
+            _boot_err: list = []
+
+            def _boot():
+                try:
+                    kb.bootstrap_venv(
+                        progress=lambda s: _heartbeat(base, SESSION_KEY,
+                                                      f"session:{s}"),
+                        parent_deps=False,
+                    )
+                except (SystemExit, Exception) as exc:  # noqa: BLE001
+                    _boot_err.append(exc)
+
+            _boot_thread = threading.Thread(target=_boot, daemon=False)
+            _boot_thread.start()
+            prewarm_rembg()
+            _boot_thread.join()
+            if _boot_err:
+                raise _boot_err[0]
         except (SystemExit, Exception) as exc:
             print(f"[session] bootstrap session-level fail: {exc}", flush=True)
             return EXIT_SESSION_LEVEL

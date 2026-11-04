@@ -115,3 +115,56 @@
 - 2026-11-03 audit: item "mất dấu xuống dòng" đã sửa trong `layout_spec.py` (~dòng 370) — test
   chưa chạy được vì Postgres :5433 down (pytest cần test DB).
 - Branch: 24/24 branch đều đã merge vào master → dọn được, không mất việc.
+
+## Measured (2026-11-04, bench vLLM)
+- `jhandf/img2text-bench-vllm` (T4, ảnh 31 regions): **native 49,2–50,0 s/ảnh** vs
+  **vLLM backend 3,26–3,33 s/ảnh = ~15×**; nạp pipeline 34,2 s vs 11,9 s; vLLM cold start 180 s.
+- Suy ra: **6 phút/trang của production không phải chi phí VLM** (VLM native ~50 s) → ~85% ở
+  venv bootstrap / nạp model / preprocess / rembg / spawn kernel. Chưa đo từng phần.
+- `deploy/kaggle/bench/` = bench tách rời, push bằng `docker exec deploy-server-1 python /tmp/bench/push_bench.py /tmp/bench`.
+- T4 (CC 7.5) chạy được vLLM dù docs PaddleOCR khuyến cáo không nên; 3 lỗi cần fix:
+  paddle ở venv riêng (không phá torch), `--served-model-name` nhiều alias,
+  `--trust-request-mm-kwargs`, `--dtype float16`.
+- 2026-11-04 · `jhandf/img2text-bench-stages` (T4, PDF 3 trang 2117×1900): **pip paddle 177,1 s**,
+  bootstrap tổng **187,65 s**, load model **24,75 s**, import paddleocr 8,91 s,
+  predict **54,6 / 52,9 / 53,3 s/trang**, preprocess cv2 **0,8 s/trang**, rasterize 2,4 s/3 trang.
+  → cold start ~222 s/session; VLM chỉ ~19% job đầu; cv2 KHÔNG phải nút cổ chai (đính chính).
+- 2026-11-04 · `jhandf/img2text-bench-crops` (T4): **rembg.remove ≈ 25 s/crop, không phụ thuộc kích
+  thước** (256/512/1024 đều ~25 s) vì chạy CPU (`rembg[cpu]`, u2net resize 320²);
+  `new_session()` **110,29 s** khi chưa cache u2net.onnx; fitz clip 0,06–0,27 s/crop.
+  `kernel-session-metadata.json` có `dataset_sources: []` → session mode KHÔNG có cache u2net.
+- 2026-11-04 · push → COMPLETE = 444 s với compute 409 s ⇒ **overhead Kaggle chỉ ~35 s**
+  (bác bỏ giả thuyết spawn kernel 6 phút).
+- 2026-11-04 · cold start session mode ≈ **321 s** (pip 177 + import 9 + load model 25 + u2net 110),
+  chưa tính 53 s/trang VLM và 25 s/image block rembg.
+- 2026-11-04 · `jhandf/img2text-bench-deps` (mount wheelbuild-env, 139 file): wheelhouse install
+  **811,39 s** vs pip mạng **1063,74 s** (−24%); cùng lệnh pip mạng đo ở #stages chỉ **177 s**
+  ⇒ **dao động 6×**. `import paddleocr` từ venv wheelhouse 11,5 s.
+- 2026-11-04 · u2net: copy 176 MB từ `/kaggle/input` rồi `new_session()` = **174,95 s**,
+  tải từ mạng = **94,17 s** ⇒ **cache trong dataset chậm hơn tải** (đính chính).
+- 2026-11-04 · rembg: **cả trang 1524×1368 = 31,70 s** vs **3 vùng 456 px = 87,99 s** (2,8×).
+  Production đang rembg từng image block (`extract_crops`), không phải cả trang.
+- 2026-11-04 · rembg luôn resize input về **320×320** rồi phóng mask về kích thước input
+  (`rembg/sessions/u2net.py:32,45`) ⇒ mask-px/ảnh-px: từng vùng 456px = 0,70 · cả trang 1524px = 0,21
+  (thô hơn 3,3×). RGB không đổi ⇒ không vỡ ảnh, chỉ răng cưa biên alpha.
+- 2026-11-04 · Chọn dataset vì **không phụ thuộc Internet**, không vì tốc độ (811 vs 1064 s).
+  Chưa đo: đóng gói `venv.tar.zst` 1 file trong dataset để né FUSE 139 file.
+- 2026-11-04 · `jhandf/img2text-bench-parallel`: song song (pip paddle ∥ rasterize+preprocess+u2net+rembg
+  cả trang) → **tổng 280,97 s** vs tuần tự 432,21 s = **1,54×**, tiết kiệm **151 s**;
+  stage-1 173,39 s ẩn hoàn toàn trong pip 186,10 s. `uv` **có sẵn** trong Kaggle image (bỏ pip uv).
+- 2026-11-04 · Kaggle cho **2× T4** (`n_gpu=2`) nhưng session kernel chỉ 1 loop/1 claim → GPU #2 idle.
+- 2026-11-04 · Tắt Kaggle orchestration ở **dev**: comment `KAGGLE_KERNEL_REF` trong
+  `deploy/.env.dev:26` (feature self-disable khi kernel_ref rỗng) → `docker compose -f
+  docker-compose.dev.yml up -d --force-recreate server`. Verify: `printenv KAGGLE_KERNEL_REF` → unset,
+  `docker logs img2text-dev-server-1 | grep -ci kaggle` → **0** (trước đó 60 lần/30 phút, warning
+  kaggle 2.2.4 lặp mỗi scheduler tick), `/healthz` 200. Bật lại = bỏ `#` ở dòng 26.
+- 2026-11-04 · `deploy-server-1` (prod) **có** `KAGGLE_KERNEL_REF` nhưng 0 dòng log kaggle →
+  chưa từng import kaggle (không có job queued). Sẽ tự gọi lại khi có job queued.
+- 2026-11-04 · **Đã implement + smoke PASS trên Kaggle** (`jhandf/img2text-bench-session-smoke`):
+  `install_parent_deps()` tách khỏi `bootstrap_venv` (uv có sẵn → bỏ `pip install uv`),
+  `_bootstrap_venv_packages` chạy trong thread ∥ `prewarm_rembg` (u2net), `page_rgba()`
+  (rembg 1 lần/trang) + `extract_crops(rgba_pages=…)` cắt RGBA theo bbox.
+  Số đo code thật: parent deps 39,25 s · song song 251,5 s (0 error) · page_rgba 29,36 s
+  (RGBA 1524×1368) · **extract_crops 0,268 s** (trước ~25 s/vùng) · crop 914×820 RGBA alpha 0–255.
+  Test: `server/tests` **961 passed** (thêm 4 test: rgba cut, page_rgba None, ensure_uv skip, session cache).
+  CHƯA verify: session loop e2e với API thật (claim → job → upload).

@@ -193,3 +193,77 @@ def test_extract_crops_pixmap_144dpi(tmp_path):
     img = Image.open(io.BytesIO(got["p1_b0"]))
     clip_w_pt = (60 - 10) * 2.0  # bbox × scale = 100pt
     assert img.width >= clip_w_pt * 1.5, f"pix.width={img.width} < {clip_w_pt*1.5}"
+
+
+# --- 2026-11-04: rembg 1 lần/trang (rgba_pages) + session prewarm ----------
+
+def test_extract_crops_uses_rgba_page_without_calling_rembg(tmp_path):
+    """rgba_pages có trang → cắt từ ảnh RGBA 2xpt, KHÔNG gọi rembg lần nữa."""
+    import io
+
+    from PIL import Image
+
+    pdf = tmp_path / "doc.pdf"
+    pdf.write_bytes(_pdf_2pages())
+    rgba = Image.new("RGBA", (1191, 1684), (255, 0, 0, 0))  # 2x A4 pt
+    buf = io.BytesIO()
+    rgba.save(buf, "PNG")
+
+    def _boom(_png):
+        raise AssertionError("rembg không được gọi khi đã có rgba_pages")
+
+    got = kb.extract_crops(
+        str(pdf),
+        _pages_out(_pt_bbox(50, 60, 150, 160), _pt_bbox(10, 10, 190, 290)),
+        remove=_boom,
+        rgba_pages={1: buf.getvalue()},
+    )
+    # trang 2 không có rgba → rơi về đường rembg từng vùng (stub raise)
+    assert "p1_b1" in got
+    assert "p2_b0" not in got
+    cut = Image.open(io.BytesIO(got["p1_b1"]))
+    assert cut.mode == "RGBA"
+    # 100pt × 2 (Matrix(2,2)) ± 1px do làm tròn px->pt->px
+    assert abs(cut.size[0] - 200) <= 2 and abs(cut.size[1] - 200) <= 2
+
+
+def test_page_rgba_returns_none_on_broken_input(tmp_path):
+    """Input hỏng → None (không raise) để caller giữ đường rembg từng vùng."""
+    bad = tmp_path / "bad.pdf"
+    bad.write_bytes(b"not a pdf")
+    assert kb.page_rgba(str(bad), 1) is None
+
+
+def test_ensure_uv_skips_pip_when_uv_present(monkeypatch):
+    """uv có sẵn trong image Kaggle (đo 2026-11-04) → không pip install."""
+    from types import SimpleNamespace
+
+    import shutil as _sh
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(_sh, "which", lambda name: "/usr/local/bin/uv")
+    monkeypatch.setattr(
+        kb.subprocess, "run",
+        lambda cmd, **kw: calls.append(list(cmd)) or SimpleNamespace(returncode=0),
+    )
+    labels: list[str] = []
+    kb.ensure_uv(labels.append)
+    assert calls == []  # không cài uv
+    assert labels == ["uv"]
+
+
+def test_get_rembg_session_cached(monkeypatch):
+    """u2net session tạo 1 lần/session (không tải model mỗi job)."""
+    import img2text_session as sess
+
+    made: list[int] = []
+
+    def _fake():
+        made.append(1)
+        return "SESSION"
+
+    monkeypatch.setattr(sess.kb, "rembg_session", _fake)
+    monkeypatch.setattr(sess, "_rembg_session", None)
+    assert sess.get_rembg_session() == "SESSION"
+    assert sess.get_rembg_session() == "SESSION"
+    assert made == [1]
