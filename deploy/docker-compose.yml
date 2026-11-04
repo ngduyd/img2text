@@ -40,7 +40,9 @@ services:
   nginx:
     image: nginx:alpine
     ports:
-      - "80:80"
+      # WEB_PORT: host port override. Mặc định 80; Docker rootless (hoặc host đã dùng 80)
+      # thì đặt WEB_PORT=18080 trong deploy/.env — không phải sửa file này.
+      - "${WEB_PORT:-80}:80"
     # busybox wget in nginx:alpine (P0 spec 2026-10-15)
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/healthz"]
