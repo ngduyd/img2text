@@ -8,8 +8,9 @@ is "extracting" (both HTTP claim and batch spawn set it; "running" gone).
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, case, func, or_, select, update
 
+from app.core.config import settings
 from app.core.models import Job
 from app.services import job_results
 
@@ -24,7 +25,11 @@ async def reap_leases(session) -> int:
 
     Covers both claim paths: HTTP-claimed (worker_token_hash set) and batch
     (kaggle_ref set); a queued job never carries a lease, untouched.
+
+    Spec 2026-11-04 (B3): MỘT UPDATE — attempts+1 và CASE quyết định
+    queued vs failed khi chạm job_max_attempts (job độc không lặp vô hạn).
     """
+    exhausted = Job.attempts + 1 >= settings.job_max_attempts
     result = await session.execute(
         update(Job)
         .where(
@@ -32,13 +37,26 @@ async def reap_leases(session) -> int:
             Job.lease_expires_at < func.now(),
         )
         .values(
-            status="queued",
+            attempts=Job.attempts + 1,
+            status=case((exhausted, "failed"), else_="queued"),
+            error=case(
+                (
+                    exhausted,
+                    "Worker không phản hồi (hết hạn lease) — bấm Thử lại để "
+                    f"chạy lại (tối đa {settings.job_max_attempts} lần).",
+                ),
+                else_=Job.error,
+            ),
             worker_token_hash=None,
             lease_expires_at=None,
             started_at=None,
         )
+        .execution_options(synchronize_session=False)
     )
     await session.commit()
+    # Core UPDATE + CASE: ORM không tự cập nhật object trong identity map →
+    # expire để lần đọc sau thấy giá trị thật (attempts/status/error).
+    session.expire_all()
     if result.rowcount:
         logger.info("reap-leases: requeued %d expired lease(s)", result.rowcount)
     return result.rowcount

@@ -65,6 +65,13 @@ class User(Base):
     upload_byte_limit: Mapped[int | None] = mapped_column(BigInteger, default=211812352)
     auto_purge: Mapped[bool | None] = mapped_column(Boolean, default=True)
     purge_notice_seen: Mapped[bool | None] = mapped_column(Boolean, default=False)
+    # ToS acceptance (spec 2026-11-04, A4): NULL = user cũ chưa đồng ý bản nào.
+    # ALTER-only migration (create_all never ALTERs):
+    #   docs/migrations/2026-11-04_tos_accept.sql
+    tos_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    tos_version: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -302,6 +309,12 @@ class Job(Base):
     )
     lease_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    # Spec 2026-11-04 (B3): số lần reap requeue; chạm job_max_attempts →
+    # failed thay vì queued (job độc không lặp vô hạn). ALTER-only migration:
+    #   docs/migrations/2026-11-04_job_attempts.sql
+    attempts: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

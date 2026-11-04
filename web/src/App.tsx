@@ -19,6 +19,7 @@ import ExtractionPage from "./pages/ExtractionPage";
 import Jobs from "./pages/Jobs";
 import Storage from "./pages/Storage";
 import Landing from "./pages/Landing";
+import Legal from "./pages/Legal";
 import Signin from "./pages/Signin";
 import Profile from "./pages/Profile";
 import Signup from "./pages/Signup";
@@ -384,6 +385,8 @@ export default function App() {
             <Route path="/profile" element={<Profile />} />
             {/* Lane B2 (wave-5 S6): trang góp ý — link ở footer do Lane B1 thêm. */}
             <Route path="/feedback" element={<Feedback />} />
+            {/* Spec 2026-11-04 (A1): /legal — public, không cần đăng nhập. */}
+            <Route path="/legal" element={<Legal />} />
             <Route path="/" element={<Landing />} />
             <Route path="/landing" element={<Navigate to="/" replace />} />
             <Route path="/jobs" element={<Jobs />} />

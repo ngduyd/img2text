@@ -103,6 +103,16 @@ class Settings(BaseSettings):
     # default = kernel hard cap (deploy/kaggle MAX_PDF_PAGES=100). Web upload
     # UI cap (25) thuộc lane web — server chỉ expose config này.
     max_pages: int = 100
+    # Spec 2026-11-04: ToS version hiện hành ghi vào users.tos_version khi
+    # register (A4) + lease động theo số trang (B2) + cap lần reap (B3).
+    tos_version: str = "2026-11-04"
+    lease_base_minutes: int = 20
+    lease_per_page_minutes: int = 4
+    lease_cap_minutes: int = 90
+    # B1": lease gia hạn mỗi lần worker poll GET /api/jobs/{id}/status
+    # (sai số phát hiện worker chết = giá trị này).
+    job_page_lease_minutes: int = 10
+    job_max_attempts: int = 3
     kaggle_stage_src: str = "deploy/kaggle"
     kaggle_stage_dir: str = "/tmp/img2text-kaggle-kernel"
     # Plan K2/K5 orchestration mode (spec session worker 2026-10-16 T9a):

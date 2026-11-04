@@ -56,7 +56,7 @@ async def test_patch_ocr_disable_keeps_queued_job_claimable(
     """
     c = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
     email = f"pin-{uuid4().hex}@test.io"
-    r = await c.post("/api/auth/register", json={"email": email, "password": "secret123"})
+    r = await c.post("/api/auth/register", json={"accept_tos": True, "email": email, "password": "secret123"})
     assert r.status_code == 201, r.text
     await grant_ocr(db_session, email)
     r = await c.post("/api/auth/login", json={"email": email, "password": "secret123"})
@@ -136,7 +136,7 @@ async def test_admin_revoke_sessions(admin_client, app):
     """P2 #17: admin revoke sessions của target user → 204 + refresh token chết."""
     c = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
     r = await c.post(
-        "/api/auth/register", json={"email": "revoke-target@x.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "revoke-target@x.io", "password": "secret123"}
     )
     assert r.status_code == 201, r.text
     r = await c.post("/api/auth/login", json={"email": "revoke-target@x.io", "password": "secret123"})

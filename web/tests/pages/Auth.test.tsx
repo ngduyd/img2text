@@ -89,6 +89,8 @@ it("register → tự login (register không set cookie) → route theo is_verif
   renderWithRouter(<Signup />);
   await userEvent.type(screen.getByTestId("input-email"), "u@x.io");
   await userEvent.type(screen.getByTestId("input-password"), "secret123");
+  // Spec 2026-11-04 (A2): nút register khoá tới khi tick đồng ý ToS.
+  await userEvent.click(screen.getByTestId("input-tos"));
   await userEvent.click(screen.getByTestId("btn-register"));
   await waitFor(() => expect(api.login).toHaveBeenCalledWith("u@x.io", "secret123"));
   // Chưa verify → trang chủ "/" (route guard VerifyGating sẽ mở modal verify).
@@ -105,6 +107,7 @@ it("register → login: đã verify → /jobs (như login thường)", async () 
     is_verified: true,
   } as User);
   renderWithRouter(<Signup />);
+  await userEvent.click(screen.getByTestId("input-tos"));
   await userEvent.click(screen.getByTestId("btn-register"));
   await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs"));
 });

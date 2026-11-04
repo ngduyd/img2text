@@ -9,7 +9,7 @@ from app.core.middleware import prune_request_logs
 
 
 async def test_request_logged(client, app, db_session):
-    await client.post("/api/auth/register", json={"email": "m@x.io", "password": "secret123"})
+    await client.post("/api/auth/register", json={"accept_tos": True, "email": "m@x.io", "password": "secret123"})
     from app.core.middleware import flush_request_logs
     await flush_request_logs(app)  # P2 #18: buffer → DB trước khi assert
     rows = (await db_session.execute(select(RequestLog))).scalars().all()
@@ -18,7 +18,7 @@ async def test_request_logged(client, app, db_session):
 
 async def test_request_log_resolves_authenticated_user(client, app, db_session):
     email, password = "auth@x.io", "secret123"
-    r = await client.post("/api/auth/register", json={"email": email, "password": password})
+    r = await client.post("/api/auth/register", json={"accept_tos": True, "email": email, "password": password})
     assert r.status_code == 201
     r = await client.post("/api/auth/login", json={"email": email, "password": password})
     assert r.status_code == 200

@@ -1,7 +1,7 @@
 """Task 4: refresh rotation, reuse detection, logout."""
 
 async def _register_login(client):
-    await client.post("/api/auth/register", json={"email":"r@x.io","password":"secret123"})
+    await client.post("/api/auth/register", json={"accept_tos": True, "email":"r@x.io","password":"secret123"})
     await client.post("/api/auth/login", json={"email":"r@x.io","password":"secret123"})
 
 async def test_refresh_rotates(client):

@@ -62,7 +62,7 @@ async def test_migration_backfills_and_drops_plaintext_column(client, db_session
         text("ALTER TABLE jobs ADD COLUMN IF NOT EXISTS worker_token TEXT")
     )
     r = await client.post(
-        "/api/auth/register", json={"email": "mig-hash@x.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "mig-hash@x.io", "password": "secret123"}
     )
     assert r.status_code == 201, r.text
     user_id = await db_session.scalar(

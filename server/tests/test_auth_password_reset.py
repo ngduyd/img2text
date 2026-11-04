@@ -40,7 +40,7 @@ async def _register(client, monkeypatch, email="r@x.io"):
     sent, fake = _capture()
     monkeypatch.setattr("app.services.mailer.send_email", fake)
     r = await client.post(
-        "/api/auth/register", json={"email": email, "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": email, "password": "secret123"}
     )
     assert r.status_code == 201
     await _flush()  # outbox → 2 email (welcome + verify_code)

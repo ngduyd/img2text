@@ -27,11 +27,17 @@ it("renders copyright, mailto, external site link, and /feedback link (en defaul
   expect(site).toHaveAttribute("target", "_blank");
   expect(site).toHaveAttribute("rel", expect.stringContaining("noopener"));
   expect(screen.getByRole("link", { name: "Feedback" })).toHaveAttribute("href", "/feedback");
+  // Spec 2026-11-04 (A1): /legal public từ footer.
+  expect(screen.getByRole("link", { name: "Terms of Service" })).toHaveAttribute(
+    "href",
+    "/legal",
+  );
 });
 
 it("renders VI copy ('Góp ý') when stored lang is vi", () => {
   localStorage.setItem("lang", "vi");
   renderFooter();
   expect(screen.getByRole("link", { name: "Góp ý" })).toHaveAttribute("href", "/feedback");
+  expect(screen.getByRole("link", { name: "Điều khoản" })).toHaveAttribute("href", "/legal");
   expect(screen.getByText("© 2026 Nguyen Duy")).toBeInTheDocument();
 });

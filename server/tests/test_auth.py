@@ -92,7 +92,7 @@ async def test_resend_limit_still_429_before_send(client, db_session, monkeypatc
 
 async def test_register_rejects_password_over_72_bytes(client):
     resp = await client.post(
-        "/api/auth/register", json={"email": "a@b.c", "password": "x" * 73}
+        "/api/auth/register", json={"accept_tos": True, "email": "a@b.c", "password": "x" * 73}
     )
     assert resp.status_code == 400
     assert resp.json() == {"code": "password_too_long", "max_bytes": 72}

@@ -65,7 +65,7 @@ async def test_register_smtp_down_still_201_then_refund(client, db_session, smtp
     (refund quota) → resend 202, KHÔNG 429."""
     email = "q1@x.io"
     r = await client.post(
-        "/api/auth/register", json={"email": email, "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": email, "password": "secret123"}
     )
     assert r.status_code == 201 and r.json() == {"status": "ok"}
     rows = await _rows(db_session, email)
@@ -93,7 +93,7 @@ async def test_forgot_smtp_down_202_queued(client, db_session, smtp_down):
     email = "q2@x.io"
     assert (
         await client.post(
-            "/api/auth/register", json={"email": email, "password": "secret123"}
+            "/api/auth/register", json={"accept_tos": True, "email": email, "password": "secret123"}
         )
     ).status_code == 201
     r = await client.post("/api/auth/password/forgot", json={"email": email})

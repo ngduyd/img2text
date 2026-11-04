@@ -18,6 +18,9 @@ export default function SiteFooter() {
           <a href="https://ngduyd.id.vn" target="_blank" rel="noopener noreferrer" className={LINK}>
             ngduyd.id.vn
           </a>
+          <Link to="/legal" className={LINK}>
+            {t("footer.legal")}
+          </Link>
           <Link to="/feedback" className={LINK}>
             {t("footer.feedback")}
           </Link>

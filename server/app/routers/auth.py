@@ -109,6 +109,11 @@ class Credentials(_EmailIn):
     email: str = Field(pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     password: str = Field(min_length=8)
 
+class RegisterBody(Credentials):
+    """Spec 2026-11-04 (A3): ToS bắt buộc ở register. Tách khỏi Credentials
+    (login dùng chung — không được đòi accept_tos ở /login)."""
+    accept_tos: bool = False
+
 
 class UserOut(BaseModel):
     id: int
@@ -134,7 +139,7 @@ def _user_out(user: User) -> UserOut:
 
 @router.post("/register", status_code=201)
 async def register(
-    creds: Credentials,
+    creds: RegisterBody,
     session: AsyncSession = Depends(get_session),
     _: None = Depends(rate_limit_auth),
 ) -> dict:
@@ -149,6 +154,18 @@ async def register(
     queue: route không gửi inline — SMTP fail → row retry/backoff trong
     scheduler, không còn 503 email_unavailable; duplicate vẫn 201.
     #11: password >72 byte → 400 password_too_long TRƯỚC khi hash."""
+    # Spec 2026-11-04 (A3/A4): thiếu/false accept_tos → 422 NGAY ĐẦU HÀM,
+    # trước mọi truy vấn email → giữ nguyên anti-oracle (không lộ email tồn tại).
+    if not creds.accept_tos:
+        # {code} + detail: code để client map i18n (errors.tos_required, cùng
+        # pattern password_too_long), detail làm fallback nếu key chưa có.
+        return JSONResponse(
+            status_code=422,
+            content={
+                "code": "tos_required",
+                "detail": "Cần đồng ý điều khoản sử dụng để đăng ký.",
+            },
+        )
     if password_too_long(creds.password):
         return JSONResponse(
             status_code=400,
@@ -158,6 +175,9 @@ async def register(
     if existing is not None:
         return {"status": "ok"}
     user = User(email=creds.email, password_hash=hash_password(creds.password))
+    # Spec 2026-11-04 (A4): ghi nhận ToS đã đồng ý (version = settings hiện hành).
+    user.tos_accepted_at = datetime.now(timezone.utc)
+    user.tos_version = settings.tos_version
     session.add(user)
     await session.commit()  # id ổn định cho email_sends + code hash
     code = generate_email_code()

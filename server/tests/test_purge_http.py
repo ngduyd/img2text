@@ -48,7 +48,7 @@ async def test_purge_foreign_403(auth_client, client, db_session, app):
     jid = await _done_job_with_upload(auth_client, app, db_session)
     # user khác login
     r = await client.post(
-        "/api/auth/register", json={"email": "other@test.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "other@test.io", "password": "secret123"}
     )
     assert r.status_code == 201
     r = await client.post(

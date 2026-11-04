@@ -22,7 +22,7 @@ async def _register_login(app, db_session, prefix: str):
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     )
     r = await c.post(
-        "/api/auth/register", json={"email": email, "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": email, "password": "secret123"}
     )
     assert r.status_code == 201, r.text
     await grant_ocr(db_session, email)

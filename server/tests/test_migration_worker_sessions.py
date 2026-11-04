@@ -53,7 +53,7 @@ async def test_migration_idempotent_and_link(client, db_session):
     )
     r = await client.post(
         "/api/auth/register",
-        json={"email": "ws-mig@x.io", "password": "secret123"},
+        json={"accept_tos": True, "email": "ws-mig@x.io", "password": "secret123"},
     )
     assert r.status_code == 201, r.text
     user_id = await db_session.scalar(

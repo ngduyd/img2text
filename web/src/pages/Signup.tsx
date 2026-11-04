@@ -15,6 +15,7 @@ export default function Register() {
   const queryClient = useQueryClient();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [acceptTos, setAcceptTos] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -23,7 +24,7 @@ export default function Register() {
     setError(null);
     setLoading(true);
     try {
-      await api.register(email, password);
+      await api.register(email, password, true);
       // S5: register KHÔNG set cookie → tự login lấy session.
       const user = await api.login(email, password);
       queryClient.setQueryData(["me"], user);
@@ -46,7 +47,10 @@ export default function Register() {
       footer={
         <>
           {t("auth.signup.haveAccount")}{" "}
-          <Link to="/signin" className="text-accent-text hover:underline">
+          <Link
+            to="/signin"
+            className="inline-flex min-h-6 items-center text-accent-text hover:underline"
+          >
             {t("nav.signIn")}
           </Link>
         </>
@@ -69,12 +73,37 @@ export default function Register() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+        {/* Spec 2026-11-04 (A2): bắt buộc đồng ý ToS — nút register khoá tới khi tick. */}
+        <label className="inline-flex min-h-6 cursor-pointer items-start gap-2 text-sm text-muted">
+          <input
+            type="checkbox"
+            data-testid="input-tos"
+            checked={acceptTos}
+            onChange={(e) => setAcceptTos(e.target.checked)}
+            className="mt-0.5 h-6 min-h-6 w-6 min-w-6 shrink-0 accent-accent"
+          />
+          <span>
+            {t("auth.signup.tosPrefix")}{" "}
+            <Link
+              to="/legal"
+              className="inline-flex min-h-6 items-center text-accent-text hover:underline"
+            >
+              {t("auth.signup.tosLink")}
+            </Link>
+          </span>
+        </label>
         {error && (
           <p data-testid="error-detail" role="alert" className="text-sm text-error">
             {error}
           </p>
         )}
-        <Button testid="btn-register" type="submit" loading={loading} className="w-full">
+        <Button
+          testid="btn-register"
+          type="submit"
+          loading={loading}
+          disabled={!acceptTos}
+          className="w-full"
+        >
           {t("nav.signUp")}
         </Button>
       </form>
