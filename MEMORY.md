@@ -168,3 +168,14 @@
   (RGBA 1524×1368) · **extract_crops 0,268 s** (trước ~25 s/vùng) · crop 914×820 RGBA alpha 0–255.
   Test: `server/tests` **961 passed** (thêm 4 test: rgba cut, page_rgba None, ensure_uv skip, session cache).
   CHƯA verify: session loop e2e với API thật (claim → job → upload).
+- 2026-11-04 · **E2E session kernel PASS** (job 84, PDF tự dựng có text + ảnh nhúng): done 149,65 s,
+  34 regions, exports md-layout 7.726B + docx-layout 41.030B. Log kernel xác nhận
+  `rembg u2net sẵn sàng` xuất hiện TRƯỚC job (prewarm chạy trong lúc cài venv) và
+  `rembg cả trang 1 xong`. Các job PNG 70-byte (test cũ 2026-11-03) fail
+  `broken data stream` — input hỏng sẵn, không phải regression; PDF trắng (0 region) cũng OK.
+- 2026-11-04 · Bug tự gây ra khi làm prewarm: `prewarm_rembg` gọi `kb.VENV_PY` khi venv chưa tồn tại
+  → `FileNotFoundError` → bỏ luôn prewarm ở run 255. Đã sửa (chỉ dùng kernel python), run 256 xác nhận.
+- 2026-11-04 · **Commit `9e262e7`** `perf(worker): cold start song song + rembg 1 lần/trang`
+  (kernel batch/session + 4 test + `deploy/kaggle/bench/` + MEMORY). E2E gate đã pass trước khi commit.
+- 2026-11-04 · Dọn sau e2e: comment lại `KAGGLE_KERNEL_REF` trong `deploy/.env.dev`, recreate dev
+  server (kaggle unset, `:8010` healthz 200), kill cloudflared tunnel.
