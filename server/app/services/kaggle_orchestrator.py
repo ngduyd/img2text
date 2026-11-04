@@ -62,8 +62,21 @@ logger = logging.getLogger(__name__)
 # _last_spawn.
 _quota_low = False
 
+# Kill switch (K1): admin bơm drain → claim kế tiếp trả server_flags.quota_low=true →
+# kernel thoát 0 (img2text_session.py:433). Là **drain** không phải abort: job đang
+# chạy vẫn chạy xong trang hiện tại, chỉ không nhận job mới. In-process flag cùng
+# single-worker assumption với _quota_low; DB row `kaggle_drain` giữ trạng thái qua restart.
+_drain = False
+
+def set_drain(on: bool) -> None:
+    global _drain
+    _drain = on
+
+def drain_on() -> bool:
+    return _drain
+
 def session_quota_low() -> bool:
-    return _quota_low
+    return _quota_low or _drain
 
 DATASET_SLUG = "img2text-worker-files"
 INPUT_SLUG = "img2text-input"  # batch input dataset (run_one.py K4, shared slug)
@@ -1298,6 +1311,13 @@ async def ensure_worker(session_factory) -> bool:
         api = _api()  # inside try: constructor/auth errors must also return False (never-raise contract)
         if api is None:
             return False
+        # Adopt drain flag từ DB (restart không mất kill switch).
+        set_drain(
+            str(
+                await get_runtime_setting(session_factory, "kaggle_drain", "")
+            ).lower()
+            in ("1", "true", "on")
+        )
         mode = await get_runtime_setting(
             session_factory, "kaggle_mode", settings.kaggle_mode
         )

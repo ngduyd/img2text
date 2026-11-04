@@ -488,3 +488,19 @@ async def test_ensure_worker_reads_db_min_queue_override(db_session, monkeypatch
     # reached the queue gate (status probed) but never pushed
     assert len(stub.status_calls) == 1
     assert stub.pushed == []
+
+
+async def test_kaggle_drain_toggle_drives_claim_flag(admin_client):
+    """K1: drain bật → session claim trả quota_low=true → kernel tự thoát 0."""
+    from app.services import kaggle_orchestrator as orch
+
+    orch.set_drain(False)
+    r = await admin_client.post("/api/admin/kaggle/drain", json={"drain": True})
+    assert r.status_code == 200
+    assert r.json()["quota_low"] is True
+    assert orch.session_quota_low() is True  # claim path đọc đúng flag
+    assert (await admin_client.get("/api/admin/kaggle/drain")).json()["drain"] is True
+
+    r = await admin_client.post("/api/admin/kaggle/drain", json={"drain": False})
+    assert r.json()["quota_low"] is False
+    assert orch.session_quota_low() is False

@@ -30,6 +30,7 @@ from app.core.models import (
     WorkerHeartbeat,
 )
 from app.routers.auth import revoke_all_refresh
+from app.services import kaggle_orchestrator
 from app.services.kaggle_quota import kaggle_quota_payload
 from app.services.purge import purge_due_jobs, purge_retention_days
 from app.services.runtime_settings import (
@@ -644,6 +645,43 @@ async def put_settings(
     if body.scheduler_interval_seconds is not None:
         _reschedule_reap(request.app, body.scheduler_interval_seconds)
     return await _runtime_settings(request.app.state.session_factory)
+
+class KaggleDrainPut(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    drain: bool
+
+@router.post("/kaggle/drain")
+async def post_kaggle_drain(
+    body: KaggleDrainPut,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    _: User = Depends(_admin_user),
+) -> dict:
+    """K1 kill switch: bơm/tắt drain cho session Kaggle đang chạy.
+
+    drain=True → claim kế tiếp trả `server_flags.quota_low=true` → kernel thoát 0
+    (img2text_session.py:433). Là **drain**, không abort job đang chạy: job đó vẫn
+    xong, chỉ không nhận job mới. Persist DB row `kaggle_drain` để sống qua restart
+    (orchestrator adopt trong ensure_worker).
+    """
+    value = "1" if body.drain else "0"
+    row = await session.get(Setting, "kaggle_drain")
+    if row is None:
+        session.add(Setting(key="kaggle_drain", value=value))
+    else:
+        row.value = value
+    await session.commit()
+    # In-process ngay (không đợi tick 60s) — single-worker design như _quota_low.
+    kaggle_orchestrator.set_drain(body.drain)
+    return {"drain": body.drain, "quota_low": kaggle_orchestrator.session_quota_low()}
+
+@router.get("/kaggle/drain")
+async def get_kaggle_drain(_: User = Depends(_admin_user)) -> dict:
+    """Trạng thái kill switch — đọc flag in-process (nguồn sự thật runtime)."""
+    return {
+        "drain": kaggle_orchestrator.drain_on(),
+        "quota_low": kaggle_orchestrator.session_quota_low(),
+    }
 
 @router.delete("/settings/{key}")
 async def delete_setting(
