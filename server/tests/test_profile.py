@@ -13,7 +13,7 @@ def _email() -> str:
 
 async def _register_login(client, email: str, password: str = OLD_PW) -> dict:
     r = await client.post(
-        "/api/auth/register", json={"email": email, "password": password}
+        "/api/auth/register", json={"accept_tos": True, "email": email, "password": password}
     )
     assert r.status_code == 201, r.text
     r = await client.post(

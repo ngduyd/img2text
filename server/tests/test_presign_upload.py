@@ -140,7 +140,7 @@ async def test_presign_rejects_invalid_mode(auth_client):
 
 async def test_presign_requires_ocr_enabled(client):
     await client.post(
-        "/api/auth/register", json={"email": "e@x.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "e@x.io", "password": "secret123"}
     )
     # P1-1: register không cookie → login để test ocr_enabled gate
     await client.post(

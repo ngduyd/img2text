@@ -288,7 +288,7 @@ async def auth_client(client, db_session):
     """Ruling R10: fresh registered+logged-in user, ocr_enabled granted."""
     email = f"u-{uuid4().hex}@test.io"
     r = await client.post(
-        "/api/auth/register", json={"email": email, "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": email, "password": "secret123"}
     )
     assert r.status_code == 201, r.text
     await grant_ocr(db_session, email)
@@ -308,7 +308,7 @@ async def admin_client(client, db_session):
     await bootstrap_admin(db_session, "admin@test.local", "adminpass1")
     r = await client.post(
         "/api/auth/register",
-        json={"email": "admin@test.local", "password": "adminpass1"},
+        json={"accept_tos": True, "email": "admin@test.local", "password": "adminpass1"},
     )
     assert r.status_code in (201, 409), r.text
     r = await client.post(

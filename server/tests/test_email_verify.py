@@ -143,7 +143,7 @@ async def test_register_sends_welcome_and_verify_code(client, monkeypatch, db_se
     sent, fake = _capture()
     monkeypatch.setattr("app.services.mailer.send_email", fake)
     r = await client.post(
-        "/api/auth/register", json={"email": "new@x.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "new@x.io", "password": "secret123"}
     )
     assert r.status_code == 201
     assert r.json() == {"status": "ok"}  # P1-1: body bằng nhau 2 case
@@ -175,14 +175,14 @@ async def test_register_duplicate_identical_body(client, monkeypatch):
     sent, fake = _capture()
     monkeypatch.setattr("app.services.mailer.send_email", fake)
     r1 = await client.post(
-        "/api/auth/register", json={"email": "dup@x.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "dup@x.io", "password": "secret123"}
     )
     assert r1.status_code == 201 and r1.json() == {"status": "ok"}
     assert "set-cookie" not in r1.headers
     await _flush()
     n_first = len(sent)
     r2 = await client.post(
-        "/api/auth/register", json={"email": "dup@x.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "dup@x.io", "password": "secret123"}
     )
     assert r2.status_code == 201 and r2.json() == {"status": "ok"}
     assert "set-cookie" not in r2.headers
@@ -199,7 +199,7 @@ async def test_register_smtp_down_still_201_queued(client, monkeypatch, db_sessi
 
     monkeypatch.setattr("app.services.mailer._send_sync", boom)
     r = await client.post(
-        "/api/auth/register", json={"email": "down@x.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "down@x.io", "password": "secret123"}
     )
     assert r.status_code == 201 and r.json() == {"status": "ok"}
     kinds = (
@@ -213,7 +213,7 @@ async def test_register_smtp_down_still_201_queued(client, monkeypatch, db_sessi
     ]
     # user đã commit TRƯỚC khi gửi → duplicate register vẫn 201 (body cũ)
     dup = await client.post(
-        "/api/auth/register", json={"email": "down@x.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "down@x.io", "password": "secret123"}
     )
     assert dup.status_code == 201 and dup.json() == {"status": "ok"}
 
@@ -225,7 +225,7 @@ async def _register_with_code(client, monkeypatch, email="v@x.io"):
     sent, fake = _capture()
     monkeypatch.setattr("app.services.mailer.send_email", fake)
     r = await client.post(
-        "/api/auth/register", json={"email": email, "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": email, "password": "secret123"}
     )
     assert r.status_code == 201
     await _flush()  # outbox: route chỉ enqueue
@@ -294,7 +294,7 @@ async def test_resend_new_code_overwrites_old(client, monkeypatch, db_session):
     sent, fake = _capture()
     monkeypatch.setattr("app.services.mailer.send_email", fake)
     r = await client.post(
-        "/api/auth/register", json={"email": "rs@x.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "rs@x.io", "password": "secret123"}
     )
     assert r.status_code == 201
     await _flush()  # outbox: route chỉ enqueue

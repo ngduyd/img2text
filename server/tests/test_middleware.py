@@ -19,7 +19,7 @@ def gating_on(monkeypatch):
 
 async def test_email_gate_returns_503_on_db_error(app, client, gating_on, monkeypatch):
     r = await client.post(
-        "/api/auth/register", json={"email": "gdb@x.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "gdb@x.io", "password": "secret123"}
     )
     assert r.status_code == 201
     r = await client.post(

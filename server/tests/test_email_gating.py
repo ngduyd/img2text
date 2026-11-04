@@ -21,7 +21,7 @@ def gating_on(monkeypatch):
 
 async def test_unverified_403_on_gated_api(client, gating_on):
     r = await client.post(
-        "/api/auth/register", json={"email": "g1@x.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "g1@x.io", "password": "secret123"}
     )
     assert r.status_code == 201
     # P1-1: register không cookie → login để gate nhận diện user
@@ -36,7 +36,7 @@ async def test_unverified_403_on_gated_api(client, gating_on):
 
 async def test_gated_also_other_api(client, gating_on):
     await client.post(
-        "/api/auth/register", json={"email": "g2@x.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "g2@x.io", "password": "secret123"}
     )
     await client.post(
         "/api/auth/login", json={"email": "g2@x.io", "password": "secret123"}
@@ -69,7 +69,7 @@ async def test_verified_user_passes_gate(client, gating_on, db_session):
     from app.core.models import User
 
     await client.post(
-        "/api/auth/register", json={"email": "g4@x.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "g4@x.io", "password": "secret123"}
     )
     await client.post(
         "/api/auth/login", json={"email": "g4@x.io", "password": "secret123"}
@@ -92,7 +92,7 @@ async def test_gating_per_class_endpoints(client, gating_on):
     region_edit, admin, presign. /api/healthz không còn exempt (entry chết:
     route thật /healthz không prefix → bypass tự nhiên)."""
     await client.post(
-        "/api/auth/register", json={"email": "g6@x.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "g6@x.io", "password": "secret123"}
     )
     await client.post(
         "/api/auth/login", json={"email": "g6@x.io", "password": "secret123"}
@@ -110,7 +110,7 @@ async def test_gating_per_class_endpoints(client, gating_on):
 async def test_logout_and_refresh_exempt_for_unverified(client, gating_on):
     """P1-2: user chưa verify phải logout/refresh được để resend code."""
     await client.post(
-        "/api/auth/register", json={"email": "g7@x.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "g7@x.io", "password": "secret123"}
     )
     r = await client.post(
         "/api/auth/login", json={"email": "g7@x.io", "password": "secret123"}
@@ -132,7 +132,7 @@ async def test_exempt_match_strips_trailing_slash(client, gating_on):
 async def test_gating_off_in_test_env(client):
     """env=test (conftest) → middleware skip: register xong xài được ngay."""
     await client.post(
-        "/api/auth/register", json={"email": "g5@x.io", "password": "secret123"}
+        "/api/auth/register", json={"accept_tos": True, "email": "g5@x.io", "password": "secret123"}
     )
     await client.post(
         "/api/auth/login", json={"email": "g5@x.io", "password": "secret123"}

@@ -19,7 +19,7 @@ async def other_client(app, db_session):
     ) as c:
         email = f"other-{uuid4().hex}@test.io"
         r = await c.post(
-            "/api/auth/register", json={"email": email, "password": "secret123"}
+            "/api/auth/register", json={"accept_tos": True, "email": email, "password": "secret123"}
         )
         assert r.status_code == 201, r.text
         r = await c.post(

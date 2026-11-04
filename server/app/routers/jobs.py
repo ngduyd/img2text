@@ -93,7 +93,29 @@ CONTENT_TYPE_BY_EXT = {
 STORAGE_KEY_RE = re.compile(r"uploads/[0-9a-f]{64}\.(?:jpg|jpeg|png|webp|pdf|heic|heif|avif)")
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 PRESIGN_EXPIRES_SECONDS = 3600
-LEASE_MINUTES = 45
+# Spec 2026-11-04 (B2): lease co giãn theo số trang — 1 trang 24′, 9 trang 56′,
+# chạm trần lease_cap_minutes (90′). Worker poll status để gia hạn (B1″).
+def lease_minutes_for(page_count: int) -> int:
+    return min(
+        settings.lease_base_minutes
+        + settings.lease_per_page_minutes * max(page_count, 1),
+        settings.lease_cap_minutes,
+    )
+
+
+def extend_lease(job, now, minutes: int | None = None):
+    """Spec 2026-11-04 (B1″): poll/heartbeat GIA HẠN lease, không bao giờ rút ngắn.
+
+    Lease khởi tạo (lease_minutes_for) có thể LỚN hơn cửa sổ gia hạn
+    (job_page_lease_minutes) — vd job 1 trang = 24′ > 10′. Gán thẳng
+    `now + 10′` sẽ biến heartbeat thành hành vi làm job dễ bị reap hơn.
+    """
+    candidate = now + timedelta(
+        minutes=settings.job_page_lease_minutes if minutes is None else minutes
+    )
+    if job.lease_expires_at is None or candidate > job.lease_expires_at:
+        return candidate
+    return job.lease_expires_at
 ERROR_MAX_CHARS = 500
 ROTATE_ANGLES = {0, 90, 180, 270}
 
@@ -602,7 +624,7 @@ async def _next_session_job(
     now = _utcnow()
     job.status = "extracting"
     job.started_at = now
-    job.lease_expires_at = now + timedelta(seconds=settings.kaggle_timeout)
+    job.lease_expires_at = now + timedelta(minutes=lease_minutes_for(job.page_count))
     job.session_id = sid
     # T7 kernel cần input (spec bước 2: download + verify sha256) + spec
     # preprocess — claim response là nguồn duy nhất (không route đọc khác).
@@ -670,7 +692,7 @@ async def next_job(
     token = secrets.token_urlsafe(32)
     job.status = "extracting"
     job.started_at = now
-    job.lease_expires_at = now + timedelta(minutes=LEASE_MINUTES)
+    job.lease_expires_at = now + timedelta(minutes=lease_minutes_for(job.page_count))
     job.worker_token_hash = hash_worker_token(token)  # P2 #16: hash-at-rest
     # presign BEFORE commit: storage_key is known pre-commit; a presign
     # failure must leave the job queued, not extracting with an
@@ -1568,7 +1590,9 @@ async def heartbeat_job(
     # extend the NEW claim's lease against a stale read). Uniform 409 detail
     # with /result and /fail; new lease value computed in Python from the
     # same `now` used in the WHERE.
-    new_lease = now + timedelta(minutes=LEASE_MINUTES)
+    # Spec 2026-11-04 (B4): loop-mode heartbeat dùng chung cửa sổ lease với
+    # status poll (job_page_lease_minutes) — một công thức, không hai mức.
+    new_lease = extend_lease(job, now, lease_minutes_for(job.page_count))
     rowcount = (
         await session.execute(
             update(Job)
@@ -1737,6 +1761,12 @@ async def job_status(
         )
     if owner is None or job is None or owner != job.session_id:
         raise HTTPException(status_code=401, detail="bad session key")
+    if job.status == "extracting":
+        # Spec 2026-11-04 (B1″): worker còn poll = còn sống → gia hạn lease
+        # lên now + job_page_lease_minutes (kernel poll mỗi trang); worker chết
+        # = ngừng poll = lease hết hạn → reaper requeue.
+        job.lease_expires_at = extend_lease(job, _utcnow())
+        await session.commit()
     resp: dict = {"status": job.status, "error": job.error}
     if crop_rids:
         resp["crop_upload_urls"] = await _crop_upload_urls(storage, id, crop_rids)
