@@ -45,7 +45,9 @@ services:
       - "${WEB_PORT:-80}:80"
     # busybox wget in nginx:alpine (P0 spec 2026-10-15)
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/healthz"]
+      # 127.0.0.1 chứ không "localhost": busybox wget resolve localhost → ::1 trước, mà
+      # nginx `listen 80` chỉ mở IPv4 → healthcheck fail vĩnh viễn (failing streak 176).
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
