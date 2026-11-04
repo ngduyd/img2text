@@ -56,7 +56,8 @@
     "uploadFailed": "File upload failed.",
     "generic": "An error occurred.",
     "email_limit": "Too many emails requested. Please try again later.",
-    "filePurged": "Original file was deleted by the storage retention policy."
+    "filePurged": "Original file was deleted by the storage retention policy.",
+    "tos_required": "You need to accept the terms of service to sign up."
   },
   "ocr": {
     "enabled": "OCR enabled",
@@ -113,7 +114,10 @@
       "title": "Sign up",
       "subtitle": "Create an account to get started.",
       "haveAccount": "Already have an account?",
-      "created": "Account created. Enter the verification code."
+      "created": "Account created. Enter the verification code.",
+      "tosPrefix": "I agree to the",
+      "tosLink": "terms of service",
+      "tosRequired": "You must accept the terms of service to sign up."
     },
     "forgot": {
       "title": "Forgot password",
@@ -699,7 +703,8 @@
     "aria": "Site footer",
     "linksAria": "Footer links",
     "copyright": "© 2026 Nguyen Duy",
-    "feedback": "Feedback"
+    "feedback": "Feedback",
+    "legal": "Terms of Service"
   },
   "features": {
     "title": "In the feature",
@@ -716,6 +721,26 @@
     "members": {
       "title": "Shared quotas & members",
       "desc": "One shared quota per org, with member management and roles for every team."
+    }
+  },
+  "legal": {
+    "title": "Terms of Service",
+    "subtitle": "Version 2026-11-04 — applies to every img2text account.",
+    "service": {
+      "title": "What the service does",
+      "body": "img2text turns PDFs or images into text and a layout draft. OCR runs on a GPU worker rented through Kaggle (Google Cloud infrastructure): your file is uploaded to the worker for processing and the result comes back to our storage."
+    },
+    "data": {
+      "title": "What we store and for how long",
+      "body": "The original file is kept for at most 7 days and then deleted automatically. Extracted text, layout, exports and edit history remain until you delete the job. Layout generation calls an LLM (OpenAI-compatible endpoint), so each page's text is sent to that model to produce the structure."
+    },
+    "responsibilities": {
+      "title": "Your responsibilities",
+      "body": "Upload only documents you have the right to process. Do not put content into the service that may not legally be sent to third parties (Kaggle/Google, LLM). You are responsible for what is uploaded with your account."
+    },
+    "rights": {
+      "title": "Your rights",
+      "body": "You can delete a job at any time: deleting the job in the app removes its original file, exports, crops and every record of that job. To delete the account itself, email nguyenduy2004.d@gmail.com."
     }
   }
 }

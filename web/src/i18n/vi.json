@@ -56,7 +56,8 @@
     "uploadFailed": "Tải file thất bại.",
     "generic": "Đã xảy ra lỗi.",
     "email_limit": "Đã gửi quá nhiều email. Vui lòng thử lại sau.",
-    "filePurged": "File gốc đã bị xoá theo chính sách lưu trữ."
+    "filePurged": "File gốc đã bị xoá theo chính sách lưu trữ.",
+    "tos_required": "Cần đồng ý điều khoản sử dụng để đăng ký."
   },
   "ocr": {
     "enabled": "OCR đã cấp",
@@ -113,7 +114,10 @@
       "title": "Đăng ký",
       "subtitle": "Tạo tài khoản để bắt đầu.",
       "haveAccount": "Đã có tài khoản?",
-      "created": "Tài khoản đã được tạo. Nhập mã xác minh."
+      "created": "Tài khoản đã được tạo. Nhập mã xác minh.",
+      "tosPrefix": "Tôi đồng ý với",
+      "tosLink": "điều khoản sử dụng",
+      "tosRequired": "Bạn cần đồng ý điều khoản sử dụng để đăng ký."
     },
     "forgot": {
       "title": "Quên mật khẩu",
@@ -699,7 +703,8 @@
     "aria": "Chân trang",
     "linksAria": "Liên kết chân trang",
     "copyright": "© 2026 Nguyen Duy",
-    "feedback": "Góp ý"
+    "feedback": "Góp ý",
+    "legal": "Điều khoản"
   },
   "features": {
     "title": "Tính năng sắp tới",
@@ -716,6 +721,26 @@
     "members": {
       "title": "Quota chung & thành viên",
       "desc": "Một quota chung cho tổ chức, kèm quản lý thành viên và vai trò cho mọi team."
+    }
+  },
+  "legal": {
+    "title": "Điều khoản sử dụng",
+    "subtitle": "Bản 2026-11-04 — áp dụng cho mọi tài khoản img2text.",
+    "service": {
+      "title": "Dịch vụ làm gì",
+      "body": "img2text chuyển PDF hoặc ảnh thành văn bản và bản dựng layout. Phần OCR chạy trên GPU worker thuê qua Kaggle (hạ tầng Google Cloud): file của bạn được tải lên worker để xử lý, kết quả được tải về storage của hệ thống."
+    },
+    "data": {
+      "title": "Dữ liệu lưu và thời hạn",
+      "body": "File gốc được giữ tối đa 7 ngày rồi tự động xoá. Bản trích xuất, layout, bản xuất và lịch sử chỉnh sửa còn lại cho tới khi bạn xoá job. Tính năng dựng layout gọi LLM (endpoint OpenAI-compatible) nên văn bản từng trang được gửi tới model đó để sinh cấu trúc."
+    },
+    "responsibilities": {
+      "title": "Trách nhiệm của bạn",
+      "body": "Chỉ tải lên tài liệu bạn có quyền xử lý. Đừng đưa vào dịch vụ nội dung mà pháp luật cấm chuyển cho bên thứ ba (Kaggle/Google, LLM). Bạn chịu trách nhiệm về nội dung đã tải lên bằng tài khoản của mình."
+    },
+    "rights": {
+      "title": "Quyền của bạn",
+      "body": "Bạn xoá job bất cứ lúc nào: thao tác xoá job trong ứng dụng xoá file gốc, bản xuất, crops và toàn bộ bản ghi của job đó. Cần xoá cả tài khoản, gửi email tới nguyenduy2004.d@gmail.com."
     }
   }
 }

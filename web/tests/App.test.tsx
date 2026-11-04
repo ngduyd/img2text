@@ -496,3 +496,21 @@ it("AC2: back/forward giữ mode — URL là nguồn sự thật", async () => {
   await waitFor(() => expect(window.location.pathname).toBe("/jobs/5/layout/md"));
   expect(await screen.findByTestId("md-editor")).toBeInTheDocument();
 });
+
+it("AC8 (/legal): route công khai — render nội dung, KHÔNG bị VerifyGate chặn", async () => {
+  // Chưa verify + chưa đăng nhập vẫn đọc được ToS (link từ checkbox signup).
+  vi.mocked(api.me).mockResolvedValue({
+    id: 1,
+    email: "u@x.io",
+    role: "user",
+    ocr_enabled: false,
+    is_verified: false,
+  } as User);
+  window.history.pushState({}, "", "/legal");
+  render(<App />);
+  expect(
+    await screen.findByRole("heading", { level: 1, name: "Terms of Service" }),
+  ).toBeInTheDocument();
+  expect(screen.getByTestId("legal-data")).toBeInTheDocument();
+  expect(screen.queryByTestId("verify-modal")).not.toBeInTheDocument();
+});
