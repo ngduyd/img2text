@@ -193,3 +193,11 @@
   Tailscale; dev server phụ chạy ở `:5273` (`npx vite --port 5273 --host 0.0.0.0`), 5173/5174 là của
   phiên khác.
 - 2026-11-04 · `.git/index.lock` 0 byte còn sót từ lệnh bị kill lúc 12:20 → đã xoá để commit được.
+- 2026-11-04 · **Overview job đổi thứ tự ưu tiên**: cột trái = "Kết quả" (MarkdownPreview trong iframe
+  tự theme dark/light) + nút Edit/Layout ngay trên đầu; rail phải = link Text, stats, Info (mở sẵn),
+  File gốc (**mặc định thu gọn**). Trước đây panel file gốc render trắng chiếm 2/3 trang.
+- 2026-11-04 · **Editor kiểu soạn văn bản**: 1 "tờ giấy" canh giữa (max-w 960), toolbar token app,
+  pane nhãn SOURCE/PREVIEW, preview là tuỳ chọn (`btn-toggle-preview`, mặc định tắt), Save ở thanh trên.
+  CSS mới `web/src/styles/editor-surface.css`. Bài học: KHÔNG padding riêng `.w-md-editor-text-pre`
+  và `.w-md-editor-text-input` (2 lớp chồng khít → chữ vẽ đè); padding phải đặt trên container
+  `.w-md-editor-text`. Ẩn preview <768px.

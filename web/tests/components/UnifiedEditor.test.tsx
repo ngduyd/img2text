@@ -151,7 +151,12 @@ it("md cache hit (layout_cache.md=true): badge đã lưu + exportJob/downloadExp
   expect(api.downloadExport).toHaveBeenCalledWith("5", "md-layout");
   // value wiring: md-layout vào MDEditor + preview split render heading
   await waitFor(() => expect(editor.querySelector("textarea")?.value).toContain("# Cached"));
-  expect(editor.querySelector(".w-md-editor-preview")?.textContent).toContain("Cached");
+  // Preview là TUỲ CHỌN (mặc định chỉ soạn như gdoc) → bật mới có pane phải.
+  expect(editor.querySelector(".w-md-editor-preview")).toBeNull();
+  await userEvent.click(screen.getByTestId("btn-toggle-preview"));
+  await waitFor(() =>
+    expect(editor.querySelector(".w-md-editor-preview")?.textContent).toContain("Cached"),
+  );
 });
 
 it("layout_style đã lưu → client CSS scope preview pane md (contract M1, M5 không iframe)", async () => {

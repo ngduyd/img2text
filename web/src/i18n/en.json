@@ -203,7 +203,9 @@
     "exitZen": "Exit full screen",
     "proofread": "Proofread",
     "proofreadDone": "{n} suggestions added",
-    "exitEdit": "Done"
+    "exitEdit": "Done",
+    "resultTitle": "Result",
+    "noResult": "No content yet."
   },
   "info": {
     "createdAt": "Created:",
@@ -255,7 +257,11 @@
     },
     "suggestions": {
       "title": "Fixes ({n})"
-    }
+    },
+    "sourcePane": "Source",
+    "previewPane": "Preview",
+    "showPreview": "Preview",
+    "hidePreview": "Hide preview"
   },
   "word": {
     "toolbarAria": "Word editing toolbar",

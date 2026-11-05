@@ -203,7 +203,9 @@
     "exitZen": "Thoát toàn màn hình",
     "proofread": "Soát lỗi",
     "proofreadDone": "Đã thêm {n} đề xuất",
-    "exitEdit": "Xong"
+    "exitEdit": "Xong",
+    "resultTitle": "Kết quả",
+    "noResult": "Chưa có nội dung."
   },
   "info": {
     "createdAt": "Tạo lúc:",
@@ -255,7 +257,11 @@
     },
     "suggestions": {
       "title": "Đề xuất sửa ({n})"
-    }
+    },
+    "sourcePane": "Soạn thảo",
+    "previewPane": "Kết quả",
+    "showPreview": "Xem trước",
+    "hidePreview": "Ẩn xem trước"
   },
   "word": {
     "toolbarAria": "Công cụ soạn thảo Word",

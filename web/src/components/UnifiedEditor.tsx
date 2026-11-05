@@ -16,8 +16,8 @@ import DocStyleTools from "./DocStyleTools";
 import WordEditor from "./editor/WordEditor";
 import Badge from "./ui/Badge";
 import Button from "./ui/Button";
-import Card from "./ui/Card";
 import Skeleton from "./ui/Skeleton";
+import "../styles/editor-surface.css";
 
 export type LayoutMode = "md" | "word";
 
@@ -65,7 +65,8 @@ export default function UnifiedEditor({
   const [mdText, setMdText] = useState(markdown);
   const [docxHtml, setDocxHtml] = useState<string | null>(null);
   const [loaded, setLoaded] = useState({ md: false, word: false });
-  const [error, setError] = useState<{ mode: LayoutMode; message: string } | null>(null);
+  const [error, setError] = useState<{ mode: LayoutMode; message: string } | null>(null);  /** Soạn như gdoc: 1 cột giấy ở giữa; preview là TUỲ CHỌN (không chia đôi màn). */
+  const [showPreview, setShowPreview] = useState(false);
   // Word style: css bắn vào iframe sống, styleMap là bản PUT layout-style.
   const [baseCss, setBaseCss] = useState("");
   const [wordCss, setWordCss] = useState("");
@@ -199,21 +200,25 @@ export default function UnifiedEditor({
   return (
     /* scroll-mt-32: offset qua sticky header job khi btn-edit-doc scroll tới. */
     <section ref={hostRef} className="scroll-mt-32">
-      {/* Bỏ title card: tiêu đề trang đã nằm ở thanh sticky, thêm 1 hàng nữa
-          chỉ đẩy nội dung xuống (D1 mật độ). */}
-      <Card testid="panel-editor">
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+      {/* Màn soạn thảo (route riêng): 1 thanh điều khiển + vùng soạn full chiều cao,
+          không bọc trong card nhỏ để editor không bị bóp. */}
+      <div data-testid="panel-editor" className="flex min-w-0 flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-surface px-2 py-2">
           <div
             role="group"
             aria-label={t("editor.modeAria")}
-            className="inline-flex items-center gap-1 rounded-md border border-border p-1"
+            className="inline-flex items-center gap-0.5 rounded-md border border-border bg-surface-2 p-0.5"
           >
             <Button
               testid="switch-mode-md"
               variant="ghost"
               size="sm"
               aria-pressed={activeMode === "md"}
-              className={activeMode === "md" ? "bg-surface-2 font-semibold" : ""}
+              className={
+                activeMode === "md"
+                  ? "h-8 bg-surface font-semibold text-text shadow-card"
+                  : "h-8"
+              }
               onClick={() => switchMode("md")}
             >
               Markdown
@@ -223,16 +228,54 @@ export default function UnifiedEditor({
               variant="ghost"
               size="sm"
               aria-pressed={activeMode === "word"}
-              className={activeMode === "word" ? "bg-surface-2 font-semibold" : ""}
+              className={
+                activeMode === "word"
+                  ? "h-8 bg-surface font-semibold text-text shadow-card"
+                  : "h-8"
+              }
               onClick={() => switchMode("word")}
             >
               Word
             </Button>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <span className="ml-1 hidden text-xs text-muted sm:inline">
+            {t("editor.panelTitle")}
+          </span>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {activeMode === "md" && (
+              <Button
+                testid="btn-toggle-preview"
+                variant="ghost"
+                size="sm"
+                className="h-8"
+                aria-pressed={showPreview}
+                onClick={() => setShowPreview((v) => !v)}
+              >
+                {showPreview ? t("editor.hidePreview") : t("editor.showPreview")}
+              </Button>
+            )}
             <Badge testid="layout-badge" tone={cached ? "success" : "neutral"}>
               {cached ? t("editor.layoutCached") : t("editor.layoutNotCached")}
             </Badge>
+            {activeMode === "md" ? (
+              <Button
+                testid="btn-save-layout"
+                size="sm"
+                className="h-8"
+                onClick={() => void saveLayout()}
+              >
+                {t("common.save")}
+              </Button>
+            ) : (
+              <Button
+                testid="btn-save-style"
+                size="sm"
+                className="h-8"
+                onClick={() => void saveStyle()}
+              >
+                {t("common.saveLayout")}
+              </Button>
+            )}
           </div>
         </div>
         {displayError !== null && (
@@ -275,18 +318,26 @@ export default function UnifiedEditor({
            * từ artifact VLM/self input cùng origin (self-XSS); upgrade khi cần:
            * previewOptions.rehypePlugins + rehype-sanitize.
            */
-          <div data-testid="md-editor" className="md-pane">
+          <div
+            data-testid="md-editor"
+            className="ed-surface md-pane"
+            style={
+              {
+                "--ed-label-source": `"${t("editor.sourcePane")}"`,
+                "--ed-label-preview": `"${t("editor.previewPane")}"`,
+              } as React.CSSProperties
+            }
+          >
             <style>{mdPaneCss}</style>
             <MDEditor
               value={mdText}
               onChange={(v) => setMdText(v ?? "")}
-              height="24rem"
+              height="100%"
+              preview={showPreview ? "live" : "edit"}
+              hideToolbar={false}
+              visibleDragbar={false}
+              textareaProps={{ "aria-label": t("editor.textAreaAria") }}
             />
-            <div className="mt-3 flex justify-end border-t border-border pt-3">
-              <Button testid="btn-save-layout" onClick={() => void saveLayout()}>
-                {t("common.save")}
-              </Button>
-            </div>
           </div>
         ) : (
           <>
@@ -306,15 +357,11 @@ export default function UnifiedEditor({
               onWordChange={setWordCss}
               onStyleChange={setStyleMap}
             />
-            <div className="mt-3 flex justify-end gap-2 border-t border-border pt-3">
-              <Button testid="btn-save-style" onClick={() => void saveStyle()}>
-                {t("common.saveLayout")}
-              </Button>
-            </div>
+
           </>
         )}
           </div>
-      </Card>
+      </div>
     </section>
   );
 }

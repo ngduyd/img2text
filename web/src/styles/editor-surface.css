@@ -1,0 +1,178 @@
+/* Màn soạn thảo layout: đưa MDEditor (uiw) + pane Word về đúng token của app.
+   Lý do: theme mặc định của uiw (nền trắng, toolbar xám, serif) lệch hẳn phần còn
+   lại của UI nên khung sửa trông "thô".
+
+   Nguyên tắc: KHÔNG đụng padding của 2 lớp bên trong MDEditor (pre + textarea là 2
+   lớp chồng khít; chỉnh riêng một lớp là chữ bị vẽ lệch/đè). Muốn "tờ giấy" thì
+   thu hẹp và canh giữa cả khối .w-md-editor. */
+
+.ed-surface {
+  --ed-h: min(74vh, 780px);
+}
+
+/* --- khối soạn: canh giữa như trang giấy ---------------------- */
+.ed-surface .w-md-editor {
+  max-width: 960px;
+  margin-inline: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  height: var(--ed-h);
+}
+
+/* MDEditor mặc định nền trắng ở vài lớp con → ép theo theme */
+.ed-surface .w-md-editor-area,
+.ed-surface .w-md-editor-content,
+.ed-surface .w-md-editor-text,
+.ed-surface .w-md-editor-text-pre,
+.ed-surface .w-md-editor-text-input {
+  background: transparent !important;
+}
+
+/* đệm trong "tờ giấy": đặt trên CONTAINER (.w-md-editor-text) — 2 lớp pre/input
+   nằm trong đó nên dịch cùng nhau, không lệch */
+.ed-surface .w-md-editor-text {
+  padding: 24px 32px 72px !important;
+}
+
+/* --- toolbar -------------------------------------------------- */
+.ed-surface .w-md-editor-toolbar {
+  height: auto;
+  min-height: 44px;
+  padding: 6px 8px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.ed-surface .w-md-editor-toolbar ul {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+}
+
+.ed-surface .w-md-editor-toolbar li {
+  padding: 0;
+}
+
+.ed-surface .w-md-editor-toolbar li > button {
+  height: 28px;
+  min-width: 28px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 13px;
+  transition: background-color 150ms ease-out, color 150ms ease-out;
+}
+
+.ed-surface .w-md-editor-toolbar li > button:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.ed-surface .w-md-editor-toolbar li.active > button {
+  background: var(--surface);
+  color: var(--accent-text);
+}
+
+.ed-surface .w-md-editor-toolbar-divider {
+  height: 18px;
+  margin: 0 4px;
+  background-color: var(--border);
+}
+
+.ed-surface .w-md-editor-area {
+  border-bottom: none;
+}
+
+/* --- nhãn pane (chỉ khi bật preview) -------------------------- */
+.ed-surface .w-md-editor-show-live .w-md-editor-area::before,
+.ed-surface .w-md-editor-show-live .w-md-editor-preview::before {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: block;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ed-surface .w-md-editor-show-live .w-md-editor-area::before {
+  content: var(--ed-label-source, "Markdown");
+}
+
+.ed-surface .w-md-editor-show-live .w-md-editor-preview {
+  border-left: 1px solid var(--border);
+  padding: 0 0 24px;
+}
+
+.ed-surface .w-md-editor-show-live .w-md-editor-preview::before {
+  content: var(--ed-label-preview, "Preview");
+}
+
+/* --- typography ----------------------------------------------- */
+.ed-surface .w-md-editor-text-pre,
+.ed-surface .w-md-editor-text-input,
+.ed-surface .w-md-editor-text-pre > code {
+  font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace !important;
+  font-size: 13.5px !important;
+  line-height: 1.7 !important;
+  color: var(--text) !important;
+  -webkit-text-fill-color: var(--text) !important;
+}
+
+.ed-surface .w-md-editor-text-input::placeholder {
+  color: var(--muted) !important;
+  -webkit-text-fill-color: var(--muted) !important;
+}
+
+.ed-surface .w-md-editor-preview > .wmde-markdown {
+  padding: 20px 24px;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.ed-surface .w-md-editor-preview .wmde-markdown h1,
+.ed-surface .w-md-editor-preview .wmde-markdown h2,
+.ed-surface .w-md-editor-preview .wmde-markdown h3 {
+  border-bottom: none;
+  margin: 1.2em 0 0.5em;
+}
+
+/* --- pane Word (Tiptap) --------------------------------------- */
+.ed-pane {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: 20px 24px;
+  min-height: min(60vh, 640px);
+}
+
+.ed-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding-bottom: 6px;
+}
+
+/* <768px: 2 pane không đủ chỗ → chỉ soạn, ẩn preview */
+@media (max-width: 767px) {
+  .ed-surface .w-md-editor-preview {
+    display: none;
+  }
+  .ed-surface .w-md-editor-area {
+    width: 100% !important;
+  }
+}

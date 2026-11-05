@@ -23,11 +23,12 @@ import DownloadDropdown from "../components/DownloadDropdown";
 import InfoPanel from "../components/panels/InfoPanel";
 import OriginalFilePanel from "../components/panels/OriginalFilePanel";
 import LayoutPreview from "../components/LayoutPreview";
+import MarkdownPreview from "../components/MarkdownPreview";
 import PageShell from "../components/PageShell";
 import TextSection from "../components/TextSection";
 import UnifiedEditor, { type LayoutMode } from "../components/UnifiedEditor";
 import Badge from "../components/ui/Badge";
-import Button from "../components/ui/Button";
+import Button, { buttonClasses } from "../components/ui/Button";
 import Skeleton from "../components/ui/Skeleton";
 
 /** Poll every 3s while pending (queued/extracting/rendering); stop once done/failed (binding, Task 4). */
@@ -105,7 +106,7 @@ export default function JobDetail({
   }, [showHistory]);
   const editorHostRef = useRef<HTMLElement>(null);
   /** U4+U5: File gốc + Thông tin = collapsible, mặc định MỞ (justify-between label/chevron). */
-  const [originalOpen, setOriginalOpen] = useState(true);
+  const [originalOpen, setOriginalOpen] = useState(false);
   /** D8: ảnh gốc đối chiếu ngay trong trang layout (không phải sang Tổng quan). */
   const [showOriginal, setShowOriginal] = useState(false);
   /** Focus mode: editor chiếm trọn viewport, Escape để thoát. */
@@ -119,7 +120,7 @@ export default function JobDetail({
     setRetryingLayout(false);
     setConfirmRetry(false);
     setShowHistory(false);
-    setOriginalOpen(true);
+    setOriginalOpen(false);  // overview: file gốc là phụ, mặc định thu gọn
     setInfoOpen(true);
     setShowOriginal(false);
     setZen(false);
@@ -556,30 +557,51 @@ export default function JobDetail({
       )}
 
       {section === "overview" && (
-        /* D12 (2026-10-13): 2 cột CÂN bằng thay cho 7/5 — cột trái lửng giữa trang.
-           2026-11-03: cột phải là rail metadata (Text/Layout/Info) nên đổi sang bề
-           ngang CỐ ĐỊNH 22rem; cột trái (file gốc) nhận hết phần dư nên không còn
-           phụ thuộc chiều cao ảnh — job nhiều trang đảo ngược tỉ lệ so với job 1 trang. */
-        <div key={job.id} data-testid="detail-grid" className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-6">
-          <section className="min-w-0 self-start rounded-card border border-border bg-surface shadow-card">
-            <h2>
-              <Button
-                testid="btn-toggle-original"
-                variant="ghost"
-                aria-expanded={originalOpen}
-                aria-controls="original-panel-wrap"
-                className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-base font-semibold"
-                onClick={() => setOriginalOpen((v) => !v)}
-              >
-                {t("jd.originalFile")}
-                <ChevronDown
-                  className={`h-4 w-4 text-muted transition duration-150 ease-out ${originalOpen ? "rotate-180" : ""}`}
-                  aria-hidden="true"
-                />
-              </Button>
-            </h2>
-            <div id="original-panel-wrap" className={originalOpen ? "border-t border-border p-4" : "hidden"}>
-              {originalOpen && <OriginalFilePanel jobId={id!} fileType={job.file_type} bare />}
+        /* Tổ chức lại: KẾT QUẢ là nội dung chính (cột trái, rộng), metadata +
+           tiện ích sang rail phải. File gốc + Info mặc định thu gọn — trước đây
+           panel file gốc (PDF render trắng) chiếm 2/3 trang và đẩy kết quả ra rìa. */
+        <div
+          key={job.id}
+          data-testid="detail-grid"
+          className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:gap-6"
+        >
+          <section
+            data-testid="overview-result"
+            className="min-w-0 self-start rounded-card border border-border bg-surface shadow-card"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+              <h2 className="text-base font-semibold">{t("jd.resultTitle")}</h2>
+              <div className="flex flex-wrap items-center gap-2">
+                {layoutReady && (
+                  <Link
+                    to={`/jobs/${id}/edit/${layoutMode}`}
+                    data-testid="link-edit-layout"
+                    className={`${buttonClasses("primary", "sm")} h-8`}
+                  >
+                    {t("jd.edit")}
+                  </Link>
+                )}
+                {layoutReady && (
+                  <Link
+                    to={`/jobs/${id}/layout/${layoutMode}`}
+                    data-testid="link-open-layout"
+                    className={`${buttonClasses("secondary", "sm")} h-8`}
+                  >
+                    {t("jd.layout")}
+                  </Link>
+                )}
+              </div>
+            </div>
+            <div className="min-w-0 px-4 py-4">
+              {result?.markdown ? (
+                <div className="min-w-0 overflow-hidden rounded-md border border-border [&>iframe]:h-[min(60vh,640px)] [&>iframe]:w-full">
+                  <MarkdownPreview markdown={result.markdown} />
+                </div>
+              ) : (
+                <p className="text-sm text-muted">
+                  {job.status === "done" ? t("jd.noResult") : t("jd.notReadyYet")}
+                </p>
+              )}
             </div>
           </section>
 
@@ -590,14 +612,6 @@ export default function JobDetail({
                 testid="link-open-text"
                 title={t("jd.sectionText")}
                 desc={t("jd.textDesc")}
-              />
-            )}
-            {layoutReady && (
-              <LinkCard
-                to={`/jobs/${id}/layout`}
-                testid="link-open-layout"
-                title={t("jd.layout")}
-                desc={t("jd.layoutDesc")}
               />
             )}
             {!textReady && !layoutReady && (
@@ -633,6 +647,27 @@ export default function JobDetail({
               </h2>
               <div id="info-panel-wrap" className={infoOpen ? "border-t border-border p-4" : "hidden"}>
                 {infoOpen && <InfoPanel job={job} bare />}
+              </div>
+            </section>
+            <section className="rounded-card border border-border bg-surface shadow-card">
+              <h2>
+                <Button
+                  testid="btn-toggle-original"
+                  variant="ghost"
+                  aria-expanded={originalOpen}
+                  aria-controls="original-panel-wrap"
+                  className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-base font-semibold"
+                  onClick={() => setOriginalOpen((v) => !v)}
+                >
+                  {t("jd.originalFile")}
+                  <ChevronDown
+                    className={`h-4 w-4 text-muted transition duration-150 ease-out ${originalOpen ? "rotate-180" : ""}`}
+                    aria-hidden="true"
+                  />
+                </Button>
+              </h2>
+              <div id="original-panel-wrap" className={originalOpen ? "border-t border-border p-4" : "hidden"}>
+                {originalOpen && <OriginalFilePanel jobId={id!} fileType={job.file_type} bare />}
               </div>
             </section>
           </aside>

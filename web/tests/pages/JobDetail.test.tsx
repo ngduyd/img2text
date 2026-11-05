@@ -264,12 +264,14 @@ const DONE_JOB: Job = {
   text_version: 1,
 };
 
-it("done renders 3 panels: original + result + info with status badge", async () => {
+it("done: overview lấy KẾT QUẢ làm chính, file gốc thu gọn, info mở", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  // D3: Overview giữ file gốc + thông tin; văn bản nằm ở trang con /text.
-  expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
+  // 2026-11-04: kết quả là nội dung chính; file gốc + info là rail phụ.
+  expect(await screen.findByTestId("overview-result")).toBeInTheDocument();
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
+  expect(screen.queryByTestId("panel-original")).not.toBeInTheDocument(); // default thu gọn
+  expect(screen.getByTestId("btn-toggle-original")).toHaveAttribute("aria-expanded", "false");
   expect(screen.queryByTestId("panel-result")).not.toBeInTheDocument();
   expect(screen.getByTestId("status-5")).toHaveTextContent("Done");
 });
@@ -294,9 +296,10 @@ it("done: no job-meta/output badge, stats line + 1 nút Tải xuống (gộp c�
 it("not done shows status-only panels, ResultPanel hidden until done", async () => {
   mockJob({ ...DONE_JOB, status: "queued", result: null });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  // U4+U5: default mở cả 2 panel.
-  expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
+  // Info mặc định mở; file gốc mặc định thu gọn (2026-11-04).
+  expect(await screen.findByTestId("overview-result")).toBeInTheDocument();
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
+  expect(screen.queryByTestId("panel-original")).not.toBeInTheDocument();
   expect(screen.queryByTestId("panel-result")).toBeNull();
   expect(screen.getByTestId("status-5")).toHaveTextContent("Queued");
   // JD2: chưa có markdown → section Layout ẩn, Edit (inline) không render (không dead click)
@@ -390,29 +393,25 @@ it("U6: aside sidebar lg:sticky lg:top-32", async () => {
 });
 
 /** U4+U5: Original + Info mặc định mở, label trái / chevron phải (justify-between). */
-it("U4+U5: original+info default open with label left / chevron right", async () => {
+it("U4+U5: info mặc định mở, file gốc mặc định đóng — label trái / chevron phải", async () => {
   mockJob(DONE_JOB);
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  await screen.findByTestId("panel-original");
   await screen.findByTestId("panel-info");
-  for (const [btnId, panelId, wrapId] of [
-    ["btn-toggle-original", "panel-original", "original-panel-wrap"],
-    ["btn-toggle-info", "panel-info", "info-panel-wrap"],
-  ] as const) {
-    const btn = screen.getByTestId(btnId);
-    expect(btn).toHaveAttribute("aria-expanded", "true");
-    expect(btn).toHaveAttribute("aria-controls", wrapId);
-    // justify-between: label (text node) trong btn, chevron (svg) đứng CUỐI.
-    expect(btn.textContent?.trim()).toBeTruthy();
-    const svg = btn.querySelector("svg")!;
-    expect(btn.lastElementChild).toBe(svg);
-    expect(svg.getAttribute("class")).toContain("rotate-180");
-    expect(screen.getByTestId(panelId)).toBeInTheDocument();
-  }
-  // Đóng → unmount.
   const user = userEvent.setup();
-  await user.click(screen.getByTestId("btn-toggle-original"));
-  expect(screen.queryByTestId("panel-original")).not.toBeInTheDocument();
+  // Info: mở sẵn.
+  const info = screen.getByTestId("btn-toggle-info");
+  expect(info).toHaveAttribute("aria-expanded", "true");
+  expect(info).toHaveAttribute("aria-controls", "info-panel-wrap");
+  expect(info.textContent?.trim()).toBeTruthy();
+  expect(info.lastElementChild).toBe(info.querySelector("svg"));
+  expect(info.querySelector("svg")!.getAttribute("class")).toContain("rotate-180");
+  // File gốc: đóng sẵn → mở ra mới mount panel.
+  const orig = screen.getByTestId("btn-toggle-original");
+  expect(orig).toHaveAttribute("aria-expanded", "false");
+  expect(orig).toHaveAttribute("aria-controls", "original-panel-wrap");
+  await user.click(orig);
+  expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
+  expect(orig.querySelector("svg")!.getAttribute("class")).toContain("rotate-180");
 });
 
 /** D3: 3 trang tách — subnav có 3 link, aria-current đúng trang đang mở. */
@@ -581,18 +580,18 @@ it("renders single wrapper grid: collapsible original+info right (U4+U5 default 
   expect(aside).not.toBeNull();
   // D3: overview không sticky (trang ngắn).
   expect(aside!.className).not.toMatch(/(^|\s)sticky/);
-  // U4+U5: default MỞ — panel mount ngay, aria-expanded=true.
-  expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
+  // Info mở sẵn; file gốc đóng sẵn (2026-11-04) → bấm mới mount + fetch.
   expect(screen.getByTestId("panel-info")).toBeInTheDocument();
-  expect(screen.getByTestId("btn-toggle-original")).toHaveAttribute("aria-expanded", "true");
   expect(screen.getByTestId("btn-toggle-info")).toHaveAttribute("aria-expanded", "true");
+  const user = userEvent.setup();
+  await user.click(screen.getByTestId("btn-toggle-original"));
+  expect(await screen.findByTestId("panel-original")).toBeInTheDocument();
   await screen.findByTestId("original-pdf-frame");
   await waitFor(() => expect(api.downloadJobFile).toHaveBeenCalledTimes(1));
   // Card lồng card đã bỏ: panel nằm thẳng trong section collapsible.
   expect(screen.getByTestId("panel-original")).toBeInTheDocument();
   expect(screen.getByTestId("btn-download")).toBeInTheDocument();
   // Đóng → unmount + fetch không tăng (1 panel duy nhất).
-  const user = userEvent.setup();
   await user.click(screen.getByTestId("btn-toggle-original"));
   expect(screen.queryByTestId("panel-original")).not.toBeInTheDocument();
   expect(screen.queryByTestId("panel-original-layout")).not.toBeInTheDocument();
