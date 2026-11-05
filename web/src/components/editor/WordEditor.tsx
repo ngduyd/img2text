@@ -39,17 +39,25 @@ export default function WordEditor({
     <>
       <WordToolbar editor={editor} />
       <style>{`${PANE_CSS}${scopeWordPaneCss(css)}`}</style>
-      {/* D7/D8: soạn | xem trước A4 song song (≥lg), xếp dọc dưới lg. */}
-      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+      {/* Soạn kiểu Google Docs: 1 tờ giấy A4 ở giữa, không chia đôi màn.
+          Bản xem trang A4 thật (paged.js) gấp lại trong "Xem trang A4". */}
+      <div className="wp-paper-scroll">
         {/* preview-docx-frame giữ testid (e2e M4) — giờ là container editor, không còn iframe. */}
-        <div
-          data-testid="preview-docx-frame"
-          className="word-doc min-h-[60vh] w-full rounded-md border border-border p-3"
-        >
+        <div data-testid="preview-docx-frame" className="word-doc wp-paper">
           <EditorContent editor={editor} />
         </div>
-        <PagePreview html={docHtml} css={css} />
       </div>
+      <details className="mt-3 rounded-md border border-border bg-surface">
+        <summary
+          data-testid="btn-toggle-page-preview"
+          className="cursor-pointer list-none px-3 py-2 text-sm text-muted [&::-webkit-details-marker]:hidden"
+        >
+          {t("editor.pagePreview")}
+        </summary>
+        <div className="border-t border-border p-3">
+          <PagePreview html={docHtml} css={css} />
+        </div>
+      </details>
       <div className="mt-3 flex justify-end gap-2">
         <Button testid="btn-save-layout-word" onClick={() => editor && onSave(editor.getHTML())}>
           {t("common.save")}

@@ -212,7 +212,8 @@ it("switch mode: word → exportJob docx-layout + Tiptap editor + word tools; md
   expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout not saved");
   // M4: editor Tiptap thay iframe — container giữ testid, nội dung là .ProseMirror contenteditable
   const pane = screen.getByTestId("preview-docx-frame");
-  expect(pane.className).toContain("min-h-[60vh]");
+  // 2026-11-04: khung soạn = "tờ giấy" A4 canh giữa (kiểu Google Docs).
+  expect(pane.className).toContain("wp-paper");
   await waitFor(() =>
     expect(pane.querySelector(".ProseMirror")).toHaveAttribute("contenteditable", "true"),
   );

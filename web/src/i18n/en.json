@@ -261,7 +261,8 @@
     "sourcePane": "Source",
     "previewPane": "Preview",
     "showPreview": "Preview",
-    "hidePreview": "Hide preview"
+    "hidePreview": "Hide preview",
+    "pagePreview": "Show A4 pages"
   },
   "word": {
     "toolbarAria": "Word editing toolbar",

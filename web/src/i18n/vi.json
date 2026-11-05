@@ -261,7 +261,8 @@
     "sourcePane": "Soạn thảo",
     "previewPane": "Kết quả",
     "showPreview": "Xem trước",
-    "hidePreview": "Ẩn xem trước"
+    "hidePreview": "Ẩn xem trước",
+    "pagePreview": "Xem trang A4"
   },
   "word": {
     "toolbarAria": "Công cụ soạn thảo Word",
