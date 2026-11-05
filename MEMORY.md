@@ -179,3 +179,17 @@
   (kernel batch/session + 4 test + `deploy/kaggle/bench/` + MEMORY). E2E gate đã pass trước khi commit.
 - 2026-11-04 · Dọn sau e2e: comment lại `KAGGLE_KERNEL_REF` trong `deploy/.env.dev`, recreate dev
   server (kaggle unset, `:8010` healthz 200), kill cloudflared tunnel.
+- 2026-11-04 · **UI: edit layout thành MÀN RIÊNG** theo yêu cầu user (preview giữ toggle, edit không nằm
+  trong khung preview): route `/jobs/:id/edit` (+ `/edit/md`, `/edit/word`), `btn-edit-doc` = điều hướng
+  (Edit → `/edit/<mode>`, Done → `/layout/<mode>`), `switch-mode-*` trong editor → `/edit/<mode>`.
+  `/jobs/:id/layout` còn read-only preview.
+- 2026-11-04 · **Kích thước nút header đồng nhất 32px** (trước: edit 30, download 40, history 28,
+  original 28, zen 24, ⋯ 36) — pin `h-8` ở call site, KHÔNG sửa `Button.SIZES` (thử `h-8` global
+  làm 1 test JobDetail treo >300 s; revert). Đo lại bằng Playwright: cả 6 nút = 32.
+- 2026-11-04 · `scripts/audit-a11y.mjs` thêm `SHOT_BASE` + `SHOT_ROUTES` (mặc định giữ nguyên 5173 +
+  8 route cũ). Chạy với vite :5273 + user `ui-demo` → **DONE 0 routes with findings** (gồm /jobs/84/layout
+  và /jobs/84/edit).
+- 2026-11-04 · `web/vite.config.ts` thêm `server.allowedHosts` (`.ts.net`, IP tailscale) để xem dev qua
+  Tailscale; dev server phụ chạy ở `:5273` (`npx vite --port 5273 --host 0.0.0.0`), 5173/5174 là của
+  phiên khác.
+- 2026-11-04 · `.git/index.lock` 0 byte còn sót từ lệnh bị kill lúc 12:20 → đã xoá để commit được.

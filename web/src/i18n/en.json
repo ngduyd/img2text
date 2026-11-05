@@ -202,7 +202,8 @@
     "zen": "Full screen",
     "exitZen": "Exit full screen",
     "proofread": "Proofread",
-    "proofreadDone": "{n} suggestions added"
+    "proofreadDone": "{n} suggestions added",
+    "exitEdit": "Done"
   },
   "info": {
     "createdAt": "Created:",

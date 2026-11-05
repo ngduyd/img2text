@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import { mapApiError } from "../lib/errors";
 import { useT } from "../i18n";
-import Button from "./ui/Button";
+import Button, { type ButtonSize } from "./ui/Button";
 
 /**
  * Lane I Task 5: 1 nút dropdown "Tải xuống" ở header actions (cạnh "Chỉnh
@@ -29,12 +29,15 @@ export default function DownloadDropdown({
   open,
   onToggle,
   layoutReady = false,
+  size = "sm",
 }: {
   jobId: string;
   open: boolean;
   onToggle: () => void;
   /** Job chưa dựng layout → ẩn nhóm md-layout/docx-layout. */
   layoutReady?: boolean;
+  /** Cùng size với các nút cạnh nó (mặc định sm = h-8 như header job). */
+  size?: ButtonSize;
 }) {
   const { t } = useT();
   const download = async (fmt: string) => {
@@ -63,6 +66,8 @@ export default function DownloadDropdown({
     <div className="relative">
       <Button
         testid="btn-download"
+        size={size}
+        className="h-8"
         aria-expanded={open}
         aria-haspopup="true"
         aria-controls="download-formats"

@@ -202,7 +202,8 @@
     "zen": "Toàn màn hình",
     "exitZen": "Thoát toàn màn hình",
     "proofread": "Soát lỗi",
-    "proofreadDone": "Đã thêm {n} đề xuất"
+    "proofreadDone": "Đã thêm {n} đề xuất",
+    "exitEdit": "Xong"
   },
   "info": {
     "createdAt": "Tạo lúc:",

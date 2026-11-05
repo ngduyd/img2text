@@ -123,7 +123,7 @@ function renderWithRouter(ui: ReactElement, { route = "/" } = {}) {
 }
 
 /** SPEC D3: trang con — chỉ render đúng section được test. */
-function renderSection(section: "text" | "layout", { route = "/jobs/5" } = {}) {
+function renderSection(section: "text" | "layout" | "edit", { route = "/jobs/5" } = {}) {
   return renderWithRouter(<JobDetail section={section} />, { route });
 }
 
@@ -319,26 +319,29 @@ it("header: back link, title, badge, actions in one row (adjust-only)", async ()
 });
 
 /** JD2 amendment: btn-edit-doc = preview ↔ editor trong Section "Layout". */
-it("btn-edit-doc toggles editor: preview → editor → preview, no navigation", async () => {
+it("preview chỉ đọc; btn-edit-doc ĐIỀU HƯỚNG sang màn edit riêng", async () => {
   mockJob(DONE_JOB);
   renderSection("layout");
   const user = userEvent.setup();
   const btn = await screen.findByTestId("btn-edit-doc");
   expect(btn).toHaveTextContent("Edit");
-  // Default = XEM TRƯỚC read-only (spec WS-UI section Layout).
+  // /layout = XEM TRƯỚC read-only, không có editor trong trang.
   expect(screen.getByTestId("layout-preview")).toBeInTheDocument();
+  expect(screen.queryByTestId("md-editor")).not.toBeInTheDocument();
   await user.click(btn);
-  expect(mockNavigate).not.toHaveBeenCalled();
-  expect(btn).toHaveAttribute("aria-pressed", "true");
-  expect(btn).toHaveTextContent("Editing");
+  expect(mockNavigate).toHaveBeenCalledWith("/jobs/5/edit/md");
+});
+
+it("màn edit riêng (/jobs/:id/edit): có editor + nút Xong quay lại preview", async () => {
+  mockJob(DONE_JOB);
+  renderSection("edit");
+  const user = userEvent.setup();
+  expect(await screen.findByTestId("detail-edit")).toBeInTheDocument();
+  expect(screen.queryByTestId("layout-preview")).not.toBeInTheDocument();
   const editor = await screen.findByTestId("md-editor");
   expect(editor.querySelector("textarea")).toHaveFocus();
-  // Toggle lần 2 → quay lại preview (UnifiedEditor unmount).
   await user.click(screen.getByTestId("btn-edit-doc"));
-  expect(btn).toHaveAttribute("aria-pressed", "false");
-  expect(screen.queryByTestId("md-editor")).not.toBeInTheDocument();
-  expect(screen.getByTestId("layout-preview")).toBeInTheDocument();
-  expect(mockNavigate).not.toHaveBeenCalled();
+  expect(mockNavigate).toHaveBeenCalledWith("/jobs/5/layout/md");
 });
 
 /** Lane I Task 5: header "Tải xuống" dropdown — 4 định dạng text (không còn download rải dưới). */
@@ -512,9 +515,7 @@ it("U1 P0: navigate A→B → getJob id=2, preview shows B (không html A), hist
 it("review r1 P1: no duplicate btn-retry-layout (editor retry = btn-retry-layout-error)", async () => {
   mockJob(DONE_JOB);
   vi.mocked(api.exportJob).mockRejectedValue(new ApiError("boom"));
-  renderSection("layout");
-  const user = userEvent.setup();
-  await user.click(await screen.findByTestId("btn-edit-doc"));
+  renderSection("edit");
   await screen.findByTestId("layout-error");
   expect(screen.getByTestId("btn-retry-layout-error")).toBeInTheDocument();
   expect(screen.getAllByTestId("btn-retry-layout")).toHaveLength(1);
@@ -560,13 +561,11 @@ it("btn-retry-layout: confirm → retryLayout + toast; cancel → no call", asyn
 });
 
 /** Wave-3 #7 → Lane I Task 4: bỏ btn-edit-layout + textarea; btn-edit-doc mở UnifiedEditor. */
-it("no btn-edit-layout / layout-editor-textarea; btn-edit-doc opens UnifiedEditor", async () => {
+it("no btn-edit-layout / layout-editor-textarea; màn edit render UnifiedEditor", async () => {
   mockJob(DONE_JOB);
-  renderSection("layout");
-  const user = userEvent.setup();
+  renderSection("edit");
   expect(screen.queryByTestId("btn-edit-layout")).not.toBeInTheDocument();
   expect(screen.queryByTestId("layout-editor-textarea")).not.toBeInTheDocument();
-  await user.click(await screen.findByTestId("btn-edit-doc"));
   expect(await screen.findByTestId("md-editor")).toBeInTheDocument();
 });
 
@@ -870,9 +869,9 @@ it("D8: layout page toggles the original file pane", async () => {
 it("zen: full screen toggle + Escape exits", async () => {
   mockJob(DONE_JOB);
   const user = userEvent.setup();
-  renderSection("layout");
+  renderSection("edit");
   const btn = await screen.findByTestId("btn-zen");
-  const wrap = screen.getByTestId("detail-layout");
+  const wrap = screen.getByTestId("detail-edit");
   expect(wrap.className).not.toContain("fixed");
   await user.click(btn);
   expect(wrap.className).toContain("fixed");

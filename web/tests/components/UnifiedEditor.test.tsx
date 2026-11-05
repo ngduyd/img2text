@@ -77,10 +77,10 @@ function Harness({
   const initialMode = job.output_format === "docx" ? "word" : "md";
   return (
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[`/jobs/${job.id}/layout/${initialMode}`]}>
+      <MemoryRouter initialEntries={[`/jobs/${job.id}/edit/${initialMode}`]}>
         <Routes>
           <Route
-            path="/jobs/:id/layout/:mode"
+            path="/jobs/:id/edit/:mode"
             element={
               <EditorRoute job={job} markdown={markdown} hostRef={hostRef} editing={editing} />
             }

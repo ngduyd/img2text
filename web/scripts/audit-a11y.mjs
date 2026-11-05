@@ -8,7 +8,10 @@
  */
 import { chromium } from "playwright";
 
-const ROUTES = ["/", "/jobs", "/jobs/5", "/jobs/5/text", "/jobs/5/layout", "/storage", "/profile", "/admin"];
+const ROUTES = (
+  process.env.SHOT_ROUTES ??
+  "/,/jobs,/jobs/5,/jobs/5/text,/jobs/5/layout,/storage,/profile,/admin"
+).split(",");
 const SIZES = [{ w: 1440, h: 900 }, { w: 320, h: 720 }];
 
 const lum = (c) => {
@@ -29,7 +32,7 @@ const b = await chromium.launch({
 });
 const ctx = await b.newContext({ viewport: { width: SIZES[0].w, height: SIZES[0].h }, locale: "vi-VN" });
 const p = await ctx.newPage();
-const WEB = "http://localhost:5173";
+const WEB = process.env.SHOT_BASE ?? "http://localhost:5173";
 
 // Login qua API (1 request/run) — tránh form + rate-limit 10/h của /auth/login.
 const lr = await ctx.request.post(`${WEB}/api/auth/login`, {

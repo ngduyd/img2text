@@ -156,7 +156,7 @@ export default function UnifiedEditor({
   const switchMode = (m: LayoutMode) => {
     if (m === activeMode) return;
     // Route đổi param, cùng element JobDetail → editor không remount, editing giữ nguyên.
-    void navigate(`/jobs/${jobId}/layout/${m}`);
+    void navigate(`/jobs/${jobId}/edit/${m}`);
   };
 
   const saveLayout = async () => {

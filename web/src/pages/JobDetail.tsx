@@ -40,7 +40,8 @@ const jobRefetchInterval = (q: Query<Job>): number | false =>
  * SECTION "Layout" (LayoutPreview / editor khi "Chỉnh sửa" + ExportBar);
  * col phải = collapsible "File gốc" + "Thông tin" (Lane I Task 2, bỏ sticky).
  */
-export type JobSection = "overview" | "text" | "layout";
+/** "edit" = MÀN RIÊNG (/jobs/:id/edit): sửa layout. Preview giữ ở /layout. */
+export type JobSection = "overview" | "text" | "layout" | "edit";
 
 const SUBPAGES = [
   { key: "overview", path: "", testid: "subnav-overview", labelKey: "jd.overview" },
@@ -70,8 +71,8 @@ export default function JobDetail({
   /** Spec #1: confirm xóa job (destructive) — mở từ header. */
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
-  /** JD2: btn-edit-doc = inline edit ON THIS PAGE — section Layout: preview ↔ editor. */
-  const [editing, setEditing] = useState(false);
+  /** Edit là SECTION RIÊNG (`/jobs/:id/edit`), không còn toggle trong preview. */
+  const editing = section === "edit";
   /** U2: nút Edit text dời ra heading row section Text (controlled xuống TextSection). */
   const [editingText, setEditingText] = useState(false);
   const [proofreading, setProofreading] = useState(false);
@@ -113,7 +114,6 @@ export default function JobDetail({
   /** U1 P0: đổi :id KHÔNG remount → reset states JobDetail theo id (grid remount bằng key). */
   useEffect(() => {
     setConfirmDelete(false);
-    setEditing(false);
     setEditingText(false);
     setDownloadOpen(false);
     setRetryingLayout(false);
@@ -295,12 +295,13 @@ export default function JobDetail({
               </Button>
             </>
           )}
-          {section === "layout" && layoutReady && (
+          {(section === "layout" || section === "edit") && layoutReady && (
             <>
               <Button
                 testid="btn-toggle-original-layout"
                 variant="ghost"
                 size="sm"
+                className="h-8 w-8 sm:w-auto"
                 aria-pressed={showOriginal}
                 onClick={() => setShowOriginal((v) => !v)}
               >
@@ -311,6 +312,7 @@ export default function JobDetail({
                 testid="btn-zen"
                 variant="ghost"
                 size="sm"
+                className="h-8 w-8"
                 aria-pressed={zen}
                 aria-label={zen ? t("jd.exitZen") : t("jd.zen")}
                 title={zen ? t("jd.exitZen") : t("jd.zen")}
@@ -322,11 +324,17 @@ export default function JobDetail({
                 testid="btn-edit-doc"
                 variant={editing ? "primary" : "secondary"}
                 size="sm"
-                aria-pressed={editing}
+                className="h-8"
                 disabled={job.status !== "done"}
-                onClick={() => setEditing((v) => !v)}
+                onClick={() =>
+                  navigate(
+                    editing
+                      ? `/jobs/${id}/layout/${layoutMode}`
+                      : `/jobs/${id}/edit/${layoutMode}`,
+                  )
+                }
               >
-                {editing ? t("jd.editing") : t("jd.edit")}
+                {editing ? t("jd.exitEdit") : t("jd.edit")}
               </Button>
             </>
           )}
@@ -334,6 +342,7 @@ export default function JobDetail({
             testid="btn-version-history"
             variant="ghost"
             size="sm"
+            className="h-8"
             aria-expanded={showHistory}
             aria-controls="version-history"
             onClick={() => setShowHistory((v) => !v)}
@@ -351,7 +360,7 @@ export default function JobDetail({
               data-testid="btn-job-more"
               aria-label={t("jobs.row.more")}
               title={t("jobs.row.more")}
-              className="inline-flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-md text-muted transition duration-150 ease-out hover:bg-surface-2 hover:text-text [&::-webkit-details-marker]:hidden"
+              className="inline-flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md text-muted transition duration-150 ease-out hover:bg-surface-2 hover:text-text [&::-webkit-details-marker]:hidden"
             >
               <span aria-hidden="true">⋯</span>
             </summary>
@@ -650,11 +659,7 @@ export default function JobDetail({
         <div
           key={job.id}
           data-testid="detail-layout"
-          className={
-            zen
-              ? "fixed inset-0 z-40 flex flex-col gap-4 overflow-auto bg-surface p-4"
-              : "flex flex-col gap-4 px-4 sm:px-6"
-          }
+          className="flex flex-col gap-4 px-4 sm:px-6"
         >
           {layoutReady && result ? (
             <>
@@ -671,21 +676,47 @@ export default function JobDetail({
                   </div>
                 )}
                 <div className="min-w-0">
-                  {editing ? (
-                    <UnifiedEditor
-                      jobId={id!}
-                      job={job}
-                      markdown={result.edited_markdown ?? result.markdown}
-                      editing={editing}
-                      hostRef={editorHostRef}
-                      mode={layoutMode}
-                    />
-                  ) : (
-                    <LayoutPreview job={job} fmt={layoutFmt} />
-                  )}
+                  <LayoutPreview job={job} fmt={layoutFmt} />
                 </div>
               </div>
             </>
+          ) : (
+            <p className="text-sm text-muted">{t("jd.layoutNotReady")}</p>
+          )}
+        </div>
+      )}
+      {section === "edit" && (
+        <div
+          key={job.id}
+          data-testid="detail-edit"
+          className={
+            zen
+              ? "fixed inset-0 z-40 flex flex-col gap-4 overflow-auto bg-surface p-4"
+              : "flex flex-col gap-4 px-4 sm:px-6"
+          }
+        >
+          {layoutReady && result ? (
+            <div className={showOriginal ? "flex min-w-0 flex-col gap-4" : "min-w-0"}>
+              {showOriginal && (
+                <div className="max-h-[45vh] min-w-0 overflow-auto">
+                  <OriginalFilePanel
+                    jobId={id!}
+                    fileType={job.file_type}
+                    testid="panel-original-edit"
+                  />
+                </div>
+              )}
+              <div className="min-w-0">
+                <UnifiedEditor
+                  jobId={id!}
+                  job={job}
+                  markdown={result.edited_markdown ?? result.markdown}
+                  editing
+                  hostRef={editorHostRef}
+                  mode={layoutMode}
+                />
+              </div>
+            </div>
           ) : (
             <p className="text-sm text-muted">{t("jd.layoutNotReady")}</p>
           )}

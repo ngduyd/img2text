@@ -437,8 +437,10 @@ it("AC1: /jobs/5/layout/word renders word mode without clicking a mode switch", 
   // Read-only preview nhận mode từ URL ngay ở mount.
   expect(await screen.findByTestId("preview-word")).toBeInTheDocument();
   expect(screen.queryByTestId("preview-md")).toBeNull();
-  // Editor: vào bằng btn-edit-doc (entry point, không phải mode switch).
+  // Editor = MÀN RIÊNG: btn-edit-doc điều hướng, mode đi theo URL.
   await userEvent.click(screen.getByTestId("btn-edit-doc"));
+  await waitFor(() => expect(window.location.pathname).toBe("/jobs/5/edit/word"));
+  expect(mockNavigate).toHaveBeenCalledWith("/jobs/5/edit/word");
   await screen.findByTestId("preview-docx-frame");
   expect(screen.queryByTestId("md-editor")).toBeNull();
 });
@@ -449,6 +451,7 @@ it("AC1: /jobs/5/layout/md renders md mode without clicking a mode switch", asyn
   expect(await screen.findByTestId("preview-md")).toBeInTheDocument();
   expect(screen.queryByTestId("preview-word")).toBeNull();
   await userEvent.click(screen.getByTestId("btn-edit-doc"));
+  await waitFor(() => expect(window.location.pathname).toBe("/jobs/5/edit/md"));
   expect(await screen.findByTestId("md-editor")).toBeInTheDocument();
   expect(screen.queryByTestId("preview-docx-frame")).toBeNull();
 });
@@ -458,7 +461,13 @@ it.each([["docx", "word"], ["md", "md"]] as const)(
   async (output_format, expected) => {
     mockLayoutJob(output_format);
     renderAt("/jobs/5/layout");
-    await userEvent.click(await screen.findByTestId("btn-edit-doc"));
+    // Preview vẫn ở /layout (không redirect), mode resolve từ output_format.
+    expect(await screen.findByTestId("btn-edit-doc")).toBeInTheDocument();
+    // AC4: edit nằm ở route riêng, mode đi theo URL của nó.
+    await userEvent.click(screen.getByTestId("btn-edit-doc"));
+    await waitFor(() =>
+      expect(window.location.pathname).toBe(`/jobs/5/edit/${expected}`),
+    );
     if (expected === "word") {
       await screen.findByTestId("preview-docx-frame");
       expect(screen.queryByTestId("md-editor")).toBeNull();
@@ -466,20 +475,16 @@ it.each([["docx", "word"], ["md", "md"]] as const)(
       await screen.findByTestId("md-editor");
       expect(screen.queryByTestId("preview-docx-frame")).toBeNull();
     }
-    // AC4: /jobs/:id/layout là canonical — không Navigate sang /layout/{mode}.
-    expect(window.location.pathname).toBe("/jobs/5/layout");
-    expect(mockNavigate).not.toHaveBeenCalled();
   },
 );
 
-it("AC2: switch-mode-word at /jobs/5/layout/md navigates to /jobs/5/layout/word", async () => {
+it("AC2: switch-mode-word trong màn edit điều hướng /jobs/5/edit/word", async () => {
   mockLayoutJob("md");
-  renderAt("/jobs/5/layout/md");
-  await userEvent.click(await screen.findByTestId("btn-edit-doc"));
+  renderAt("/jobs/5/edit/md");
   await screen.findByTestId("md-editor");
   await userEvent.click(screen.getByTestId("switch-mode-word"));
-  await waitFor(() => expect(window.location.pathname).toBe("/jobs/5/layout/word"));
-  expect(mockNavigate).toHaveBeenCalledWith("/jobs/5/layout/word");
+  await waitFor(() => expect(window.location.pathname).toBe("/jobs/5/edit/word"));
+  expect(mockNavigate).toHaveBeenCalledWith("/jobs/5/edit/word");
   // Mode đi theo URL: word container, md unmount.
   expect(await screen.findByTestId("preview-docx-frame")).toBeInTheDocument();
   expect(screen.queryByTestId("md-editor")).toBeNull();
@@ -487,13 +492,12 @@ it("AC2: switch-mode-word at /jobs/5/layout/md navigates to /jobs/5/layout/word"
 
 it("AC2: back/forward giữ mode — URL là nguồn sự thật", async () => {
   mockLayoutJob("md");
-  renderAt("/jobs/5/layout/md");
-  await userEvent.click(await screen.findByTestId("btn-edit-doc"));
+  renderAt("/jobs/5/edit/md");
   await screen.findByTestId("md-editor");
   await userEvent.click(screen.getByTestId("switch-mode-word"));
-  await waitFor(() => expect(window.location.pathname).toBe("/jobs/5/layout/word"));
+  await waitFor(() => expect(window.location.pathname).toBe("/jobs/5/edit/word"));
   window.history.back();
-  await waitFor(() => expect(window.location.pathname).toBe("/jobs/5/layout/md"));
+  await waitFor(() => expect(window.location.pathname).toBe("/jobs/5/edit/md"));
   expect(await screen.findByTestId("md-editor")).toBeInTheDocument();
 });
 
