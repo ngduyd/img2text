@@ -289,6 +289,12 @@ def _add_spec_block(
             _add_math_block(doc, blk, omml)
             return
     para = doc.add_paragraph()
+    # 2026-11-07: level do IR quyết (cùng nguồn với dấu # của md) → Word có
+    # Heading style thật thay vì paragraph thường.
+    if blk.kind == "text" and blk.level > 0:
+        style_name = f"Heading {min(blk.level, 3)}"
+        if style_name in [s.name for s in doc.styles]:
+            para.style = doc.styles[style_name]
     para.alignment = _SPEC_ALIGN.get(blk.align, WD_ALIGN_PARAGRAPH.LEFT)
     pf = para.paragraph_format
     if blk.align == "left" and blk.indent_px > 0.5:
@@ -397,7 +403,11 @@ def render_docx_ir(
         _set_section_cols(
             doc.sections[-1], group[0].cols, scale=_scale_for(group[0].width)
         )
-        for pg in group:
+        for pi, pg in enumerate(group):
+            if pi:
+                # ranh giới trang gốc: cùng section (cùng số cột) nhưng trang
+                # mới phải bắt đầu ở trang giấy mới
+                doc.add_page_break()
             page_scale = _scale_for(pg.width)
             for blk in pg.blocks:
                 _add_spec_block(doc, blk, crops, page_scale)
