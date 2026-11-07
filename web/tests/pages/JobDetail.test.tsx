@@ -123,8 +123,9 @@ function renderWithRouter(ui: ReactElement, { route = "/" } = {}) {
 }
 
 /** SPEC D3: trang con — chỉ render đúng section được test. */
+/** 2026-11-07: trang Text đã gộp vào Overview → "text" render overview. */
 function renderSection(section: "text" | "layout" | "edit", { route = "/jobs/5" } = {}) {
-  return renderWithRouter(<JobDetail section={section} />, { route });
+  return renderWithRouter(<JobDetail section={section === "text" ? "overview" : section} />, { route });
 }
 
 beforeEach(() => {
@@ -327,7 +328,8 @@ it("preview chỉ đọc; btn-edit-doc ĐIỀU HƯỚNG sang màn edit riêng", 
   renderSection("layout");
   const user = userEvent.setup();
   const btn = await screen.findByTestId("btn-edit-doc");
-  expect(btn).toHaveTextContent("Edit");
+  // Icon-only từ 2026-11-05: accessible name thay cho text hiển thị.
+  expect(btn).toHaveAttribute("aria-label", "Edit");
   // /layout = XEM TRƯỚC read-only, không có editor trong trang.
   expect(screen.getByTestId("layout-preview")).toBeInTheDocument();
   expect(screen.queryByTestId("md-editor")).not.toBeInTheDocument();
@@ -423,7 +425,7 @@ it("D3: job-subnav renders 3 links and marks the active page", async () => {
     "href",
     "/jobs/5",
   );
-  expect(within(nav).getByTestId("subnav-text")).toHaveAttribute("href", "/jobs/5/text");
+  expect(within(nav).getByTestId("subnav-layout")).toHaveAttribute("href", "/jobs/5/layout");
   expect(within(nav).getByTestId("subnav-layout")).toHaveAttribute(
     "href",
     "/jobs/5/layout",
@@ -432,7 +434,7 @@ it("D3: job-subnav renders 3 links and marks the active page", async () => {
     "aria-current",
     "page",
   );
-  expect(within(nav).getByTestId("subnav-text")).not.toHaveAttribute("aria-current");
+  expect(within(nav).getByTestId("subnav-layout")).not.toHaveAttribute("aria-current");
 });
 
 /** D3: mỗi trang chỉ render section của mình (không còn 2 editor cùng màn). */
@@ -443,14 +445,13 @@ it("D3: overview has no editors; text page has panel-result; layout page has edi
   expect(screen.queryByTestId("panel-result")).not.toBeInTheDocument();
   expect(screen.queryByTestId("layout-preview")).not.toBeInTheDocument();
   // Overview có 2 link sang trang con.
-  expect(screen.getByTestId("link-open-text")).toBeInTheDocument();
-  expect(screen.getByTestId("link-open-layout")).toBeInTheDocument();
-  view.unmount();
-
-  const text = renderSection("text");
+  // Văn bản nằm ngay trong Overview; nút Layout chỉ còn trên thanh 1 (subnav),
+  // không lặp lại trong vùng văn bản.
   expect(await screen.findByTestId("detail-text")).toBeInTheDocument();
-  expect(screen.queryByTestId("layout-preview")).not.toBeInTheDocument();
-  text.unmount();
+  expect(screen.getByTestId("subnav-layout")).toBeInTheDocument();
+  expect(screen.queryByTestId("link-open-layout")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("link-edit-layout")).not.toBeInTheDocument();
+  view.unmount();
 
   renderSection("layout");
   expect(await screen.findByTestId("layout-preview")).toBeInTheDocument();
@@ -611,12 +612,17 @@ it("section-text content scrolls in max-h-[75vh] region", async () => {
 });
 
 // P1-2 review r1: extract_only không gen layout → không có link sang /layout + không export.
-it("extract_only done hides layout link and export groups", async () => {
+it("extract_only done: không có layout artifact + không có export bar", async () => {
   mockJob({ ...DONE_JOB, mode: "extract_only" });
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  await screen.findByTestId("link-open-text");
-  expect(screen.queryByTestId("link-open-layout")).not.toBeInTheDocument();
+  await screen.findByTestId("detail-text");
   expect(screen.queryByTestId("export-bar")).not.toBeInTheDocument();
+
+  // Vào tab Layout vẫn được, nhưng không có bản layout nào để xem.
+  const layout = renderSection("layout");
+  expect(await screen.findByTestId("detail-layout")).toBeInTheDocument();
+  expect(screen.queryByTestId("layout-preview")).not.toBeInTheDocument();
+  layout.unmount();
 });
 
 /** D3: mỗi trang con có đúng 1 h1 (heading trang), không còn h2 section trùng tên. */
@@ -667,32 +673,6 @@ it("pending job hides extraction link", async () => {
   renderWithRouter(<JobDetail />, { route: "/jobs/5" });
   await screen.findByTestId("job-header");
   expect(screen.queryByTestId("link-extraction")).not.toBeInTheDocument();
-});
-
-/** P0-D: stale_layouts > 0 → badge "Cần đồng bộ" + resync (contract GET /api/jobs/{id}). */
-it("stale_layouts non-empty: stale-badge shows, resync calls api + toast + invalidate", async () => {
-  mockJob({ ...DONE_JOB, stale_layouts: ["md"] });
-  vi.mocked(api.retryLayout).mockResolvedValue({ md: true, docx: true });
-  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  expect(await screen.findByTestId("stale-badge")).toHaveTextContent("Needs sync");
-  const invalidate = vi.spyOn(lastQueryClient!, "invalidateQueries");
-  const user = userEvent.setup();
-  await user.click(screen.getByTestId("btn-resync-layout"));
-  expect(api.retryLayout).toHaveBeenCalledWith("5");
-  await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Layout synced"));
-  expect(invalidate).toHaveBeenCalledWith({ queryKey: ["job", "5"] });
-});
-
-// Hidden case: stale_layouts rỗng hoặc vắng mặt → KHÔNG render badge/nút.
-it.each<[string, Job]>([
-  ["missing", DONE_JOB],
-  ["empty", { ...DONE_JOB, stale_layouts: [] }],
-])("stale_layouts %s hides stale-badge and resync button", async (_label, job) => {
-  mockJob(job);
-  renderWithRouter(<JobDetail />, { route: "/jobs/5" });
-  await screen.findByTestId("job-header");
-  expect(screen.queryByTestId("stale-badge")).not.toBeInTheDocument();
-  expect(screen.queryByTestId("btn-resync-layout")).not.toBeInTheDocument();
 });
 
 /** P0-C: lịch sử version — list + badge "Hiện tại" (version == job.text_version). */
@@ -850,17 +830,26 @@ it("delete job: hủy → không gọi deleteJob", async () => {
 });
 
 /** D8: ảnh gốc đối chiếu được ngay trong trang layout khi đang sửa. */
-it("D8: layout page toggles the original file pane", async () => {
+/** 2026-11-07: bấm Original → chọn chia trái-phải / trên-dưới (kéo được tỉ lệ). */
+it("D8: layout page mở ảnh gốc theo kiểu chia 2 pane", async () => {
   mockJob(DONE_JOB);
   const user = userEvent.setup();
   renderSection("layout");
   const btn = await screen.findByTestId("btn-toggle-original-layout");
   expect(btn).toHaveAttribute("aria-pressed", "false");
   expect(screen.queryByTestId("panel-original-layout")).not.toBeInTheDocument();
+
   await user.click(btn);
+  expect(screen.getByTestId("original-split-menu")).toBeInTheDocument();
+  await user.click(screen.getByTestId("btn-original-split-x"));
+
   expect(btn).toHaveAttribute("aria-pressed", "true");
   expect(await screen.findByTestId("panel-original-layout")).toBeInTheDocument();
+  expect(screen.getByTestId("split-pane-x")).toBeInTheDocument();
+  expect(screen.getByTestId("split-handle-x")).toBeInTheDocument();
+
   await user.click(btn);
+  await user.click(screen.getByTestId("btn-original-split-off"));
   expect(screen.queryByTestId("panel-original-layout")).not.toBeInTheDocument();
 });
 

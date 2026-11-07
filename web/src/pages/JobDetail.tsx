@@ -2,11 +2,16 @@ import type { Query } from "@tanstack/react-query";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Check,
   ChevronDown,
   FileQuestion,
+  History,
   Image as ImageIcon,
   Maximize2,
+  ChevronsDown,
+  ChevronsUp,
   Minimize2,
+  SquarePen,
   TriangleAlert,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -22,13 +27,13 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import DownloadDropdown from "../components/DownloadDropdown";
 import InfoPanel from "../components/panels/InfoPanel";
 import OriginalFilePanel from "../components/panels/OriginalFilePanel";
+import SplitPane from "../components/SplitPane";
 import LayoutPreview from "../components/LayoutPreview";
-import MarkdownPreview from "../components/MarkdownPreview";
 import PageShell from "../components/PageShell";
 import TextSection from "../components/TextSection";
 import UnifiedEditor, { type LayoutMode } from "../components/UnifiedEditor";
 import Badge from "../components/ui/Badge";
-import Button, { buttonClasses } from "../components/ui/Button";
+import Button from "../components/ui/Button";
 import Skeleton from "../components/ui/Skeleton";
 
 /** Poll every 3s while pending (queued/extracting/rendering); stop once done/failed (binding, Task 4). */
@@ -46,7 +51,6 @@ export type JobSection = "overview" | "text" | "layout" | "edit";
 
 const SUBPAGES = [
   { key: "overview", path: "", testid: "subnav-overview", labelKey: "jd.overview" },
-  { key: "text", path: "/text", testid: "subnav-text", labelKey: "jd.sectionText" },
   { key: "layout", path: "/layout", testid: "subnav-layout", labelKey: "jd.layout" },
 ] as const;
 
@@ -108,9 +112,27 @@ export default function JobDetail({
   /** U4+U5: File gốc + Thông tin = collapsible, mặc định MỞ (justify-between label/chevron). */
   const [originalOpen, setOriginalOpen] = useState(false);
   /** D8: ảnh gốc đối chiếu ngay trong trang layout (không phải sang Tổng quan). */
-  const [showOriginal, setShowOriginal] = useState(false);
+  /** 2026-11-07: ảnh gốc chia 2 pane + kéo tỉ lệ. "x" = trái/phải, "y" = trên/dưới. */
+  const [originalSplit, setOriginalSplit] = useState<null | "x" | "y">(null);
+  const [originalMenu, setOriginalMenu] = useState(false);
+  /** Fullscreen: thanh 1 (tên file + hành động) thu gọn được — chỉ khi đang zen. */
+  const [headerCollapsed, setHeaderCollapsed] = useState(false);
+  /** Nút Save văn bản nằm ở hàng tiêu đề "Text" → handler do TextSection đẩy lên. */
+  const [textSave, setTextSave] = useState<null | { save: () => void; saving: boolean }>(null);
+  /** Save/Preview/badge của editor Markdown — render ở thanh 1 thay cho hàng điều khiển cũ. */
+  const [edActions, setEdActions] = useState<null | {
+    mode: LayoutMode;
+    save: () => void;
+    saving: boolean;
+  }>(null);
   /** Focus mode: editor chiếm trọn viewport, Escape để thoát. */
   const [zen, setZen] = useState(false);
+  // Fullscreen: ẩn nav site + footer để panel chiếm trọn màn (CSS đọc class này).
+  useEffect(() => {
+    document.documentElement.classList.toggle("zen-mode", zen);
+    return () => document.documentElement.classList.remove("zen-mode");
+  }, [zen]);
+
   const [infoOpen, setInfoOpen] = useState(true);
   /** U1 P0: đổi :id KHÔNG remount → reset states JobDetail theo id (grid remount bằng key). */
   useEffect(() => {
@@ -122,7 +144,8 @@ export default function JobDetail({
     setShowHistory(false);
     setOriginalOpen(false);  // overview: file gốc là phụ, mặc định thu gọn
     setInfoOpen(true);
-    setShowOriginal(false);
+    setOriginalSplit(null);
+    setOriginalMenu(false);
     setZen(false);
     setEditingText(false);
     setProofreading(false);
@@ -218,7 +241,9 @@ export default function JobDetail({
         /* overview dùng shell `data` (main có px-4) → -mx để tràn viền; text/layout
            dùng shell `editor` (main px-0) → -mx sẽ tràn ngang 16px ở 320px. */
         className={[
-          "lg:sticky lg:top-16 z-10 mb-4 flex flex-wrap items-center gap-x-2 gap-y-2 border-b border-border bg-surface/95 px-4 py-2 backdrop-blur sm:px-6",
+          zen
+            ? "sticky top-0 z-[60] mb-4 flex flex-wrap items-center gap-x-2 gap-y-2 border-b border-border bg-surface px-4 py-2 sm:px-6"
+            : "lg:sticky lg:top-16 z-10 mb-4 flex flex-wrap items-center gap-x-2 gap-y-2 border-b border-border bg-surface/95 px-4 py-2 backdrop-blur sm:px-6",
           section === "overview" ? "-mx-4 sm:-mx-6" : "",
         ].join(" ")}
       >
@@ -227,6 +252,7 @@ export default function JobDetail({
           data-testid="link-back-jobs"
           aria-label={t("jd.backToList")}
           title={t("jd.backToList")}
+          hidden={zen && headerCollapsed}
           className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-muted transition duration-150 ease-out hover:bg-surface-2 hover:text-text"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
@@ -235,9 +261,45 @@ export default function JobDetail({
           <span className="font-mono text-muted">#{job.id}</span>
           <span className="max-w-[10ch] truncate sm:max-w-[22ch]">{job.filename || t("jd.title")}</span>
         </h1>
-        <Badge tone={STATUS_TONE[job.status]}>{t(STATUS_KEY[job.status])}</Badge>
+        {zen && headerCollapsed && (
+          <div className="ml-auto flex items-center gap-1">
+            <Button
+              testid="btn-collapse-header"
+              variant="secondary"
+              size="sm"
+              className="h-8"
+              aria-expanded={false}
+              aria-label={t("jd.expandBar")}
+              title={t("jd.expandBar")}
+              onClick={() => setHeaderCollapsed(false)}
+            >
+              <ChevronsDown className="h-4 w-4" aria-hidden="true" />
+              <span className="ml-1 hidden sm:inline">{t("jd.expandBar")}</span>
+            </Button>
+            <Button
+              testid="btn-zen"
+              variant="secondary"
+              size="sm"
+              className="h-8"
+              aria-pressed
+              aria-label={t("jd.exitZen")}
+              title={t("jd.exitZen")}
+              onClick={() => {
+                setZen(false);
+                setHeaderCollapsed(false);
+              }}
+            >
+              <Minimize2 className="h-4 w-4" aria-hidden="true" />
+              <span className="ml-1 hidden sm:inline">{t("jd.exitZen")}</span>
+            </Button>
+          </div>
+        )}
+        {!(zen && headerCollapsed) && (
+          <Badge tone={STATUS_TONE[job.status]}>{t(STATUS_KEY[job.status])}</Badge>
+        )}
         <nav
           data-testid="job-subnav"
+          hidden={zen && headerCollapsed}
           aria-label={t("jd.subnavAria")}
           className="-mx-1 flex min-w-0 max-w-full items-center gap-0.5 overflow-x-auto px-1 sm:mx-0 sm:ml-2 sm:overflow-visible sm:px-0"
         >
@@ -258,9 +320,30 @@ export default function JobDetail({
             </Link>
           ))}
         </nav>
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+        <div
+          hidden={zen && headerCollapsed}
+          className="ml-auto flex flex-wrap items-center justify-end gap-2"
+        >
+          {zen && !headerCollapsed && (
+            <Button
+              testid="btn-collapse-header"
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 px-0"
+              aria-expanded={!headerCollapsed}
+              aria-label={headerCollapsed ? t("jd.expandBar") : t("jd.collapseBar")}
+              title={headerCollapsed ? t("jd.expandBar") : t("jd.collapseBar")}
+              onClick={() => setHeaderCollapsed((v) => !v)}
+            >
+              {headerCollapsed ? (
+                <ChevronsDown className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <ChevronsUp className="h-4 w-4" aria-hidden="true" />
+              )}
+            </Button>
+          )}
           {/* D4: tối đa 1 primary + 1 secondary hiện; còn lại nằm trong ⋯. */}
-          {section === "text" && textReady && (
+          {section === "overview" && textReady && (
             <>
               <Button
                 testid="btn-edit-text"
@@ -298,35 +381,99 @@ export default function JobDetail({
           )}
           {(section === "layout" || section === "edit") && layoutReady && (
             <>
+              {/* 2026-11-07: nút chuyển MD⇄Word đặt cạnh Download — nút thường,
+                  nhãn ghi ĐÍCH (đang Word thì ghi "Chuyển sang Markdown"). */}
               <Button
-                testid="btn-toggle-original-layout"
-                variant="ghost"
+                testid={layoutMode === "word" ? "switch-mode-md" : "switch-mode-word"}
+                variant="secondary"
                 size="sm"
-                className="h-8 w-8 sm:w-auto"
-                aria-pressed={showOriginal}
-                onClick={() => setShowOriginal((v) => !v)}
+                className="h-8"
+                onClick={() => navigate(`/jobs/${id}/${section}/${layoutMode === "word" ? "md" : "word"}`)}
               >
-                <ImageIcon className="h-4 w-4" aria-hidden="true" />
-                {t("jd.showOriginal")}
+                {layoutMode === "word" ? t("editor.toMd") : t("editor.toWord")}
               </Button>
+              {/* Hàng điều khiển riêng của editor đã bỏ → chỉ còn nút Save ở đây. */}
+              {edActions !== null && edActions.mode === "md" && (
+                <Button
+                  testid="btn-save-layout"
+                  size="sm"
+                  className="h-8"
+                  onClick={edActions.save}
+                >
+                  {t("common.save")}
+                </Button>
+              )}
+              <div className="relative">
+                <Button
+                  testid="btn-toggle-original-layout"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 sm:w-auto"
+                  aria-pressed={originalSplit !== null}
+                  aria-expanded={originalMenu}
+                  onClick={() => setOriginalMenu((v) => !v)}
+                >
+                  <ImageIcon className="h-4 w-4" aria-hidden="true" />
+                  {t("jd.showOriginal")}
+                  <ChevronDown className="ml-0.5 h-3 w-3" aria-hidden="true" />
+                </Button>
+                {originalMenu && (
+                  <div
+                    data-testid="original-split-menu"
+                    className="absolute right-0 top-full z-20 mt-1 flex w-52 flex-col gap-1 rounded-md border border-border bg-surface p-1 shadow-card"
+                  >
+                    <MenuBtn
+                      testid="btn-original-split-x"
+                      onClick={() => {
+                        setOriginalSplit("x");
+                        setOriginalMenu(false);
+                      }}
+                    >
+                      {t("jd.splitSide")}
+                    </MenuBtn>
+                    <MenuBtn
+                      testid="btn-original-split-y"
+                      onClick={() => {
+                        setOriginalSplit("y");
+                        setOriginalMenu(false);
+                      }}
+                    >
+                      {t("jd.splitStack")}
+                    </MenuBtn>
+                    {originalSplit !== null && (
+                      <MenuBtn
+                        testid="btn-original-split-off"
+                        onClick={() => {
+                          setOriginalSplit(null);
+                          setOriginalMenu(false);
+                        }}
+                      >
+                        {t("jd.splitOff")}
+                      </MenuBtn>
+                    )}
+                  </div>
+                )}
+              </div>
               <Button
                 testid="btn-zen"
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8"
+                className="h-8 w-8 px-0"
                 aria-pressed={zen}
                 aria-label={zen ? t("jd.exitZen") : t("jd.zen")}
                 title={zen ? t("jd.exitZen") : t("jd.zen")}
                 onClick={() => setZen((v) => !v)}
               >
-                {zen ? <Minimize2 className="h-4 w-4" aria-hidden="true" /> : <Maximize2 className="h-4 w-4" aria-hidden="true" />}
+                {zen ? <Minimize2 className="h-4 w-4 shrink-0" aria-hidden="true" /> : <Maximize2 className="h-4 w-4 shrink-0" aria-hidden="true" />}
               </Button>
               <Button
                 testid="btn-edit-doc"
-                variant={editing ? "primary" : "secondary"}
+                variant="secondary"
                 size="sm"
-                className="h-8"
+                className="h-8 w-8 px-0"
                 disabled={job.status !== "done"}
+                aria-label={editing ? t("jd.exitEdit") : t("jd.edit")}
+                title={editing ? t("jd.exitEdit") : t("jd.edit")}
                 onClick={() =>
                   navigate(
                     editing
@@ -335,7 +482,11 @@ export default function JobDetail({
                   )
                 }
               >
-                {editing ? t("jd.exitEdit") : t("jd.edit")}
+                {editing ? (
+                  <Check className="h-[18px] w-[18px] shrink-0" strokeWidth={2.25} aria-hidden="true" />
+                ) : (
+                  <SquarePen className="h-[18px] w-[18px] shrink-0" strokeWidth={2.25} aria-hidden="true" />
+                )}
               </Button>
             </>
           )}
@@ -343,12 +494,14 @@ export default function JobDetail({
             testid="btn-version-history"
             variant="ghost"
             size="sm"
-            className="h-8"
+            className="h-8 w-8 px-0"
+            aria-label={t("jd.history")}
+            title={t("jd.history")}
             aria-expanded={showHistory}
             aria-controls="version-history"
             onClick={() => setShowHistory((v) => !v)}
           >
-            {t("jd.history")}
+            <History className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
           </Button>
           <DownloadDropdown
             jobId={id!}
@@ -369,29 +522,6 @@ export default function JobDetail({
               data-testid="job-more-panel"
               className="absolute right-0 z-20 mt-1 flex w-56 flex-col rounded-md border border-border bg-surface p-1 shadow-lg"
             >
-              {(job.stale_layouts?.length ?? 0) > 0 && (
-                <>
-                  <span className="px-3 py-1.5">
-                    <Badge testid="stale-badge" tone="warning">
-                      {t("jd.staleBadge")}
-                    </Badge>
-                  </span>
-                  <MenuBtn
-                    testid="btn-resync-layout"
-                  onClick={async () => {
-                    try {
-                      await api.retryLayout(id!);
-                      toast.success(t("jd.resyncDone"));
-                      await queryClient.invalidateQueries({ queryKey: ["job", id] });
-                    } catch (err) {
-                      toast.error(mapApiError(err));
-                    }
-                  }}
-                  >
-                    {t("jd.resync")}
-                  </MenuBtn>
-                </>
-              )}
               {job.status === "failed" && (
                 <MenuBtn
                   testid="btn-retry-job"
@@ -569,51 +699,41 @@ export default function JobDetail({
             data-testid="overview-result"
             className="min-w-0 self-start rounded-card border border-border bg-surface shadow-card"
           >
+            {/* Không đặt nút Layout/Edit layout ở đây: tab Layout đã có trên thanh 1,
+                còn sửa layout thì vào tab Layout rồi bấm Edit. Thêm ở đây là trùng. */}
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
-              <h2 className="text-base font-semibold">{t("jd.resultTitle")}</h2>
-              <div className="flex flex-wrap items-center gap-2">
-                {layoutReady && (
-                  <Link
-                    to={`/jobs/${id}/edit/${layoutMode}`}
-                    data-testid="link-edit-layout"
-                    className={`${buttonClasses("primary", "sm")} h-8`}
-                  >
-                    {t("jd.edit")}
-                  </Link>
-                )}
-                {layoutReady && (
-                  <Link
-                    to={`/jobs/${id}/layout/${layoutMode}`}
-                    data-testid="link-open-layout"
-                    className={`${buttonClasses("secondary", "sm")} h-8`}
-                  >
-                    {t("jd.layout")}
-                  </Link>
-                )}
-              </div>
+              <h2 className="text-base font-semibold">{t("jd.sectionText")}</h2>
+              {editingText && textSave !== null && (
+                <Button
+                  testid="btn-save-text"
+                  size="sm"
+                  className="h-8"
+                  loading={textSave.saving}
+                  onClick={textSave.save}
+                >
+                  {t("common.save")}
+                </Button>
+              )}
             </div>
-            <div className="min-w-0 px-4 py-4">
-              {result?.markdown ? (
-                <div className="min-w-0 overflow-hidden rounded-md border border-border [&>iframe]:h-[min(60vh,640px)] [&>iframe]:w-full">
-                  <MarkdownPreview markdown={result.markdown} />
-                </div>
+            {/* 2026-11-07: gộp trang Text vào Overview — văn bản trích xuất nằm ngay
+                đây, sửa tại chỗ (click-fix + proofread), không còn tab riêng. */}
+            <div data-testid="detail-text" className="min-w-0 px-4 py-4">
+              {textReady ? (
+                <TextSection
+                  jobId={id!}
+                  regions={regions}
+                  fileType={job.file_type}
+                  editingText={editingText}
+                  onEditingTextChange={setEditingText}
+                  onSaveStateChange={setTextSave}
+                />
               ) : (
-                <p className="text-sm text-muted">
-                  {job.status === "done" ? t("jd.noResult") : t("jd.notReadyYet")}
-                </p>
+                <p className="text-sm text-muted">{t("jd.textNotReady")}</p>
               )}
             </div>
           </section>
 
           <aside className="flex min-w-0 flex-col gap-4 lg:self-start">
-            {textReady && (
-              <LinkCard
-                to={`/jobs/${id}/text`}
-                testid="link-open-text"
-                title={t("jd.sectionText")}
-                desc={t("jd.textDesc")}
-              />
-            )}
             {!textReady && !layoutReady && (
               <p data-testid="not-ready" className="text-sm text-muted">
                 {t("jd.notReadyYet")}
@@ -674,22 +794,6 @@ export default function JobDetail({
         </div>
       )}
 
-      {section === "text" && (
-        <div key={job.id} data-testid="detail-text" className="flex flex-col gap-4 px-4 sm:px-6">
-          {textReady ? (
-            <TextSection
-              jobId={id!}
-              regions={regions}
-              fileType={job.file_type}
-              editingText={editingText}
-              onEditingTextChange={setEditingText}
-            />
-          ) : (
-            <p className="text-sm text-muted">{t("jd.textNotReady")}</p>
-          )}
-        </div>
-      )}
-
       {section === "layout" && (
         <div
           key={job.id}
@@ -698,21 +802,23 @@ export default function JobDetail({
         >
           {layoutReady && result ? (
             <>
-              {/* D8: ảnh gốc để đối chiếu khi sửa. Xếp DỌC chứ không chia cột:
-                  3 pane (ảnh gốc | editor | A4) ở 1200px sẽ bóp cả hai bên. */}
-              <div className={showOriginal ? "flex min-w-0 flex-col gap-4" : "min-w-0"}>
-                {showOriginal && (
-                  <div className="max-h-[45vh] min-w-0 overflow-auto">
-                    <OriginalFilePanel
-                      jobId={id!}
-                      fileType={job.file_type}
-                      testid="panel-original-layout"
-                    />
-                  </div>
-                )}
-                <div className="min-w-0">
-                  <LayoutPreview job={job} fmt={layoutFmt} />
-                </div>
+              {/* 2026-11-07: ảnh gốc chia 2 pane theo lựa chọn của người dùng + kéo tỉ lệ. */}
+              <div className="min-w-0">
+                <SplitPane
+                  heightClass="h-[min(78vh,900px)]"
+                  axis={originalSplit ?? "x"}
+                  storageKey={`split.original.${originalSplit ?? "x"}`}
+                  first={
+                    originalSplit === null ? null : (
+                      <OriginalFilePanel
+                        jobId={id!}
+                        fileType={job.file_type}
+                        testid="panel-original-layout"
+                      />
+                    )
+                  }
+                  second={<LayoutPreview job={job} fmt={layoutFmt} />}
+                />
               </div>
             </>
           ) : (
@@ -726,31 +832,37 @@ export default function JobDetail({
           data-testid="detail-edit"
           className={
             zen
-              ? "fixed inset-0 z-40 flex flex-col gap-4 overflow-auto bg-surface p-4"
+              ? "fixed inset-0 z-40 flex flex-col gap-4 overflow-auto bg-surface p-4 pt-14"
               : "flex flex-col gap-4 px-4 sm:px-6"
           }
         >
           {layoutReady && result ? (
-            <div className={showOriginal ? "flex min-w-0 flex-col gap-4" : "min-w-0"}>
-              {showOriginal && (
-                <div className="max-h-[45vh] min-w-0 overflow-auto">
-                  <OriginalFilePanel
+            <div className="min-w-0">
+              <SplitPane
+                heightClass="h-[min(78vh,900px)]"
+                axis={originalSplit ?? "x"}
+                storageKey={`split.original.${originalSplit ?? "x"}`}
+                first={
+                  originalSplit === null ? null : (
+                    <OriginalFilePanel
+                      jobId={id!}
+                      fileType={job.file_type}
+                      testid="panel-original-edit"
+                    />
+                  )
+                }
+                second={
+                  <UnifiedEditor
                     jobId={id!}
-                    fileType={job.file_type}
-                    testid="panel-original-edit"
+                    job={job}
+                    markdown={result.edited_markdown ?? result.markdown}
+                    editing
+                    hostRef={editorHostRef}
+                    mode={layoutMode}
+                    onActionsChange={setEdActions}
                   />
-                </div>
-              )}
-              <div className="min-w-0">
-                <UnifiedEditor
-                  jobId={id!}
-                  job={job}
-                  markdown={result.edited_markdown ?? result.markdown}
-                  editing
-                  hostRef={editorHostRef}
-                  mode={layoutMode}
-                />
-              </div>
+                }
+              />
             </div>
           ) : (
             <p className="text-sm text-muted">{t("jd.layoutNotReady")}</p>
@@ -794,31 +906,3 @@ function MenuBtn({
   );
 }
 
-/** Nhãn + mô tả cho 2 trang con (Overview). */
-function LinkCard({
-  to,
-  testid,
-  title,
-  desc,
-}: {
-  to: string;
-  testid: string;
-  title: string;
-  desc: string;
-}) {
-  return (
-    <Link
-      to={to}
-      data-testid={testid}
-      className="group flex items-start justify-between gap-4 rounded-card border border-border bg-surface p-4 transition duration-150 ease-out hover:border-accent-text/40 hover:bg-surface-2"
-    >
-      <span className="min-w-0">
-        <span className="block text-base font-semibold">{title}</span>
-        <span className="mt-1 block text-sm text-muted">{desc}</span>
-      </span>
-      <span aria-hidden="true" className="shrink-0 text-accent-text">
-        →
-      </span>
-    </Link>
-  );
-}

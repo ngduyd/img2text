@@ -57,7 +57,8 @@
     "generic": "An error occurred.",
     "email_limit": "Too many emails requested. Please try again later.",
     "filePurged": "Original file was deleted by the storage retention policy.",
-    "tos_required": "You need to accept the terms of service to sign up."
+    "tos_required": "You need to accept the terms of service to sign up.",
+    "rate_limited": "Too fast — try again in a second."
   },
   "ocr": {
     "enabled": "OCR enabled",
@@ -162,9 +163,6 @@
     "loadFailedTitle": "Could not load the job.",
     "notFoundTitle": "Job not found.",
     "notFoundBody": "The job does not exist or you do not have permission to view it.",
-    "staleBadge": "Needs sync",
-    "resync": "Sync again",
-    "resyncDone": "Layout synced",
     "retryOcr": "Retry OCR",
     "retryFailed": "Retry failed.",
     "cancelJob": "Cancel job",
@@ -205,7 +203,14 @@
     "proofreadDone": "{n} suggestions added",
     "exitEdit": "Done",
     "resultTitle": "Result",
-    "noResult": "No content yet."
+    "noResult": "No content yet.",
+    "splitSide": "Split left — right",
+    "splitStack": "Split top — bottom",
+    "splitOff": "Hide original",
+    "editText": "Edit text",
+    "editLayout": "Edit layout",
+    "collapseBar": "Collapse top bar",
+    "expandBar": "Expand top bar"
   },
   "info": {
     "createdAt": "Created:",
@@ -262,7 +267,12 @@
     "previewPane": "Preview",
     "showPreview": "Preview",
     "hidePreview": "Hide preview",
-    "pagePreview": "Show A4 pages"
+    "saveContent": "Save content",
+    "docStylePanel": "Page & text style",
+    "modeMd": "Markdown",
+    "modeWord": "Word",
+    "toMd": "Switch to Markdown",
+    "toWord": "Switch to Word"
   },
   "word": {
     "toolbarAria": "Word editing toolbar",
@@ -292,13 +302,24 @@
     "tableInsert": "Insert table {r}×{c}",
     "tablePick": "Pick a table (max 10×10)",
     "pagesUnit": "pages",
-    "pagePreviewAria": "A4 page preview",
     "moreTools": "More tools",
     "paragraph": "Paragraph",
     "indent": "Increase indent",
     "outdent": "Decrease indent",
     "lineHeight": "Line spacing",
-    "lineHeightDefault": "Line spacing"
+    "lineHeightDefault": "Line spacing",
+    "normalText": "Normal text",
+    "formatGroup": "Text format",
+    "alignGroup": "Alignment",
+    "listGroup": "List",
+    "pageTools": "Page & text",
+    "dockPosition": "Toolbar position",
+    "dock": {
+      "top": "Top",
+      "bottom": "Bottom",
+      "left": "Left",
+      "right": "Right"
+    }
   },
   "extraction": {
     "title": "Text extraction",

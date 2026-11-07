@@ -18,20 +18,24 @@ function renderToolbar(editor: Editor | null) {
   return render(<WordToolbar editor={editor} />);
 }
 
-const COMMAND_IDS = [
+/** 2026-11-07 (phương án A): align/list gộp vào dropdown, clear vào ⋯ → 3 nhóm. */
+const BAR_IDS = [
   "word-tb-undo",
   "word-tb-redo",
   "word-tb-bold",
   "word-tb-italic",
   "word-tb-underline",
+  "word-tb-align",
+  "word-tb-list",
+];
+const ALIGN_IDS = [
   "word-tb-align-left",
   "word-tb-align-center",
   "word-tb-align-right",
   "word-tb-align-justify",
-  "word-tb-list-ul",
-  "word-tb-list-ol",
-  "word-tb-clear",
 ];
+const LIST_IDS = ["word-tb-list-ul", "word-tb-list-ol"];
+const MORE_IDS = ["word-tb-clear", "word-tb-indent", "word-tb-outdent", "word-tb-line-height"];
 
 it("1 container role=toolbar duy nhất: 1 hàng (overflow-x-auto, gap-2, không flex-wrap) + đủ testid", () => {
   renderToolbar(makeEditor());
@@ -41,11 +45,11 @@ it("1 container role=toolbar duy nhất: 1 hàng (overflow-x-auto, gap-2, không
   expect(rows[0]).toHaveClass("overflow-x-auto");
   expect(rows[0]).toHaveClass("gap-2");
   expect(rows[0]).not.toHaveClass("flex-wrap");
-  for (const id of [...COMMAND_IDS, "word-tb-font", "word-tb-size", "word-tb-table"]) {
+  for (const id of [...BAR_IDS, "word-tb-font", "word-tb-size", "word-tb-heading", "word-tb-table", "word-tb-more"]) {
     expect(screen.getByTestId(id)).toBeInTheDocument();
   }
   // label screen-reader/title (a11y)
-  for (const id of COMMAND_IDS) {
+  for (const id of BAR_IDS) {
     expect(screen.getByTestId(id)).toHaveAttribute("title");
     expect(screen.getByTestId(id)).toHaveAttribute("aria-label");
   }
@@ -67,6 +71,8 @@ it("clear gỡ định dạng; undo/redo đi theo history của editor", () => {
   renderToolbar(editor);
   fireEvent.click(screen.getByTestId("word-tb-bold"));
   expect(editor.getHTML()).toContain("<strong>");
+  fireEvent.click(screen.getByTestId("word-tb-more"));
+  for (const id of MORE_IDS) expect(screen.getByTestId(id)).toBeInTheDocument();
   fireEvent.click(screen.getByTestId("word-tb-clear"));
   expect(editor.getHTML()).not.toContain("<strong>");
   fireEvent.click(screen.getByTestId("word-tb-undo"));
@@ -96,6 +102,8 @@ it("font → textStyle fontFamily; size (8-72pt) → fontSize, merge attrs trên
 it("align → setTextAlign trên block; aria-pressed theo trạng thái editor", () => {
   const editor = makeEditor();
   renderToolbar(editor);
+  fireEvent.click(screen.getByTestId("word-tb-align"));
+  for (const id of ALIGN_IDS) expect(screen.getByTestId(id)).toBeInTheDocument();
   fireEvent.click(screen.getByTestId("word-tb-align-center"));
   expect(editor.isActive({ textAlign: "center" })).toBe(true);
   expect(editor.getHTML()).toContain("text-align: center");
@@ -108,6 +116,8 @@ it("align → setTextAlign trên block; aria-pressed theo trạng thái editor",
 it("list ul/ol → toggleBulletList/toggleOrderedList", () => {
   const editor = makeEditor();
   renderToolbar(editor);
+  fireEvent.click(screen.getByTestId("word-tb-list"));
+  for (const id of LIST_IDS) expect(screen.getByTestId(id)).toBeInTheDocument();
   fireEvent.click(screen.getByTestId("word-tb-list-ul"));
   expect(editor.isActive("bulletList")).toBe(true);
   expect(editor.getHTML()).toContain("<ul>");
@@ -154,13 +164,12 @@ it("caret trong table: cụm +row −row +col −col hiện và sửa bảng th�
   expect(count("td")).toBe(6);
 });
 
-/** WordToolbar sticky chỉ ≥lg — mobile header static, toolbar sticky +128px = treo hổng. */
-it("toolbar sticky chỉ ≥lg (mobile static)", () => {
+/** 2026-11-07: toolbar KHÔNG sticky — nó dính sát vùng page và page tự cuộn bên trong. */
+it("toolbar không sticky (page cuộn bên trong .wp-paper-scroll)", () => {
   renderToolbar(makeEditor());
   const root = screen.getByTestId("word-toolbar");
-  expect(root).toHaveClass("lg:sticky");
-  expect(root).toHaveClass("lg:top-32");
-  expect(root.className).not.toMatch(/(^|\s)sticky/);
+  expect(root.className).not.toMatch(/(^|\s)(lg:)?sticky/);
+  expect(root).toHaveClass("relative");
 });
 
 it("caret ngoài table (không có table): ẩn cụm row/col", () => {

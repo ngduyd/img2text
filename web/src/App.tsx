@@ -243,6 +243,7 @@ function AppNav() {
   return (
     <nav
       ref={navRef}
+      data-testid="site-nav"
       aria-label={t("nav.ariaMain")}
       className="sticky top-0 z-20 border-b border-border bg-bg/80 backdrop-blur"
     >
@@ -392,7 +393,8 @@ export default function App() {
             <Route path="/jobs" element={<Jobs />} />
             <Route path="/jobs/:id" element={<JobDetail />} />
             {/* SPEC-ui-redesign D3: 2 trang con tách khỏi JobDetail. */}
-            <Route path="/jobs/:id/text" element={<JobDetail section="text" />} />
+            {/* 2026-11-07: trang Text gộp vào Overview — bookmark cũ vẫn mở được văn bản. */}
+            <Route path="/jobs/:id/text" element={<JobDetail section="overview" />} />
             <Route path="/jobs/:id/layout" element={<JobDetail section="layout" />} />
             {/* Edit là MÀN RIÊNG (preview ở /layout giữ nguyên) — mode vẫn
                 addressable qua URL, song song với /layout/md|word. */}

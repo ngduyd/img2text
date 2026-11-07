@@ -15,6 +15,12 @@ export default defineConfig({
     // — keep in sync).
     proxy: { "/api": "http://localhost:8010" },
   },
+  // Preview bản build (dùng khi xem qua Tailscale: dev server bắn ~140 request
+  // module rời / 14–42MB, qua relay thì mất vài phút; bundle chỉ ~1.5MB gzip).
+  preview: {
+    allowedHosts: [".ts.net", "100.86.205.2", "nguyenducduy-server"],
+    proxy: { "/api": "http://localhost:8010" },
+  },
   test: {
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",

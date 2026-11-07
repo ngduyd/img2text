@@ -8,6 +8,9 @@
 
 .ed-surface {
   --ed-h: min(74vh, 780px);
+  /* Vùng hiển thị của page — md editor và Word dùng CHUNG biến này để đổi mode
+     không nhảy chiều cao. */
+  --paper-h: min(78vh, 900px);
 }
 
 /* --- khối soạn: canh giữa như trang giấy ---------------------- */
@@ -19,7 +22,9 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
   overflow: hidden;
-  height: var(--ed-h);
+  /* MDEditor nhận height qua inline style (height="100%") → phải !important để
+     vùng soạn tự cuộn bên trong thay vì kéo dài cả trang. */
+  height: var(--paper-h) !important;
 }
 
 /* MDEditor mặc định nền trắng ở vài lớp con → ép theo theme */
@@ -178,31 +183,94 @@
 }
 
 /* --- WORD (Tiptap) kiểu Google Docs ------------------------- */
-.wp-paper-scroll {
-  margin-top: 12px;
-  background: var(--surface-2);
+/* Toolbar dính sát mép vùng page; tờ giấy cuộn BÊN TRONG `.wp-paper-scroll`
+   (không phải document ngoài cuộn) → không có khe hở cho page chạy qua toolbar.
+   `--paper-h` dùng chung với `.w-md-editor` để đổi mode không nhảy chiều cao. */
+.ed-work {
+  display: flex;
+  min-width: 0;
+  height: var(--paper-h);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 28px 16px 48px;
-  overflow: auto;
-  max-height: var(--ed-h, min(74vh, 780px));
+  overflow: hidden;
+  background: var(--surface-2);
+}
+
+.ed-surface,
+.ed-work {
+  --paper-h: min(78vh, 900px);
+}
+
+.ed-work[data-dock="top"],
+.ed-work[data-dock="bottom"] {
+  flex-direction: column;
+}
+
+.ed-work[data-dock="bottom"] [data-testid="word-toolbar"] {
+  order: 2;
+  border-bottom: 0;
+  border-top: 1px solid var(--border);
+}
+
+.ed-work[data-dock="left"],
+.ed-work[data-dock="right"] {
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.ed-work[data-dock="right"] [data-testid="word-toolbar"] {
+  order: 2;
+  border-right: 0;
+  border-left: 1px solid var(--border);
+}
+
+.ed-work[data-dock="left"] [data-testid="word-toolbar"],
+.ed-work[data-dock="right"] [data-testid="word-toolbar"] {
+  border-bottom: 0;
+  width: 48px;
+  flex: 0 0 48px;
+}
+
+.ed-work .wp-paper-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.wp-paper-scroll {
+  margin-top: 0;
+  background: var(--surface-2);
+  padding: 20px 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .wp-paper {
-  /* A4 @96dpi ≈ 794px; đệm 72px như lề giấy */
+  /* A4 @96dpi = 794×1123px; lề 2.5cm ≈ 95px, dùng 72px cho cân mắt trên web. */
   width: min(794px, 100%);
   margin-inline: auto;
-  min-height: 1000px;
-  padding: 64px 72px;
+  min-height: 1123px;
+  padding: 96px 72px;
   background: var(--paper);
   color: #111418;
-  border-radius: 2px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), 0 8px 24px rgba(0, 0, 0, 0.18);
+  border-radius: 0;
+  box-sizing: border-box;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.14);
 }
 
 @media (max-width: 767px) {
-  .wp-paper {
-    padding: 32px 20px;
+  .ed-surface,
+  .ed-work {
+    --paper-h: min(76vh, 700px);
+  }
+  .wp-paper-scroll {
+    padding: 8px 0 24px;
+  }
+  /* Lề giấy = layout_style.margin (cm) bắn vào .word-doc; trên màn 358px thì
+     2.5cm = 94px mỗi bên → chữ còn 169px. Mobile giữ lề màn, không mô phỏng lề in. */
+  .word-doc.wp-paper {
+    min-height: auto;
+    padding: 40px 20px 56px;
   }
 }
 
@@ -237,18 +305,25 @@
   color: #4a525c;
 }
 
-/* toolbar word: 1 hàng phẳng như gdoc */
+/* toolbar word: 1 hàng phẳng như gdoc — dính sát mép vùng page, không khung,
+   không khe hở (page cuộn bên dưới nó, không chạy qua sau lưng). */
 [data-testid="word-toolbar"] {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
   background: var(--surface);
-  padding: 6px 8px;
+  padding: 4px 8px;
+  margin-bottom: 0;
 }
 
 [data-testid="word-toolbar"] button {
   height: 28px;
   min-width: 28px;
   border-radius: var(--radius-sm);
+}
+
+[data-testid="word-toolbar"] select {
+  height: 28px;
 }
 
 /* Bỏ màu syntax của theme uiw: nhiều token rơi dưới 4.5:1 (audit 2026-11-04:
@@ -258,4 +333,11 @@
 .ed-surface .w-md-editor-text-pre .token {
   color: var(--text) !important;
   -webkit-text-fill-color: var(--text) !important;
+}
+/* --- Fullscreen editor (zen) ---------------------------------- */
+/* Panel soạn là `fixed inset-0`; nav site + footer phải biến mất để thanh job
+   (sticky top-0, z-60) dính sát mép trên và không bị đẩy xuống dưới nav. */
+html.zen-mode [data-testid="site-nav"],
+html.zen-mode footer {
+  display: none;
 }

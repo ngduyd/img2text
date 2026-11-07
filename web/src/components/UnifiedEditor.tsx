@@ -3,9 +3,8 @@ import MDEditor from "@uiw/react-md-editor";
 import DOMPurify from "dompurify";
 import * as mammoth from "mammoth";
 import { splitStyle } from "../lib/splitStyle";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "../api/client";
 import type { Job, LayoutStyle } from "../api/types";
@@ -14,7 +13,6 @@ import { mapApiError } from "../lib/errors";
 import { translate, useT } from "../i18n";
 import DocStyleTools from "./DocStyleTools";
 import WordEditor from "./editor/WordEditor";
-import Badge from "./ui/Badge";
 import Button from "./ui/Button";
 import Skeleton from "./ui/Skeleton";
 import "../styles/editor-surface.css";
@@ -48,6 +46,7 @@ export default function UnifiedEditor({
   editing,
   hostRef,
   mode,
+  onActionsChange,
 }: {
   jobId: string;
   job: Job;
@@ -55,10 +54,13 @@ export default function UnifiedEditor({
   editing: boolean;
   hostRef?: RefObject<HTMLElement | null>;
   mode: LayoutMode;
+  /** Thanh 1 (JobDetail) nhận Save/Preview/badge thay cho hàng điều khiển cũ. */
+  onActionsChange?: (
+    actions: { mode: LayoutMode; save: () => void; saving: boolean } | null,
+  ) => void;
 }) {
   const { t } = useT();
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
   // Plan M3: docx.html cache (PUT html lần trước) → load thẳng, bỏ mammoth/export.
   const docxHtmlCached = job.layout_cache?.docx_html === true;
   // md text = artifact md-layout; markdown prop chỉ là nội dung tạm trước khi artifact về.
@@ -66,7 +68,6 @@ export default function UnifiedEditor({
   const [docxHtml, setDocxHtml] = useState<string | null>(null);
   const [loaded, setLoaded] = useState({ md: false, word: false });
   const [error, setError] = useState<{ mode: LayoutMode; message: string } | null>(null);  /** Soạn như gdoc: 1 cột giấy ở giữa; preview là TUỲ CHỌN (không chia đôi màn). */
-  const [showPreview, setShowPreview] = useState(false);
   // Word style: css bắn vào iframe sống, styleMap là bản PUT layout-style.
   const [baseCss, setBaseCss] = useState("");
   const [wordCss, setWordCss] = useState("");
@@ -153,13 +154,6 @@ export default function UnifiedEditor({
     if (editing) hostRef?.current?.querySelector("textarea")?.focus();
   });
 
-  /** AC2: đổi mode = điều hướng URL (reload/back/forward giữ mode). */
-  const switchMode = (m: LayoutMode) => {
-    if (m === activeMode) return;
-    // Route đổi param, cùng element JobDetail → editor không remount, editing giữ nguyên.
-    void navigate(`/jobs/${jobId}/edit/${m}`);
-  };
-
   const saveLayout = async () => {
     try {
       // Lane I Task 4: Lưu layout → PATCH /layout-content (kind md-layout snapshot).
@@ -193,91 +187,27 @@ export default function UnifiedEditor({
     }
   };
 
-  const cached = (job.layout_cache ?? { md: false, docx: false })[
-    activeMode === "md" ? "md" : "docx"
-  ];
+  /** 2026-11-07: hàng điều khiển riêng đã bỏ — Save/Preview/badge render ở thanh 1 (JobDetail). */
+  useEffect(() => {
+    if (onActionsChange === undefined) return;
+    onActionsChange({
+      mode: activeMode,
+      save: () => void saveLayoutRef.current(),
+      saving: false,
+    });
+  }, [activeMode, onActionsChange]);
+
+  const saveLayoutRef = useRef(saveLayout);
+  saveLayoutRef.current = saveLayout;
 
   return (
     /* scroll-mt-32: offset qua sticky header job khi btn-edit-doc scroll tới. */
-    <section ref={hostRef} className="scroll-mt-32">
+    <section ref={hostRef} data-mode={activeMode} className="scroll-mt-32">
       {/* Màn soạn thảo (route riêng): 1 thanh điều khiển + vùng soạn full chiều cao,
-          không bọc trong card nhỏ để editor không bị bóp. */}
+          không bọc trong card nhỏ để editor không bị bóp.
+          2026-11-07: switch MD⇄Word dời lên thanh hành động của job (cạnh Download)
+          — nút thường, nhãn ghi ĐÍCH; ở đây chỉ còn badge + Save. */}
       <div data-testid="panel-editor" className="flex min-w-0 flex-col gap-3">
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-surface px-2 py-2">
-          <div
-            role="group"
-            aria-label={t("editor.modeAria")}
-            className="inline-flex items-center gap-0.5 rounded-md border border-border bg-surface-2 p-0.5"
-          >
-            <Button
-              testid="switch-mode-md"
-              variant="ghost"
-              size="sm"
-              aria-pressed={activeMode === "md"}
-              className={
-                activeMode === "md"
-                  ? "h-8 bg-surface font-semibold text-text shadow-card"
-                  : "h-8"
-              }
-              onClick={() => switchMode("md")}
-            >
-              Markdown
-            </Button>
-            <Button
-              testid="switch-mode-word"
-              variant="ghost"
-              size="sm"
-              aria-pressed={activeMode === "word"}
-              className={
-                activeMode === "word"
-                  ? "h-8 bg-surface font-semibold text-text shadow-card"
-                  : "h-8"
-              }
-              onClick={() => switchMode("word")}
-            >
-              Word
-            </Button>
-          </div>
-          <span className="ml-1 hidden text-xs text-muted sm:inline">
-            {t("editor.panelTitle")}
-          </span>
-          <div className="ml-auto flex flex-wrap items-center gap-2">
-            {activeMode === "md" && (
-              <Button
-                testid="btn-toggle-preview"
-                variant="ghost"
-                size="sm"
-                className="h-8"
-                aria-pressed={showPreview}
-                onClick={() => setShowPreview((v) => !v)}
-              >
-                {showPreview ? t("editor.hidePreview") : t("editor.showPreview")}
-              </Button>
-            )}
-            <Badge testid="layout-badge" tone={cached ? "success" : "neutral"}>
-              {cached ? t("editor.layoutCached") : t("editor.layoutNotCached")}
-            </Badge>
-            {activeMode === "md" ? (
-              <Button
-                testid="btn-save-layout"
-                size="sm"
-                className="h-8"
-                onClick={() => void saveLayout()}
-              >
-                {t("common.save")}
-              </Button>
-            ) : (
-              <Button
-                testid="btn-save-style"
-                size="sm"
-                className="h-8"
-                onClick={() => void saveStyle()}
-              >
-                {t("common.saveLayout")}
-              </Button>
-            )}
-          </div>
-        </div>
         {displayError !== null && (
           <div
             data-testid="layout-error"
@@ -331,9 +261,10 @@ export default function UnifiedEditor({
             <style>{mdPaneCss}</style>
             <MDEditor
               value={mdText}
+              // Bỏ nút Preview của app → giữ 1 khung soạn (không mặc định split SOURCE|PREVIEW).
+              preview="edit"
               onChange={(v) => setMdText(v ?? "")}
               height="100%"
-              preview={showPreview ? "live" : "edit"}
               hideToolbar={false}
               visibleDragbar={false}
               textareaProps={{ "aria-label": t("editor.textAreaAria") }}
@@ -348,16 +279,19 @@ export default function UnifiedEditor({
                 html={docxHtml}
                 css={baseCss + wordCss}
                 onSave={(html) => void saveWord(html)}
+                onSaveStyle={() => void saveStyle()}
+                key="word"
+                pageTools={
+                  <DocStyleTools
+                    html={docxHtml}
+                    initialStyle={job.layout_style}
+                    onChange={setBaseCss}
+                    onWordChange={setWordCss}
+                    onStyleChange={setStyleMap}
+                  />
+                }
               />
             )}
-            <DocStyleTools
-              html={docxHtml}
-              initialStyle={job.layout_style}
-              onChange={setBaseCss}
-              onWordChange={setWordCss}
-              onStyleChange={setStyleMap}
-            />
-
           </>
         )}
           </div>

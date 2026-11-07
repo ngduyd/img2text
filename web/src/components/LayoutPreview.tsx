@@ -32,10 +32,10 @@ export default function LayoutPreview({
   fmt: "md-layout" | "docx-layout";
 }) {
   const { t } = useT();
-  /** md-layout là text thuần (không cột/vị trí) → cho phép xem bản layout
-   *  dựng từ spec (docx-layout) ngay tại chỗ, khỏi đổi output_format. */
-  const [forceWord, setForceWord] = useState(false);
-  const mode: Mode = fmt === "docx-layout" || forceWord ? "word" : "md";
+  /* md-layout là text thuần (không cột/why vị trí) — muốn xem bản layout thì dùng
+     nút chuyển MD⇄Word trên thanh hành động (điều hướng URL /layout|edit/word).
+     2026-11-07: bỏ toggle `forceWord` một chiều — trước đây bấm xong không quay lại được. */
+  const mode: Mode = fmt === "docx-layout" ? "word" : "md";
   const [mdHtml, setMdHtml] = useState<string | null>(null);
   const [wordHtml, setWordHtml] = useState<string | null>(null);
   const [wordCss, setWordCss] = useState<string>("");
@@ -142,14 +142,6 @@ export default function LayoutPreview({
           <style>{mdBase + mdStyle}</style>
           <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-muted">
             <span>{t("preview.layoutNote")}</span>
-            <Button
-              testid="btn-preview-word"
-              variant="secondary"
-              size="sm"
-              onClick={() => setForceWord(true)}
-            >
-              {t("preview.showLayout")}
-            </Button>
           </div>
           {mdHtml !== null && <div dangerouslySetInnerHTML={{ __html: mdHtml }} />}
         </div>

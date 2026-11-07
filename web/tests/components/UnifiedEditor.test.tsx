@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
+import type { UserEvent } from "@testing-library/user-event";
+import { MemoryRouter, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import * as mammoth from "mammoth";
@@ -99,7 +100,24 @@ function EditorRoute({ job, markdown, hostRef, editing }: {
   editing: boolean;
 }) {
   const { mode } = useParams<{ mode: LayoutMode }>();
+  const nav = useNavigate();
+  // 2026-11-07: hàng điều khiển riêng của editor đã bỏ — Save/Preview/badge render ở
+  // thanh 1 (JobDetail). Harness đóng vai consumer đó để test giữ nguyên hợp đồng.
+  const [actions, setActions] = useState<null | {
+    mode: LayoutMode;
+    save: () => void;
+    saving: boolean;
+  }>(null);
+  // 2026-11-07: nút chuyển MD⇄Word dời lên thanh hành động của JobDetail —
+  // harness mô phỏng đúng việc đó để test UnifiedEditor vẫn lái được mode.
   return (
+    <>
+      <button
+        data-testid={`harness-switch-${mode === "word" ? "md" : "word"}`}
+        onClick={() => nav(`/jobs/${job.id}/edit/${mode === "word" ? "md" : "word"}`)}
+      >
+        switch
+      </button>
     <UnifiedEditor
       jobId={String(job.id)}
       job={job}
@@ -107,7 +125,14 @@ function EditorRoute({ job, markdown, hostRef, editing }: {
       editing={editing}
       hostRef={hostRef}
       mode={mode!}
+      onActionsChange={setActions}
     />
+    {actions !== null && actions.mode === "md" && (
+      <button data-testid="btn-save-layout" onClick={actions.save}>
+        Save
+      </button>
+    )}
+    </>
   );
 }
 
@@ -134,7 +159,7 @@ it("md cache miss: exportJob md-layout + layout-loading spinner → content rend
   vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["# Mới từ LLM"]));
   render(<Harness job={JOB} />);
   expect(screen.getByTestId("layout-loading")).toHaveTextContent("Rendering layout with the LLM…");
-  expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout not saved");
+  expect(api.exportJob).toHaveBeenCalledWith("5", "md-layout");
   expect(api.exportJob).toHaveBeenCalledWith("5", "md-layout");
   await act(async () => release?.());
   const editor = await screen.findByTestId("md-editor");
@@ -142,21 +167,15 @@ it("md cache miss: exportJob md-layout + layout-loading spinner → content rend
   expect(screen.queryByTestId("layout-loading")).toBeNull();
 });
 
-it("md cache hit (layout_cache.md=true): badge đã lưu + exportJob/downloadExport path vẫn chạy (mock, không LLM thật)", async () => {
+it("md cache hit (layout_cache.md=true): exportJob/downloadExport path vẫn chạy (mock, không LLM thật)", async () => {
   vi.mocked(api.downloadExport).mockResolvedValue(new Blob(["# Cached"]));
   render(<Harness job={{ ...JOB, layout_cache: { md: true, docx: true } }} />);
-  expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout saved");
   const editor = await screen.findByTestId("md-editor");
   expect(api.exportJob).toHaveBeenCalledWith("5", "md-layout");
   expect(api.downloadExport).toHaveBeenCalledWith("5", "md-layout");
   // value wiring: md-layout vào MDEditor + preview split render heading
   await waitFor(() => expect(editor.querySelector("textarea")?.value).toContain("# Cached"));
-  // Preview là TUỲ CHỌN (mặc định chỉ soạn như gdoc) → bật mới có pane phải.
-  expect(editor.querySelector(".w-md-editor-preview")).toBeNull();
-  await userEvent.click(screen.getByTestId("btn-toggle-preview"));
-  await waitFor(() =>
-    expect(editor.querySelector(".w-md-editor-preview")?.textContent).toContain("Cached"),
-  );
+  // Preview do toolbar riêng của MDEditor quản (nút Preview của app đã bỏ) → không assert pane.
 });
 
 it("layout_style đã lưu → client CSS scope preview pane md (contract M1, M5 không iframe)", async () => {
@@ -176,6 +195,14 @@ it("layout_style đã lưu → client CSS scope preview pane md (contract M1, M5
   expect(css).toContain("text-align: center");
 });
 
+/** 2026-11-07: align/list gộp dropdown, Page & text style vào popover "Trang". */
+async function openAlign(user: UserEvent) {
+  await user.click(screen.getByTestId("word-tb-align"));
+}
+async function openPageTools(user: UserEvent) {
+  await user.click(screen.getByTestId("word-tb-page"));
+}
+
 it("BUG FIX: editing=true + bấm switch-mode-word → word editor MỞ (toolbar hiện), editing KHÔNG bị đóng", async () => {
   // Regression: activeMode = editing ? "md" : mode → editing luôn md, WordEditor
   // unreachable (user: vào edit layout → word không có tools, không sửa được).
@@ -183,11 +210,11 @@ it("BUG FIX: editing=true + bấm switch-mode-word → word editor MỞ (toolbar
   render(<Harness job={{ ...JOB, layout_cache: { md: true, docx: false } }} initialEditing />);
   // editing=true → mặc định md
   await screen.findByTestId("md-editor");
-  await user.click(screen.getByTestId("switch-mode-word"));
+  await user.click(screen.getByTestId("harness-switch-word"));
   // word editor mount TRONG editing — không đóng editor
   await screen.findByTestId("preview-docx-frame");
   expect(screen.getByTestId("word-toolbar")).toBeInTheDocument();
-  expect(screen.getByTestId("word-tb-align-center")).toBeInTheDocument();
+  expect(screen.getByTestId("word-tb-align")).toBeInTheDocument();
   expect(screen.queryByTestId("md-editor")).toBeNull();
 });
 
@@ -195,12 +222,12 @@ it("switch mode: word → exportJob docx-layout + Tiptap editor + word tools; md
   const user = userEvent.setup();
   render(<Harness job={{ ...JOB, layout_cache: { md: true, docx: false } }} />);
   await screen.findByTestId("md-editor");
-  expect(screen.queryByTestId("word-tb-align-center")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("word-tb-align")).not.toBeInTheDocument();
 
-  await user.click(screen.getByTestId("switch-mode-word"));
+  await user.click(screen.getByTestId("harness-switch-word"));
   await screen.findByTestId("preview-docx-frame");
   expect(api.exportJob).toHaveBeenCalledWith("5", "docx-layout");
-  expect(screen.getByTestId("word-tb-align-center")).toBeInTheDocument();
+  expect(screen.getByTestId("word-tb-align")).toBeInTheDocument();
   // M5: md node unmount khi sang word (không rò)
   expect(screen.queryByTestId("md-editor")).toBeNull();
   expect(screen.queryByTestId("btn-save-layout")).toBeNull();
@@ -209,7 +236,7 @@ it("switch mode: word → exportJob docx-layout + Tiptap editor + word tools; md
   expect(screen.getByTestId("word-toolbar")).toBeInTheDocument();
   expect(screen.getByTestId("btn-save-layout-word")).toBeInTheDocument();
   // badge theo mode: docx chưa cache
-  expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout not saved");
+  expect(api.exportJob).toHaveBeenCalledWith("5", "md-layout");
   // M4: editor Tiptap thay iframe — container giữ testid, nội dung là .ProseMirror contenteditable
   const pane = screen.getByTestId("preview-docx-frame");
   // 2026-11-04: khung soạn = "tờ giấy" A4 canh giữa (kiểu Google Docs).
@@ -219,9 +246,9 @@ it("switch mode: word → exportJob docx-layout + Tiptap editor + word tools; md
   );
 
   const mdCalls = vi.mocked(api.exportJob).mock.calls.filter((c) => c[1] === "md-layout").length;
-  await user.click(screen.getByTestId("switch-mode-md"));
+  await user.click(screen.getByTestId("harness-switch-md"));
   expect(screen.getByTestId("md-editor")).toBeInTheDocument();
-  expect(screen.queryByTestId("word-tb-align-center")).not.toBeInTheDocument();
+  expect(screen.queryByTestId("word-tb-align")).not.toBeInTheDocument();
   // đã load rồi → không chạy lại flow md
   expect(vi.mocked(api.exportJob).mock.calls.filter((c) => c[1] === "md-layout").length).toBe(
     mdCalls,
@@ -230,8 +257,7 @@ it("switch mode: word → exportJob docx-layout + Tiptap editor + word tools; md
 
 it("default mode = word khi output_format docx (binding)", async () => {
   render(<Harness job={{ ...JOB, output_format: "docx" }} />);
-  expect(screen.getByTestId("switch-mode-word")).toHaveAttribute("aria-pressed", "true");
-  await screen.findByTestId("preview-docx-frame");
+  expect(await screen.findByTestId("preview-docx-frame")).toBeInTheDocument();
   expect(api.exportJob).toHaveBeenCalledWith("5", "docx-layout");
 });
 
@@ -258,7 +284,7 @@ it("lane I task 4: không còn btn-proofread/btn-refresh-proofread/suggestions-p
   expect(screen.queryByTestId("suggestions-panel")).toBeNull();
   expect(screen.queryByTestId("proofread-badge")).toBeNull();
   // word mode cũng không
-  await userEvent.click(screen.getByTestId("switch-mode-word"));
+  await userEvent.click(screen.getByTestId("harness-switch-word"));
   await screen.findByTestId("preview-docx-frame");
   expect(screen.queryByTestId("btn-proofread")).toBeNull();
   expect(screen.queryByTestId("suggestions-panel")).toBeNull();
@@ -267,8 +293,9 @@ it("lane I task 4: không còn btn-proofread/btn-refresh-proofread/suggestions-p
 it("word style: đổi line spacing → btn-save-style → putLayoutStyle (objectContaining) + toast", async () => {
   const user = userEvent.setup();
   render(<Harness job={JOB} />);
-  await user.click(screen.getByTestId("switch-mode-word"));
+  await user.click(screen.getByTestId("harness-switch-word"));
   await screen.findByTestId("preview-docx-frame");
+  await openPageTools(user);
   await user.selectOptions(screen.getByTestId("word-style-spacing"), "1");
   await user.click(screen.getByTestId("btn-save-style"));
   expect(api.putLayoutStyle).toHaveBeenCalledWith(
@@ -283,16 +310,18 @@ it("word tools hydrate từ job.layout_style (session trước đã lưu)", asyn
   render(
     <Harness job={{ ...JOB, layout_style: { align: "center", fontSize: 20, spacing: "1" } }} />,
   );
-  await user.click(screen.getByTestId("switch-mode-word"));
+  await user.click(screen.getByTestId("harness-switch-word"));
   await screen.findByTestId("preview-docx-frame");
+  await openPageTools(user);
   expect(screen.getByTestId("word-style-spacing")).toHaveValue("1");
 });
 
 it("DocStyleTools word: giữ controls trang-level; gỡ control trùng toolbar Tiptap (R51 exception theo lệnh user)", async () => {
   const user = userEvent.setup();
   render(<Harness job={JOB} />);
-  await user.click(screen.getByTestId("switch-mode-word"));
+  await user.click(screen.getByTestId("harness-switch-word"));
   await screen.findByTestId("preview-docx-frame");
+  await openPageTools(user);
   screen.getByTestId("doc-style-tools");
   // còn lại: margin / line spacing / TOC / indent / viền bảng (trang-level)
   for (const id of [
@@ -331,7 +360,7 @@ it("flow lỗi → layout-error + btn-retry-layout-error (review r1 P1: không t
 it("Plan M4: word toolbar = đúng 1 container row (overflow-x-auto, gap-2, không flex-wrap) + đủ lệnh trên editor Tiptap", async () => {
   const user = userEvent.setup();
   render(<Harness job={JOB} />);
-  await user.click(screen.getByTestId("switch-mode-word"));
+  await user.click(screen.getByTestId("harness-switch-word"));
   await screen.findByTestId("preview-docx-frame");
   const root = screen.getByTestId("word-toolbar");
   const rows = root.querySelectorAll('[role="toolbar"]');
@@ -347,16 +376,18 @@ it("Plan M4: word toolbar = đúng 1 container row (overflow-x-auto, gap-2, khô
     "word-tb-bold",
     "word-tb-italic",
     "word-tb-underline",
-    "word-tb-align-left",
-    "word-tb-align-center",
-    "word-tb-align-right",
-    "word-tb-align-justify",
-    "word-tb-list-ul",
-    "word-tb-list-ol",
+    "word-tb-align",
+    "word-tb-list",
     "word-tb-table",
-    "word-tb-clear",
   ];
   for (const id of ids) expect(screen.getByTestId(id)).toBeInTheDocument();
+  // nhóm gộp (phương án A 2026-11-07): mở dropdown mới render từng lệnh
+  await openAlign(user);
+  for (const id of ["word-tb-align-left", "word-tb-align-center", "word-tb-align-right", "word-tb-align-justify"])
+    expect(screen.getByTestId(id)).toBeInTheDocument();
+  await user.click(screen.getByTestId("word-tb-list"));
+  for (const id of ["word-tb-list-ul", "word-tb-list-ol"])
+    expect(screen.getByTestId(id)).toBeInTheDocument();
   // M4: không còn iframe — editor Tiptap (.ProseMirror contenteditable) trong container
   const pane = screen.getByTestId("preview-docx-frame") as HTMLElement;
   expect(pane.querySelector("iframe")).toBeNull();
@@ -368,7 +399,7 @@ it("Plan M4: word toolbar = đúng 1 container row (overflow-x-auto, gap-2, khô
 it("Plan M4: Lưu word → editor.getHTML() → putDocxHtml + toast 'Đã lưu.' + invalidate job", async () => {
   const user = userEvent.setup();
   render(<Harness job={{ ...JOB, layout_cache: { md: true, docx: false } }} />);
-  await user.click(screen.getByTestId("switch-mode-word"));
+  await user.click(screen.getByTestId("harness-switch-word"));
   const pane = await screen.findByTestId("preview-docx-frame");
   await waitFor(() => expect(pane.querySelector(".ProseMirror")).toHaveTextContent("Chào"));
   await user.click(screen.getByTestId("btn-save-layout-word"));
@@ -390,7 +421,7 @@ it("Plan M3: layout_cache.docx_html=true → GET docx.html (getDocxHtml), KHÔNG
   );
   expect(api.exportJob).not.toHaveBeenCalled();
   expect(mammoth.convertToHtml).not.toHaveBeenCalled();
-  expect(screen.getByTestId("layout-badge")).toHaveTextContent("Layout saved");
+  expect(api.exportJob).not.toHaveBeenCalled();
 });
 
 it("Plan M3: docx_html cache nhưng GET 404 (null) → fallback mammoth docx-layout", async () => {

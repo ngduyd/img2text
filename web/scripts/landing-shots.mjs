@@ -55,15 +55,12 @@ async function shot(name, path, prepare) {
 // 1. Jobs list — 1 CTA, hàng gọn, ⋯ menu.
 await shot("jobs", "/jobs");
 
-// 2. Editor + xem trước A4 (điểm bán hàng chính) — chờ paged.js chia trang xong.
+// 2. Editor Word (điểm bán hàng chính) — chờ toolbar + tờ giấy mount xong.
 await shot("editor", `/jobs/${JOB}/layout`, async () => {
   await page.waitForSelector('[data-testid="btn-edit-doc"]', { timeout: 20000 });
   await page.click('[data-testid="btn-edit-doc"]');
-  await page.waitForSelector('[data-testid="page-preview"]', { timeout: 20000 });
-  await page.waitForFunction(
-    () => (document.querySelector('[data-testid="page-count"]')?.textContent ?? "").trim() !== "–",
-    { timeout: 20000 },
-  );
+  await page.waitForSelector('[data-testid="word-toolbar"]', { timeout: 20000 });
+  await page.waitForSelector('.wp-paper', { timeout: 20000 });
   await page.waitForTimeout(1500);
 });
 

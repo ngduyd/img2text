@@ -1,4 +1,4 @@
-import { Download } from "lucide-react";
+import { ChevronDown, Download } from "lucide-react";
 import { useEffect } from "react";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
@@ -67,14 +67,16 @@ export default function DownloadDropdown({
       <Button
         testid="btn-download"
         size={size}
-        className="h-8"
+        className="h-8 px-2"
+        aria-label={t("jd.download")}
+        title={t("jd.download")}
         aria-expanded={open}
         aria-haspopup="true"
         aria-controls="download-formats"
         onClick={onToggle}
       >
-        <Download className="h-4 w-4" aria-hidden="true" />
-        {t("jd.download")}
+        <Download className="h-[18px] w-[18px]" aria-hidden="true" />
+        <ChevronDown className="ml-0.5 h-3.5 w-3.5" aria-hidden="true" />
       </Button>
       <div
         id="download-formats"

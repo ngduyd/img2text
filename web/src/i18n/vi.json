@@ -57,7 +57,8 @@
     "generic": "Đã xảy ra lỗi.",
     "email_limit": "Đã gửi quá nhiều email. Vui lòng thử lại sau.",
     "filePurged": "File gốc đã bị xoá theo chính sách lưu trữ.",
-    "tos_required": "Cần đồng ý điều khoản sử dụng để đăng ký."
+    "tos_required": "Cần đồng ý điều khoản sử dụng để đăng ký.",
+    "rate_limited": "Thao tác quá nhanh, thử lại sau 1 giây."
   },
   "ocr": {
     "enabled": "OCR đã cấp",
@@ -162,9 +163,6 @@
     "loadFailedTitle": "Không tải được công việc.",
     "notFoundTitle": "Không tìm thấy công việc.",
     "notFoundBody": "Công việc không tồn tại hoặc bạn không có quyền xem.",
-    "staleBadge": "Cần đồng bộ",
-    "resync": "Đồng bộ lại",
-    "resyncDone": "Đã đồng bộ layout",
     "retryOcr": "Chạy lại OCR",
     "retryFailed": "Thử lại thất bại.",
     "cancelJob": "Hủy job",
@@ -205,7 +203,14 @@
     "proofreadDone": "Đã thêm {n} đề xuất",
     "exitEdit": "Xong",
     "resultTitle": "Kết quả",
-    "noResult": "Chưa có nội dung."
+    "noResult": "Chưa có nội dung.",
+    "splitSide": "Chia trái — phải",
+    "splitStack": "Chia trên — dưới",
+    "splitOff": "Ẩn ảnh gốc",
+    "editText": "Sửa văn bản",
+    "editLayout": "Sửa layout",
+    "collapseBar": "Thu gọn thanh trên",
+    "expandBar": "Mở thanh trên"
   },
   "info": {
     "createdAt": "Tạo lúc:",
@@ -262,7 +267,12 @@
     "previewPane": "Kết quả",
     "showPreview": "Xem trước",
     "hidePreview": "Ẩn xem trước",
-    "pagePreview": "Xem trang A4"
+    "saveContent": "Lưu nội dung",
+    "docStylePanel": "Trang & kiểu chữ",
+    "modeMd": "Markdown",
+    "modeWord": "Word",
+    "toMd": "Chuyển sang Markdown",
+    "toWord": "Chuyển sang Word"
   },
   "word": {
     "toolbarAria": "Công cụ soạn thảo Word",
@@ -292,13 +302,24 @@
     "tableInsert": "Chèn bảng {r}×{c}",
     "tablePick": "Chọn bảng (tối đa 10×10)",
     "pagesUnit": "trang",
-    "pagePreviewAria": "Xem trước trang A4",
     "moreTools": "Thêm công cụ",
     "paragraph": "Đoạn văn",
     "indent": "Tăng thụt lề",
     "outdent": "Giảm thụt lề",
     "lineHeight": "Giãn dòng",
-    "lineHeightDefault": "Giãn dòng"
+    "lineHeightDefault": "Giãn dòng",
+    "normalText": "Đoạn văn",
+    "formatGroup": "Định dạng chữ",
+    "alignGroup": "Căn lề",
+    "listGroup": "Danh sách",
+    "pageTools": "Trang & chữ",
+    "dockPosition": "Vị trí thanh công cụ",
+    "dock": {
+      "top": "Trên",
+      "bottom": "Dưới",
+      "left": "Trái",
+      "right": "Phải"
+    }
   },
   "extraction": {
     "title": "Trích xuất văn bản",
