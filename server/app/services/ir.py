@@ -15,6 +15,9 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
+# 1.1 (2026-11-07): node mang text + render payload, page mang width/columns
+IR_SCHEMA_VERSION = "1.1"
+
 class NodeType(str, Enum):
     HEADING = "heading"
     PARAGRAPH = "paragraph"
@@ -32,6 +35,33 @@ class NodeType(str, Enum):
     UNKNOWN = "unknown"
 
 
+class NodeStyleIR(BaseModel):
+    """Geometry/style mang đủ dữ liệu để renderer dựng lại layout (0 tra spec)."""
+
+    align: Literal["left", "center", "right", "justify"] = "left"
+    indent_px: float = 0.0
+    first_line_indent_px: float = 0.0
+    font_px: float = 0.0
+    level: int = 0
+    space_after_px: float = 0.0
+    col_index: int = 0
+    tabs: list[dict] = Field(default_factory=list)
+
+
+class NodeRenderIR(BaseModel):
+    """Dữ liệu render: text/lines/style + payload riêng của table/image/latex."""
+
+    kind: Literal["text", "table", "image"] = "text"
+    # bbox KHÔNG làm tròn (bbox ở NodeIR là int cho viewer/contract cũ)
+    bbox_exact: list[float] | None = None
+    lines: list[str] = Field(default_factory=list)
+    style: NodeStyleIR = Field(default_factory=NodeStyleIR)
+    latex: str = ""
+    html: str = ""
+    cells: list | None = None
+    image_region_id: str | None = None
+
+
 class NodeIR(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -46,6 +76,9 @@ class NodeIR(BaseModel):
     source_block_ids: list[str] = Field(default_factory=list)
     bbox: list[int] | None = None
     children: list["NodeIR"] = Field(default_factory=list)
+    # 2026-11-07: renderer (md/docx) đi từ IR — cần text/style/layout đầy đủ,
+    # không đọc lại layout_spec. None = IR cũ (client cũ/LLM) → renderer bỏ qua.
+    render: NodeRenderIR | None = None
 
     @field_validator("bbox")
     @classmethod
@@ -59,6 +92,10 @@ class NodeIR(BaseModel):
 class PageIR(BaseModel):
     page_id: str
     page_number: int
+    width: float = 0.0
+    height: float = 0.0
+    # [[x0, x1], ...] theo col_index — cần cho căn lề md (đếm khoảng trắng)
+    columns: list[list[float]] = Field(default_factory=list)
     header: list[NodeIR] = Field(default_factory=list)
     content: list[NodeIR] = Field(default_factory=list)
     footer: list[NodeIR] = Field(default_factory=list)
@@ -346,11 +383,44 @@ def validate_ir(ir: dict, ocr_result: dict) -> DocumentIR:
 
     return doc
 
+def _style_of(block) -> dict:
+    return {
+        "align": block.align,
+        "indent_px": block.indent_px,
+        "first_line_indent_px": block.first_line_indent_px,
+        "font_px": block.font_px,
+        "level": block.level,
+        "space_after_px": block.space_after_px,
+        "col_index": block.col_index,
+        "tabs": [
+            {"pos_px": t.pos_px, "align": t.align, "leader": t.leader}
+            for t in block.tabs
+        ],
+    }
+
+
+def _render_of(block) -> dict:
+    return {
+        "kind": block.kind,
+        "bbox_exact": [float(v) for v in block.bbox],
+        "lines": list(block.lines),
+        "style": _style_of(block),
+        "latex": block.latex or "",
+        "html": block.html or "",
+        "cells": block.cells,
+        "image_region_id": block.region_id if block.kind == "image" else None,
+    }
+
+
 def spec_ir(result: dict) -> dict:
     """IR dựng trực tiếp từ layout_spec — tất định, 0 LLM call.
 
     1 node / block của spec; region bị layout_spec nuốt (tab-stop) vẫn giữ
     thành node paragraph riêng để coverage không mất block.
+
+    2026-11-07: node mang luôn `text` + `render` (style/bbox float/lines/
+    table/latex/image) và page mang `width/height/columns` → md và docx dựng
+    layout TỪ IR, không đọc lại layout_spec.
     """
     from app.services.layout_spec import build_page_specs   # tránh vòng import
 
@@ -364,6 +434,8 @@ def spec_ir(result: dict) -> dict:
                 "type": block.type_label,
                 "source_block_ids": [block.region_id],
                 "bbox": [round(v) for v in block.bbox],
+                "text": block.text,
+                "render": _render_of(block),
             })
         seen = {b.region_id for b in spec.blocks}
         for region in page.get("regions") or []:
@@ -371,7 +443,14 @@ def spec_ir(result: dict) -> dict:
             if rid in seen or not region.get("bbox"):
                 continue
             nodes.append({"id": f"f{pi}_{rid}", "type": "paragraph",
-                          "source_block_ids": [rid], "bbox": list(region["bbox"])})
-        out.append({"page_id": str(page.get("index", pi)), "page_number": pi + 1,
-                    "header": [], "content": nodes, "footer": []})
-    return {"document_id": "doc_001", "schema_version": "1.0", "pages": out}
+                          "source_block_ids": [rid], "bbox": list(region["bbox"]),
+                          "text": region.get("text") or ""})
+        out.append({
+            "page_id": str(page.get("index", pi)),
+            "page_number": pi + 1,
+            "width": float(spec.width),
+            "height": float(spec.height),
+            "columns": [[c.x0, c.x1] for c in spec.cols],
+            "header": [], "content": nodes, "footer": [],
+        })
+    return {"document_id": "doc_001", "schema_version": IR_SCHEMA_VERSION, "pages": out}

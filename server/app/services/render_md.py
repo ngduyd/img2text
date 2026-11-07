@@ -474,96 +474,147 @@ HEADING_H1_RATIO = 2.0
 HEADING_H2_RATIO = 1.6
 FONT_FLOOR, FONT_CEIL = 10.0, 48.0
 
-def _line_font(block: BlockSpec) -> float:
-    """Font ước lượng theo TỪNG dòng — block.font_px là chiều cao cả khối,
-    sai (quá to) cho đoạn nhiều dòng → indent/căn lề méo."""
-    n = max(1, len(block.lines))
-    return min(FONT_CEIL, max(FONT_FLOOR, block.h / n))
+def _node_lines(node: dict) -> list[str]:
+    render = node.get("render") or {}
+    lines = list(render.get("lines") or [])
+    if not lines:
+        lines = [ln.strip() for ln in (node.get("text") or "").splitlines() if ln.strip()]
+    return lines
 
-def _heading_level(block: BlockSpec, median_font: float) -> int:
-    """Label ('#' theo _HEAD_RE/_ROMAN_RE như đường heuristic cũ); spec không
-    có `h` → suy từ tỉ lệ font so với median trang."""
-    if block.kind != "text":
+
+def _node_box(node: dict) -> tuple[float, float, float, float]:
+    """(x0, y0, x1, y1) — ưu tiên bbox_exact (không làm tròn) của IR."""
+    render = node.get("render") or {}
+    bbox = render.get("bbox_exact") or node.get("bbox") or [0, 0, 1, 1]
+    x0, y0, x1, y1 = (float(v) for v in bbox[:4])
+    return x0, y0, max(x0 + 1.0, x1), max(y0 + 1.0, y1)
+
+
+def _node_line_font(node: dict) -> float:
+    """Font ước lượng theo TỪNG dòng — font_px là chiều cao cả khối, sai (quá
+    to) cho đoạn nhiều dòng → indent/căn lề méo."""
+    _, y0, _, y1 = _node_box(node)
+    n = max(1, len(_node_lines(node)))
+    return min(FONT_CEIL, max(FONT_FLOOR, (y1 - y0) / n))
+
+
+def _node_heading_level(node: dict, median_font: float) -> int:
+    render = node.get("render") or {}
+    if render.get("kind") != "text":
         return 0
-    first = (block.lines or [""])[0].strip()
+    lines = _node_lines(node)
+    first = (lines or [""])[0].strip()
     if _HEAD_RE.match(first) or _ROMAN_RE.match(first):
         return 2
-    if len(block.lines) > 1:      # heading là 1 dòng; đoạn nhiều dòng thì không
+    if len(lines) > 1:      # heading là 1 dòng; đoạn nhiều dòng thì không
         return 0
-    ratio = _line_font(block) / median_font if median_font else 1.0
+    ratio = _node_line_font(node) / median_font if median_font else 1.0
     if ratio >= HEADING_H1_RATIO:
         return 1
     if ratio >= HEADING_H2_RATIO:
         return 2
     return 0
 
-def _spec_para(block: BlockSpec, page: PageSpec, median_font: float) -> list[str]:
-    """1 block spec → các dòng md (chưa nối paragraph)."""
-    if block.kind == "image":
-        return [IMAGE_MARKER.format(region_id=block.region_id)]
-    if block.kind == "table":
-        return _cells_md(block.cells) if block.cells else _table_md(block.html or block.text)
-    if block.latex:
+
+def _node_col_w(page: dict, node: dict) -> float:
+    cols = page.get("columns") or []
+    idx = (node.get("render") or {}).get("style", {}).get("col_index", 0)
+    if not cols:
+        return float(page.get("width") or 1.0)
+    x0, x1 = cols[min(idx, len(cols) - 1)]
+    return max(1.0, float(x1) - float(x0))
+
+
+def _node_para(node: dict, page: dict, median_font: float) -> list[str]:
+    """1 node IR → các dòng md (chưa nối paragraph)."""
+    render = node.get("render") or {}
+    kind = render.get("kind", "text")
+    rid = render.get("image_region_id") or next(
+        iter(node.get("source_block_ids") or []), ""
+    )
+    if kind == "image":
+        return [IMAGE_MARKER.format(region_id=rid)]
+    if kind == "table":
+        cells = render.get("cells")
+        return _cells_md(cells) if cells else _table_md(render.get("html") or node.get("text") or "")
+    if render.get("latex"):
         # công thức: giữ LaTeX trong $$ ... $$ (KaTeX/MathJax render); docx
         # đi đường OMML. Không detex ở md — detex chỉ là fallback text.
-        return ["$$", block.latex, "$$"]
-    lines = list(block.lines)
-    if not lines:
-        lines = [ln.strip() for ln in block.text.splitlines() if ln.strip()]
+        return ["$$", render["latex"], "$$"]
+    lines = _node_lines(node)
     if not lines:
         return []
-    h = _heading_level(block, median_font)
+    style = render.get("style") or {}
+    h = _node_heading_level(node, median_font)
     if h:
         lines[0] = f"{'#' * h} {lines[0]}"
-    col = page.cols[block.col_index]
-    col_w = max(1.0, col.x1 - col.x0)
-    adv = _advance_px(_line_font(block))
-    if block.align == "center":
-        spaces = int(max(0.0, (col_w - block.w) / 2.0) / adv)
-    elif block.align == "right":
-        spaces = int(max(0.0, col_w - block.w) / adv)
+    x0, _, x1, _ = _node_box(node)
+    col_w = _node_col_w(page, node)
+    adv = _advance_px(_node_line_font(node))
+    align = style.get("align", "left")
+    if align == "center":
+        spaces = int(max(0.0, (col_w - (x1 - x0)) / 2.0) / adv)
+    elif align == "right":
+        spaces = int(max(0.0, col_w - (x1 - x0)) / adv)
     else:
-        spaces = indent_px_to_spaces(block.indent_px, _line_font(block))
+        spaces = indent_px_to_spaces(style.get("indent_px", 0.0), _node_line_font(node))
     pad = " " * spaces
     return [pad + ln for ln in lines]
 
-def _is_spec_verse(a: BlockSpec, b: BlockSpec, col_w: float) -> bool:
-    """2 block text liền nhau CÙNG cột, sát nhau, ngắn → nối bằng 1 newline
+
+def _is_node_verse(a: dict, b: dict, col_w: float) -> bool:
+    """2 node text liền nhau CÙNG cột, sát nhau, ngắn → nối bằng 1 newline
     (thơ / câu nối dòng), không phải đoạn mới."""
-    if a.kind != "text" or b.kind != "text":
+    ra, rb = a.get("render") or {}, b.get("render") or {}
+    if ra.get("kind") != "text" or rb.get("kind") != "text":
         return False
-    if a.col_index != b.col_index or a.align != b.align:
+    sa, sb = ra.get("style") or {}, rb.get("style") or {}
+    if sa.get("col_index", 0) != sb.get("col_index", 0):
         return False
-    if a.tabs or b.tabs or "\t" in a.text or "\t" in b.text:
+    if sa.get("align", "left") != sb.get("align", "left"):
         return False
-    if abs(a.indent_px - b.indent_px) > X_TOL:
+    if sa.get("tabs") or sb.get("tabs"):
         return False
-    if a.w > VERSE_WIDTH_RATIO * col_w or b.w > VERSE_WIDTH_RATIO * col_w:
+    if "\t" in (a.get("text") or "") or "\t" in (b.get("text") or ""):
         return False
-    return (b.y0 - a.y1) <= VERSE_GAP_RATIO * min(a.h, b.h)
+    if abs(sa.get("indent_px", 0.0) - sb.get("indent_px", 0.0)) > X_TOL:
+        return False
+    ax0, ay0, ax1, ay1 = _node_box(a)
+    bx0, by0, bx1, by1 = _node_box(b)
+    aw, ah = ax1 - ax0, ay1 - ay0
+    bw, bh = bx1 - bx0, by1 - by0
+    if aw > VERSE_WIDTH_RATIO * col_w or bw > VERSE_WIDTH_RATIO * col_w:
+        return False
+    return (by0 - ay1) <= VERSE_GAP_RATIO * min(ah, bh)
 
-def render_md_spec(result: dict) -> str:
-    """OCR result → Markdown qua layout spec: đọc HẾT cột trái rồi mới sang
-    cột phải (blocks đã sort col_index, y0, x0) — không trộn dòng 2 cột.
 
-    Trả "" khi không có block nào (caller fallback heuristic cũ).
-    Kết quả luôn kết thúc bằng đúng 1 newline."""
+def render_md_ir(ir: dict) -> str:
+    """Document IR → Markdown (0 LLM): hết cột trái rồi sang cột phải.
+
+    Trả "" khi IR không có node render được (caller fallback heuristic cũ).
+    Kết quả luôn kết thúc bằng đúng 1 newline.
+    """
     pages_md: list[str] = []
-    for page in build_page_specs(result):
-        fonts = [_line_font(b) for b in page.blocks if b.kind == "text"]
+    for page in ir.get("pages") or []:
+        nodes = page.get("content") or []
+        fonts = [
+            _node_line_font(n) for n in nodes
+            if (n.get("render") or {}).get("kind") == "text"
+        ]
         median_font = statistics.median(fonts) if fonts else FONT_FLOOR
         chunks: list[str] = []
-        prev: BlockSpec | None = None
-        for block in page.blocks:
-            para = _spec_para(block, page, median_font)
+        prev: dict | None = None
+        for node in nodes:
+            if not node.get("render"):
+                continue
+            para = _node_para(node, page, median_font)
             if not para:
                 continue
             if prev is not None:
-                col = page.cols[block.col_index]
-                col_w = max(1.0, col.x1 - col.x0)
-                chunks.append("\n" if _is_spec_verse(prev, block, col_w) else "\n\n")
+                col_w = _node_col_w(page, node)
+                chunks.append("\n" if _is_node_verse(prev, node, col_w) else "\n\n")
             chunks.append("\n".join(para))
-            prev = block
+            prev = node
         text = "".join(chunks).strip("\n")
         if text:
             pages_md.append(text)
@@ -571,6 +622,10 @@ def render_md_spec(result: dict) -> str:
         return ""
     return "\n\n".join(pages_md) + "\n"
 
+
+def render_md_spec(result: dict) -> str:
+    """OCR result → Markdown: dựng IR rồi render từ IR (một đường duy nhất)."""
+    return render_md_ir(spec_ir(result))
 
 # ---------------------------------------------------------------- IR generation
 def generate_ir(result: dict) -> dict:

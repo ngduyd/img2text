@@ -20,7 +20,14 @@ from docx.oxml.ns import nsdecls, qn
 from docx.shared import Inches, Pt, Twips
 from docx.table import _Cell
 
-from app.services.layout_spec import BlockSpec, PageSpec, build_page_specs
+from app.services.ir import spec_ir
+from app.services.layout_spec import (
+    FONT_FALLBACK,
+    BlockSpec,
+    Col,
+    PageSpec,
+    Tab,
+)
 
 logger = logging.getLogger("app.services.render_docx")
 
@@ -304,6 +311,45 @@ def _add_spec_block(
     para.add_run("\n".join(blk.lines or [blk.text]))
 
 
+def _block_of(node: dict):
+    """Node IR → BlockSpec (view) để walker docx dùng lại nguyên vẹn.
+
+    IR mang đủ dữ liệu (render.style + bbox_exact + lines/cells/latex) nên
+    KHÔNG đọc lại layout_spec; node IR cũ (không có `render`) → None (bỏ qua).
+    """
+    render = node.get("render")
+    if not render:
+        return None
+    style = render.get("style") or {}
+    bbox = render.get("bbox_exact") or node.get("bbox") or [0, 0, 1, 1]
+    x0, y0, x1, y1 = (float(v) for v in bbox[:4])
+    rid = render.get("image_region_id") or next(
+        iter(node.get("source_block_ids") or []), ""
+    )
+    return BlockSpec(
+        region_id=rid,
+        kind=render.get("kind") or "text",
+        text=node.get("text") or "",
+        bbox=(x0, y0, x1, y1),
+        col_index=int(style.get("col_index") or 0),
+        align=style.get("align") or "left",
+        indent_px=float(style.get("indent_px") or 0.0),
+        first_line_indent_px=float(style.get("first_line_indent_px") or 0.0),
+        tabs=[
+            Tab(float(t.get("pos_px") or 0.0), t.get("align") or "left", t.get("leader") or "none")
+            for t in (style.get("tabs") or [])
+        ],
+        space_after_px=float(style.get("space_after_px") or 0.0),
+        font_px=float(style.get("font_px") or 0.0) or FONT_FALLBACK,
+        type_label=node.get("type") or "paragraph",
+        level=int(style.get("level") or 0),
+        latex=render.get("latex") or "",
+        html=render.get("html") or "",
+        cells=render.get("cells"),
+        lines=list(render.get("lines") or []),
+    )
+
+
 def _group_pages(pages: list[PageSpec]) -> list[list[PageSpec]]:
     """Trang liên tiếp cùng số cột → 1 section (linearize nếu quá nhiều)."""
     groups: list[list[PageSpec]] = []
@@ -320,17 +366,30 @@ def _group_pages(pages: list[PageSpec]) -> list[list[PageSpec]]:
     return groups
 
 
-def render_docx_spec(
-    result: dict,
+def render_docx_ir(
+    ir: dict,
     style_overrides: dict | None = None,
     crops: dict[str, bytes] | None = None,
 ) -> bytes:
-    """OCR result → DOCX qua layout spec (không LLM, không HTML, không framePr).
+    """Document IR → DOCX (0 LLM, không HTML, không framePr).
 
+    Đi từ IR (node đã mang text/style/bbox/lines/cells) — không đọc layout_spec.
     crops: {region_id: bytes} — block image có id trong crops → nhúng ảnh
     (width = bbox width px → twips); thiếu key/ảnh lỗi → placeholder [ảnh].
     """
-    pages = build_page_specs(result)
+    pages: list[PageSpec] = []
+    for page in ir.get("pages") or []:
+        cols = [Col(float(c[0]), float(c[1])) for c in (page.get("columns") or [])]
+        blocks = [b for b in (_block_of(n) for n in page.get("content") or []) if b is not None]
+        pages.append(
+            PageSpec(
+                width=float(page.get("width") or 0.0),
+                height=float(page.get("height") or 0.0),
+                margin_left=cols[0].x0 if cols else 0.0,
+                cols=cols or [Col(0.0, float(page.get("width") or 1.0))],
+                blocks=blocks,
+            )
+        )
     doc = Document()
     for gi, group in enumerate(_group_pages(pages)):
         if gi:
@@ -348,14 +407,25 @@ def render_docx_spec(
     doc.save(buf)
     return buf.getvalue()
 
+
+def render_docx_spec(
+    result: dict,
+    style_overrides: dict | None = None,
+    crops: dict[str, bytes] | None = None,
+) -> bytes:
+    """OCR result → DOCX: dựng IR rồi render từ IR (một đường duy nhất)."""
+    return render_docx_ir(spec_ir(result), style_overrides, crops)
+
+
 async def _load_crops(result: dict, crop_loader) -> dict[str, bytes] | None:
     """Gom crop bytes cho mọi block image (gọi loader TUẦN TỰ, lỗi/None → bỏ)."""
     if crop_loader is None:
         return None
     crops: dict[str, bytes] = {}
-    for pg in build_page_specs(result):
-        for blk in pg.blocks:
-            if blk.kind != "image" or blk.region_id in crops:
+    for page in spec_ir(result).get("pages") or []:
+        for node in page.get("content") or []:
+            blk = _block_of(node)
+            if blk is None or blk.kind != "image" or blk.region_id in crops:
                 continue
             try:
                 data = await crop_loader(blk.region_id)

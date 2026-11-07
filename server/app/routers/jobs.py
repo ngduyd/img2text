@@ -754,10 +754,8 @@ async def get_job(
         # Plan M: unified-editor contract — artifact cache flags + word style
         # Plan M3: docx = docx.html (user-edited) OR docx-layout (LLM render)
         "layout_cache": {
-            "md": await _layout_artifact_exists(storage, id, "md-layout"),
-            "docx": docx_html or await _layout_artifact_exists(
-                storage, id, "docx-layout"
-            ),
+            "md": md_cached,
+            "docx": docx_html or docx_layout_cached,
             "docx_html": docx_html,
         },
         "layout_style": _parse_layout_style(job),
@@ -811,6 +809,15 @@ async def put_layout_style(
     await storage.delete_prefix(f"exports/{id}/docx-layout")
     return Response(status_code=204)
 
+def _ir_cache_current(raw: str) -> bool:
+    """IR cache đúng schema hiện tại (1.1: node có text/render, page có columns)."""
+    from app.services.ir import IR_SCHEMA_VERSION
+
+    try:
+        return json.loads(raw).get("schema_version") == IR_SCHEMA_VERSION
+    except (ValueError, TypeError, AttributeError):
+        return False
+
 @router.get("/api/jobs/{id}/ir")
 async def get_job_ir(
     id: int,
@@ -820,7 +827,8 @@ async def get_job_ir(
     """Get Document IR JSON — dựng từ layout_spec (tất định, 0 LLM),
     sau đó đọc cache job.ir_json."""
     job = await _job_or_403(session, id, user)
-    if not job.ir_json:
+    if not job.ir_json or not _ir_cache_current(job.ir_json):
+        # cache cũ (IR chỉ id/type/bbox, không render payload) → dựng lại
         ir = generate_ir(job.result or {})
         job.ir_json = json.dumps(ir, ensure_ascii=False)
         await session.commit()

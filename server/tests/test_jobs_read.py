@@ -130,9 +130,11 @@ async def test_ir_on_demand_then_cached(
 
     calls: list = []
 
+    from app.services.ir import IR_SCHEMA_VERSION
+
     def fake_ir(result):   # spec_ir là sync, 0 LLM call
         calls.append(result)
-        return {"document_id": "d1", "schema_version": "1.0", "pages": []}
+        return {"document_id": "d1", "schema_version": IR_SCHEMA_VERSION, "pages": []}
 
     monkeypatch.setattr(jobs_mod, "generate_ir", fake_ir)
     jid = done_job_with_result
