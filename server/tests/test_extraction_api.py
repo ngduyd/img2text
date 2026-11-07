@@ -118,7 +118,8 @@ async def test_post_extraction_needs_render(auth_client, app, done_job_with_resu
 async def test_post_extraction_empty_old_phrase_skips_sync(
     auth_client, app, done_job_with_result
 ):
-    """P1-1: empty old_phrase → sync skipped, artifact never corrupted."""
+    """P1-1: empty old_phrase → KHÔNG phrase-replace; artifact dựng lại từ regions
+    (Save full text): không có "".replace chèn giữa mọi ký tự."""
     jid = done_job_with_result
     await _seed_layouts(app, jid)
     st = app.state.storage
@@ -135,8 +136,12 @@ async def test_post_extraction_empty_old_phrase_skips_sync(
     assert r.status_code == 200, r.text
     assert r.json()["synced"] == {"md": False, "docx": False}
     assert r.json()["needs_render"] == []
-    # "".replace inserts new between EVERY char — artifact must be untouched
-    assert await st.get(f"exports/{jid}/md-layout") == md_before
+    # "".replace inserts new between EVERY char — không được phrase-replace.
+    # Artifact dựng lại tất định từ regions đã nhận text mới.
+    md_after = (await st.get(f"exports/{jid}/md-layout")).decode("utf-8")
+    assert "Xin chao" in md_after
+    assert "y" not in md_after.replace("Xin chao", "")
+    assert md_before != md_after.encode("utf-8")
     got = (await auth_client.get(f"/api/jobs/{jid}/extraction")).json()
     assert got["text"] == "Xin chao"  # text still saved
     assert got["text_version"] == 1
@@ -144,7 +149,7 @@ async def test_post_extraction_empty_old_phrase_skips_sync(
 async def test_post_extraction_empty_new_phrase_skips_sync(
     auth_client, app, done_job_with_result
 ):
-    """P1-1: empty new_phrase → sync skipped, artifact untouched."""
+    """P1-1: empty new_phrase → KHÔNG phrase-replace; artifact dựng lại từ regions."""
     jid = done_job_with_result
     await _seed_layouts(app, jid)
     st = app.state.storage
@@ -161,7 +166,10 @@ async def test_post_extraction_empty_new_phrase_skips_sync(
     assert r.status_code == 200, r.text
     assert r.json()["synced"] == {"md": False, "docx": False}
     assert r.json()["needs_render"] == []
-    assert await st.get(f"exports/{jid}/md-layout") == md_before
+    # Save full text → rebuild tất định từ regions (không xoá text bằng "").
+    md_after = (await st.get(f"exports/{jid}/md-layout")).decode("utf-8")
+    assert "Xin chao" in md_after
+    assert md_before != md_after.encode("utf-8")
 
 async def test_post_extraction_concurrent_expected_one_409(
     auth_client, done_job_with_result
@@ -225,7 +233,8 @@ async def test_auto_gen_snapshots_previous_md_layout(
     items = (
         await auth_client.get(f"/api/jobs/{jid}/versions?kind=md-layout")
     ).json()["items"]
-    assert [i["version"] for i in items] == [1]  # pre-overwrite snapshot
+    # pre-overwrite snapshot (v1) + head row của bản mới (v2) → stale tính đúng
+    assert [i["version"] for i in items] == [2, 1]
     assert await st.get(f"versions/{jid}/md-layout/1") == b"# ban cu"
 
 async def test_auto_gen_snapshots_previous_docx_layout(
@@ -254,7 +263,8 @@ async def test_auto_gen_snapshots_previous_docx_layout(
     items = (
         await auth_client.get(f"/api/jobs/{jid}/versions?kind=docx-layout")
     ).json()["items"]
-    assert [i["version"] for i in items] == [1]  # pre-overwrite snapshot
+    # pre-overwrite snapshot (v1) + head row của bản mới (v2) → stale tính đúng
+    assert [i["version"] for i in items] == [2, 1]
     assert await st.get(f"versions/{jid}/docx-layout/1") == b"docx ban cu"
 
 async def test_auto_gen_overwrites_stale_artifacts(
@@ -396,8 +406,9 @@ async def test_put_layout_marks_detached(auth_client, done_job_with_result):
 # --- audit-P1 verification (đóng bởi P0 stale badge; bổ sung test evidence) ---
 
 async def test_audit_text_only_save_shows_stale_badge(auth_client, app, done_job_with_result):
-    """Audit P1 (a): text-only save (KHÔNG old/new phrase) bump version →
-    GET job stale_layouts hiện badge (sync skipped → layout rows behind)."""
+    """Audit P1 (a) — đổi hành vi 2026-11-07: text-only save (KHÔNG old/new
+    phrase) bump version + rebuild cả 2 layout tất định (0 LLM) → KHÔNG còn
+    stale (trước đây skip sync → badge treo, layout đứng im)."""
     jid = done_job_with_result
     await _seed_layouts(app, jid)
     r = await auth_client.get(f"/api/jobs/{jid}/extraction")  # lazy-seed @tv0
@@ -410,7 +421,9 @@ async def test_audit_text_only_save_shows_stale_badge(auth_client, app, done_job
     assert r.json()["text_version"] == 1
     body = (await auth_client.get(f"/api/jobs/{jid}")).json()
     assert body["text_version"] == 1
-    assert body["stale_layouts"] == ["md", "docx"]
+    assert body["stale_layouts"] == []
+    md = (await app.state.storage.get(f"exports/{jid}/md-layout")).decode("utf-8")
+    assert "Xin chao ban" in md
 
 async def test_audit_restore_text_shows_badge_then_resync_clears(
     auth_client, app, done_job_with_result

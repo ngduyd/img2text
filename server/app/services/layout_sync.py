@@ -6,10 +6,12 @@ Phrase not found in an artifact → that kind is NOT touched (atomic
 per-layout; caller flags needs_render for it).
 """
 
+from difflib import SequenceMatcher
 from html import escape
 from html.parser import HTMLParser
 import logging
 
+from app.services.layout_spec import reading_order_region_ids
 from app.services.storage import StorageDriver
 
 logger = logging.getLogger(__name__)
@@ -118,3 +120,181 @@ async def _sync_one(
     except Exception as exc:
         logger.warning("layout sync failed key=%s: %s", key, exc)
         return False
+
+def _bbox_height(region: dict) -> float:
+    """Chiều cao bbox (y1-y0); 0 khi thiếu/hỏng → caller fallback số dòng."""
+    bbox = region.get("bbox")
+    if not bbox or len(bbox) < 4:
+        return 0.0
+    try:
+        return max(0.0, float(bbox[3]) - float(bbox[1]))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _region_index(result: dict) -> dict[str, tuple[int, int]]:
+    """region id → (page_idx, region_idx)."""
+    index: dict[str, tuple[int, int]] = {}
+    for pi, page in enumerate(result.get("pages") or []):
+        for ri, region in enumerate(page.get("regions") or []):
+            index[str(region.get("id"))] = (pi, ri)
+    return index
+
+
+def text_from_regions(result: dict) -> str:
+    """Text gốc theo THỨ TỰ ĐỌC (cột → y → x): regions join "\\n", pages "\\n\\n".
+
+    Cùng thứ tự với layout render → sửa dòng nào thấy đúng chỗ đó. Region rỗng
+    (ảnh) vẫn chiếm 1 dòng trống để text và layout khớp nhau.
+    """
+    index = _region_index(result)
+    pages_text: list[str] = []
+    pages = result.get("pages") or []
+    for ids in reading_order_region_ids(result):
+        lines = []
+        for rid in ids:
+            pi, ri = index[rid]
+            lines.append(pages[pi]["regions"][ri].get("text") or "")
+        pages_text.append("\n".join(lines))
+    return "\n\n".join(pages_text)
+
+
+def _find_run(lines: list[str], run: list[str], start: int) -> int | None:
+    """Vị trí `run` xuất hiện LIÊN TIẾP trong lines, tìm từ `start`."""
+    n, k = len(lines), len(run)
+    for pos in range(start, n - k + 1):
+        if lines[pos:pos + k] == run:
+            return pos
+    return None
+
+
+def apply_text_to_regions(result: dict, new_text: str) -> bool:
+    """Text phẳng user sửa (Overview) → regions[].text, neo theo bbox.
+
+    Layout render (`build_page_specs` → md/docx) đọc regions, không đọc
+    `extraction_text` → phải đẩy text mới ngược vào regions (bug job #84:
+    sửa text xong layout in nguyên bản cũ).
+
+    Neo 2 lớp: (1) mỗi region được tìm thấy trong text cũ theo NỘI DUNG (chạy
+    liên tiếp, không phụ thuộc thứ tự lưu — row-major cũ hay column-major mới
+    đều khớp); (2) phần bị viết lại chia cho các region trong span theo CHIỀU
+    CAO bbox, dòng mới không có chủ → region TRƯỚC (chữ nằm ngay sau đoạn trên,
+    nên không bị đẩy qua ảnh). Trả False khi không có region nào.
+    ponytail: đủ cho sửa tay 1 người; upgrade = neo theo toạ độ từng dòng khi
+    cần dựng lại layout từ text không còn giống bản OCR.
+    """
+    pages = result.get("pages") or []
+    index = _region_index(result)
+    if not index:
+        return False
+    old_text = result.get("extraction_text") or text_from_regions(result)
+    old_lines = old_text.split("\n")
+    owners: list[tuple[int, int] | None] = [None] * len(old_lines)
+    cursor = 0
+    for ids in reading_order_region_ids(result):
+        for rid in ids:
+            key = index[rid]
+            text = pages[key[0]]["regions"][key[1]].get("text") or ""
+            if not text:
+                continue  # region ảnh/rỗng: không nhận chữ
+            run = text.split("\n")
+            pos = _find_run(old_lines, run, cursor)
+            if pos is None:
+                # text cũ có thể lưu theo thứ tự khác (row-major đời trước) →
+                # tìm lại từ đầu thay vì bỏ neo
+                pos = _find_run(old_lines, run, 0)
+            if pos is None:
+                continue  # đã bị sửa tay từ trước → để diff xử lý
+            for k in range(len(run)):
+                owners[pos + k] = key
+            cursor = max(cursor, pos + len(run))
+    if not any(owner is not None for owner in owners):
+        return False  # không neo được gì → KHÔNG xoá text các region
+
+    def target(i: int) -> tuple[int, int] | None:
+        j = i
+        while j < len(owners) and owners[j] is None:
+            j += 1
+        if j < len(owners):
+            return owners[j]
+        j = i - 1
+        while j >= 0 and owners[j] is None:
+            j -= 1
+        return owners[j] if j >= 0 else None
+
+    def owner_at(i: int) -> tuple[int, int] | None:
+        return owners[i] if 0 <= i < len(owners) else None
+
+    def prev_owner(i: int) -> tuple[int, int] | None:
+        j = i
+        while j >= 0 and owners[j] is None:
+            j -= 1
+        return owners[j] if j >= 0 else None
+
+    assigned: dict[tuple[int, int], list[str]] = {}
+    new_lines = new_text.split("\n")
+    matcher = SequenceMatcher(None, old_lines, new_lines, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for k in range(i2 - i1):
+                owner = owners[i1 + k]
+                if owner is not None:
+                    assigned.setdefault(owner, []).append(old_lines[i1 + k])
+            continue
+        if tag == "delete":
+            continue
+        # insert = gõ thêm dòng NGAY SAU dòng cũ → thuộc region của dòng trước
+        # (insert ở đầu → region đầu). replace = chia tỉ lệ theo số dòng cũ của
+        # từng region trong span: user viết lại cả đoạn qua nhiều region thì
+        # structure (và anchor ảnh cạnh đó) vẫn giữ được hình dạng.
+        if tag == "insert":
+            owner = owner_at(i1 - 1) or target(i1)
+            if owner is not None:
+                assigned.setdefault(owner, []).extend(new_lines[j1:j2])
+            continue
+        # Span bắt đầu ở dòng KHÔNG có chủ (dòng trống của vùng ảnh): chữ mới
+        # nằm ngay dưới đoạn TRÊN ảnh → neo vào region trước, đừng đẩy xuống
+        # region dưới ảnh.
+        head = prev_owner(i1 - 1) if owner_at(i1) is None else None
+        if head is not None:
+            assigned.setdefault(head, []).extend(new_lines[j1:j2])
+            continue
+        spans: dict[tuple[int, int], int] = {}
+        span_order: list[tuple[int, int]] = []
+        for line_idx in range(i1, i2):
+            filled = owners[line_idx]
+            if filled is None:
+                continue
+            if filled not in spans:
+                spans[filled] = 0
+                span_order.append(filled)
+            spans[filled] += 1
+        chunk = new_lines[j1:j2]
+        if not span_order:
+            continue
+        if len(span_order) == 1:
+            assigned.setdefault(span_order[0], []).extend(chunk)
+            continue
+        # Trọng số = CHIỀU CAO bbox (neo vật lý: đoạn chữ chiếm bao nhiêu
+        # khoảng giấy thì nhận bấy nhiêu dòng) — bbox thiếu/hỏng → số dòng cũ.
+        weights = {
+            owner: _bbox_height(pages[owner[0]]["regions"][owner[1]]) or spans[owner]
+            for owner in span_order
+        }
+        total = sum(weights.values())
+        idx = 0
+        for pos, owner in enumerate(span_order):
+            remaining = len(chunk) - idx
+            if pos == len(span_order) - 1:
+                take = remaining
+            elif total > 0:
+                take = round(len(chunk) * weights[owner] / total)
+            else:
+                take = len(chunk) // len(span_order)
+            take = max(0, min(take, remaining))
+            assigned.setdefault(owner, []).extend(chunk[idx:idx + take])
+            idx += take
+    for pi, page in enumerate(pages):
+        for ri, region in enumerate(page.get("regions") or []):
+            region["text"] = "\n".join(assigned.get((pi, ri), []))
+    return True

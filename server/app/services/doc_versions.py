@@ -85,6 +85,46 @@ async def snapshot_current_layout(
             await session.close()
 
 
+async def mark_layout_current(
+    storage: StorageDriver,
+    job_id: int,
+    kind: str,
+    text_version: int,
+    session: AsyncSession | None = None,
+) -> None:
+    """Head artifact hiện tại ĐƯỢC dựng từ text_version này → hết stale.
+
+    Gọi sau khi rebuild layout (0 LLM). Bytes trùng row mới nhất → chỉ UPDATE
+    based_on (không đẻ row trùng); khác → ghi row mới. Không có artifact → no-op.
+    """
+    from app.core.db import SessionLocal
+
+    key = (MD_LAYOUT_KEY if kind == "md-layout" else DOCX_HTML_KEY).format(
+        job_id=job_id
+    )
+    try:
+        data = await storage.get(key)
+    except KeyError:
+        if kind != "docx-layout":
+            return
+        try:
+            data = await storage.get(DOCX_LAYOUT_KEY.format(job_id=job_id))
+        except KeyError:
+            return
+    own = session is None
+    session = session or SessionLocal()
+    try:
+        latest = await latest_version(session, job_id, kind)
+        if latest is not None and await read_version(storage, latest) == data:
+            if latest.based_on_text_version != text_version:
+                latest.based_on_text_version = text_version
+                await session.commit()
+            return
+        await save_version(storage, job_id, kind, data, text_version, session=session)
+    finally:
+        if own:
+            await session.close()
+
 async def save_version(
     storage: StorageDriver,
     job_id: int,

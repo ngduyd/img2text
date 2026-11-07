@@ -6,6 +6,7 @@ Plan D binding: stale exports+crops deleted) → worker protocol (Task 4;
 R11 capability token, R16/R17 atomic conditional-UPDATE transitions).
 """
 
+import asyncio
 import hmac
 import json
 import logging
@@ -717,7 +718,12 @@ async def get_job(
 ) -> dict:
     job = await _job_or_403(session, id, user)
     # storage_key deliberately omitted — never leak bucket keys to users
-    docx_html = await _layout_artifact_exists(storage, id, "docx.html")
+    # 3 HEAD lên R2 chạy SONG SONG: tuần tự tốn 380–740ms mỗi lần mở job (đo 2026-11-06).
+    docx_html, md_cached, docx_layout_cached = await asyncio.gather(
+        _layout_artifact_exists(storage, id, "docx.html"),
+        _layout_artifact_exists(storage, id, "md-layout"),
+        _layout_artifact_exists(storage, id, "docx-layout"),
+    )
     # P0-D: web contract — text_version + kinds whose layout version row is
     # based on an older text (re-render needed); no version row → not stale
     stale_layouts: list[str] = []
@@ -1069,12 +1075,14 @@ class ExtractionBody(BaseModel):
     force: bool = False
 
 def _extraction_text(result: dict) -> str:
-    """Derived text gốc: regions join \n, pages join \n\n (pre-edit jobs)."""
-    pages = result.get("pages") or []
-    return "\n\n".join(
-        "\n".join(r.get("text") or "" for r in p.get("regions", []))
-        for p in pages
-    )
+    """Derived text gốc: regions join \n, pages join \n\n (pre-edit jobs).
+
+    Thứ tự ĐỌC (cột → y → x) — cùng thứ tự layout render, để sửa dòng nào thì
+    layout đổi đúng dòng đó (trước đây thứ tự mảng region: trang 2 cột bị lệch).
+    """
+    from app.services.layout_sync import text_from_regions
+
+    return text_from_regions(result)
 
 def _text_bytes(result: dict) -> bytes:
     """extraction_text nếu có, không thì derive từ regions — seed/trước-sửa
@@ -1222,6 +1230,14 @@ async def post_extraction(
     #    check-then-set race: loser gets rowcount=0 → 409, never a silent
     #    last-win overwrite nor a UNIQUE version clash).
     result = dict(job.result or {})
+    # Save full text (không old/new phrase): đẩy text mới vào regions — layout
+    # render từ regions, không từ extraction_text (bug job #84). PHẢI chạy
+    # TRƯỚC khi ghi extraction_text để còn text cũ mà neo.
+    regions_synced = False
+    if not (body.old_phrase and body.new_phrase):
+        from app.services.layout_sync import apply_text_to_regions
+
+        regions_synced = apply_text_to_regions(result, body.text)
     result["extraction_text"] = body.text
     new_version = body.expected_text_version + 1
     # Save khi rendering → cờ vẽ lại nằm NGAY trong conditional UPDATE
@@ -1295,6 +1311,15 @@ async def post_extraction(
             update(Job).where(Job.id == id).values(rerender_requested=True)
         )
         await session.commit()
+    # 3) regions đổi → dựng lại artifact ngay (0 LLM, tất định): không còn
+    #    "layout đứng im" + badge stale sau khi sửa text. Phrase-sync ở trên
+    #    đã xử lý đường replace; đây là đường Save full text.
+    if regions_synced and job.status == "done" and not extract_only:
+        job.result = result
+        from app.routers.exports import auto_generate_output
+
+        await auto_generate_output(job, storage)
+
     return {
         "synced": synced,
         "needs_render": needs_render,

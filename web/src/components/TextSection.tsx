@@ -3,12 +3,12 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import { Fragment, Slice } from "@tiptap/pm/model";
 import type { EditorView } from "@tiptap/pm/view";
 import type { CSSProperties } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toast } from "sonner";
-import { api, ApiError } from "../api/client";
+import { api } from "../api/client";
 import type { ExtractionSaveResult, RegionOut, Suggestion } from "../api/types";
-import { mapApiError } from "../lib/errors";
+import { isDetached, mapApiError } from "../lib/errors";
 import { buildHighlights } from "../lib/highlight";
 import { translate, useT } from "../i18n";
 import { wordExtensions } from "../lib/wordEditor";
@@ -79,10 +79,13 @@ function TextEditor({
   text,
   saving,
   onSave,
+  onReady,
 }: {
   text: string;
   saving: boolean;
   onSave: (text: string) => void;
+  /** JobDetail đặt nút Save ở hàng tiêu đề "Text" → component chỉ đưa getter text lên. */
+  onReady?: (getText: () => string) => void;
 }) {
   const { t, lang } = useT();
   const editor = useEditor({
@@ -98,6 +101,16 @@ function TextEditor({
       handlePaste: stripPaste,
     },
   });
+  // onReady đổi identity mỗi render → phải đi qua ref, nếu không effect chạy lại vô hạn
+  // (setState ở parent → render → onReady mới → effect → setState…).
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
+  useEffect(() => {
+    if (!editor) return;
+    onReadyRef.current?.(() => editor.getText({ blockSeparator: "\n" }));
+    /* eslint-disable-next-line react-hooks/exhaustive-deps -- ref giữ callback mới nhất */
+  }, [editor]);
+
   // Lane M3 P2: aria-label translate() lúc init chỉ snapshot 1 lần — setOptions khi lang đổi.
   useEffect(() => {
     if (!editor) return;
@@ -110,21 +123,27 @@ function TextEditor({
   }, [editor, lang]);
   return (
     <div className="flex flex-col gap-3">
+      {/* Nút Save do JobDetail render ở hàng tiêu đề "Text" (onReady !== undefined).
+          Không có onReady (ExtractionPage) → tự render như trước. */}
+      {onReady === undefined && (
+        <div className="flex justify-end">
+          <Button
+            testid="btn-save-text"
+            loading={saving}
+            disabled={!editor}
+            onClick={() => editor && onSave(editor.getText({ blockSeparator: "\n" }))}
+          >
+            {t("common.save")}
+          </Button>
+        </div>
+      )}
+      {/* Cùng khung cuộn với bản đọc (max-h-[75vh]): trước đây edit không có scroll nên
+          văn bản dài đẩy cả trang, không cuộn nội bộ được. */}
       <div
         data-testid="text-editor"
-        className="rounded-card border border-border bg-surface p-4 shadow-card"
+        className="max-h-[75vh] overflow-y-auto rounded-card border border-border bg-surface p-4 shadow-card"
       >
         <EditorContent editor={editor} />
-      </div>
-      <div className="flex justify-end">
-        <Button
-          testid="btn-save-text"
-          loading={saving}
-          disabled={!editor}
-          onClick={() => editor && onSave(editor.getText({ blockSeparator: "\n" }))}
-        >
-          {t("common.save")}
-        </Button>
       </div>
     </div>
   );
@@ -137,6 +156,7 @@ export default function TextSection({
   onSaved,
   editingText: editingTextProp,
   onEditingTextChange,
+  onSaveStateChange,
 }: {
   jobId: string;
   regions?: RegionOut[];
@@ -145,6 +165,8 @@ export default function TextSection({
   /** U2: controlled từ JobDetail (nút Edit ở heading row); thiếu prop → internal (ExtractionPage). */
   editingText?: boolean;
   onEditingTextChange?: (editing: boolean) => void;
+  /** JobDetail render nút Save trong hàng tiêu đề "Text" → nhận handler từ đây. */
+  onSaveStateChange?: (state: { save: () => void; saving: boolean } | null) => void;
 }) {
   const { t } = useT();
   const queryClient = useQueryClient();
@@ -169,6 +191,16 @@ export default function TextSection({
   const editingText = editingTextProp ?? editingTextInternal;
   const setEditingText = onEditingTextChange ?? setEditingTextInternal;
   const [savingText, setSavingText] = useState(false);
+  /** Getter nội dung Tiptap (do TextEditor đưa lên) — ref vì setState với function sẽ bị
+   *  React hiểu là updater. readyTick chỉ để publish handler sang JobDetail. */
+  const getTextRef = useRef<null | (() => string)>(null);
+  const saveFullTextRef = useRef<(text: string) => void>(() => {});
+  /** identity ổn định → TextEditor không bị effect lại mỗi render. */
+  const publishGetText = useCallback((fn: () => string) => {
+    getTextRef.current = fn;
+    setReadyTick((n) => n + 1);
+  }, []);
+  const [readyTick, setReadyTick] = useState(0);
   /** Task 6: save set cờ rerender (rendering | sync targeted-fail) → confirm xếp hàng. */
   const [rerenderModal, setRerenderModal] = useState(false);
   const rerenderPanelRef = useDialogA11y<HTMLDivElement>(rerenderModal, () =>
@@ -222,6 +254,32 @@ export default function TextSection({
     await queryClient.invalidateQueries({ queryKey: ["suggestions", jobId] });
   };
 
+  /** Full save (Save ở hàng tiêu đề "Text") gặp 409 detached → confirm rồi
+   *  gửi lại force=true (đường phrase-sync đã làm vậy, full save thì chưa). */
+  const saveFullText = async (text: string) => {
+    if (!data) return;
+    setSavingText(true);
+    const body = { text, expected_text_version: data.text_version };
+    try {
+      try {
+        await api.saveExtraction(jobId, body);
+      } catch (err) {
+        if (!isDetached(err) || !window.confirm(t("editor.detachedConfirm")))
+          throw err;
+        await api.saveExtraction(jobId, { ...body, force: true });
+      }
+      setEditingText(false);
+      toast.success(t("editor.saved"));
+      await invalidate();
+    } catch (err) {
+      toast.error(mapApiError(err));
+    } finally {
+      setSavingText(false);
+    }
+  };
+  // Ref luôn trỏ bản mới nhất (handler ở hàng tiêu đề "Text" gọi qua ref, không closure cũ).
+  saveFullTextRef.current = (t: string) => void saveFullText(t);
+
   /** POST /extraction (old→new phrase) → save + sync; detached 409 → force resend. */
   const saveReplace = async (original: string, replacement: string) => {
     if (!data) return;
@@ -242,13 +300,7 @@ export default function TextSection({
         result = await save(false);
       } catch (err) {
         // P2: detached layout 409 → confirm ghi đè → resend force=true.
-        // Lane M3 P1b: server gửi detail {code:"detached"} — so theo code,
-        // fallback detail string cũ (backward compat server cũ).
-        const detached =
-          err instanceof ApiError &&
-          (err.code === "detached" ||
-            err.detail === "Layout có chỉnh tay. Đồng bộ sẽ ghi đè.");
-        if (!detached || !window.confirm(t("editor.detachedConfirm")))
+        if (!isDetached(err) || !window.confirm(t("editor.detachedConfirm")))
           throw err;
         result = await save(true);
       }
@@ -302,24 +354,21 @@ export default function TextSection({
     void saveReplace(s.original, customText);
   };
 
-  /** Lane I Task 1: lưu toàn bộ text soạn tay (không old/new phrase — full save). */
-  const saveFullText = async (text: string) => {
-    if (!data) return;
-    setSavingText(true);
-    try {
-      await api.saveExtraction(jobId, {
-        text,
-        expected_text_version: data.text_version,
-      });
-      setEditingText(false);
-      toast.success(t("editor.saved"));
-      await invalidate();
-    } catch (err) {
-      toast.error(mapApiError(err));
-    } finally {
-      setSavingText(false);
+  /** JobDetail giữ nút Save ở hàng tiêu đề "Text" → đẩy handler + trạng thái saving lên. */
+  useEffect(() => {
+    if (onSaveStateChange === undefined) return;
+    if (!editingText) {
+      onSaveStateChange(null);
+      return;
     }
-  };
+    onSaveStateChange({
+      save: () => {
+        const get = getTextRef.current;
+        if (get) void saveFullTextRef.current(get());
+      },
+      saving: savingText,
+    });
+  }, [editingText, savingText, readyTick, onSaveStateChange]);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -358,6 +407,7 @@ export default function TextSection({
               text={data.text}
               saving={savingText}
               onSave={(text) => void saveFullText(text)}
+              onReady={onSaveStateChange === undefined ? undefined : publishGetText}
             />
           ) : (
         <div className="max-h-[75vh] overflow-y-auto">

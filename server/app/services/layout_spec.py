@@ -511,3 +511,44 @@ def _label_types(blocks: list[BlockSpec]) -> None:
 def build_page_specs(result: dict) -> list[PageSpec]:
     """result (spec §4) → layout spec per page."""
     return [_page_spec(pg) for pg in result.get("pages", [])]
+
+
+def reading_order_region_ids(result: dict) -> list[list[str]]:
+    """Region id theo THỨ TỰ ĐỌC của spec (cột → y → x), từng page.
+
+    Dùng để text người dùng sửa (extraction_text) và layout render cùng một
+    thứ tự. Region không vào spec (thiếu bbox / bị gộp) → nối sau, sort (y0, x0).
+    """
+    pages = list(result.get("pages") or [])
+    try:
+        specs = build_page_specs(result)
+    except Exception:  # spec hỏng (dữ liệu cũ) → fallback sort theo bbox
+        specs = []
+    out: list[list[str]] = []
+    for pi, page in enumerate(pages):
+        ids: list[str] = []
+        seen: set[str] = set()
+        if pi < len(specs):
+            for block in specs[pi].blocks:
+                rid = str(block.region_id)
+                if rid not in seen:
+                    seen.add(rid)
+                    ids.append(rid)
+        rest: list[tuple[tuple[float, float], str]] = []
+        for region in page.get("regions") or []:
+            rid = str(region.get("id"))
+            if rid in seen:
+                continue
+            seen.add(rid)
+            rest.append((_bbox_sort_key(region), rid))
+        rest.sort()
+        out.append(ids + [rid for _, rid in rest])
+    return out
+
+
+def _bbox_sort_key(region: dict) -> tuple[float, float]:
+    bbox = region.get("bbox") or []
+    try:
+        return (float(bbox[1]), float(bbox[0]))
+    except (IndexError, TypeError, ValueError):
+        return (0.0, 0.0)

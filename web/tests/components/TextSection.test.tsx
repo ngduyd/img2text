@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
-import { api } from "../../src/api/client";
+import { api, ApiError } from "../../src/api/client";
 import type { RegionOut, Suggestion } from "../../src/api/types";
 import TextSection from "../../src/components/TextSection";
 
@@ -197,6 +197,30 @@ it("btn-save-text → saveExtraction full text (không old/new phrase) + toast",
   expect(body.expected_text_version).toBe(3);
   expect(body).not.toHaveProperty("old_phrase");
   await waitFor(() => expect(toast.success).toHaveBeenCalledWith("Saved."));
+});
+
+it("save full text gặp 409 detached → confirm rồi gửi lại force=true", async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.saveExtraction)
+    .mockRejectedValueOnce(
+      new ApiError("Layout có chỉnh tay. Đồng bộ sẽ ghi đè.", "detached", undefined, 409),
+    )
+    .mockResolvedValueOnce({
+      synced: { md: false, docx: false },
+      needs_render: [],
+      text_version: 4,
+      requires_rerender: false,
+    });
+  const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  renderSection(<TextSection jobId="5" />);
+  await screen.findByTestId("extraction-text");
+  await user.click(screen.getByTestId("btn-edit-text"));
+  await screen.findByTestId("text-editor");
+  await user.click(screen.getByTestId("btn-save-text"));
+  await waitFor(() => expect(api.saveExtraction).toHaveBeenCalledTimes(2));
+  expect(vi.mocked(api.saveExtraction).mock.calls[1][1]).toMatchObject({ force: true });
+  expect(confirmSpy).toHaveBeenCalled();
+  confirmSpy.mockRestore();
 });
 
 it("renders issues panel below text when regions provided", async () => {

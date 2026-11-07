@@ -15,3 +15,13 @@ export function mapApiError(e: unknown): string {
     return translate("errors.network");
   return String(e instanceof Error ? e.message : e);
 }
+
+/** 409 detached: layout đã bị sửa tay → đồng bộ sẽ ghi đè (cần user xác nhận).
+ *  Server gửi detail {code:"detached"}; detail string giữ cho server cũ. */
+export function isDetached(err: unknown): boolean {
+  if (!(err instanceof ApiError)) return false;
+  return (
+    err.code === "detached" ||
+    err.detail === "Layout có chỉnh tay. Đồng bộ sẽ ghi đè."
+  );
+}

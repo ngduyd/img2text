@@ -33,7 +33,11 @@ from app.routers.jobs import _job_or_403, _text_bytes, bump_text_after_edit
 from app.services.render_docx import build_docx
 from app.services.render_html_spec import render_html_spec
 from app.services.render_md import build_md, embed_crop_keys, embed_crop_urls
-from app.services.doc_versions import save_version, snapshot_current_layout
+from app.services.doc_versions import (
+    mark_layout_current,
+    save_version,
+    snapshot_current_layout,
+)
 from app.services.html_to_docx import html_to_docx, CROP_SRC_RE
 from app.services.storage import StorageDriver, get_storage
 
@@ -608,6 +612,7 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
         # retry-layout/auto-gen can never overwrite the stale artifact
         await storage.delete_prefix(f"exports/{job.id}/md-layout")
         await storage.put(f"exports/{job.id}/md-layout", data)
+        await mark_layout_current(storage, job.id, "md-layout", job.text_version)
         md_ok = True
     except Exception as exc:  # HTTPException 409 hoặc lỗi render bất ngờ → fallback
         logger.warning(
@@ -634,6 +639,7 @@ async def auto_generate_output(job: Job, storage: StorageDriver) -> bool:
         # user-edited docx.html must survive an LLM re-render)
         await storage.delete_prefix(f"exports/{job.id}/docx-layout")
         await storage.put(f"exports/{job.id}/docx-layout", data)
+        await mark_layout_current(storage, job.id, "docx-layout", job.text_version)
         docx_ok = True
     except Exception as exc:  # độc lập với md ở trên; lỗi bất kỳ → chỉ warning
         logger.warning(
