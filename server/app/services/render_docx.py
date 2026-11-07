@@ -187,12 +187,12 @@ def _scale_for(page_width: float) -> float:
 def _set_section_cols(
     section, cols: list, n: int | None = None, scale: float = 1.0
 ) -> None:
-    """w:cols — python-docx không có API; chèn đúng vị trí schema (trước
-    w:docGrid) chứ không append thô (Word có thể từ chối file).
+    """w:cols — python-docx không có API; chèn đúng vị trí schema.
 
-    Cột không đều bề ngang (2 cột scan thật: 23-326 | 724-1009) phải khai
-    báo từng `w:col w:w` + equalWidth=0, nếu chỉ `w:num="2"` Word chia đều →
-    bản docx lệch vị trí so với bản gốc.
+    Cột không đều bề ngang phải khai báo từng `w:col w:w` + equalWidth=0, nếu
+    chỉ `w:num` Word chia đều → lệch bản gốc. Bề ngang + rãnh được CHUẨN HOÁ
+    cho vừa vùng chữ của Word (trước đây dùng px tuyệt đối → 4 cột chỉ chiếm
+    52% bề ngang, LibreOffice vẽ chồng chữ lên nhau).
     """
     sect_pr = section._sectPr
     for old_el in sect_pr.findall(qn("w:cols")):
@@ -200,15 +200,18 @@ def _set_section_cols(
     cols_el = OxmlElement("w:cols")
     count = max(1, n if n is not None else len(cols))
     cols_el.set(qn("w:num"), str(count))
-    widths = [max(1, round((c.x1 - c.x0) * TWIPS_PER_PX * scale)) for c in cols]
-    if count > 1 and len(widths) == count and max(widths) - min(widths) > 40:
+    if count > 1 and len(cols) == count:
+        span_px = max(1.0, cols[-1].x1 - cols[0].x0)
+        gaps_px = [max(0.0, cols[i + 1].x0 - cols[i].x1) for i in range(count - 1)]
+        norm = TEXT_WIDTH_TWIPS / span_px
+        widths = [max(1, round((c.x1 - c.x0) * norm)) for c in cols]
+        gaps = [max(0, round(g * norm)) for g in gaps_px]
         cols_el.set(qn("w:equalWidth"), "0")
-        for i, (col, width) in enumerate(zip(cols, widths)):
+        for i, width in enumerate(widths):
             col_el = OxmlElement("w:col")
             col_el.set(qn("w:w"), str(width))
             if i < count - 1:      # w:space = khoảng cách SAU cột này
-                gap = max(0, round((cols[i + 1].x0 - col.x1) * TWIPS_PER_PX * scale))
-                col_el.set(qn("w:space"), str(gap if gap > 0 else SEC_COL_SPACE_TWIPS))
+                col_el.set(qn("w:space"), str(gaps[i] or SEC_COL_SPACE_TWIPS))
             cols_el.append(col_el)
     else:
         cols_el.set(qn("w:space"), SEC_COL_SPACE_TWIPS)
@@ -314,6 +317,10 @@ def _add_spec_block(
         min(MAX_SPACE_AFTER_PT, round(blk.space_after_px * PT_PER_PX, 1))
     )
     # "\n" → <w:br/>, "\t" → <w:tab/> (python-docx Run.text xử lý sẵn)
+    # KHÔNG ép cỡ chữ/giãn dòng theo bbox ở đây: đo bằng vòng VLM preview
+    # (job 84) thấy chữ tràn sang cột bên cạnh và các cột lệch đỉnh, tệ hơn
+    # để Word dùng mặc định. Cần cỡ chữ thì làm theo cặp (font_px, median)
+    # của trang, kèm test render thật.
     para.add_run("\n".join(blk.lines or [blk.text]))
 
 
@@ -372,6 +379,44 @@ def _group_pages(pages: list[PageSpec]) -> list[list[PageSpec]]:
     return groups
 
 
+def _page_bands(page: dict) -> list[tuple[list[Col], float, list[BlockSpec]]]:
+    """IR page → [(cols, page_width, blocks)] theo từng DẢI NGANG.
+
+    Trang trộn bố cục (đề bài 1 cột trên, thân báo 4 cột giữa, dòng kết 1 cột)
+    → mỗi dải là 1 section của Word; IR cũ (không có bands) → cả trang 1 dải.
+    """
+    width = float(page.get("width") or 0.0)
+    by_id = {
+        n["id"]: b
+        for n in page.get("content") or []
+        for b in [_block_of(n)]
+        if b is not None
+    }
+    bands = page.get("bands") or []
+    out: list[tuple[list[Col], float, list[BlockSpec]]] = []
+    if bands:
+        seen: set[str] = set()
+        for band in bands:
+            cols = [Col(float(c[0]), float(c[1])) for c in band.get("columns") or []]
+            blocks: list[BlockSpec] = []
+            for nid in band.get("node_ids") or []:
+                blk = by_id.get(nid)
+                if blk is not None and nid not in seen:
+                    seen.add(nid)
+                    blocks.append(blk)
+            if blocks:
+                out.append((cols or [Col(0.0, width or 1.0)], width, blocks))
+        rest = [b for nid, b in by_id.items() if nid not in seen]
+        if rest:
+            out.append(([Col(0.0, width or 1.0)], width, rest))
+    else:
+        cols = [Col(float(c[0]), float(c[1])) for c in page.get("columns") or []]
+        out.append(
+            (cols or [Col(0.0, width or 1.0)], width, list(by_id.values()))
+        )
+    return out
+
+
 def render_docx_ir(
     ir: dict,
     style_overrides: dict | None = None,
@@ -379,38 +424,23 @@ def render_docx_ir(
 ) -> bytes:
     """Document IR → DOCX (0 LLM, không HTML, không framePr).
 
-    Đi từ IR (node đã mang text/style/bbox/lines/cells) — không đọc layout_spec.
-    crops: {region_id: bytes} — block image có id trong crops → nhúng ảnh
-    (width = bbox width px → twips); thiếu key/ảnh lỗi → placeholder [ảnh].
+    Mỗi DẢI NGANG của trang = 1 section (grid cột riêng). Trang OCR mới → page
+    break, giữ ranh giới trang gốc. crops: {region_id: bytes} — thiếu → placeholder.
     """
-    pages: list[PageSpec] = []
-    for page in ir.get("pages") or []:
-        cols = [Col(float(c[0]), float(c[1])) for c in (page.get("columns") or [])]
-        blocks = [b for b in (_block_of(n) for n in page.get("content") or []) if b is not None]
-        pages.append(
-            PageSpec(
-                width=float(page.get("width") or 0.0),
-                height=float(page.get("height") or 0.0),
-                margin_left=cols[0].x0 if cols else 0.0,
-                cols=cols or [Col(0.0, float(page.get("width") or 1.0))],
-                blocks=blocks,
-            )
-        )
     doc = Document()
-    for gi, group in enumerate(_group_pages(pages)):
-        if gi:
-            doc.add_section(WD_SECTION_START.CONTINUOUS)
-        _set_section_cols(
-            doc.sections[-1], group[0].cols, scale=_scale_for(group[0].width)
-        )
-        for pi, pg in enumerate(group):
-            if pi:
-                # ranh giới trang gốc: cùng section (cùng số cột) nhưng trang
-                # mới phải bắt đầu ở trang giấy mới
-                doc.add_page_break()
-            page_scale = _scale_for(pg.width)
-            for blk in pg.blocks:
+    first = True
+    for page in ir.get("pages") or []:
+        for bi, (cols, width, blocks) in enumerate(_page_bands(page)):
+            if first:
+                first = False
+            else:
+                doc.add_section(WD_SECTION_START.CONTINUOUS)
+            _set_section_cols(doc.sections[-1], cols, scale=_scale_for(width))
+            page_scale = _scale_for(width)
+            for blk in blocks:
                 _add_spec_block(doc, blk, crops, page_scale)
+        if not first:
+            doc.add_page_break()
     if style_overrides:
         _apply_style_overrides(doc, style_overrides)
     buf = io.BytesIO()

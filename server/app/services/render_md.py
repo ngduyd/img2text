@@ -517,8 +517,15 @@ def _node_heading_level(node: dict, median_font: float) -> int:
 
 
 def _node_col_w(page: dict, node: dict) -> float:
-    cols = page.get("columns") or []
-    idx = (node.get("render") or {}).get("style", {}).get("col_index", 0)
+    style = (node.get("render") or {}).get("style", {})
+    bands = page.get("bands") or []
+    bi = style.get("band", 0)
+    cols = (
+        bands[bi].get("columns")
+        if 0 <= bi < len(bands) and bands[bi].get("columns")
+        else page.get("columns") or []
+    )
+    idx = style.get("col_index", 0)
     if not cols:
         return float(page.get("width") or 1.0)
     x0, x1 = cols[min(idx, len(cols) - 1)]

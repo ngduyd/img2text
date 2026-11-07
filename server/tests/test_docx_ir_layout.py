@@ -63,3 +63,46 @@ def test_docx_page_break_between_ocr_pages():
     xml = _xml(render_docx_ir(spec_ir(result)))
     assert '<w:br w:type="page"/>' in xml
     assert xml.index("trang mot") < xml.index('w:type="page"') < xml.index("trang hai")
+
+
+def _two_band_result() -> dict:
+    """Trang trộn bố cục: đề bài 1 cột trên, thân 3 cột dưới."""
+    return {"markdown": "", "pages": [{
+        "index": 0, "width": 1000, "height": 1400,
+        "regions": [
+            _region("t0", "de bai dong mot", [80, 60, 900, 120]),
+            _region("t1", "de bai dong hai", [80, 130, 900, 190]),
+            _region("c0", "cot mot a\ncot mot b", [80, 400, 300, 520]),
+            _region("c1", "cot hai a\ncot hai b", [340, 400, 560, 520]),
+            _region("c2", "cot ba a\ncot ba b", [600, 400, 820, 520]),
+            _region("c0b", "cot mot c", [80, 540, 300, 600]),
+            _region("c1b", "cot hai c", [340, 540, 560, 600]),
+            _region("c2b", "cot ba c", [600, 540, 820, 600]),
+        ],
+    }]}
+
+
+def test_ir_has_one_band_per_layout_zone():
+    ir = spec_ir(_two_band_result())
+    bands = ir["pages"][0]["bands"]
+    assert len(bands) == 2, bands
+    assert len(bands[0]["columns"]) == 1
+    assert len(bands[1]["columns"]) == 3
+    # thứ tự ĐỌC: hết cột 1 rồi sang cột 2, 3
+    assert bands[1]["node_ids"] == [
+        "f0_c0", "f0_c0b", "f0_c1", "f0_c1b", "f0_c2", "f0_c2b",
+    ]
+
+
+def test_docx_section_per_band_with_its_own_columns():
+    from docx import Document
+
+    xml = _xml(render_docx_ir(spec_ir(_two_band_result())))
+    cols = re.findall(r'<w:cols[^>]*num="(\d)"', xml)
+    assert cols == ["1", "3"], cols
+    # 3 cột phải khai báo bề ngang thật (equalWidth=0), không chia đều
+    assert 'w:equalWidth="0"' in xml
+    doc = Document(io.BytesIO(render_docx_ir(spec_ir(_two_band_result()))))
+    texts = [p.text for p in doc.paragraphs if p.text.strip()]
+    assert texts[0] == "de bai dong mot"
+    assert "cot mot a" in texts[2]

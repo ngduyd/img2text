@@ -33,7 +33,14 @@ FORM_MAX_CHARS = 60
 TWO_SIDE_EDGE_RATIO = 0.05
 TWO_SIDE_GAP_RATIO = 0.10         # cặp nhãn/giá trị dài hơn → coi là 2 block text thường
 INDENT_SNAP_RATIO = 0.05   # thụt lề < 5% bề ngang CỘT = nhiễu → 0
-COL_MIN_BLOCKS = 2          # cột phải có ≥2 block định nghĩa cột, thiếu → bỏ
+COL_MIN_BLOCKS = 2
+# Dải ngang: khoảng trống dọc > ratio × chiều cao dòng trung vị → dải mới
+BAND_GAP_RATIO = 1.2
+# Block rộng hơn ratio × bề rộng cột "chuẩn" → block chạy nhiều cột (headline,
+# ảnh, đoạn full-width) → phải ra dải riêng, không nhét vào grid cột
+SPAN_WIDTH_RATIO = 1.35
+# Mép trái lệch trong khoảng này (× bề ngang trang) vẫn coi là CÙNG cột
+COL_LEFT_TOL_RATIO = 0.03          # cột phải có ≥2 block định nghĩa cột, thiếu → bỏ
 HEADING_MAX_CHARS = 90     # heading thật thì ngắn; note/list dài không phải heading
 HEADING_RATIO = 1.6         # font ≥ 1.6× median → heading
 HEADING_L1_RATIO = 2.2      # font ≥ 2.2× median → heading level 1
@@ -98,12 +105,28 @@ class BlockSpec:
 
 
 @dataclass
+class Band:
+    """Dải ngang có CÙNG bộ cột (vd. đầu trang 1 cột, thân bài 4 cột).
+
+    Trang thật trộn nhiều kiểu cột: văn bản đề bài chạy hết bề ngang, thân báo
+    chia 3-4 cột, dòng kết 1 cột. Một grid cột cho cả trang không biểu diễn được
+    → Word phải dùng section riêng cho từng dải.
+    """
+
+    y0: float
+    y1: float
+    cols: list[Col]
+    blocks: list[BlockSpec]
+
+
+@dataclass
 class PageSpec:
     width: float
     height: float
     margin_left: float
     cols: list[Col]
     blocks: list[BlockSpec]
+    bands: list[Band] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------- extract
@@ -216,12 +239,16 @@ def _bands(blocks: list[BlockSpec]) -> list[list[BlockSpec]]:
     return bands
 
 
-def _cluster_columns(blocks: list[BlockSpec]) -> list[Col]:
-    """Cùng thuật toán `render_md._cluster_columns` (sort x0, tách khi mất
-    overlap) nhưng giữ toạ độ px thật của cột."""
+def _cluster_columns(blocks: list[BlockSpec], tol: float = X_TOL) -> list[Col]:
+    """Cột = nhóm block có MÉP TRÁI trùng nhau (trong `tol` px).
+
+    Trước đây gộp theo "interval chồng nhau" → một dòng byline nằm vắt qua
+    rãnh cột (vd. 777-981 giữa 2 cột 654-869 và 877-1089) nuốt luôn 2 cột
+    thành 1, docx ra 1 cột rộng bất thường và chữ chảy loạn.
+    """
     cols: list[Col] = []
     for b in sorted(blocks, key=lambda b: b.x0):
-        if cols and b.x0 < cols[-1].x1 - X_TOL:
+        if cols and b.x0 - cols[-1].x0 <= tol:
             cols[-1].x1 = max(cols[-1].x1, b.x1)
         else:
             cols.append(Col(b.x0, b.x1))
@@ -262,11 +289,21 @@ def _drop_thin_columns(
     return kept or cols[:1]
 
 def _col_index_of(block: BlockSpec, cols: list[Col]) -> int:
-    """Cột chứa tâm block; ngoài mọi cột → cột gần nhất."""
-    cx = (block.x0 + block.x1) / 2
+    """Cột CHỒNG NHIỀU NHẤT với block; không chồng cột nào → cột gần nhất.
+
+    Trước đây lấy cột đầu tiên chứa tâm block → với cột chồng nhau (byline vắt
+    qua rãnh) block bị xếp vào cột bên trái, cột thật bên phải thành "rỗng" và
+    bị `_drop_thin_columns` xoá.
+    """
+    if not cols:
+        return 0
+    best, best_ov = 0, 0.0
     for i, c in enumerate(cols):
-        if c.x0 - X_TOL <= cx <= c.x1 + X_TOL:
-            return i
+        ov = min(c.x1, block.x1) - max(c.x0, block.x0)
+        if ov > best_ov:
+            best, best_ov = i, ov
+    if best_ov > 0:
+        return best
     return min(
         range(len(cols)),
         key=lambda i: min(abs(cols[i].x0 - block.x0), abs(cols[i].x1 - block.x1)),
@@ -412,72 +449,136 @@ def _is_form_pairs(blocks: list[BlockSpec], cols: list[Col]) -> bool:
             labelled += 1
     return paired >= 2 and labelled == paired
 
+def _zones(blocks: list[BlockSpec]) -> list[list[BlockSpec]]:
+    """Chia trang thành DẢI NGANG theo khoảng trống dọc lớn.
+
+    Trang thật trộn kiểu bố cục: đề bài 1 cột ở trên, thân báo nhiều cột ở
+    giữa, dòng kết 1 cột ở dưới. Mỗi dải có grid cột riêng.
+    """
+    order = sorted(blocks, key=lambda b: (b.y0, b.x0))
+    heights = [b.h for b in order if b.kind == "text"] or [FONT_FALLBACK]
+    med_h = statistics.median(heights)
+    zones: list[list[BlockSpec]] = []
+    bottom = None
+    for b in order:
+        if bottom is not None and b.y0 - bottom > BAND_GAP_RATIO * med_h:
+            zones.append([])
+        if not zones:
+            zones.append([])
+        zones[-1].append(b)
+        bottom = b.y1 if bottom is None else max(bottom, b.y1)
+    return zones
+
+
+def _zone_cols(zone: list[BlockSpec], width: float) -> list[Col]:
+    """Grid cột của MỘT dải: chỉ block không "span" mới định nghĩa cột."""
+    texts = [b for b in zone if b.kind == "text"]
+    if not texts:
+        right = max((b.x1 for b in zone), default=width)
+        left = min((b.x0 for b in zone), default=0.0)
+        return [Col(left, right)]
+    med_w = statistics.median([b.x1 - b.x0 for b in texts])
+    basis = [b for b in texts if (b.x1 - b.x0) <= SPAN_WIDTH_RATIO * med_w]
+    left_tol = max(X_TOL, COL_LEFT_TOL_RATIO * width)
+    cols = _drop_thin_columns(
+        _cluster_columns(basis or texts, left_tol), basis or texts
+    )
+    if len(cols) <= 1 and len(basis) < len(texts):
+        # Trang 1 cột: block rộng CHÍNH LÀ bề ngang cột, không phải "span" →
+        # tính lại bằng mọi block text (nếu không cột bị co còn 1/3 trang).
+        cols = _drop_thin_columns(
+            _cluster_columns(texts, left_tol), texts
+        )
+    if not cols:
+        cols = [Col(min(b.x0 for b in texts), max(b.x1 for b in texts))]
+    return cols
+
+
 def _page_spec(page: dict) -> PageSpec:
     width = float(page.get("width") or 1000)
     height = float(page.get("height") or 1000)
     blocks = _extract_regions(page)
-
     text_blocks = [b for b in blocks if b.kind == "text"]
-    margin_left = (
-        min(b.x0 for b in text_blocks) if text_blocks else 0.0
-    )
-    # Block nhiều dòng mới "định nghĩa" cột (hàng form 1 dòng không được biến
-    # trang thành 2 cột). Trang toàn block 1 dòng (scan không tách dòng) →
-    # dùng tất cả block text làm căn cứ, nếu không cột thật bị bỏ.
-    col_basis = _column_defining(blocks) or [
-        b for b in blocks if b.kind == "text"
-    ]
-    cols = _drop_thin_columns(_cluster_columns(col_basis), col_basis)
-    if not cols:  # trang chỉ có bảng/form row → 1 cột = toàn bề ngang
-        right = max((b.x1 for b in blocks), default=width)
-        cols = [Col(margin_left, right)]
-    # Form nhãn/value: 2 "cột" thực chất là 1 cột + tab stop → gộp lại.
-    for b in blocks:
-        b.col_index = _col_index_of(b, cols)
-    if _is_form_pairs(blocks, cols):
-        cols = [Col(margin_left, max((b.x1 for b in blocks), default=width))]
-
+    margin_left = min((b.x0 for b in text_blocks), default=0.0)
     figures = [b for b in blocks if b.kind == "image"]
     tol = ALIGN_TOL_RATIO * width
-    for b in blocks:
-        b.col_index = _col_index_of(b, cols)
-        b.font_px = _font_px(b)
-        b.align = _align_of(b, cols[b.col_index], tol) if b.kind == "text" else "left"
-        if b.kind == "text" and _covered_by_figure(b, figures):
-            b.align = "left"   # caption dưới hình: canh trái trong vùng hình
-        elif (
-            b.kind == "text" and b.align == "left"
-            and not b.tabs and len(b.text) >= 60
-        ):
-            # thân bài chiếm gần hết cột → văn bản gốc canh đều 2 bên
-            col = cols[b.col_index]
-            col_w = max(1.0, col.x1 - col.x0)
-            if (b.x1 - b.x0) >= JUSTIFY_MIN_WIDTH_RATIO * col_w:
-                b.align = "justify"
-        raw_indent = max(0.0, b.x0 - cols[b.col_index].x0)
-        # nhiễu OCR vài px không được thành thụt lề (bản gốc không thụt)
-        col_w = max(1.0, cols[b.col_index].x1 - cols[b.col_index].x0)
-        b.indent_px = 0.0 if raw_indent < INDENT_SNAP_RATIO * col_w else raw_indent
-        b.first_line_indent_px = _first_line_indent(b)
 
-    dropped: set[str] = set()
-    # _attach_tabs nhóm theo col_index nên chỉ ghép tab TRONG cùng cột — an
-    # toàn cho trang nhiều cột (bug trước đây là do cột bị nhận sai thành 1).
-    for band in _bands(blocks):
-        dropped |= _attach_tabs(band, cols, figures)
-    blocks = [b for b in blocks if b.region_id not in dropped]
+    bands: list[Band] = []
+    band_of: dict[str, int] = {}
+    for zone in _zones(blocks):
+        # Một dải = MỘT section của Word. Block "span" (headline/ảnh) vẫn nằm
+        # trong dải và chảy theo cột chứa nó — Word không cho 1 block vắt qua
+        # nhiều cột, và tách dải riêng thì nội dung bị cắt vụn (đo: 1 trang báo
+        # ra 8 section, chữ nhảy lung tung).
+        cols = _zone_cols(zone, width)
+        for b in zone:
+            b.col_index = _col_index_of(b, cols)
+        # Form nhãn/value: các "cột" thực chất là 1 cột + tab stop → gộp lại
+        # (giữ hành vi cũ, nếu không tab leader DOTS mất).
+        if len(cols) > 1 and _is_form_pairs(zone, cols):
+            cols = [Col(min(b.x0 for b in zone), max(b.x1 for b in zone))]
+        idx = len(bands)
+        band = Band(
+            y0=min(b.y0 for b in zone),
+            y1=max(b.y1 for b in zone),
+            cols=cols,
+            blocks=list(zone),
+        )
+        bands.append(band)
+        for b in zone:
+            band_of[b.region_id] = idx
 
-    blocks.sort(key=lambda b: (b.col_index, b.y0, b.x0))
-    for i, b in enumerate(blocks):
+    for band in bands:
+        cols = band.cols
+        for b in band.blocks:
+            b.col_index = _col_index_of(b, cols)
+            b.font_px = _font_px(b)
+            b.align = (
+                _align_of(b, cols[b.col_index], tol) if b.kind == "text" else "left"
+            )
+            if b.kind == "text" and _covered_by_figure(b, figures):
+                b.align = "left"   # caption dưới hình: canh trái trong vùng hình
+            elif (
+                b.kind == "text" and b.align == "left"
+                and not b.tabs and len(b.text) >= 60
+            ):
+                col = cols[b.col_index]
+                col_w = max(1.0, col.x1 - col.x0)
+                if (b.x1 - b.x0) >= JUSTIFY_MIN_WIDTH_RATIO * col_w:
+                    b.align = "justify"
+            raw_indent = max(0.0, b.x0 - cols[b.col_index].x0)
+            col_w = max(1.0, cols[b.col_index].x1 - cols[b.col_index].x0)
+            b.indent_px = 0.0 if raw_indent < INDENT_SNAP_RATIO * col_w else raw_indent
+            b.first_line_indent_px = _first_line_indent(b)
+        # tab-stop: chỉ ghép trong cùng band/col
+        dropped = set()
+        for row in _bands(band.blocks):
+            dropped |= _attach_tabs(row, cols, figures)
+        if dropped:
+            band.blocks = [b for b in band.blocks if b.region_id not in dropped]
+
+    ordered: list[BlockSpec] = []
+    for band in bands:
+        band.blocks.sort(key=lambda b: (b.col_index, b.y0, b.x0))
+        ordered.extend(band.blocks)
+    for i, b in enumerate(ordered):
         same_col = [
-            o for o in blocks[i + 1:] if o.col_index == b.col_index
+            o for o in ordered[i + 1:]
+            if o.col_index == b.col_index and band_of[o.region_id] == band_of[b.region_id]
         ]
         b.space_after_px = max(0.0, same_col[0].y0 - b.y1) if same_col else 0.0
 
-    _label_types(blocks)
+    _label_types(ordered)
+    main_band = max(bands, key=lambda b: len(b.blocks)) if bands else None
     return PageSpec(
-        width=width, height=height, margin_left=margin_left, cols=cols, blocks=blocks
+        width=width,
+        height=height,
+        margin_left=margin_left,
+        cols=main_band.cols if main_band else [Col(margin_left, width)],
+        blocks=ordered,
+        bands=[Band(b.y0, b.y1, b.cols, b.blocks) for b in bands if b.blocks],
     )
+
 
 def _label_types(blocks: list[BlockSpec]) -> None:
     """type_label + heading level: tất định, chỉ từ font & text (không LLM).

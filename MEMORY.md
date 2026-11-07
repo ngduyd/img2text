@@ -1,6 +1,19 @@
 # MEMORY
 
 ## Now
+- 2026-11-07 · **Docx giữ layout: dải ngang (band) thay vì 1 grid cột/trang.** `layout_spec._zones()`
+  chia trang theo khoảng trống dọc (ratio 1.2 × median line height); mỗi zone có grid cột riêng
+  (`_zone_cols`); `PageSpec.bands` + `Band`; block sắp theo (band, col, y, x) → thứ tự đọc đúng.
+  IR page có `bands: [{y0,y1,columns,node_ids}]`, node có `render.style.band`.
+  `render_docx_ir` phát 1 SECTION / dải (grid cột riêng), page break giữa trang OCR.
+- 2026-11-07 · Sửa nhận cột: `_cluster_columns` gộp theo **mép trái** (tol 3% bề ngang trang) thay vì
+  "interval chồng nhau" (byline vắt rãnh nuốt 2 cột thành 1); `_col_index_of` chọn cột **chồng nhiều
+  nhất** (trước: cột đầu tiên chứa tâm → cột thật bị xoá oan); `_set_section_cols` **chuẩn hoá** bề
+  ngang + rãnh cột cho vừa vùng chữ Word (trước dùng px tuyệt đối → 4 cột chỉ chiếm 52% bề ngang,
+  LibreOffice vẽ chồng chữ).
+- 2026-11-07 · Vòng **VLM preview** để kiểm layout Word: `deploy/dev/docx-render/Dockerfile`
+  (LibreOffice + fonts Noto CJK) + `server/scripts/docx_layout_preview.py` (job → .docx → PDF → PNG
+  cạnh trang gốc rasterize). Chạy trong container dev rồi render qua image `img2text-docx-render`.
 - 2026-11-07 · **Hướng A (user chốt): IR là nguồn render duy nhất.** `spec_ir` giờ sinh node có
   `text` + `render{kind, bbox_exact (float), lines, style{align,indent_px,first_line_indent_px,font_px,
   level,space_after_px,col_index,tabs},latex,html,cells,image_region_id}`; page có `width/height/columns`.
@@ -128,6 +141,12 @@
   `web/src/api/types.ts` chạy được.
 
 ## Measured
+- 2026-11-07 · job #84 docx sau band: 3 section (1 cột đề bài / 4 cột thân / 1 cột dòng kết),
+  cols 4 cột equalWidth=0, ảnh nhúng trong dòng, đọc đúng thứ tự; trước đó: 2 cột hẹp (213/211 px)
+  với rãnh 2400 twips + chữ tràn loạn.
+- 2026-11-07 · Ép cỡ chữ/giãn dòng theo bbox → **tệ hơn** (chữ tràn sang cột bên, cột lệch đỉnh) →
+  đã revert, ghi lý do trong code.
+- 2026-11-07 · server pytest **990** trong worktree `.worktrees/docx-layout` (nhánh feat/docx-layout).
 - 2026-11-07 · Parity sau refactor IR: job #84 md-layout **giống hệt** trước (chỉ khác payload ảnh);
   docx `document.xml` **byte-identical** (so sau khi bỏ whitespace) khi cấp cùng crop.
 - 2026-11-07 · IR job #84: schema 1.1, 34 node, width 1653, 2 columns, node có `text` + 8 key style.

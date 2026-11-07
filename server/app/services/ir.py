@@ -45,6 +45,7 @@ class NodeStyleIR(BaseModel):
     level: int = 0
     space_after_px: float = 0.0
     col_index: int = 0
+    band: int = 0
     tabs: list[dict] = Field(default_factory=list)
 
 
@@ -96,6 +97,9 @@ class PageIR(BaseModel):
     height: float = 0.0
     # [[x0, x1], ...] theo col_index — cần cho căn lề md (đếm khoảng trắng)
     columns: list[list[float]] = Field(default_factory=list)
+    # Dải ngang có grid cột riêng: [{y0, y1, columns, node_ids}] — trang thật
+    # trộn bố cục (đề bài 1 cột, thân báo 4 cột) nên Word cần section mỗi dải.
+    bands: list[dict] = Field(default_factory=list)
     header: list[NodeIR] = Field(default_factory=list)
     content: list[NodeIR] = Field(default_factory=list)
     footer: list[NodeIR] = Field(default_factory=list)
@@ -383,7 +387,7 @@ def validate_ir(ir: dict, ocr_result: dict) -> DocumentIR:
 
     return doc
 
-def _style_of(block) -> dict:
+def _style_of(block, band: int = 0) -> dict:
     return {
         "align": block.align,
         "indent_px": block.indent_px,
@@ -392,6 +396,7 @@ def _style_of(block) -> dict:
         "level": block.level,
         "space_after_px": block.space_after_px,
         "col_index": block.col_index,
+        "band": band,
         "tabs": [
             {"pos_px": t.pos_px, "align": t.align, "leader": t.leader}
             for t in block.tabs
@@ -399,12 +404,12 @@ def _style_of(block) -> dict:
     }
 
 
-def _render_of(block) -> dict:
+def _render_of(block, band: int = 0) -> dict:
     return {
         "kind": block.kind,
         "bbox_exact": [float(v) for v in block.bbox],
         "lines": list(block.lines),
-        "style": _style_of(block),
+        "style": _style_of(block, band),
         "latex": block.latex or "",
         "html": block.html or "",
         "cells": block.cells,
@@ -427,16 +432,31 @@ def spec_ir(result: dict) -> dict:
     pages = list(result.get("pages") or [])
     out: list[dict] = []
     for pi, (page, spec) in enumerate(zip(pages, build_page_specs(result))):
+        band_of: dict[str, int] = {}
+        band_meta: list[dict] = []
+        for bi, band in enumerate(spec.bands):
+            for b in band.blocks:
+                band_of[b.region_id] = bi
+            band_meta.append({
+                "y0": float(band.y0),
+                "y1": float(band.y1),
+                "columns": [[float(c.x0), float(c.x1)] for c in band.cols],
+                "node_ids": [],
+            })
         nodes: list[dict] = []
         for block in spec.blocks:
-            nodes.append({
+            bi = band_of.get(block.region_id, 0)
+            node = {
                 "id": f"f{pi}_{block.region_id}",
                 "type": block.type_label,
                 "source_block_ids": [block.region_id],
                 "bbox": [round(v) for v in block.bbox],
                 "text": block.text,
-                "render": _render_of(block),
-            })
+                "render": _render_of(block, bi),
+            }
+            nodes.append(node)
+            if bi < len(band_meta):
+                band_meta[bi]["node_ids"].append(node["id"])
         seen = {b.region_id for b in spec.blocks}
         for region in page.get("regions") or []:
             rid = str(region.get("id"))
@@ -451,6 +471,7 @@ def spec_ir(result: dict) -> dict:
             "width": float(spec.width),
             "height": float(spec.height),
             "columns": [[c.x0, c.x1] for c in spec.cols],
+            "bands": band_meta,
             "header": [], "content": nodes, "footer": [],
         })
     return {"document_id": "doc_001", "schema_version": IR_SCHEMA_VERSION, "pages": out}
