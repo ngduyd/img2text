@@ -18,3 +18,7 @@ node_modules/
 
 # Serena MCP — config riêng từng máy (project.yml sinh theo máy, không commit)
 .serena/
+
+# Artifact của flow/GUI agent — chứa cookie, log tunnel, ảnh chụp: không commit
+.pi-flow/
+.piwigo/
