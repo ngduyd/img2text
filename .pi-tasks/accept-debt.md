@@ -1,0 +1,1 @@
+TASK_0001	work did n…`web/AGENTS.md` (real: repo-root `AGENTS.md`) at doc:135 and doc:257, making J1's `spec-backed` tag unresolvable, and its top-10 row cites `web/src/pages/JobDetail.tsx:392` (actually `toast.success(t("jobs.row.retryScheduled"))`) for the D3 finding instead of `web/src/App.tsx:390`–`:393`.	enforce-revert

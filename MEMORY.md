@@ -1,6 +1,81 @@
 # MEMORY
 
 ## Now
+- 2026-11-07 · **Hướng A (user chốt): IR là nguồn render duy nhất.** `spec_ir` giờ sinh node có
+  `text` + `render{kind, bbox_exact (float), lines, style{align,indent_px,first_line_indent_px,font_px,
+  level,space_after_px,col_index,tabs},latex,html,cells,image_region_id}`; page có `width/height/columns`.
+  `IR_SCHEMA_VERSION = "1.1"`; `GET /ir` dựng lại cache khi schema khác.
+- 2026-11-07 · `render_md.py`: `render_md_ir(ir)` (walker node) là đường duy nhất, `render_md_spec(result)`
+  = wrapper `spec_ir` → IR. `render_docx.py`: `render_docx_ir(ir, style_overrides, crops)`; `_block_of(node)`
+  adapter node IR → BlockSpec để walker docx giữ nguyên; `_load_crops` cũng đi qua IR. `build_page_specs`
+  KHÔNG còn trong đường render (chỉ dùng khi sinh IR).
+- 2026-11-07 · **Ảnh không bao giờ hiện trong md/docx (job PDF)**: worker local chỉ ghi marker text
+  (crop chỉ có từ Kaggle kernel); fallback `get_or_make_crop` mở file gốc bằng PIL → PDF thì
+  `UnidentifiedImageError`; route `/regions/{rid}/crop` chặn `file_type != "image"` (ruling R26).
+  → Fix: `_pdf_page_png()` rasterize trang bằng PyMuPDF (zoom theo `page.width` để bbox px dùng trực
+  tiếp), `get_or_make_crop` nhánh PDF, bỏ gate R26 ở route; lỗi rasterize → KeyError (404, không 500).
+  PyMuPDF đã có sẵn trong server deps → không thêm dependency.
+- 2026-11-07 · Ruling R26 (PDF không crop được) **bị bãi bỏ** — thay bằng "PDF rasterize at request".
+- 2026-11-07 · **Thứ tự đọc = thứ tự layout**: `layout_spec.reading_order_region_ids()` (spec col→y→x,
+  region ngoài spec nối sau sort y0,x0); `layout_sync.text_from_regions()` dùng nó; `jobs._extraction_text`
+  delegate → text trong editor và layout cùng thứ tự (trang 2 cột trước đây lệch).
+- 2026-11-07 · **Neo theo nội dung thay vì vị trí**: `apply_text_to_regions` tìm từng region text trong
+  text cũ bằng `_find_run` (khớp liên tiếp, không tìm thấy từ cursor thì tìm lại từ 0) → không phụ thuộc
+  thứ tự đã lưu (row-major cũ vẫn đúng). Không neo được gì → return False (không xoá text region).
+- 2026-11-07 · **Chữ mới trên ảnh**: span replace bắt đầu ở dòng KHÔNG có chủ (dòng trống của vùng ảnh)
+  → neo vào `prev_owner` (region trước ảnh), không đẩy xuống region dưới ảnh.
+- 2026-11-07 · Thứ tự gọi trong `post_extraction`: `apply_text_to_regions` PHẢI chạy TRƯỚC khi ghi
+  `result["extraction_text"]` (cần text cũ để neo; ghi trước → diff rỗng → mất sạch text region).
+- 2026-11-07 · Neo theo BBOX (user chốt): khi một opcode `replace` trải nhiều region, chia dòng mới theo
+  **chiều cao bbox** (`y1-y0`) thay vì số dòng cũ; bbox thiếu/hỏng → fallback số dòng. Helper
+  `layout_sync._bbox_height()`. Dòng không đổi vẫn giữ region gốc qua diff (equal), nên neo chỉ áp cho
+  phần bị viết lại.
+- 2026-11-07 · Siết anchor (hướng A): replace trải nhiều region → chia tỉ lệ theo số dòng cũ của từng
+  region; region text rỗng (placeholder ảnh) = owner None → không nhận chữ; insert ở đầu → region đầu.
+- 2026-11-07 · Full save gặp 409 `detached` → `window.confirm` rồi gửi lại `force=true` (helper
+  `isDetached()` trong `web/src/lib/errors.ts`, dùng chung với phrase-sync).
+- 2026-11-07 · Xoá badge `stale-badge` + nút `btn-resync-layout` + 3 key i18n (`staleBadge`, `resync`,
+  `resyncDone`): layout tự rebuild khi save text nên badge gần như không còn nghĩa. Server vẫn trả
+  `stale_layouts` (contract, không phá API).
+- 2026-11-07 · **Bug workflow (job #84)**: sửa text ở Overview KHÔNG tới layout. 3 nguyên nhân:
+  (1) `POST /extraction` chỉ ghi `result.extraction_text`, render đọc `pages[].regions[].text`;
+  (2) `TextSection.saveFullText` không gửi old/new phrase → server bỏ qua cả sync lẫn cờ rerender;
+  (3) `retry-layout` → `auto_generate_output` → `build_md(result)` từ regions cũ → ra đúng byte cũ
+  (7 lần bấm = 7 version docx y hệt).
+- 2026-11-07 · **Fix (hướng A user chốt)**: `layout_sync.apply_text_to_regions()` diff theo DÒNG từ text
+  phẳng → regions (insert neo vào region dòng trước, insert đầu → region đầu), giữ anchor ảnh/bảng;
+  `post_extraction` full-save → gọi nó rồi `auto_generate_output` (0 LLM) dựng lại md-layout + docx-layout;
+  thêm `doc_versions.mark_layout_current()` ghi head row `based_on_text_version` mới (bytes trùng → UPDATE
+  thay vì đẻ row) → stale badge không treo.
+- 2026-11-07 · Thanh 1 bỏ luôn badge `Layout saved` + nút `Preview` (yêu cầu user): chỉ còn `Save` (md).
+  MDEditor đặt `preview="edit"` cố định → 1 khung soạn, không còn split SOURCE|PREVIEW. Hợp đồng
+  `onActionsChange` gọn lại `{mode, save, saving}`.
+- 2026-11-07 · Bỏ hàng điều khiển riêng của editor (`Markdown | Editor … Preview | Layout saved | Save`):
+  `UnifiedEditor` publish `{mode, cached, preview, save, saving}` qua prop `onActionsChange`, `JobDetail`
+  render badge + Preview + Save ở thanh 1 (chỉ md mới có Preview/Save; word dùng nút ở footer tờ giấy).
+  `btn-edit-doc` (Done) đổi sang `variant="secondary"` — **Done chỉ điều hướng /edit ↔ /layout, KHÔNG lưu**.
+- 2026-11-07 · Review loop (parent-orchestrated, 2 vòng + 1 lần chạy lại): thanh 1 đổi Done/History/Download
+  sang icon-only (worker), 3 reviewer fresh-context. Chốt: 1 P1 thật (đã sửa), 2 P2 đã sửa, 4 claim reviewer
+  SAI đã bác bỏ bằng grep/git diff, 3 P2 defer. Verdict cuối: **OK with notes** — không còn P0/P1.
+  Sửa sau review: `web/scripts/landing-shots.mjs` (2 wait chết `page-preview`/`page-count` → `word-toolbar`
+  + `.wp-paper`) và `DownloadDropdown.tsx` (thêm ChevronDown, `h-8 w-8` → `h-8 px-2`).
+- 2026-11-07 · Xong đợt refactor UI (chưa commit): gộp trang Text vào Overview; Edit = sửa văn bản
+  gốc; nút chuyển MD⇄Word lên thanh hành động (nhãn ghi đích); bỏ toggle một chiều
+  `forceWord`; ảnh gốc chia 2 pane kéo tỉ lệ (`SplitPane`, lưu localStorage); toolbar nhóm
+  phương án A (11 mục, align/list thành dropdown, `Page & text style` thành popover "Trang");
+  toolbar dock 4 phía, dính sát vùng page; page cuộn BÊN TRONG `.wp-paper-scroll`; thanh trên
+  thu gọn được khi fullscreen. Verify: tsc clean, vitest 457/457, `audit:a11y` → DONE 0.
+- 2026-11-06 · **UI không lỗi — load 3–4 phút là do dev server + Tailscale relay.** Peer `nguyenducduy`
+  (`100.72.17.32`) đi qua **DERP(sin), không có direct connection** (`tailscale ping` → 146–1201ms).
+  Vite dev bắn **140 request / 42MB cold, 14MB warm** → qua relay thành vài phút. Đã chuyển sang
+  **`vite preview` (bản build) trên `100.86.205.2:5173`: 11 request / 1697KB**, dcl 727ms, paper 2827ms.
+  Còn phải làm: `preview/layout.html` trả 500 (PIL crop) nên web fallback export+download, tốn ~1.2s
+  trước khi WordEditor mount.
+- 2026-11-06 · Word editor chỉnh theo Google Docs: bỏ khung scroll lồng — `.wp-paper-scroll` cuộn ở
+  cấp trang; giấy A4 794×1123, `border-radius:0`, shadow 2 lớp; toolbar 1 dải phẳng chỉ
+  `border-bottom`, ô "Normal text/H1-H3" ra đầu hàng; form `DocStyleTools` gấp vào `<details>`
+  "Trang & kiểu chữ"; nút lưu gom về footer giấy ("Lưu kiểu trình bày" + "Lưu nội dung").
+  Còn 1 finding chưa làm: toolbar 390px vẫn phải vuốt ngang mới tới B/I/U (test cấm `flex-wrap`).
 - 2026-11-04 · Xong bộ skill `pi-flow` ở `.agents/skills/flow*` (7 skill, 412 dòng): `flow` (điều phối)
   → `flow-grill` (pha 1–4) → `flow-spec` (5) → `flow-coldread` (6) → `flow-execute` (7) →
   `flow-verify` (8) → `flow-ship` (9, thêm mới: commit/PR/deploy + đường lùi + đóng flow).
@@ -20,6 +95,30 @@
   `design-taste-frontend` định hướng fix + §14 pre-flight → chụp lại so before/after.
 
 ## Decisions
+- 2026-11-07 · Reviewer agent mặc định model `opencode/muse-spark-1.3-contributor-free` KHÔNG có trong registry
+  session này → phải truyền `model: "9router/KG/claude-sonnet-4.5"` cho mọi lần gọi `reviewer`. Ghi nhớ khi
+  chạy lại loop.
+- 2026-11-07 · Workflow script: `runs.run` phải được gán (`const impl = await runs.run(...)`) trước `runs.all`,
+  nếu không script chết `ReferenceError` và trả "workflow completed" mà worker chưa từng chạy.
+- 2026-11-07 · Reviewer trả file artifact 0 byte khi nó chỉ trả progress note; brief phải ghi rõ
+  "reply MUST be the full report, not a progress note" để lấy được nội dung.
+- 2026-11-07 · `--paper-h` (min(78vh,900px)) là chiều cao vùng hiển thị của page, dùng chung cho
+  `.w-md-editor` (phải `!important` vì MDEditor set inline `height:100%`) và `.ed-work`.
+- 2026-11-07 · `SplitPane` luôn render `second` ở cùng vị trí cây React, `first=null` khi tắt split →
+  bật/tắt ảnh gốc KHÔNG remount editor (remount sẽ chạy lại export và mất nội dung đang sửa).
+  Khi không split thì không khoá chiều cao (khoá → panel tràn, footer đè hàng Save ở mobile).
+- 2026-11-07 · Nút chuyển mode nằm ở `JobDetail` action bar; test `UnifiedEditor` lái mode bằng
+  nút `harness-switch-*` trong harness (mô phỏng điều hướng), không phải UI thật.
+- 2026-11-06 · Xem qua Tailscale thì chạy `vite preview` (build) chứ không `npm run dev`: dev phục vụ từng
+  module rời, 140 request qua DERP relay = vài phút. `preview` cần `preview.proxy` cho `/api`
+  (đã thêm vào `vite.config.ts`, cùng `allowedHosts`).
+- 2026-11-06 · `/api/jobs/{id}`: 3 HEAD lên R2 đổi tuần tự → `asyncio.gather` (380–740ms → 143–190ms).
+  HEAD `docx-layout` giờ luôn chạy (trước chỉ khi thiếu docx.html) — đổi 1 round trip lấy song song.
+- 2026-11-06 · Lề giấy Word lấy từ `layout_style.margin` (cm), không hard-code: `scopeWordPaneCss`
+  scope `body` → `.word-doc` = chính `.wp-paper`, nên 2.5cm = 94px mỗi bên. Mobile override
+  `.word-doc.wp-paper` về 20px (specificity 0,2,0 thắng `.word-doc` 0,1,0 → không cần `!important`).
+- 2026-11-06 · Nút lưu: giữ 2 chức năng riêng (PUT docx.html vs PATCH layout-style) nhưng dồn về
+  cùng footer của tờ giấy; không gộp thành 1 request vì sẽ đổi hành vi + phá test.
 - 2026-11-04 · Review UI dừng ở mức tài liệu, không sửa code · constraint của task; mọi finding
   phải có `file:line` đọc trực tiếp, số liệu từ MEMORY.md cũ phải đánh dấu "chưa xác minh lại".
 - 2026-11-03 · Tắt agentmemory bằng project override `.pi/mcp.json` thay vì sửa `~/.pi/agent/mcp.json`
@@ -29,6 +128,63 @@
   `web/src/api/types.ts` chạy được.
 
 ## Measured
+- 2026-11-07 · Parity sau refactor IR: job #84 md-layout **giống hệt** trước (chỉ khác payload ảnh);
+  docx `document.xml` **byte-identical** (so sau khi bỏ whitespace) khi cấp cùng crop.
+- 2026-11-07 · IR job #84: schema 1.1, 34 node, width 1653, 2 columns, node có `text` + 8 key style.
+  Payload /ir 27.6 KB (trước ~8 KB).
+- 2026-11-07 · server pytest **984** (thêm `tests/test_ir_render.py` 5 test), web vitest 453, audit:a11y 0 findings.
+- 2026-11-07 · job #84 (PDF): crop p1_b7 → 200, JPEG 18635 bytes (ảnh thật); md-layout 0 marker,
+  có `![vùng p1_b7](data:image/jpeg;base64,…)`; `/preview/layout.html` 200 (trước 500) với `<img>` presigned;
+  docx-layout có `word/media/image1.jpg` + `<w:drawing>`.
+- 2026-11-07 · server pytest **979** (thêm `tests/test_crop_pdf.py` 2 test; sửa `test_crop.py` fixture PDF thật).
+- 2026-11-07 · job #84: chèn "DONG MOI TREN ANH 1/2" ngay trước vùng ảnh (dòng 6) → md-layout có chữ
+  ở idx 215, marker ảnh idx 432 → **trước ảnh**; revert sạch (0), marker còn (1), tv 12, stale=[].
+- 2026-11-07 · gate cuối: server pytest **976**, web vitest **453**, tsc clean, audit:a11y 0 findings.
+- 2026-11-07 · test bbox: 3 region cao 100/400/50, mỗi region 5 dòng cũ, rewrite 20 dòng → chia 4/15/1
+  (không phải 5/5/5); nối lại đúng nguyên văn. server pytest **972**.
+- 2026-11-07 · job #84: sửa "Cau 3."→"Cau 3 (bbox)." → md-layout có bản sửa, marker ảnh còn, regions
+  nhận đúng (region text "Cau 3 (bbox). Chung minh tam…"); revert sạch, stale=[].
+- 2026-11-07 · job #84 sau siết anchor: sửa "Cau 2."→"Cau 2 (sua)." → md-layout có bản sửa (1), marker
+  ảnh `Hình ảnh chưa trích xuất` vẫn còn (1); revert → 0 / 1; `stale_layouts=[]`, tv 7.
+- 2026-11-07 · gate: server pytest **970**, web vitest **453**, tsc clean, build OK, audit:a11y 0 findings.
+- 2026-11-07 · job #84 end-to-end: save text sửa "90 phut"→"90 phut SUA" → md-layout chứa bản sửa (grep 1);
+  revert → grep 0; `stale_layouts=[]` mọi lần; md-layout versions head `(2, based_on=3)`.
+- 2026-11-07 · server pytest **969 passed** (thêm `tests/test_text_regions_sync.py`, 8 test).
+- 2026-11-07 · `/jobs/84/edit/md` sau khi bỏ hàng: thanh 1 có switch-mode-word, badge "Layout saved",
+  Preview, Save, Done(secondary), History, Download; hàng cũ đã mất (rowGone=true); trang 949px.
+- 2026-11-07 · `/jobs/84/layout/md`: KHÔNG có badge/Preview/Save (đúng — trang xem, UnifiedEditor không mount).
+- 2026-11-07 · **Root cause icon bé**: `Button size="sm"` = `px-3` (24px padding ngang). Nút vuông `h-8 w-8`
+  (32px) + icon 16px → padding ăn 24px nên SVG bị flex bóp còn **8×18** (đọc được bằng
+  `getBoundingClientRect` của svg). Sửa: `px-0` cho nút icon-only + `shrink-0` trên svg + icon 18px.
+- 2026-11-07 · Sau sửa (Playwright `/jobs/84/edit/word` @1440): btn-edit-doc 32×32 svg 18×18,
+  btn-version-history 32×32 svg 18×18, btn-download 66×32 svg[18×18,14×14], btn-zen 32×32 svg 16×16.
+- 2026-11-07 · `vitest` 455/455 và `audit:a11y` `DONE 0 routes with findings` sau khi sửa icon.
+- 2026-11-07 · Bar 1 sau khi icon hoá (Playwright, `/jobs/84/layout` @1440): btn-edit-doc 32×32 label
+  "Edit" 1 svg; btn-version-history 32×32 "History" 1 svg; btn-download 62×32 "Download" 2 svg (icon+chevron).
+- 2026-11-07 · Sau loop: `tsc` 0 lỗi, `vitest` 455/455 (61 file), `npm run build` OK.
+- 2026-11-07 · CHƯA chạy `web/scripts/landing-shots.mjs` sau khi sửa selector (sẽ ghi đè ảnh đã commit
+  trong `web/public/shots/`) → 2 selector mới chỉ verify bằng grep + trace component, chưa verify bằng chạy thật.
+- 2026-11-07 · Word editor @1440: toolbar 1150×45, `.wp-paper-scroll` cao 655 với `scrollHeight` 2837
+  (cuộn nội bộ), trang chỉ 1015px. Dock trái: toolbar 48×700, paper-scroll 1102×700.
+- 2026-11-07 · MD editor @1440: `.w-md-editor` 702, scroll trong 2137, trang 971px (trước: trang 2453px).
+- 2026-11-07 · Toolbar cần ~1136px cho 17 mục cũ; phương án A còn ~618px cho 11 mục → vừa tờ giấy 794px.
+- 2026-11-06 · Load `/jobs/84/edit/word` @1280 qua tailnet: dev = 140 req / 42358KB cold /
+  14103KB warm, dcl 1905ms, paper 4063ms. Build+preview = 11 req / **1697KB**, dcl 727ms,
+  fcp 868ms, paper 2827ms.
+- 2026-11-06 · Bundle build: `index` 3600KB (gzip 1195KB) + `src` 510KB (100KB) + css 76KB (14KB)
+  + `pdf.worker` 1178KB. Dev warm 14MB → build 1.7MB = **8×**; dev cold 42MB → **25×**.
+- 2026-11-06 · `/api/jobs/84` (27KB payload): 380–740ms trước, **143–190ms** sau `asyncio.gather`.
+- 2026-11-06 · `preview/layout.html` job #84: **500** sau 585ms (`PIL.UnidentifiedImageError`,
+  `exports.py:192`), web gọi 2 lần → ~1.2s phí trước fallback. Chưa sửa.
+- 2026-11-06 · Word editor @1440 sau sửa: `.wp-paper` 794px, `.wp-paper-scroll` cao 2944 = đúng
+  `scrollHeight` (trước: khung 666px nhốt nội dung 2864px). Mobile @390: `.ProseMirror` 318px
+  (trước 169px), trang 4329px (trước 7747px).
+- 2026-11-06 · `npm run audit:a11y` (SHOT_EMAIL=ui-demo@example.com) → `DONE 0 routes with findings`;
+  vitest 457/457; tsc clean.
+- 2026-11-06 · Rate limit auth 10/1h in-memory theo process → cạn quota login thì
+  `docker compose -f deploy/docker-compose.dev.yml restart server` là reset (đã dùng).
+- 2026-11-06 · `ocg/kimi-k3.1-pro` + `ocg/kimi-k3`: hết quota opencode-go (`GoUsageLimitError`) →
+  review UI dùng `KG/claude-sonnet-4.5` (vision, chạy được 9 ảnh + 7 file code).
 - 2026-11-04 · discovery skill: `pi -p -t read "list skill flow*"` → **7/7 tên đúng**, nên `.agents/skills/`
   trong project root được pi load (không cần `~/.pi/agent/skills/`). Lưu ý: `--no-tools` làm pi **bỏ
   luôn skills hint** khỏi system prompt → probe bằng `-p --no-tools` cho kết quả sai "None".
