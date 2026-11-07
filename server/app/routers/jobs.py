@@ -7,6 +7,7 @@ R11 capability token, R16/R17 atomic conditional-UPDATE transitions).
 """
 
 import asyncio
+import io
 import hmac
 import json
 import logging
@@ -266,6 +267,23 @@ def _sniff_kind(data: bytes) -> str | None:
         return "heic"
     return None
 
+def _undecodable_image(data: bytes) -> bool:
+    """Ảnh bytes không mở/verify được (cụt, hỏng, sai định dạng thật).
+
+    Magic-byte sniff chỉ so chữ ký, nên một PNG cụt 70 byte vẫn "hợp lệ" và
+    chui vào kernel → fail sau vài phút ("broken data stream when reading image
+    file", job 80/81/83). Verify ở đây → 422 ngay, xoá object.
+    """
+    try:
+        from PIL import Image  # lazy: create path rẻ, PIL nặng
+
+        with Image.open(io.BytesIO(data)) as img:
+            img.verify()
+        return False
+    except Exception:
+        return True
+
+
 def _bad_page_count(ext: str, page_count: int) -> str | None:
     """pdf → ≤ settings.max_pages (P2-5: 1 config); image = 1 (rasterization
     always yields one page). None = ok."""
@@ -374,7 +392,8 @@ async def create_job(
     # Magic-byte cross-check (spec §9b): metadata là primary, sniff chặn
     # file sai đuôi thật sự; unidentified bytes pass (no false positive).
     sniff_ext = {"jpeg": "jpg"}.get(ext, ext)
-    kind = _sniff_kind(await storage.get(body.storage_key))
+    raw = await storage.get(body.storage_key)
+    kind = _sniff_kind(raw)
     # heic/heif là CÙNG 1 định dạng (brand "heic" cho cả 2 đuôi) — normalize
     # thành 1 nhóm trước khi so, không 422 oan file .heif thật.
     heif_bytes = kind == "heic" and sniff_ext in {"heic", "heif"}
@@ -383,6 +402,13 @@ async def create_job(
         raise HTTPException(
             status_code=422,
             detail=f"File (.{ext}) không khớp nội dung file ({kind} thật)",
+        )
+    # Ảnh phải DECODE được (không chỉ đúng chữ ký): file cụt/hỏng → 422 ngay.
+    if ext != "pdf" and _undecodable_image(raw):
+        await storage.delete_prefix(body.storage_key)
+        raise HTTPException(
+            status_code=422,
+            detail="File ảnh không đọc được (hỏng hoặc tải lên không trọn vẹn) — thử tải lại hoặc chọn file khác.",
         )
     bad = _bad_page_count(ext, body.page_count)
     if bad is not None:

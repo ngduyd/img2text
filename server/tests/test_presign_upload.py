@@ -201,11 +201,18 @@ async def test_create_oversize_upload_422_and_deletes(auth_client, app):
     assert r.json()["items"] == []
 
 async def test_create_at_size_cap_ok(auth_client, app):
-    """Boundary: size == MAX_BYTES (50MB) PASS — cap là strict greater-than."""
-    r = await auth_client.post("/api/jobs/presign", json=_presign_body())
+    """Boundary: size == MAX_BYTES (50MB) PASS — cap là strict greater-than.
+
+    Dùng PDF (không phải ảnh) để test đúng biên SIZE: 50MB rác không decode
+    được nên sẽ bị chặn ở bước verify ảnh, không liên quan cap.
+    """
+    payload = b"%PDF-1.4\n" + b"x" * (MAX_BYTES - 9)
+    r = await auth_client.post(
+        "/api/jobs/presign", json=_presign_body(payload, "big.pdf")
+    )
     key = r.json()["storage_key"]
     app.state.storage.client.put_object(
-        Bucket=app.state.storage.bucket, Key=key, Body=b"x" * MAX_BYTES
+        Bucket=app.state.storage.bucket, Key=key, Body=payload
     )
     r = await auth_client.post(
         "/api/jobs", json={"storage_key": key, "page_count": 1}

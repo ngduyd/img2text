@@ -1,6 +1,11 @@
 # MEMORY
 
 ## Now
+- 2026-11-07 · **Job failed vì ảnh cụt**: 29 job (bang-luong.png ×14, hoa-don-1.png ×15) cùng trỏ
+  `uploads/a4bcd7b8…png` = **70 byte** (đúng chữ ký PNG, hết ngay sau IHDR) → kernel chết
+  "broken data stream when reading image file". Magic-byte sniff cũ chỉ so chữ ký nên cho qua.
+  → Fix: `jobs._undecodable_image()` (PIL open+verify) trong `create_job`, ảnh không decode được →
+  422 + xoá object, không tạo row. Đường PDF không đổi (pypdf/header, xem ponytail).
 - 2026-11-07 · **Docx giữ layout: dải ngang (band) thay vì 1 grid cột/trang.** `layout_spec._zones()`
   chia trang theo khoảng trống dọc (ratio 1.2 × median line height); mỗi zone có grid cột riêng
   (`_zone_cols`); `PageSpec.bands` + `Band`; block sắp theo (band, col, y, x) → thứ tự đọc đúng.
@@ -141,6 +146,10 @@
   `web/src/api/types.ts` chạy được.
 
 ## Measured
+- 2026-11-07 · Upload path đo lại: PNG 638 byte → PUT → đọc lại đúng 638 byte (không bị cắt hiện nay);
+  object 70 byte là từ lần upload cũ/hỏng sẵn.
+- 2026-11-07 · server pytest **992** (thêm tests/test_jobs_upload_decodable.py; sửa test_presign_upload
+  dùng PDF cho test biên 50MB).
 - 2026-11-07 · job #84 docx sau band: 3 section (1 cột đề bài / 4 cột thân / 1 cột dòng kết),
   cols 4 cột equalWidth=0, ảnh nhúng trong dòng, đọc đúng thứ tự; trước đó: 2 cột hẹp (213/211 px)
   với rãnh 2400 twips + chữ tràn loạn.
