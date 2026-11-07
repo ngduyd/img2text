@@ -167,6 +167,34 @@ def find_region(result: dict, rid: str) -> dict | None:
                 return region
     return None
 
+def find_region_page(result: dict, rid: str) -> dict | None:
+    """Page chứa region (cần cho rasterize PDF: page index + width/height)."""
+    for page in result.get("pages", []):
+        for region in page.get("regions", []):
+            if region["id"] == rid:
+                return page
+    return None
+
+
+def _pdf_page_png(pdf_bytes: bytes, page_no: int, width_px: float) -> bytes:
+    """Trang PDF → PNG đúng khung pixel của OCR (bbox là px trên khung đó).
+
+    zoom theo bề rộng để bbox dùng trực tiếp, không phải đổi px↔pt. Trang
+    ngoài phạm vi → KeyError (route map 404).
+    """
+    import fitz
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        if not 1 <= page_no <= doc.page_count:
+            raise KeyError(page_no)
+        page = doc[page_no - 1]
+        zoom = (width_px / page.rect.width) if width_px else 2.0
+        return page.get_pixmap(matrix=fitz.Matrix(zoom, zoom)).tobytes("png")
+    finally:
+        doc.close()
+
+
 async def get_or_make_crop(
     job_id: int, rid: str, job: Job, result: dict, storage: StorageDriver
 ) -> str:
@@ -189,6 +217,20 @@ async def get_or_make_crop(
         original = await storage.get(job.storage_key)
     except KeyError:
         raise HTTPException(status_code=404, detail="File gốc không tồn tại.")
+    if (job.file_type or "").lower() == "pdf":
+        page = find_region_page(result, rid) or {}
+        try:
+            original = await asyncio.to_thread(
+                _pdf_page_png,
+                original,
+                int(page.get("index") or 1),
+                float(page.get("width") or 0),
+            )
+        except KeyError:
+            raise KeyError(rid)
+        except Exception as exc:  # PDF hỏng → 404 thay vì 500
+            logger.warning("crop: rasterize PDF job=%s rid=%s lỗi: %r", job.id, rid, exc)
+            raise KeyError(rid) from exc
     img = Image.open(io.BytesIO(original))
     # no exif_transpose: crop must match VLM pixel frame (worker sees raw pixels)
     img = img.convert("RGB")  # RGBA/P-mode/WEBP originals cannot save as JPEG
@@ -771,9 +813,8 @@ async def region_crop(
     storage: StorageDriver = Depends(get_storage),
 ) -> dict:
     job = await _job_or_403(session, id, user)
-    if job.file_type != "image":
-        # ruling R26: PDF jobs have no PIL-decodable original
-        raise HTTPException(status_code=404, detail="Crop chỉ hỗ trợ file ảnh.")
+    # PDF: rasterize trang bằng PyMuPDF (trước đây R26 chặn → mọi vùng ảnh chỉ
+    # còn marker text trong md/docx).
     result = dict(job.result or {})
     try:
         key = await get_or_make_crop(id, rid, job, result, storage)

@@ -119,12 +119,20 @@ async def done_job_with_rgba_original(auth_client, db_session, storage) -> int:
 
 @pytest_asyncio.fixture
 async def done_job_pdf(auth_client, db_session, storage) -> int:
-    """Done job with file_type='pdf' (review round 1, Important 2)."""
+    """Done job with file_type='pdf' — PDF THẬT (1 trang 300x400) để crop
+    rasterize được; trước đây chỉ là bytes rác vì route chặn PDF."""
+    import fitz
+
+    doc = fitz.open()
+    page = doc.new_page(width=300, height=400)
+    page.draw_rect(fitz.Rect(100, 50, 200, 150), color=(1, 0, 0), fill=(1, 0, 0))
+    pdf = doc.tobytes()
+    doc.close()
     return await _seed_done_job(
         db_session,
         storage,
         [100, 50, 200, 150],
-        original=b"%PDF-1.4 not really",
+        original=pdf,
         file_type="pdf",
         storage_key="uploads/test.pdf",
     )
@@ -135,7 +143,19 @@ async def test_crop_rgba_original_200_valid_jpeg(auth_client, done_job_with_rgba
     data = await storage.get(f"crops/{done_job_with_rgba_original}/p1r0.jpg")
     assert Image.open(io.BytesIO(data)).format == "JPEG"
 
-async def test_crop_pdf_job_404(auth_client, done_job_pdf):
+async def test_crop_pdf_job_rasterized_200(auth_client, done_job_pdf, storage):
+    """PDF: crop rasterize bằng PyMuPDF (trước đây 404 "chỉ hỗ trợ file ảnh" →
+    mọi vùng ảnh của job PDF chỉ còn marker text)."""
+    r = await auth_client.get(f"/api/jobs/{done_job_pdf}/regions/p1r0/crop")
+    assert r.status_code == 200
+    data = await storage.get(f"crops/{done_job_pdf}/p1r0.jpg")
+    assert Image.open(io.BytesIO(data)).format == "JPEG"
+
+async def test_crop_pdf_broken_original_404(auth_client, done_job_pdf, storage):
+    """PDF hỏng → 404 (không phải 500)."""
+    # S3Driver.put dedupe key đã có → phải xoá trước khi thay
+    await storage.delete_key(f"crops/{done_job_pdf}/p1r0.jpg")
+    await storage.delete_key("uploads/test.pdf")
+    await storage.put("uploads/test.pdf", b"khong-phai-pdf")
     r = await auth_client.get(f"/api/jobs/{done_job_pdf}/regions/p1r0/crop")
     assert r.status_code == 404
-    assert r.json()["detail"] == "Crop chỉ hỗ trợ file ảnh."
