@@ -1,6 +1,13 @@
 # MEMORY
 
 ## Now
+- 2026-11-08 · **2 job user push (#87 thẻ SV HEIF, #88 datasheet PDF)** đã chạy tự động xong. Fix trong lúc
+  theo dõi: (a) crop dùng bbox thô trên ảnh gốc lớn hơn frame OCR → vùng QR lệch (scale
+  img.width/page.width), (b) PyMuPDF không mở HEIF → kernel crop bằng PIL fallback, (c) presign manifest
+  batch 900s hết hạn khi hàng đợi GPU dài (#88 403 → kernel bỏ job) → `batch_input_url_expires` 6h,
+  (d) font docx tính cả node table/image → bảng tràn 2 trang; cột thoái hoá (2 dải hẹp) → fallback 1 cột.
+  Còn lại: OCR sai dấu vài chỗ (THỂ/Thè/bảo quàn), heading giả trên thẻ (bbox không có info dòng),
+  datasheet nhiều ảnh vẫn thô về bố cục (chấp nhận: bản chất là brochure đồ hoạ).
 - 2026-11-08 · **Header đề thi mất là do UVDoc (use_doc_unwarping)**, không phải code: cùng trang job 86
   unwarp ON = 21 block (mất header, box kẹp mép y0=1), unwarp OFF = 23 block (có header). Mặc định giờ
   unwarp=False, `--opt unwarp=true` cho trang cong. docx 1 trang đủ header + gạch chân.
@@ -164,6 +171,8 @@
   `web/src/api/types.ts` chạy được.
 
 ## Measured
+- 2026-11-08 · job 87: 15 text node + 1 image (QR), md 36KB; job 88: 29 node (15 text, 11 image, 1 table
+  28 hàng), docx 2 trang → **1 trang** sau fix. server pytest 1008, deploy/kaggle 60.
 - 2026-11-08 · OCR ra 21 block (unwarp on) vs 23 (off); thời gian kernel ~13 phút/lần chạy.
 - 2026-11-08 · Job 86 batch tự động: ~13 phút/trang (venv+deps ~300s + OCR). docx-layout 1 trang.
 - 2026-11-08 · server pytest **1003**, deploy/kaggle pytest **57**.
