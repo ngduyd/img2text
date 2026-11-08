@@ -114,6 +114,76 @@ def _page_text(page: dict) -> str:
         lines.append(text)
     return "\n".join(lines)
 
+def _first_json_object(content: str) -> str | None:
+    """Lấy OBJECT JSON đầu tiên trong content (bỏ text thừa trước/sau).
+
+    Model không phải lúc nào cũng trả đúng 1 object dù đã xin json_object
+    (job 91: "Extra data: line 1 column 29092" — model viết thêm JSON thứ hai
+    hoặc văn xuôi sau object). Cắt theo độ sâu ngoặc + tôn trọng chuỗi/escape.
+    """
+    start = content.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(content)):
+        ch = content[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return content[start:i + 1]
+    return None
+
+
+def _response_json(text: str) -> dict:
+    """Body HTTP → object JSON (chấp nhận cả SSE `data: {...}` + `data: [DONE]`).
+
+    Một số model/router trả SSE dù client không xin stream (role-scout: body có
+    "data: {...}\n\ndata: [DONE]") → resp.json() ném 'Extra data'.
+    """
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {}
+    except (ValueError, TypeError):
+        pass
+    last: dict | None = None
+    for line in text.splitlines():
+        line = line.strip()
+        if not line.startswith("data:"):
+            continue
+        payload = line[5:].strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            obj = json.loads(payload)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(obj, dict) and obj.get("choices"):
+            last = obj
+    if last is not None:
+        return last
+    # body = JSON + đuôi rác ("data: [DONE]") không có newline trước đó
+    candidate = _first_json_object(text)
+    if candidate is not None:
+        data = json.loads(candidate)
+        if isinstance(data, dict):
+            return data
+    raise ValueError("phản hồi không phải JSON/SSE hợp lệ")
+
+
 def _parse(content: str) -> list[dict]:
     """LLM content → list of item dicts (bad shape → ProofreadError)."""
     if not isinstance(content, str):
@@ -121,7 +191,13 @@ def _parse(content: str) -> list[dict]:
     try:
         data = json.loads(content)
     except (ValueError, TypeError) as exc:
-        raise ProofreadError(f"phản hồi không phải JSON: {exc}") from exc
+        candidate = _first_json_object(content)
+        if candidate is None:
+            raise ProofreadError(f"phản hồi không phải JSON: {exc}") from exc
+        try:
+            data = json.loads(candidate)
+        except (ValueError, TypeError) as exc2:
+            raise ProofreadError(f"phản hồi không phải JSON: {exc2}") from exc2
     items = data.get("items") if isinstance(data, dict) else None
     if not isinstance(items, list):
         raise ProofreadError('phản hồi thiếu khóa "items"')
@@ -178,7 +254,11 @@ async def _call_llm(page_text: str, hint: str) -> list[dict]:
     if resp.status_code >= 400:
         raise ProofreadError(f"LLM HTTP {resp.status_code}")
     try:
-        content = resp.json()["choices"][0]["message"]["content"]
+        try:
+            payload_json = resp.json()          # đường thường
+        except Exception:                        # SSE/body lạ → parse thủ công
+            payload_json = _response_json(getattr(resp, "text", ""))
+        content = payload_json["choices"][0]["message"]["content"]
     except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise ProofreadError(f"phản hồi thiếu content: {exc}") from exc
     return _parse(content)

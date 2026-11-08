@@ -452,3 +452,50 @@ async def test_manual_proofread_llm_down_returns_zero(auth_client, done_job_with
     r = await auth_client.post(f"/api/jobs/{done_job_with_result}/proofread")
     assert r.status_code == 200, r.text
     assert r.json() == {"count": 0}
+
+def test_parse_tolerates_extra_data_after_json_object():
+    """Model trả thêm JSON/văn xuôi sau object (job 91: 'Extra data: line 1
+    column 29092') → vẫn parse được object đầu tiên thay vì mất hết gợi ý."""
+    from app.services.proofread import _parse
+
+    content = (
+        '{"items":[{"phrase":"bảo quàn","reason":"sai dấu","suggestion":"bảo quản"}]}\n'
+        '{"items":[{"phrase":"khác","reason":"x","suggestion":"y"}]}'
+    )
+    items = _parse(content)
+    assert items == [{"phrase": "bảo quàn", "reason": "sai dấu", "suggestion": "bảo quản"}]
+
+
+def test_parse_ignores_prose_before_object():
+    from app.services.proofread import _parse
+
+    assert _parse('Đây là kết quả: {"items":[]} — hết.') == []
+
+def test_response_json_accepts_sse_body():
+    """Router trả SSE (`data: {...}` + `data: [DONE]`) dù không xin stream →
+    vẫn lấy được object cuối có choices (role-scout)."""
+    from app.services.proofread import _response_json
+
+    sse = (
+        'data: {"choices":[{"message":{"content":"{\\"items\\":[]}"}}]}\n\n'
+        "data: [DONE]\n"
+    )
+    data = _response_json(sse)
+    assert data["choices"][0]["message"]["content"] == '{"items":[]}'
+    assert _response_json('{"choices":[{"message":{"content":"x"}}]}')["choices"]
+
+
+def test_response_json_rejects_garbage():
+    import pytest as _pytest
+    from app.services.proofread import ProofreadError, _response_json
+
+    with _pytest.raises(ValueError):
+        _response_json("<html>502</html>")
+
+def test_response_json_tolerates_trailing_done_marker():
+    """Body = JSON nguyên + 'data: [DONE]' dính liền (không có newline) — đúng
+    dạng role-scout trả về (job 91: Extra data: line 1 column 3208)."""
+    from app.services.proofread import _response_json
+
+    body = '{"choices":[{"message":{"content":"{\\"items\\":[]}"}}]}data: [DONE]'
+    assert _response_json(body)["choices"][0]["message"]["content"] == '{"items":[]}'
