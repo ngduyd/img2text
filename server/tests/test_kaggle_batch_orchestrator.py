@@ -322,7 +322,12 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
         set(r) >= {"id", "bbox", "text", "verdict", "placeholder"}
         for r in p1["regions"]
     )
-    assert set(p1["regions"][0]) == {"id", "bbox", "text", "verdict", "placeholder"}  # non-table: no extra keys
+    # non-table: chỉ id/bbox/text/verdict/placeholder (+ ocr_text/text_kind khi kernel
+    # có OCR trong vùng ảnh — None thì bị loại khỏi dump)
+    assert set(p1["regions"][0]) <= {
+        "id", "bbox", "text", "verdict", "placeholder", "ocr_text", "text_kind"
+    }
+    assert "html" not in p1["regions"][0] and "cells" not in p1["regions"][0]
     assert p1["regions"][-1]["verdict"] == "image_unextractable"
     assert p1["regions"][-1]["placeholder"] is True
     assert all(

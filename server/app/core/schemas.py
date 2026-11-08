@@ -26,6 +26,12 @@ class RegionOut(BaseModel):
     # Shape cũ (HTTP worker / batch đã ingest) → None.
     html: str | None = None
     cells: list[list[dict]] | None = None
+    # Chữ nằm TRONG vùng ảnh (kernel OCR): giữ lại để tra cứu/copy kể cả khi
+    # text_kind="graphic" (số đo bản vẽ, nhãn biểu đồ) — KHÔNG đưa vào thân văn
+    # bản vì sẽ sai trình bày. "document" (bảng/đoạn văn chụp trong ảnh) thì
+    # kernel/adapter đã sinh thêm region "<rid>_text" để vào thân.
+    ocr_text: str | None = None
+    text_kind: Literal["document", "graphic"] | None = None
 
     @field_validator("bbox")
     @classmethod
