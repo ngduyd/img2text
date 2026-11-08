@@ -1,6 +1,11 @@
 # MEMORY
 
 ## Now
+- 2026-11-08 · **Job 86 (đề thi 1 cột, 1242×1713)**: upload OK sau fix sha256; nhưng đứng `queued`
+  vì `KAGGLE_KERNEL_REF` bị comment trong `deploy/.env.dev` → `kaggle_enabled=False` → scheduler
+  không spawn kernel, dev compose cũng không có worker container. Đã bơm result tesseract
+  (`/tmp/tess_worker.py`) để test đường layout/docx. docx-layout: 3 trang → **1 trang** sau fix
+  khung trang. Việc còn lại: bật kernel thật (uncomment KAGGLE_KERNEL_REF + push kernel).
 - 2026-11-07 · **Job failed vì ảnh cụt**: 29 job (bang-luong.png ×14, hoa-don-1.png ×15) cùng trỏ
   `uploads/a4bcd7b8…png` = **70 byte** (đúng chữ ký PNG, hết ngay sau IHDR) → kernel chết
   "broken data stream when reading image file". Magic-byte sniff cũ chỉ so chữ ký nên cho qua.
@@ -146,6 +151,11 @@
   `web/src/api/types.ts` chạy được.
 
 ## Measured
+- 2026-11-08 · docx job 86 @805fa8d = 3 trang; sau fix geometry = **1 trang** (font 9,2pt từ nhịp
+  dòng 24px, lề A4 834/527/614/297 twips, vùng chữ ~7,1in). job 84 vẫn 2 trang, band 4 cột nguyên.
+- 2026-11-08 · Ép vùng chữ 6in (template cũ) làm chữ phải nhỏ ~35% mới vừa; cỡ chữ suy từ bbox
+  height cho 13,5pt (tràn), từ pitch/1,25 cho 9,2pt (vừa) — đo bằng sweep 6,5→10pt.
+- 2026-11-08 · server pytest **994** (2 test mới: geometry + metrics).
 - 2026-11-07 · Upload path đo lại: PNG 638 byte → PUT → đọc lại đúng 638 byte (không bị cắt hiện nay);
   object 70 byte là từ lần upload cũ/hỏng sẵn.
 - 2026-11-07 · server pytest **992** (thêm tests/test_jobs_upload_decodable.py; sửa test_presign_upload
