@@ -57,6 +57,26 @@ async def test_result_done(worker_client, db_session, seed_job, VALID_RESULT_JSO
     job = await db_session.get(Job, seed_job)
     assert job.status == "done" and job.result["model_version"] and job.worker_token_hash is None
 
+async def test_result_clears_stale_ir_cache(
+    worker_client, db_session, seed_job, VALID_RESULT_JSONB, monkeypatch
+):
+    """Result mới phải xoá job.ir_json: IR là nguồn render duy nhất, cache cũ
+    khiến md/docx xuất từ region cũ (bug thật: re-run VLM vẫn ra text cũ)."""
+    async def _md_ok(*args, **kwargs):
+        return "# layout md"
+    monkeypatch.setattr("app.routers.exports.build_md", _md_ok)
+    job = await db_session.get(Job, seed_job)
+    job.ir_json = '{"document_id": "old", "schema_version": "1.1", "pages": []}'
+    await db_session.commit()
+    claim = await worker_client.get("/api/jobs/next"); tok = claim.json()["worker_token"]
+    r = await worker_client.post(f"/api/jobs/{seed_job}/result", json=VALID_RESULT_JSONB,
+                                 headers={"Authorization": f"Bearer {tok}"})
+    assert r.status_code == 200
+    from app.services.job_results import drain_auto_output
+    await drain_auto_output()
+    db_session.expire_all()
+    assert (await db_session.get(Job, seed_job)).ir_json is None
+
 async def test_result_409_when_not_running(worker_client, db_session, seed_job, VALID_RESULT_JSONB):
     claim = await worker_client.get("/api/jobs/next"); tok = claim.json()["worker_token"]
     await worker_client.post(f"/api/jobs/{seed_job}/fail", json={"error": "boom"},

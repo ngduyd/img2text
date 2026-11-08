@@ -223,24 +223,32 @@ def _page_geometry(page: dict) -> PageGeometry:
     text_width = A4_W - margins[0] - margins[1]
     return PageGeometry(scale=scale, text_width=text_width, margins=margins)
 
+LINE_BOX_TO_FONT = 0.5   # hộp dòng của OCR (bbox/lines) ≈ 2× cỡ chữ thật
+LINE_SPACING_RATIO = 1.2
+
 def _page_metrics(page: dict, geo: PageGeometry) -> tuple[float, float] | None:
     """IR page → (font_pt, line_pitch_pt) theo đúng khung trang của trang gốc.
 
-    Nhịp dòng = median khoảng cách đỉnh-dòng liên tiếp; cỡ chữ suy từ nhịp dòng
-    (chữ thật ≈ pitch/1,25 với giãn dòng đơn), KHÔNG từ chiều cao bbox (bbox
-    phình vì dấu + khoảng trắng → chữ to hơn bản gốc).
+    Cỡ chữ suy từ hộp dòng TRUNG BÌNH của từng block (bbox height / số dòng):
+    block VLM là cả đoạn nhiều dòng nên không thể dùng chiều cao block, cũng
+    không dùng khoảng cách đỉnh-block (đó là khoảng cách đoạn, job 86: 83px →
+    font 16pt → 5 trang). Hộp dòng ≈ 2× cỡ chữ (bbox có leading) — đo bằng
+    vòng preview trên job 86 (1242×1713, chữ thật ~9pt).
     """
-    tops: list[float] = []
+    line_boxes: list[float] = []
     for node in page.get("content") or []:
-        bbox = (node.get("render") or {}).get("bbox_exact")
-        if bbox and len(bbox) == 4:
-            tops.append(float(bbox[1]))
-    uniq = sorted(set(round(t, 1) for t in tops))
-    gaps = [b - a for a, b in zip(uniq, uniq[1:]) if b - a >= 4]
-    if not gaps:
+        render = node.get("render") or {}
+        bbox = render.get("bbox_exact")
+        if not bbox or len(bbox) != 4:
+            continue
+        n_lines = max(1, len(render.get("lines") or []))
+        line_boxes.append((float(bbox[3]) - float(bbox[1])) / n_lines)
+    line_boxes = [h for h in line_boxes if h >= 4]
+    if not line_boxes:
         return None
-    pitch_pt = statistics.median(gaps) * PT_PER_PX * geo.scale
-    return pitch_pt / 1.25, pitch_pt
+    line_box_pt = statistics.median(line_boxes) * PT_PER_PX * geo.scale
+    font_pt = line_box_pt * LINE_BOX_TO_FONT
+    return font_pt, font_pt * LINE_SPACING_RATIO
 
 def _apply_page_metrics(doc, pages: list[dict], geo: PageGeometry) -> None:
     """Cỡ chữ + giãn dòng khớp bản gốc (1 lần cho cả document).
@@ -255,7 +263,7 @@ def _apply_page_metrics(doc, pages: list[dict], geo: PageGeometry) -> None:
         return
     font_pt, pitch_pt = metrics
     font_pt = max(6.0, min(12.0, round(font_pt, 1)))
-    pitch_pt = max(font_pt * 1.05, round(pitch_pt, 1))
+    pitch_pt = max(font_pt * 1.05, round(pitch_pt, 2))
     normal = doc.styles["Normal"]
     normal.font.size = Pt(font_pt)
     normal.paragraph_format.line_spacing = Pt(pitch_pt)

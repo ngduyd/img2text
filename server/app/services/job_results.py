@@ -195,6 +195,10 @@ async def _store(
                 # result (batch + loop cùng qua đây) — SUM quota phản ánh
                 # ngay job đầu, chống khai láo khi create.
                 page_count=len(body.pages),
+                # IR là NGUỒN RENDER DUY NHẤT → result mới mà cache IR cũ còn
+                # thì md/docx xuất ra từ region cũ (job 86: re-run bằng VLM vẫn
+                # render text tesseract). Xoá để /ir dựng lại từ result mới.
+                ir_json=None,
                 worker_token_hash=None,
                 lease_expires_at=None,
             )

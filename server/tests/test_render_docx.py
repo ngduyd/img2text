@@ -288,17 +288,26 @@ def test_page_geometry_margins_from_content_and_a4():
     assert geo.text_width > 8640   # rộng hơn 6in template cũ
 
 
-def test_page_metrics_font_from_line_pitch_not_bbox_height():
-    """Cỡ chữ suy từ NHỊP DÒNG (pitch/1,25), không từ chiều cao bbox: bbox phình
-    vì dấu/khoảng trắng nên cho ra chữ to hơn bản gốc (job 86: 13,5pt → 3 trang)."""
-    from app.services.render_docx import PT_PER_PX, _page_geometry, _page_metrics
+def test_page_metrics_font_from_line_box_not_block_height():
+    """Cỡ chữ suy từ HỘP DÒNG (bbox height / số dòng), không từ chiều cao block
+    hay khoảng cách đỉnh-block: block VLM là cả đoạn nhiều dòng (job 86: đỉnh
+    block cách 83px → font 16pt → 5 trang; hộp dòng 38,5px → 9,2pt → 1 trang)."""
+    from app.services.render_docx import (
+        LINE_BOX_TO_FONT,
+        PT_PER_PX,
+        _page_geometry,
+        _page_metrics,
+    )
 
-    tops = [100.0, 124.0, 148.0, 172.0]      # nhịp 24px
     page = {"width": 1242, "height": 1713, "content": [
-        {"render": {"bbox_exact": [90.0, t, 1150.0, t + 39.0]}} for t in tops
+        # 1 đoạn 4 dòng: bbox cao 4×38 = 152px, đỉnh block cách nhau rất xa
+        {"render": {"bbox_exact": [90.0, 100.0, 1150.0, 252.0], "lines": ["a", "b", "c", "d"]}},
+        {"render": {"bbox_exact": [90.0, 400.0, 1150.0, 552.0], "lines": ["e", "f", "g", "h"]}},
     ]}
     geo = _page_geometry(page)
     font_pt, pitch_pt = _page_metrics(page, geo)
-    assert pitch_pt == pytest.approx(24 * PT_PER_PX * geo.scale)
-    assert font_pt == pytest.approx(pitch_pt / 1.25)
-    assert font_pt < 39 * PT_PER_PX * geo.scale    # nhỏ hơn cách tính theo bbox
+    assert font_pt == pytest.approx(38.0 * PT_PER_PX * geo.scale * LINE_BOX_TO_FONT)
+    assert pitch_pt == pytest.approx(font_pt * 1.2)
+    assert font_pt < 12.0   # không phình theo chiều cao block (152px)
+
+
