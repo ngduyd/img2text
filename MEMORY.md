@@ -1,6 +1,14 @@
 # MEMORY
 
 ## Now
+- 2026-11-08 · **Job 90 'ảnh mất một khúc + không nhận ra trang ngang'** — 3 nguyên nhân riêng biệt:
+  (a) mọi trang ép A4 DỌC (p1 chứng chỉ là trang ngang 2339×1653) → giờ nhận orientation + khổ ngang;
+  (b) style Normal đặt line_spacing EXACT → paragraph chứa ẢNH bị co dòng, ảnh đẩy lên toạ độ ÂM
+      (PDF rect y0=-265) nên KHÔNG vẽ → bỏ line_spacing khỏi Normal; ảnh còn bị cắt khi rộng hơn CỘT
+      → `_limit_width = min(vùng chữ, cột)`;
+  (c) rembg khoét lỗ trắng trong screenshot → chỉ xoá nền khi viền ảnh sáng+đồng nhất.
+  Đo lại: p1 842×595 landscape, p3 screenshot đầy đủ, job 88 ảnh bo mạch/logo hiện đủ (trước là dải mỏng).
+  Job 90 docx 20 → 27 trang (ảnh giờ thật sự được vẽ nên chiếm chỗ).
 - 2026-11-08 · Chốt cách xử lý chữ-trong-ảnh: kernel OCR vùng ảnh ≥5% diện tích trang rồi PHÂN LOẠI
   ("document" = ≥3 dòng, ≥2 dòng ≥25 ký tự, token số <40% → thêm region `<rid>_text` vào thân;
   "graphic" = còn lại → chỉ lưu `ocr_text` metadata). Verify job 88: b2 (ảnh bo mạch) OCR ra rác
