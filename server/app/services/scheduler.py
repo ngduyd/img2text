@@ -239,4 +239,9 @@ def init_scheduler(app: FastAPI) -> AsyncIOScheduler:
     app.state.scheduler = scheduler
     if "PYTEST_CURRENT_TEST" not in os.environ:
         scheduler.start()
+    logger.info(
+        "scheduler: %s, jobs=%s",
+        "started" if scheduler.running else "NOT started",
+        [j.id for j in scheduler.get_jobs()],
+    )
     return scheduler

@@ -42,6 +42,7 @@ BAND_GAP_RATIO = 1.2
 SPAN_WIDTH_RATIO = 1.35
 # Mép trái lệch trong khoảng này (× bề ngang trang) vẫn coi là CÙNG cột
 DEGENERATE_COLS_RATIO = 0.5      # cột phủ <50% vùng chữ ⇒ coi như 1 cột
+WIDE_BLOCK_RATIO = 0.6           # block rộng ≥60% vùng chữ ⇒ block toàn trang
 COL_LEFT_TOL_RATIO = 0.03          # cột phải có ≥2 block định nghĩa cột, thiếu → bỏ
 HEADING_MAX_CHARS = 90     # heading thật thì ngắn; note/list dài không phải heading
 HEADING_RATIO = 1.6         # font ≥ 1.6× median → heading
@@ -640,6 +641,13 @@ def _zone_cols(zone: list[BlockSpec], width: float) -> list[Col]:
     span = sum(max(0.0, c.x1 - c.x0) for c in cols)
     content_w = max(1.0, max(b.x1 for b in texts) - min(b.x0 for b in texts))
     if span < DEGENERATE_COLS_RATIO * content_w:
+        return [Col(min(b.x0 for b in texts), max(b.x1 for b in texts))]
+    # Đa số block RỘNG (≥60% vùng chữ) thì trang là 1 cột: chúng không thể nằm
+    # trong cột hẹp nào. Trước đây header trái/phải + dòng thụt đầu + khổ thơ
+    # tạo 3 "cột" giả (job 91: [55,400],[118,550],[333,606]) và toàn bộ thân bài
+    # bị nhồi vào cột 432px → chữ gãy dòng, đảo thứ tự đọc.
+    wide = [b for b in texts if (b.x1 - b.x0) >= WIDE_BLOCK_RATIO * content_w]
+    if len(wide) >= 2:
         return [Col(min(b.x0 for b in texts), max(b.x1 for b in texts))]
     return cols
 

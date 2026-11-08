@@ -273,7 +273,10 @@ def _apply_page_metrics(doc, pages: list[dict], geo: PageGeometry) -> None:
     if metrics is None:
         return
     font_pt, pitch_pt = metrics
-    font_pt = max(6.0, min(12.0, round(font_pt, 1)))
+    # Sàn 8pt: hộp dòng của OCR có lúc rất bó (scan chứng chỉ/ảnh thẻ) → công
+    # thức cho 4-5pt, chữ li ti so với 1 trang A4 (job 90). Tài liệu Word thật
+    # gần như luôn nằm trong 8–12pt.
+    font_pt = max(8.0, min(12.0, round(font_pt, 1)))
     pitch_pt = max(font_pt * 1.05, round(pitch_pt, 2))
     normal = doc.styles["Normal"]
     normal.font.size = Pt(font_pt)

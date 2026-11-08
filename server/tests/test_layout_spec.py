@@ -349,3 +349,26 @@ def test_underline_with_nested_text_group():
     )
     assert plain == "Question 8. The word  accelerate in paragraph 1"
     assert spans == [(22, 32)]
+
+class TestWideBlocksMeanSingleColumn:
+    """Trang 1 cột có header trái/phải + dòng thụt đầu + khổ thơ → detector cũ
+    tách 3 "cột" giả và nhồi thân bài vào cột hẹp (job 91: chữ gãy dòng, đảo
+    thứ tự đọc). Block rộng ≥60% vùng chữ phải thắng."""
+
+    def test_full_width_body_blocks_collapse_to_one_column(self):
+        regions = [
+            {"id": "h1", "bbox": [60, 40, 350, 130], "verdict": "ok",
+             "text": "SỞ GIÁO DỤC VÀ ĐÀO TẠO\nNGHỆ AN"},
+            {"id": "h2", "bbox": [420, 40, 880, 130], "verdict": "ok",
+             "text": "KỲ THI TUYỂN SINH VÀO LỚP 10"},
+            {"id": "b1", "bbox": [55, 200, 890, 300], "verdict": "ok",
+             "text": "Mỗi người chúng ta đều là một con chim làm tổ trên cây, bố mẹ chính là cây cổ thụ."},
+            {"id": "b2", "bbox": [56, 300, 891, 400], "verdict": "ok",
+             "text": "Nhưng chim luôn hướng tới bầu trời, tò mò về thế giới chưa biết."},
+            {"id": "poem", "bbox": [330, 900, 600, 1100], "verdict": "ok",
+             "text": "Chân phải bước tới cha\nChân trái bước tới mẹ"},
+        ]
+        spec = build_page_specs({"pages": [{"index": 1, "width": 930, "height": 1384,
+                                            "regions": regions}]})[0]
+        assert len(spec.cols) == 1
+        assert spec.cols[0].x0 <= 56 and spec.cols[0].x1 >= 891
