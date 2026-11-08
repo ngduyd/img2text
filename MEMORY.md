@@ -1,6 +1,11 @@
 # MEMORY
 
 ## Now
+- 2026-11-08 · Chốt cách xử lý chữ-trong-ảnh: kernel OCR vùng ảnh ≥5% diện tích trang rồi PHÂN LOẠI
+  ("document" = ≥3 dòng, ≥2 dòng ≥25 ký tự, token số <40% → thêm region `<rid>_text` vào thân;
+  "graphic" = còn lại → chỉ lưu `ocr_text` metadata). Verify job 88: b2 (ảnh bo mạch) OCR ra rác
+  "005 | 11 | y | 1 | O | CH5a" → graphic (không vào thân ✓); b18 (bản vẽ) OCR ra đúng 202.70/200/189.90
+  → graphic, giữ metadata. Cần 1 lần chạy lại job 88 để `ocr_text` vào DB/API (schema đã cho phép).
 - 2026-11-08 · Mục tiêu chốt với user: **luôn lấy được VĂN BẢN**, không biến trang thành ảnh. Docx giờ
   dựng geometry + cỡ chữ THEO TỪNG TRANG (job 90: trang chứng chỉ ngang + 19 trang text dọc).
   Đo độ đầy đủ job 90: 13.5k ký tự docx vs 9.5k ký tự text gốc (gốc có trang scan 0 ký tự → OCR bù).
