@@ -41,6 +41,7 @@ BAND_GAP_RATIO = 1.2
 # ảnh, đoạn full-width) → phải ra dải riêng, không nhét vào grid cột
 SPAN_WIDTH_RATIO = 1.35
 # Mép trái lệch trong khoảng này (× bề ngang trang) vẫn coi là CÙNG cột
+DEGENERATE_COLS_RATIO = 0.5      # cột phủ <50% vùng chữ ⇒ coi như 1 cột
 COL_LEFT_TOL_RATIO = 0.03          # cột phải có ≥2 block định nghĩa cột, thiếu → bỏ
 HEADING_MAX_CHARS = 90     # heading thật thì ngắn; note/list dài không phải heading
 HEADING_RATIO = 1.6         # font ≥ 1.6× median → heading
@@ -265,6 +266,17 @@ def _merge_option_lines(lines: list[str], width: float) -> tuple[list[str], list
     return out, tabs
 
 
+def _plain_cells(cells):
+    """Ô bảng: bỏ LaTeX inline ($ \\text{®} $ → ®) — cùng quy tắc với text block."""
+    if not cells:
+        return cells
+    return [
+        [{**c, "text": _detex(plain_inline_tex(c.get("text") or "")[0])}
+         for c in row]
+        for row in cells
+    ]
+
+
 def _detex(text: str) -> str:
     """LaTeX đơn giản → text đọc được (docx/md không render math).
 
@@ -325,7 +337,7 @@ def _extract_regions(page: dict) -> list[BlockSpec]:
                 text=plain_text,
                 bbox=tuple(float(v) for v in bbox_raw),
                 html=html,
-                cells=region.get("cells"),
+                cells=_plain_cells(region.get("cells")),
                 lines=plain_lines,
                 latex=latex,
                 underline=underline,
@@ -622,6 +634,13 @@ def _zone_cols(zone: list[BlockSpec], width: float) -> list[Col]:
         )
     if not cols:
         cols = [Col(min(b.x0 for b in texts), max(b.x1 for b in texts))]
+    # Cột "thoái hoá": tổng bề ngang các cột quá nhỏ so với trang (job 88:
+    # datasheet 2 cột thật nhưng detector chỉ bắt 2 dải hẹp 147px + 40px → mọi
+    # block bị nhồi vào cột hẹp, bảng đè lên nhau). Fallback 1 cột = vùng chữ.
+    span = sum(max(0.0, c.x1 - c.x0) for c in cols)
+    content_w = max(1.0, max(b.x1 for b in texts) - min(b.x0 for b in texts))
+    if span < DEGENERATE_COLS_RATIO * content_w:
+        return [Col(min(b.x0 for b in texts), max(b.x1 for b in texts))]
     return cols
 
 

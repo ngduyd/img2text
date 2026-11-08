@@ -1148,7 +1148,14 @@ def extract_crops(input_path: str, pages_out: list, remove=None,
     if remove is None:
         # KHÔNG dùng cache u2net.onnx trong dataset: đọc FUSE 175 s > tải mạng 94 s.
         from rembg import remove as remove  # noqa: PLC0415 (lazy - import test cheap)
-    doc = fitz.open(input_path)
+    try:
+        doc = fitz.open(input_path)
+    except Exception as exc:
+        # PyMuPDF KHÔNG đọc được HEIF/HEIC (ảnh điện thoại) → cắt bằng PIL
+        # (pillow-heif đã đăng ký). Không có nhánh này thì crops rỗng và server
+        # phải cắt bù bằng bbox thô (bug job 87: vùng QR cắt thành dòng chữ).
+        print(f"[batch] fitz mở input lỗi ({exc}) — crop bằng PIL", flush=True)
+        return _extract_crops_pil(input_path, pages_out, remove)
     try:
         crops: dict[str, bytes] = {}
         for pg in pages_out:
@@ -1191,6 +1198,33 @@ def extract_crops(input_path: str, pages_out: list, remove=None,
         return crops
     finally:
         doc.close()
+
+def _extract_crops_pil(input_path: str, pages_out: list, remove) -> dict[str, bytes]:
+    """Fallback crop cho ảnh fitz không mở được (HEIF/HEIC): PIL + scale."""
+    from PIL import Image as _Image
+    _register_heif_opener()
+    crops: dict[str, bytes] = {}
+    with _Image.open(input_path) as img:
+        img = img.convert("RGB")
+        for pg in pages_out:
+            w_px = pg.get("width") or 0
+            if not w_px:
+                continue
+            scale = img.width / w_px
+            for b in pg.get("blocks") or []:
+                if b.get("type") != "image" or not b.get("bbox"):
+                    continue
+                x0, y0, x1, y1 = _to_original_bbox(b["bbox"], scale)
+                box = (max(0, round(x0)), max(0, round(y0)),
+                       min(img.width, round(x1)), min(img.height, round(y1)))
+                try:
+                    buf = io.BytesIO()
+                    img.crop(box).save(buf, "PNG")
+                    crops[str(b["id"])] = remove(buf.getvalue())
+                except Exception as exc:   # partial-fail 1 crop
+                    print(f"[batch] crop PIL {b['id']} lỗi: {exc}", flush=True)
+    return crops
+
 
 def normalize(raw_paths: list[str], pre_info: dict,
               raw_dir: str, pre_dir: str) -> tuple[list[dict], list[str]]:

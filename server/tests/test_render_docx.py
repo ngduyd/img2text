@@ -301,8 +301,10 @@ def test_page_metrics_font_from_line_box_not_block_height():
 
     page = {"width": 1242, "height": 1713, "content": [
         # 1 đoạn 4 dòng: bbox cao 4×38 = 152px, đỉnh block cách nhau rất xa
-        {"render": {"bbox_exact": [90.0, 100.0, 1150.0, 252.0], "lines": ["a", "b", "c", "d"]}},
-        {"render": {"bbox_exact": [90.0, 400.0, 1150.0, 552.0], "lines": ["e", "f", "g", "h"]}},
+        {"render": {"kind": "text", "bbox_exact": [90.0, 100.0, 1150.0, 252.0],
+                    "lines": ["a", "b", "c", "d"]}},
+        {"render": {"kind": "text", "bbox_exact": [90.0, 400.0, 1150.0, 552.0],
+                    "lines": ["e", "f", "g", "h"]}},
     ]}
     geo = _page_geometry(page)
     font_pt, pitch_pt = _page_metrics(page, geo)
@@ -342,3 +344,25 @@ def test_plain_inline_tex_strips_math_without_underline():
 
     plain, spans = plain_inline_tex("gọi là $x^2 + y$ nhé")
     assert plain == "gọi là x^2 + y nhé" and spans == []
+
+
+def test_page_metrics_ignores_table_and_image_blocks():
+    """Table/image có bbox cả khối (lines=1) → nếu tính vào hộp dòng thì font
+    toàn trang bị thổi lên (job 88: bảng spec 900px ⇒ bảng tràn 2 trang)."""
+    from app.services.render_docx import (
+        LINE_BOX_TO_FONT,
+        PT_PER_PX,
+        _page_geometry,
+        _page_metrics,
+    )
+
+    page = {"width": 1242, "height": 1713, "content": [
+        {"render": {"kind": "text", "bbox_exact": [90.0, 100.0, 1150.0, 140.0],
+                    "lines": ["một dòng"]}},
+        {"render": {"kind": "table", "bbox_exact": [90.0, 200.0, 1150.0, 1100.0], "lines": []}},
+        {"render": {"kind": "image", "bbox_exact": [90.0, 1150.0, 500.0, 1600.0], "lines": []}},
+    ]}
+    geo = _page_geometry(page)
+    font_pt, _ = _page_metrics(page, geo)
+    # đúng bằng công thức cho hộp dòng 40px (KHÔNG dính 900px của bảng/image)
+    assert font_pt == pytest.approx(40 * PT_PER_PX * geo.scale * LINE_BOX_TO_FONT)

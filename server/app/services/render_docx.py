@@ -67,7 +67,7 @@ def _add_html_table(container, text: str) -> bool:
             table.rows[ri].cells[ci].paragraphs[0].add_run(val)
     return True
 
-def _add_cells_table(container, cells: list[list[dict]]) -> bool:
+def _add_cells_table(container, cells: list[list[dict]], width_twips: float = 0.0) -> bool:
     """wave-3: cells (kernel parse, có rowspan/colspan/header) → docx table
     python-docx với merge() thật (gridSpan/vMerge) — fidelity 100%, html
     regex path không có span.
@@ -86,6 +86,12 @@ def _add_cells_table(container, cells: list[list[dict]]) -> bool:
         if not p0.text and len(container.paragraphs) == 1:
             p0._element.getparent().remove(p0._element)
     table = container.add_table(rows=rows, cols=ncols)
+    if width_twips:
+        # Bảng phải nằm trong BỀ NGANG CỘT của nó: autofit + width mặc định làm
+        # Word nới bảng ra hết trang → chồng lên cột bên cạnh (job 88: bảng spec
+        # đè lên dải nhãn dọc bên phải).
+        table.autofit = False
+        table.width = Twips(round(width_twips))
     grid: list[list[tuple[int, int] | None]] = [[None] * ncols for _ in range(rows)]
     for ri, row in enumerate(cells):
         ci = 0
@@ -238,6 +244,11 @@ def _page_metrics(page: dict, geo: PageGeometry) -> tuple[float, float] | None:
     line_boxes: list[float] = []
     for node in page.get("content") or []:
         render = node.get("render") or {}
+        # chỉ node TEXT: bbox của table/image là cả khối (1 "dòng") → hộp dòng
+        # phình → font toàn trang bị thổi lên (job 88: bảng spec 900px ⇒ font
+        # ~14pt, bảng tràn 2 trang).
+        if (render.get("kind") or "") != "text":
+            continue
         bbox = render.get("bbox_exact")
         if not bbox or len(bbox) != 4:
             continue
@@ -417,7 +428,7 @@ def _add_spec_block(
         return
     if blk.kind == "table":
         if blk.cells:
-            _add_cells_table(doc, blk.cells)
+            _add_cells_table(doc, blk.cells, blk.w * TWIPS_PER_PX * scale)
         else:
             _add_html_table(doc, blk.html or blk.text)
         return
