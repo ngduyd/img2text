@@ -1,6 +1,11 @@
 # MEMORY
 
 ## Now
+- 2026-11-08 · **Job 91 (đề văn) fix xong**: trang 1 cột bị tách 3 cột giả → thân bài nhồi cột 432px
+  (chữ gãy dòng, đảo thứ tự). Fix: ≥2 block rộng ≥60% ⇒ 1 cột → 1 trang đúng thứ tự.
+  **Job 90 (20 trang, p1 = chứng chỉ scan, p2..20 = trang text)**: trang text OK nội dung nhưng chữ nhỏ
+  (geometry/font lấy từ TRANG 1 cho cả document) → cần geometry theo TỪNG trang; p1 là đồ hoạ nên vẫn xấu.
+  **Job 88 (datasheet)**: 1 trang, bảng gọn, ảnh đủ.
 - 2026-11-08 · **2 job user push (#87 thẻ SV HEIF, #88 datasheet PDF)** đã chạy tự động xong. Fix trong lúc
   theo dõi: (a) crop dùng bbox thô trên ảnh gốc lớn hơn frame OCR → vùng QR lệch (scale
   img.width/page.width), (b) PyMuPDF không mở HEIF → kernel crop bằng PIL fallback, (c) presign manifest
@@ -171,6 +176,9 @@
   `web/src/api/types.ts` chạy được.
 
 ## Measured
+- 2026-11-08 · job 90: 20 trang → docx 20 trang; job 91 → 1 trang; job 88 → 1 trang; job 86 vẫn 1 trang.
+- 2026-11-08 · scheduler tick 60s chạy đúng; `kaggle_min_gap_seconds=600` chỉ HOÃN spawn (job 90/91 chờ
+  ~5 phút mới được push) — không phải bug. Log app đi vào /app/logs/*.log (không phải stdout).
 - 2026-11-08 · job 87: 15 text node + 1 image (QR), md 36KB; job 88: 29 node (15 text, 11 image, 1 table
   28 hàng), docx 2 trang → **1 trang** sau fix. server pytest 1008, deploy/kaggle 60.
 - 2026-11-08 · OCR ra 21 block (unwarp on) vs 23 (off); thời gian kernel ~13 phút/lần chạy.
