@@ -79,6 +79,8 @@ class BlockSpec:
     html: str = ""
     cells: list | None = None
     lines: list[str] = field(default_factory=list)
+    # IR: [{line, start, end}] — đoạn gạch chân sau khi bỏ LaTeX inline
+    underline: list[dict] = field(default_factory=list)
 
     @property
     def x0(self) -> float:
@@ -170,6 +172,63 @@ _MATH_CMD = {
     "\\mu": "µ", "\\infty": "∞", "\\pm": "±", "\\rightarrow": "→",
 }
 
+_INLINE_TEX = re.compile(r"\$\s*(?:\\underline\s*\{([^{}]*)\}|([^$]*?))\s*\$")
+
+
+def plain_inline_tex(line: str) -> tuple[str, list[tuple[int, int]]]:
+    """`$ \\underline{x} $` → x + span gạch chân; `$x$` → x (bỏ markup).
+
+    VLM trả LaTeX inline ngay trong câu (job 86: "The word $ \\underline{curb} $ in
+    paragraph 2"). Phải bỏ TRƯỚC `_detex`: `_detex` xoá mọi `{}` nên markup sẽ
+    thành "\\underlinecurb" và không còn nhận ra được.
+    """
+    out: list[str] = []
+    spans: list[tuple[int, int]] = []
+    length = 0
+    pos = 0
+    for m in _INLINE_TEX.finditer(line):
+        chunk = line[pos:m.start()]
+        out.append(chunk)
+        length += len(chunk)
+        is_underline = m.group(1) is not None
+        content = m.group(1) if is_underline else (m.group(2) or "")
+        if is_underline:
+            spans.append((length, length + len(content)))
+        out.append(content)
+        length += len(content)
+        pos = m.end()
+    out.append(line[pos:])
+    return "".join(out), spans
+
+
+_OPTION_RE = re.compile(r"^[A-D][.)]\s+\S")
+
+
+def _merge_option_lines(lines: list[str], width: float) -> tuple[list[str], list[Tab]]:
+    """Đuôi ≥3 dòng đều là đáp án `A. ...` → gộp thành 1 dòng + tab stop.
+
+    VLM hay trả 4 đáp án nằm trên 4 dòng trong CÙNG block (job 86: Q7–Q12),
+    trong khi bản gốc là 4 cột trên một dòng → docx bị 4 dòng thay vì 1 dòng
+    4 cột. Chỉ gộp khi TOÀN BỘ đuôi là đáp án (không đoán giữa câu).
+    """
+    start = len(lines)
+    while start > 0 and _OPTION_RE.match(lines[start - 1].strip()):
+        start -= 1
+    options = lines[start:]
+    if len(options) < 3:
+        return lines, []
+    head = lines[:start]
+    tabs = []
+    step = width / len(options)
+    merged = ""
+    for i, opt in enumerate(options):
+        pos = i * step
+        if i:
+            tabs.append(Tab(pos, "left", "none"))
+        merged += ("\t" if i else "") + opt.strip()
+    return head + [merged], tabs
+
+
 def _detex(text: str) -> str:
     """LaTeX đơn giản → text đọc được (docx/md không render math).
 
@@ -206,16 +265,35 @@ def _extract_regions(page: dict) -> list[BlockSpec]:
         html = region.get("html") or (text if kind == "table" else "")
         if kind == "table" and html:
             text = html
+        # LaTeX inline → text phẳng + span gạch chân (TRƯỚC _detex, xem
+        # plain_inline_tex); bảng giữ nguyên html (không đụng markup).
+        plain_lines: list[str] = []
+        underline: list[dict] = []
+        for li, raw_line in enumerate(_lines_of(text) if kind == "table" else _lines_of(text)):
+            plain, spans = plain_inline_tex(raw_line)
+            plain = _detex(plain)
+            plain_lines.append(plain)
+            underline.extend(
+                {"line": li, "start": s, "end": e} for s, e in spans
+            )
+        merged_lines, option_tabs = _merge_option_lines(
+            plain_lines,
+            float(bbox_raw[2]) - float(bbox_raw[0]) if kind != "table" else 0.0,
+        )
+        plain_lines = merged_lines
+        plain_text = "\n".join(plain_lines)
         out.append(
             BlockSpec(
                 region_id=rid,
                 kind=kind,
-                text=_detex(text),
+                text=plain_text,
                 bbox=tuple(float(v) for v in bbox_raw),
                 html=html,
                 cells=region.get("cells"),
-                lines=_lines_of(_detex(text)),
+                lines=plain_lines,
                 latex=latex,
+                underline=underline,
+                tabs=option_tabs,
             )
         )
     return out

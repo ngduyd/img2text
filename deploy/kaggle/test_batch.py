@@ -42,10 +42,19 @@ class _CoreApi:
         self.kernel_push_calls = []
         self.status_calls = []
         self.output_calls = []
+        self.files_calls = []
         self.statuses = [_COMPLETE]
 
     def authenticate(self):
         pass
+
+    def _files(self, ref):
+        """dataset_list_files: tên file của version mới nhất (verify dataset tươi)."""
+        self.files_calls.append(ref)
+        for created, files in reversed(self.create_calls):
+            if created == ref:
+                return {"datasetFiles": [{"name": n} for n in sorted(files)]}
+        return {"datasetFiles": []}
 
     def _list(self, search=None):
         self.list_calls.append(search)
@@ -96,6 +105,9 @@ class FakeApi(_CoreApi):
     def dataset_list(self, search=None, **kwargs):
         return self._list(search)
 
+    def dataset_list_files(self, ref, **kwargs):
+        return self._files(ref)
+
 class LegacyFakeApi(_CoreApi):
     """Pre-rename datasets_* names — kcompat legacy fallback branch."""
 
@@ -107,6 +119,9 @@ class LegacyFakeApi(_CoreApi):
 
     def dataset_list(self, search=None, **kwargs):
         return self._list(search)
+
+    def datasets_list_files(self, dataset=None, **kwargs):
+        return self._files(dataset)
 
 @pytest.fixture(params=[FakeApi, LegacyFakeApi])
 def fake_api(monkeypatch, request):
@@ -131,7 +146,7 @@ def test_dataset_meta_shape_kaggle_224(tmp_path):
     # licenses → create fails "Key name not found in data"
     src = tmp_path / "a.jpg"
     src.write_bytes(b"\xff\xd8fakejpg")
-    run_one.stage_input(src, OWNER, tmp_path / "in")
+    run_one.stage_input(src, OWNER, tmp_path / "in", 1)
     in_meta = json.loads((tmp_path / "in" / "dataset-metadata.json").read_text())
     assert in_meta == {
         "id": INPUT_REF,
@@ -189,8 +204,9 @@ def test_second_run_uploads_fresh_input(fake_api, input_file):
     input_creates = [files for ref, files in fake_api.create_calls if ref == INPUT_REF]
     # 1st run: create with A; 2nd run: exists → delete + recreate with B
     assert len(input_creates) == 2
-    assert input_creates[0]["a.jpg"] != b"CONTENT-B"   # run 1: file A
-    assert input_creates[1]["a.jpg"] == b"CONTENT-B"   # run 2 recreate: file B
+    # Tên staged PHẢI có prefix job_id — kernel bỏ qua file không có prefix số.
+    assert input_creates[0]["1__a.jpg"] != b"CONTENT-B"   # run 1: file A
+    assert input_creates[1]["1__a.jpg"] == b"CONTENT-B"   # run 2 recreate: file B
     assert INPUT_REF in fake_api.delete_calls
 
 def test_kernel_metadata_contents(fake_api, input_file):
@@ -389,3 +405,66 @@ def test_normalize_gated_and_missing_pages(tmp_path):
     assert pages[1]["blocks"] == []
     assert pages[1]["width"] == 50 and pages[1]["height"] == 40
     assert any("precheck unreadable" in m for m in problems)
+
+# --- chế độ thủ công cho job thật: --job N (claim qua runner protocol) ---
+
+def test_staged_name_prefixes_job_id():
+    assert run_one.staged_name("de-thi.jpg", 86) == "86__de-thi.jpg"
+
+
+def test_claim_job_returns_bytes_and_rejects_wrong_id(monkeypatch):
+    class _Resp:
+        def __init__(self, code, payload=None, content=b""):
+            self.status_code = code
+            self._payload = payload
+            self.content = content
+            self.text = ""
+
+        def json(self):
+            return self._payload
+
+        def raise_for_status(self):
+            pass
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url, headers=None):
+            if url.endswith("/api/jobs/next"):
+                return _Resp(200, {"job_id": 86, "worker_token": "t", "file_url": "http://x/f"})
+            return _Resp(200, content=b"BYTES")
+
+    import httpx
+    monkeypatch.setattr(httpx, "Client", _Client)
+    job, data = run_one.claim_job("http://api", "k", 86)
+    assert job["job_id"] == 86 and data == b"BYTES"
+    with pytest.raises(SystemExit) as exc:
+        run_one.claim_job("http://api", "k", 84)      # claim được 86 ≠ 84
+    assert "86" in str(exc.value.code)
+
+
+def test_verify_dataset_fails_on_stale_dataset(fake_api):
+    # Bug thật: dataset còn manifest.json cũ → kernel chạy rỗng, đốt 10' GPU
+    fake_api._create(str(_staged_dir(fake_api)))     # dataset có 1__a.jpg
+    run_one.verify_dataset(fake_api, OWNER, "img2text-input", "1__a.jpg")
+    with pytest.raises(SystemExit) as exc:
+        run_one.verify_dataset(fake_api, OWNER, "img2text-input", "99__x.jpg", timeout=0)
+    assert "99__x.jpg" in str(exc.value.code)
+
+
+def _staged_dir(api):
+    """Folder tạm đúng shape dataset đã tạo (create_calls[0])."""
+    import tempfile
+    from pathlib import Path
+
+    d = Path(tempfile.mkdtemp(prefix="stale-"))
+    (d / "dataset-metadata.json").write_text(json.dumps({"id": INPUT_REF}))
+    (d / "1__a.jpg").write_bytes(b"\xff\xd8x")
+    return d

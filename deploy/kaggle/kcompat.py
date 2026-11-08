@@ -56,6 +56,22 @@ def api_delete_dataset(api, ref):
     return False
 
 
+def api_dataset_files(api, ref):
+    """Tên file trong dataset (both API generations) — verify dataset tươi."""
+    if hasattr(api, "dataset_list_files"):
+        res = api.dataset_list_files(ref)
+    elif hasattr(api, "datasets_list_files"):
+        res = api.datasets_list_files(dataset=ref)
+    else:
+        raise RuntimeError("kaggle package: dataset_list_files not found — cần kaggle>=1.6")
+    files = res.get("datasetFiles") if isinstance(res, dict) else getattr(res, "files", None)
+    names = set()
+    for f in files or []:
+        name = f.get("name") if isinstance(f, dict) else getattr(f, "name", None)
+        if name:
+            names.add(str(name))
+    return names
+
 def api_dataset_exists(api, ref):
     """Hasattr-verified exists check via dataset_list (both API generations).
 

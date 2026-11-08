@@ -273,3 +273,32 @@ def test_tab_merge_keeps_line_breaks_of_merged_block():
     assert len(blk.lines) == 4
     assert blk.lines[0] == "ĐỀ THI CHÍNH THỨC\tMôn: HÓA HỌC"
     assert blk.lines[1] == "\tThời gian: 180 phút"
+
+class TestOptionLineMerge:
+    """VLM trả 4 đáp án A/B/C/D trên 4 DÒNG trong cùng block (job 86, Q7–Q12)
+    → 4 cột trên một dòng + tab stop, giữ nguyên câu hỏi phía trên."""
+
+    def _spec(self):
+        return build_page_specs({"pages": [{"index": 1, "width": 1000, "height": 1400, "regions": [{
+            "id": "q7", "bbox": [80, 100, 920, 260], "verdict": "ok",
+            "text": ("Question 7. Which is NOT mentioned?\n"
+                     "A. weather patterns\nB. soil conditions\n"
+                     "C. data analytics\nD. plant growth"),
+        }]}]})[0]
+
+    def test_lines_merged_into_one_with_tabs(self):
+        blk = self._spec().blocks[0]
+        assert blk.lines[0].startswith("Question 7.")
+        assert len(blk.lines) == 2                     # câu hỏi + 1 dòng đáp án
+        merged = blk.lines[1]
+        assert merged.startswith("A. weather patterns\tB. soil conditions")
+        assert "\tC. data analytics\tD. plant growth" in merged
+        # 4 cột đều nhau trên bề ngang block (840px) → tab ở 210/420/630
+        assert [t.pos_px for t in blk.tabs] == [210.0, 420.0, 630.0]
+
+    def test_two_options_not_merged(self):
+        spec = build_page_specs({"pages": [{"index": 1, "width": 1000, "height": 900, "regions": [{
+            "id": "q1", "bbox": [80, 100, 920, 200], "verdict": "ok",
+            "text": "A. chỉ hai\nB. đáp án",
+        }]}]})[0]
+        assert len(spec.blocks[0].lines) == 2 and spec.blocks[0].tabs == []

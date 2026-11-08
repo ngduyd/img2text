@@ -375,6 +375,39 @@ def _add_math_block(doc, blk: BlockSpec, omml: str) -> None:
     para._p.append(parse_xml(xml))
 
 
+def _add_text_runs(para, lines: list[str], underline: list[dict] | None) -> None:
+    """lines → runs; span trong `underline` ([{line,start,end}]) bật gạch chân.
+
+    IR đã bỏ LaTeX inline (`$ \\underline{x} $` → x + span) nên docx chỉ việc
+    tô đúng đoạn, không in ra markup.
+    """
+    per_line: dict[int, list[tuple[int, int]]] = {}
+    for span in underline or []:
+        try:
+            per_line.setdefault(int(span["line"]), []).append(
+                (int(span["start"]), int(span["end"]))
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    for idx, line in enumerate(lines):
+        spans = per_line.get(idx) or []
+        if not spans:
+            run = para.add_run(line)
+            if idx < len(lines) - 1:
+                run.add_break()
+            continue
+        pos = 0
+        for start, end in sorted(spans):
+            if start > pos:
+                para.add_run(line[pos:start])
+            run = para.add_run(line[start:end])
+            run.underline = True
+            pos = end
+        if pos < len(line):
+            para.add_run(line[pos:])
+        if idx < len(lines) - 1:
+            para.runs[-1].add_break()
+
 def _add_spec_block(
     doc, blk: BlockSpec, crops: dict[str, bytes] | None = None,
     scale: float = 1.0,
@@ -420,11 +453,9 @@ def _add_spec_block(
         min(MAX_SPACE_AFTER_PT, round(blk.space_after_px * PT_PER_PX * scale, 1))
     )
     # "\n" → <w:br/>, "\t" → <w:tab/> (python-docx Run.text xử lý sẵn)
-    # KHÔNG ép cỡ chữ/giãn dòng theo bbox ở đây: đo bằng vòng VLM preview
-    # (job 84) thấy chữ tràn sang cột bên cạnh và các cột lệch đỉnh, tệ hơn
-    # để Word dùng mặc định. Cần cỡ chữ thì làm theo cặp (font_px, median)
-    # của trang, kèm test render thật.
-    para.add_run("\n".join(blk.lines or [blk.text]))
+    # Cỡ chữ/giãn dòng do style Normal quyết (`_apply_page_metrics`), KHÔNG ép
+    # theo từng run: đo bằng vòng preview thấy ép per-run làm chữ tràn cột.
+    _add_text_runs(para, blk.lines or [blk.text], blk.underline)
 
 
 def _block_of(node: dict):
@@ -463,6 +494,7 @@ def _block_of(node: dict):
         html=render.get("html") or "",
         cells=render.get("cells"),
         lines=list(render.get("lines") or []),
+        underline=list(render.get("underline") or []),
     )
 
 

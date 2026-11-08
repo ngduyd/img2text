@@ -311,3 +311,34 @@ def test_page_metrics_font_from_line_box_not_block_height():
     assert font_pt < 12.0   # không phình theo chiều cao block (152px)
 
 
+
+def test_inline_latex_underline_becomes_real_underline_run():
+    """VLM trả `$ \\underline{curb} $` trong text (job 86) → docx phải là run gạch
+    chân, KHÔNG in ra markup LaTeX; md cũng không còn `$`."""
+    from docx import Document
+    from app.services.ir import spec_ir
+    from app.services.render_docx import render_docx_ir
+    from app.services.render_md import render_md_ir
+
+    result = {"pages": [{"index": 1, "width": 800, "height": 600, "regions": [{
+        "id": "p1_b0", "bbox": [40, 40, 760, 90], "verdict": "ok",
+        "text": "The word  $ \\underline{curb} $ in paragraph 2 is OPPOSITE in meaning",
+    }]}]}
+    ir = spec_ir(result)
+    node = ir["pages"][0]["content"][0]
+    assert "$" not in node["text"] and "underline{" not in node["text"]
+    # "The word  " = 10 ký tự → span đúng vị trí "curb" trong text phẳng
+    assert node["render"]["underline"] == [{"line": 0, "start": 10, "end": 14}]
+
+    doc = Document(io.BytesIO(render_docx_ir(ir)))
+    runs = [r for p in doc.paragraphs for r in p.runs]
+    assert "".join(r.text for r in runs).startswith("The word  curb in paragraph 2")
+    assert [r.text for r in runs if r.underline] == ["curb"]
+    assert "$" not in render_md_ir(ir)
+
+
+def test_plain_inline_tex_strips_math_without_underline():
+    from app.services.layout_spec import plain_inline_tex
+
+    plain, spans = plain_inline_tex("gọi là $x^2 + y$ nhé")
+    assert plain == "gọi là x^2 + y nhé" and spans == []

@@ -409,6 +409,7 @@ def _render_of(block, band: int = 0) -> dict:
         "kind": block.kind,
         "bbox_exact": [float(v) for v in block.bbox],
         "lines": list(block.lines),
+        "underline": list(getattr(block, "underline", []) or []),
         "style": _style_of(block, band),
         "latex": block.latex or "",
         "html": block.html or "",

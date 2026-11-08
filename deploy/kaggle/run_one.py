@@ -45,10 +45,15 @@ def _write_meta(meta, dest):
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
-def stage_input(src: Path, owner: str, stage: Path):
-    """Temp stage: input file + dataset-metadata.json (title img2text-input)."""
+def staged_name(name: str, job_id: int) -> str:
+    """Tên file trong dataset PHẢI có prefix `{job_id}__` — kernel bỏ qua file
+    không có prefix số (spec 2026-10-09: server stage theo cùng contract)."""
+    return f"{job_id}__{name}"
+
+def stage_input(src: Path, owner: str, stage: Path, job_id: int):
+    """Temp stage: input file (prefix job_id) + dataset-metadata.json."""
     stage.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(src, stage / src.name)
+    shutil.copyfile(src, stage / staged_name(src.name, job_id))
     _write_meta(
         {
             "id": f"{owner}/{INPUT_SLUG}",
@@ -94,6 +99,34 @@ def ensure_dataset(api, owner: str, slug: str, stage: Path, refresh: bool = Fals
         print(f"dataset created: {ref}")
     except Exception as exc:
         sys.exit(f"error: dataset {ref}: create failed ({exc})")
+
+VERIFY_TIMEOUT = 120.0
+VERIFY_INTERVAL = 3.0
+
+def verify_dataset(api, owner: str, slug: str, expected: str,
+                   timeout: float = VERIFY_TIMEOUT, interval: float = VERIFY_INTERVAL):
+    """Dataset vừa tạo PHẢI chứa đúng file staged.
+
+    Bug thật: `img2text-input` còn `manifest.json` cũ (2026-10-17) → kernel đi
+    URL-mode, tải job cũ 403 → "không có input" → chạy rỗng, đốt 10 phút GPU.
+    Fail sớm ở client rẻ hơn nhiều. `dataset_list_files` sau delete+recreate
+    trả version CŨ trong vài giây (eventual consistency) → poll, đừng fail ngay.
+    """
+    ref = f"{owner}/{slug}"
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            files = kcompat.api_dataset_files(api, ref)
+        except Exception:   # 403/list lỗi ngay sau delete+create = chưa index
+            files = set()
+        if expected in files:
+            return
+        if time.monotonic() >= deadline:
+            sys.exit(
+                f"error: dataset {ref} thiếu {expected} (có: {sorted(files)}) — "
+                "dataset chưa refresh; xoá dataset rồi chạy lại"
+            )
+        SLEEP(interval)
 
 def build_kernel_stage(owner: str, accelerator: str, kernel_ref: str, stage: Path):
     """Copy standalone script + write kernel-metadata.json (OWNER substituted).
@@ -150,11 +183,66 @@ def pull_output(api, ref: str, out_root: str):
         print(f"  - {name}")
     return out_dir
 
+def claim_job(api_url: str, runner_key: str, want_id: int | None):
+    """GET /api/jobs/next (worker protocol) → (job dict, file bytes).
+
+    Dùng runner key nên KHÔNG cần cookie đăng nhập: đúng đường worker thật,
+    chỉ khác là OCR chạy trên Kaggle batch thay vì kernel session.
+    """
+    import httpx
+
+    with httpx.Client(timeout=120) as c:
+        r = c.get(f"{api_url}/api/jobs/next", headers={"Authorization": f"Bearer {runner_key}"})
+        if r.status_code == 204:
+            sys.exit("error: queue rỗng — không có job nào để claim")
+        r.raise_for_status()
+        job = r.json()
+        if want_id is not None and job["job_id"] != want_id:
+            sys.exit(
+                f"error: claim được job {job['job_id']} (hàng đợi lấy job cũ nhất), "
+                f"không phải {want_id} — job {job['job_id']} vẫn đang giữ lease; "
+                f"chạy lại với --job {job['job_id']}"
+            )
+        data = c.get(job["file_url"]).content
+        return job, data
+
+def post_result(api_url: str, job: dict, doc: dict) -> None:
+    """result.json (K4 document shape) → ResultBody (adapt_batch_document) →
+    POST /api/jobs/{id}/result — cùng payload server tự ingest ở chế độ batch."""
+    import httpx
+
+    try:
+        from app.services.kaggle_orchestrator import adapt_batch_document
+    except ImportError:  # chạy ngoài container server
+        sys.exit(
+            "error: cần chạy trong container server để adapt result "
+            "(docker exec img2text-dev-server-1 python deploy/kaggle/run_one.py ...)"
+        )
+    body = adapt_batch_document(doc)
+    with httpx.Client(timeout=120) as c:
+        r = c.post(
+            f"{api_url}/api/jobs/{job['job_id']}/result",
+            json=body,
+            headers={"Authorization": f"Bearer {job['worker_token']}"},
+        )
+        if r.status_code != 200:
+            sys.exit(f"error: POST result {r.status_code}: {r.text[:200]}")
+        print(f"result: job {job['job_id']} ingested ({len(body['pages'][0]['regions'])} regions)")
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Kaggle batch mode: push 1 input file → run kernel → pull output"
     )
-    parser.add_argument("input", help="input file (jpg/jpeg/png/webp/pdf)")
+    parser.add_argument("input", nargs="?", help="input file (jpg/jpeg/png/webp/pdf)")
+    parser.add_argument("--job", type=int, default=None,
+                        help="claim job N từ API (worker protocol) rồi chạy batch cho job đó")
+    parser.add_argument("--job-id", type=int, default=1,
+                        help="prefix job_id cho file local (kernel bỏ qua file không có prefix); "
+                             "cũng là tên output `<id>_result.json`")
+    parser.add_argument("--api", default=os.environ.get("IMG2TEXT_API", "http://localhost:8000"),
+                        help="API base của server (mặc định http://localhost:8000 trong container)")
+    parser.add_argument("--runner-key", default=os.environ.get("RUNNER_KEY", ""),
+                        help="runner key để claim job (mặc định env RUNNER_KEY)")
     parser.add_argument("--accelerator", default=DEFAULT_ACCELERATOR, help="GPU accelerator id")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT, help="wait timeout seconds")
     parser.add_argument("--poll", type=int, default=DEFAULT_POLL, help="poll interval seconds")
@@ -165,7 +253,21 @@ def main(argv=None):
 
     owner, _key = load_env()
 
-    src = Path(args.input)
+    job = None
+    if args.job is not None:
+        if not args.runner_key:
+            sys.exit("error: --runner-key (hoặc env RUNNER_KEY) bắt buộc khi claim job")
+        job, data = claim_job(args.api, args.runner_key, args.job)
+        ext = "pdf" if job["file_type"] == "pdf" else "png"
+        tmp_src = Path(tempfile.mkdtemp(prefix="img2text-claim-")) / f"job{job['job_id']}.{ext}"
+        tmp_src.write_bytes(data)
+        src, job_id = tmp_src, job["job_id"]
+        print(f"claimed job {job_id} ({job['file_type']}, {len(data)} bytes)")
+    else:
+        if not args.input:
+            sys.exit("error: cần input file hoặc --job N")
+        src = Path(args.input)
+        job_id = args.job_id
     if src.is_dir():
         # ponytail: 1 file/lần — directory batching khi thật sự cần
         sys.exit(f"error: directory chưa hỗ trợ, gửi 1 file: {src}")
@@ -185,8 +287,9 @@ def main(argv=None):
     build = Path(tempfile.mkdtemp(prefix="kaggle-img2text-batch-"))
     try:
         input_stage = build / "input"
-        stage_input(src, owner, input_stage)
+        stage_input(src, owner, input_stage, job_id)
         ensure_dataset(api, owner, INPUT_SLUG, input_stage, refresh=True)
+        verify_dataset(api, owner, INPUT_SLUG, staged_name(src.name, job_id))
 
         kernel_stage = build / "kernel"
         build_kernel_stage(owner, args.accelerator, kernel_ref, kernel_stage)
@@ -194,7 +297,12 @@ def main(argv=None):
         api.kernels_push(str(kernel_stage))
 
         wait_complete(api, kernel_ref, args.poll, args.timeout)
-        pull_output(api, kernel_ref, args.out)
+        out_dir = pull_output(api, kernel_ref, args.out)
+        if job is not None:
+            result_file = out_dir / f"{job_id}_result.json"
+            if not result_file.is_file():
+                sys.exit(f"error: kernel không tạo {result_file.name} trong {out_dir}")
+            post_result(args.api, job, json.loads(result_file.read_text(encoding="utf-8")))
     finally:
         shutil.rmtree(build, ignore_errors=True)
 
