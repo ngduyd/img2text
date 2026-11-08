@@ -116,6 +116,7 @@ def ensure_dataset(api, owner: str, slug: str, stage: Path, refresh: bool = Fals
         sys.exit(f"error: dataset {ref}: create failed ({exc})")
 
 VERIFY_TIMEOUT = 120.0
+DATASET_READY_WAIT = 90.0   # giây chờ Kaggle build version dataset trước khi push
 VERIFY_INTERVAL = 3.0
 
 def verify_dataset(api, owner: str, slug: str, expected: str,
@@ -321,6 +322,11 @@ def main(argv=None):
         stage_input(src, owner, input_stage, job_id, opts or None, slug)
         ensure_dataset(api, owner, slug, input_stage)   # slug MỚI mỗi lần chạy
         verify_dataset(api, owner, slug, staged_name(src.name, job_id))
+        # Dataset vừa tạo cần thời gian build version: push kernel NGAY thì mount
+        # rỗng và Kaggle lặng lẽ dùng dataset_sources của version TRƯỚC (bench:
+        # outputs ra 86_* dù stage 502__bench8.pdf).
+        print(f"chờ dataset {slug} sẵn sàng để mount…", flush=True)
+        SLEEP(DATASET_READY_WAIT)
 
         kernel_stage = build / "kernel"
         build_kernel_stage(owner, args.accelerator, kernel_ref, kernel_stage)

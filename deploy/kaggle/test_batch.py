@@ -240,7 +240,10 @@ def test_batch_metadata_template_shape():
 def test_status_loop_running_then_complete(fake_api, input_file, monkeypatch):
     fake_api.statuses = [_RUNNING, _RUNNING, _COMPLETE]
     sleeps = []
-    monkeypatch.setattr(run_one, "SLEEP", sleeps.append)
+    monkeypatch.setattr(
+        run_one, "SLEEP",
+        lambda s: sleeps.append(s) if s <= 30 else None,   # bỏ qua wait dataset
+    )
     run_one.main([str(input_file), "--poll", "20"])
     assert fake_api.status_calls == [KERNEL_REF] * 3
     assert sleeps == [20, 20]
@@ -283,7 +286,8 @@ def test_poll_clamped_to_min_1(fake_api, input_file, monkeypatch):
     with pytest.raises(SystemExit) as exc:
         run_one.main([str(input_file), "--poll", "0", "--timeout", "4"])
     assert exc.value.code == 2          # bounded loop, no busy-spin
-    assert sleeps == [1, 1, 1, 1]       # clamped to 1s
+    poll_sleeps = [s for s in sleeps if s <= 30]      # bỏ qua wait dataset
+    assert poll_sleeps == [1, 1, 1, 1]                # clamped to 1s
 
 def test_script_compiles():
     compile(BATCH_SCRIPT.read_text(encoding="utf-8"), str(BATCH_SCRIPT), "exec")
