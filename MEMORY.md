@@ -1,6 +1,10 @@
 # MEMORY
 
 ## Now
+- 2026-11-08 · Job 88 chạy lại (queue GPU ~50 phút + OCR ~15 phút) → **verify chữ-trong-ảnh vào DB/API**:
+  `p1_b2` (ảnh bo mạch) kind=graphic ocr_text="005 | 11 | y | 1 | O | CH5a…" (rác, KHÔNG vào thân);
+  `p1_b18` (bản vẽ) kind=graphic ocr_text="202.70 | 200 | 189.90 | 503.40 | 506…" (số thật, giữ metadata).
+  docx 2 trang, ảnh bo mạch/badge/logo hiện đầy đủ, thân văn bản KHÔNG có số đo bản vẽ.
 - 2026-11-08 · **Job 90 'ảnh mất một khúc + không nhận ra trang ngang'** — 3 nguyên nhân riêng biệt:
   (a) mọi trang ép A4 DỌC (p1 chứng chỉ là trang ngang 2339×1653) → giờ nhận orientation + khổ ngang;
   (b) style Normal đặt line_spacing EXACT → paragraph chứa ẢNH bị co dòng, ảnh đẩy lên toạ độ ÂM
