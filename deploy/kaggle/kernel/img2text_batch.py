@@ -1258,6 +1258,29 @@ def process_job(job_id: int, input_path: str,
     document = {"source_pdf": input_path, "dpi": DPI, "pages": pages_out,
                 "problems": problems}  # → server batch adapter maps to result warnings
     md_pages = [_page_md(pg["blocks"]) for pg in pages_out]
+    # Debug: raw parsing_res_list (label/bbox/content) → soi vì sao block bị mất
+    # text (job 86: header "BỘ GIÁO DỤC…" không xuất hiện trong result).
+    try:
+        raw_dump = []
+        for name in sorted(os.listdir(ocr_raw_dir)):
+            if not name.endswith(".json"):
+                continue
+            with open(os.path.join(ocr_raw_dir, name), encoding="utf-8") as f:
+                raw = json.load(f)
+            items = (raw.get("res", raw) or {}).get("parsing_res_list") or []
+            raw_dump.append({"page": name, "items": [
+                {"label": it.get("block_label"),
+                 "bbox": it.get("block_bbox"),
+                 "content": (it.get("block_content") or "")[:400]}
+                for it in items
+            ]})
+        for d in OUT_DIRS:
+            if os.path.isdir(d):
+                with open(os.path.join(d, f"{job_id}_raw.json"), "w",
+                          encoding="utf-8") as f:
+                    json.dump(raw_dump, f, ensure_ascii=False, indent=2)
+    except Exception as exc:   # debug không được làm chết job
+        print(f"job {job_id}: raw dump lỗi: {exc}", flush=True)
     _write_outputs(
         job_id,
         json.dumps(document, ensure_ascii=False, indent=2),

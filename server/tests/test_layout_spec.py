@@ -302,3 +302,50 @@ class TestOptionLineMerge:
             "text": "A. chỉ hai\nB. đáp án",
         }]}]})[0]
         assert len(spec.blocks[0].lines) == 2 and spec.blocks[0].tabs == []
+
+def test_bare_underline_macro_keeps_spaces_and_marks_span():
+    """VLM trả `\\underline\\text{accelerate}` KHÔNG bọc `$` (job 86 Q8) → vẫn phải
+    thành span gạch chân, và không được ăn mất khoảng trắng quanh từ."""
+    from app.services.layout_spec import plain_inline_tex
+
+    plain, spans = plain_inline_tex("The word \\underline\\text{accelerate} in paragraph 1")
+    assert plain == "The word accelerate in paragraph 1"
+    assert spans == [(9, 19)]
+
+def test_option_run_in_middle_of_block_merged_but_long_options_kept():
+    """Cụm đáp án nằm GIỮA block (job 86 Q7 nằm cùng block với Q8) vẫn gộp; đáp
+    án dài (Q11) thì giữ từng dòng."""
+    from app.services.layout_spec import _merge_option_lines
+
+    q7 = ["Question 7. Which is NOT mentioned?", "A. weather patterns",
+          "B. soil conditions", "C. data analytics", "D. plant growth",
+          "Question 8. The word accelerate"]
+    lines, tabs = _merge_option_lines(q7, 840.0)
+    assert lines[1].startswith("A. weather patterns\tB. soil conditions")
+    assert lines[2] == "Question 8. The word accelerate" and len(tabs) == 3
+
+    q11 = ["Question 11. Which best paraphrases?",
+           "A. In places with hot weather, economic projects are possible with money saved",
+           "B. Money saved thanks to smart irrigation maintains the economic practicality",
+           "C. Continents with dry climate are the most likely to enjoy financial benefits"]
+    assert _merge_option_lines(q11, 840.0)[0] == q11
+
+def test_underline_macro_without_braces():
+    """OCR trả mất ngoặc: `\\underline\\textaccelerate` (job 86 Q8) → gạch chân từ
+    ngay sau macro, giữ nguyên khoảng trắng hai bên."""
+    from app.services.layout_spec import plain_inline_tex
+
+    plain, spans = plain_inline_tex("The word  \\underline\\textaccelerate in paragraph 1")
+    assert plain == "The word  accelerate in paragraph 1"
+    assert spans == [(10, 20)]
+
+def test_underline_with_nested_text_group():
+    """Dạng thật của job 86: `$ \\underline{\\text{accelerate}} $` (ngoặc LỒNG) →
+    gạch chân "accelerate", không lọt markup ra docx."""
+    from app.services.layout_spec import plain_inline_tex
+
+    plain, spans = plain_inline_tex(
+        "Question 8. The word  $ \\underline{\\text{accelerate}} $ in paragraph 1"
+    )
+    assert plain == "Question 8. The word  accelerate in paragraph 1"
+    assert spans == [(22, 32)]

@@ -172,26 +172,38 @@ _MATH_CMD = {
     "\\mu": "µ", "\\infty": "∞", "\\pm": "±", "\\rightarrow": "→",
 }
 
-_INLINE_TEX = re.compile(r"\$\s*(?:\\underline\s*\{([^{}]*)\}|([^$]*?))\s*\$")
+# LaTeX inline: bản bọc `$` (`$ \underline{x} $`, math `$x$`) và bản KHÔNG bọc
+# (`\underline{x}`, `\underline\text{x}`) — VLM trả cả 3 kiểu (job 86).
+# `{...}` cho phép LỒNG 1 cấp: VLM trả `$ \underline{\text{accelerate}} $` (job 86)
+_BRACED = r"\{((?:[^{}]|\{[^{}]*\})*)\}"
+_DOLLAR_TEX = re.compile(
+    r"\$\s*(?:\\underline\s*(?:\\text\s*)?"
+    + _BRACED
+    + r"|([^$]*?))\s*\$"
+)
+_BARE_UNDERLINE = re.compile(r"\\underline\s*(?:\\text\s*)?" + _BRACED)
+_UNWRAP_TEXT = re.compile(r"^\\text\s*\{(.*)\}$")
+# OCR đôi khi trả mất ngoặc: "\\underline\\textaccelerate" (job 86 Q8) → lấy từ
+# ngay sau macro làm đoạn gạch chân.
+_BARE_UNDERLINE_WORD = re.compile(r"\\underline\s*(?:\\text)?\s*([^\s{}\[\],.;:)]+)")
 
 
-def plain_inline_tex(line: str) -> tuple[str, list[tuple[int, int]]]:
-    """`$ \\underline{x} $` → x + span gạch chân; `$x$` → x (bỏ markup).
-
-    VLM trả LaTeX inline ngay trong câu (job 86: "The word $ \\underline{curb} $ in
-    paragraph 2"). Phải bỏ TRƯỚC `_detex`: `_detex` xoá mọi `{}` nên markup sẽ
-    thành "\\underlinecurb" và không còn nhận ra được.
-    """
+def _replace_tex(line: str, pattern: re.Pattern, dollar: bool) -> tuple[str, list[tuple[int, int]]]:
+    """pattern → text phẳng; nhóm gạch chân trả về dưới dạng span (offset)."""
     out: list[str] = []
     spans: list[tuple[int, int]] = []
     length = 0
     pos = 0
-    for m in _INLINE_TEX.finditer(line):
+    for m in pattern.finditer(line):
         chunk = line[pos:m.start()]
         out.append(chunk)
         length += len(chunk)
-        is_underline = m.group(1) is not None
-        content = m.group(1) if is_underline else (m.group(2) or "")
+        if dollar:
+            is_underline = m.group(1) is not None
+            content = m.group(1) if is_underline else (m.group(2) or "")
+        else:
+            is_underline, content = True, m.group(1)
+        content = _UNWRAP_TEXT.sub(r"\1", content)
         if is_underline:
             spans.append((length, length + len(content)))
         out.append(content)
@@ -201,32 +213,56 @@ def plain_inline_tex(line: str) -> tuple[str, list[tuple[int, int]]]:
     return "".join(out), spans
 
 
+def plain_inline_tex(line: str) -> tuple[str, list[tuple[int, int]]]:
+    """LaTeX inline → text phẳng + span gạch chân.
+
+    Job 86: "The word $ \\underline{curb} $" và "The word \\underline\\text{accelerate}".
+    Phải bỏ TRƯỚC `_detex`: `_detex` xoá mọi `{}` nên markup thành
+    "\\underlinecurb" và không còn nhận ra.
+    """
+    plain, spans = _replace_tex(line, _DOLLAR_TEX, dollar=True)
+    plain, bare = _replace_tex(plain, _BARE_UNDERLINE, dollar=False)
+    plain, bare_word = _replace_tex(plain, _BARE_UNDERLINE_WORD, dollar=False)
+    return plain, sorted(spans + bare + bare_word)
+
+
 _OPTION_RE = re.compile(r"^[A-D][.)]\s+\S")
+# 4 đáp án ngắn mới đủ chỗ nằm 4 cột trên 1 dòng (Q11 của job 86 có đáp án dài
+# ~120 ký tự/dòng → giữ nguyên từng dòng, gộp sẽ sai bố cục).
+OPTION_MERGE_MAX_CHARS = 110
 
 
 def _merge_option_lines(lines: list[str], width: float) -> tuple[list[str], list[Tab]]:
-    """Đuôi ≥3 dòng đều là đáp án `A. ...` → gộp thành 1 dòng + tab stop.
+    """Cụm ≥3 dòng đáp án NGẮN `A. ...` liền nhau → 1 dòng + tab stop.
 
-    VLM hay trả 4 đáp án nằm trên 4 dòng trong CÙNG block (job 86: Q7–Q12),
-    trong khi bản gốc là 4 cột trên một dòng → docx bị 4 dòng thay vì 1 dòng
-    4 cột. Chỉ gộp khi TOÀN BỘ đuôi là đáp án (không đoán giữa câu).
+    VLM hay trả 4 đáp án trên 4 dòng trong CÙNG block (job 86: Q7, Q12) trong
+    khi bản gốc là 4 cột trên một dòng → docx ra 4 dòng. Chỉ gộp cụm đủ ngắn để
+    vừa một dòng; đáp án dài (Q11 ~120 ký tự/dòng) giữ nguyên từng dòng.
     """
-    start = len(lines)
-    while start > 0 and _OPTION_RE.match(lines[start - 1].strip()):
-        start -= 1
-    options = lines[start:]
-    if len(options) < 3:
-        return lines, []
-    head = lines[:start]
-    tabs = []
-    step = width / len(options)
-    merged = ""
-    for i, opt in enumerate(options):
-        pos = i * step
-        if i:
-            tabs.append(Tab(pos, "left", "none"))
-        merged += ("\t" if i else "") + opt.strip()
-    return head + [merged], tabs
+    out: list[str] = []
+    tabs: list[Tab] = []
+    i = 0
+    while i < len(lines):
+        if not _OPTION_RE.match(lines[i].strip()):
+            out.append(lines[i])
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and _OPTION_RE.match(lines[j].strip()):
+            j += 1
+        run = lines[i:j]
+        if len(run) >= 3 and sum(len(x.strip()) for x in run) <= OPTION_MERGE_MAX_CHARS:
+            step = width / len(run)
+            merged = ""
+            for k, opt in enumerate(run):
+                if k:
+                    tabs.append(Tab(k * step, "left", "none"))
+                merged += ("\t" if k else "") + opt.strip()
+            out.append(merged)
+        else:
+            out.extend(run)
+        i = j
+    return out, tabs
 
 
 def _detex(text: str) -> str:
