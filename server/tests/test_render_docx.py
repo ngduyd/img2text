@@ -366,3 +366,32 @@ def test_page_metrics_ignores_table_and_image_blocks():
     font_pt, _ = _page_metrics(page, geo)
     # đúng bằng công thức cho hộp dòng 40px (KHÔNG dính 900px của bảng/image)
     assert font_pt == pytest.approx(40 * PT_PER_PX * geo.scale * LINE_BOX_TO_FONT)
+
+def test_per_page_geometry_and_font():
+    """PDF trộn trang ngang/dọc (job 90: chứng chỉ ngang 2339px rồi 20 trang text
+    dọc 1654px) — geometry + cỡ chữ phải theo TỪNG trang, không lấy trang 1."""
+    import io
+
+    from docx import Document
+    from docx.shared import Pt
+    from app.services.ir import spec_ir
+    from app.services.render_docx import render_docx_ir
+
+    def page(idx, w, h, y):
+        return {"index": idx, "width": w, "height": h, "regions": [{
+            "id": f"p{idx}_b0", "bbox": [60, y, w - 60, y + 60], "verdict": "ok",
+            "text": "Dòng văn bản của trang",
+        }]}
+
+    result = {"pages": [page(1, 2339, 1653, 100), page(2, 1654, 2339, 100)]}
+    doc = Document(io.BytesIO(render_docx_ir(spec_ir(result))))
+    sizes = {
+        round(r.font.size.pt, 1)
+        for p in doc.paragraphs for r in p.runs if r.font.size is not None
+    }
+    # trang 1 (ngang, hộp dòng 60/1 ⇒ 8pt sàn) khác trang 2 (60px/1654 ⇒ ~10,8pt)
+    assert len(sizes) >= 2, sizes
+    assert min(sizes) == pytest.approx(8.0)
+    assert max(sizes) > 8.0
+    # mỗi trang 1 section với page size riêng (A4 dọc cho trang 2)
+    assert len(doc.sections) >= 2

@@ -389,7 +389,19 @@ def _add_math_block(doc, blk: BlockSpec, omml: str) -> None:
     para._p.append(parse_xml(xml))
 
 
-def _add_text_runs(para, lines: list[str], underline: list[dict] | None) -> None:
+def _heading_size(font_pt: float, level: int) -> float:
+    """Heading theo tỉ lệ của trang (bảng base 16/13/12 ở template 11pt)."""
+    if not font_pt:
+        return 0.0
+    base = {1: 16.0, 2: 13.0, 3: 12.0}.get(level or 0)
+    return round(base * font_pt / 11.0, 1) if base else font_pt
+
+def _sized(run, font_pt: float) -> None:
+    if font_pt:
+        run.font.size = Pt(font_pt)
+
+def _add_text_runs(para, lines: list[str], underline: list[dict] | None,
+                   font_pt: float = 0.0) -> None:
     """lines → runs; span trong `underline` ([{line,start,end}]) bật gạch chân.
 
     IR đã bỏ LaTeX inline (`$ \\underline{x} $` → x + span) nên docx chỉ việc
@@ -407,24 +419,27 @@ def _add_text_runs(para, lines: list[str], underline: list[dict] | None) -> None
         spans = per_line.get(idx) or []
         if not spans:
             run = para.add_run(line)
+            if font_pt:
+                run.font.size = Pt(font_pt)
             if idx < len(lines) - 1:
                 run.add_break()
             continue
         pos = 0
         for start, end in sorted(spans):
             if start > pos:
-                para.add_run(line[pos:start])
+                _sized(para.add_run(line[pos:start]), font_pt)
             run = para.add_run(line[start:end])
             run.underline = True
+            _sized(run, font_pt)
             pos = end
         if pos < len(line):
-            para.add_run(line[pos:])
+            _sized(para.add_run(line[pos:]), font_pt)
         if idx < len(lines) - 1:
             para.runs[-1].add_break()
 
 def _add_spec_block(
     doc, blk: BlockSpec, crops: dict[str, bytes] | None = None,
-    scale: float = 1.0,
+    scale: float = 1.0, font_pt: float = 0.0, pitch_pt: float = 0.0,
 ) -> None:
     if blk.kind == "image":
         _add_image_block(doc, blk, crops or {}, scale)
@@ -469,7 +484,10 @@ def _add_spec_block(
     # "\n" → <w:br/>, "\t" → <w:tab/> (python-docx Run.text xử lý sẵn)
     # Cỡ chữ/giãn dòng do style Normal quyết (`_apply_page_metrics`), KHÔNG ép
     # theo từng run: đo bằng vòng preview thấy ép per-run làm chữ tràn cột.
-    _add_text_runs(para, blk.lines or [blk.text], blk.underline)
+    if pitch_pt:
+        pf.line_spacing = Pt(pitch_pt)
+    _add_text_runs(para, blk.lines or [blk.text], blk.underline,
+                   _heading_size(font_pt, blk.level))
 
 
 def _block_of(node: dict):
@@ -578,27 +596,29 @@ def render_docx_ir(
     """
     doc = Document()
     pages = ir.get("pages") or []
-    page_scale = 1.0
     if pages:
-        geo = _page_geometry(pages[0])
-        page_scale = geo.scale
-        _apply_page_metrics(doc, pages, geo)
+        _apply_page_metrics(doc, pages, _page_geometry(pages[0]))  # mặc định
     first = True
     for page in pages:
+        # GEOMETRY THEO TỪNG TRANG: PDF trộn trang ngang/dọc (job 90: chứng chỉ
+        # 933px rồi 20 trang text 1210px) — dùng trang 1 cho cả file làm chữ
+        # trang 2..N nhỏ/lệch. Font + giãn dòng cũng theo trang.
+        geo = _page_geometry(page)
+        font_pt, pitch_pt = _page_metrics(page, geo) or (0.0, 0.0)
+        if font_pt:
+            font_pt = max(8.0, min(12.0, round(font_pt, 1)))
+            pitch_pt = max(font_pt * 1.05, round(pitch_pt, 2))
         for bi, (cols, width, blocks) in enumerate(_page_bands(page)):
             if first:
                 first = False
             else:
                 doc.add_section(WD_SECTION_START.CONTINUOUS)
-            if pages:
-                _apply_page_setup(doc.sections[-1], geo)
-                _set_section_cols(
-                    doc.sections[-1], cols, scale=page_scale, text_width=geo.text_width
-                )
-            else:  # pragma: no cover - IR rỗng
-                _set_section_cols(doc.sections[-1], cols, scale=_scale_for(width))
+            _apply_page_setup(doc.sections[-1], geo)
+            _set_section_cols(
+                doc.sections[-1], cols, scale=geo.scale, text_width=geo.text_width
+            )
             for blk in blocks:
-                _add_spec_block(doc, blk, crops, page_scale)
+                _add_spec_block(doc, blk, crops, geo.scale, font_pt, pitch_pt)
         if not first:
             doc.add_page_break()
     if style_overrides:
