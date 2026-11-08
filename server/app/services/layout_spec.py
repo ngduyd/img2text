@@ -521,6 +521,17 @@ def _attach_tabs(
             if figures and _covered_by_figure(other, figures):
                 edge = max(edge, other.x1)
                 continue
+            # Cặp 2 CỘT NHIỀU DÒNG (header đề thi trái/phải, ký tên + ngày):
+            # gộp bằng tab làm cột phải LỆCH nhau vì tab tính riêng từng dòng
+            # (job 86). Giữ 2 block riêng → renderer dựng bảng 2 ô không viền.
+            if (
+                len([ln for ln in (base.lines or []) if ln.strip()]) >= 2
+                and len([ln for ln in (other.lines or []) if ln.strip()]) >= 2
+                and min(base.y1, other.y1) - max(base.y0, other.y0)
+                >= 0.5 * min(base.h, other.h)
+            ):
+                edge = max(edge, other.x1)
+                continue
             if other.x0 - edge <= X_TOL:   # chồng x → không phải tab row
                 edge = max(edge, other.x1)
                 continue

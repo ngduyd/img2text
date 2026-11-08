@@ -499,3 +499,34 @@ def test_response_json_tolerates_trailing_done_marker():
 
     body = '{"choices":[{"message":{"content":"{\\"items\\":[]}"}}]}data: [DONE]'
     assert _response_json(body)["choices"][0]["message"]["content"] == '{"items":[]}'
+
+async def test_proofread_runs_pages_in_parallel(monkeypatch, db_session, done_job_with_result):
+    """20 trang tuần tự ~30 phút → phải gọi LLM song song (mặc định 3)."""
+    import asyncio
+    import time
+
+    from app.core.models import Job
+    from app.services import proofread
+
+    job = await db_session.get(Job, done_job_with_result)
+    result = dict(job.result or {})
+    page = (result.get("pages") or [{}])[0]
+    result["pages"] = [dict(page, index=i) for i in range(6)]
+    job.result = result
+    await db_session.commit()
+
+    running = 0
+    peak = 0
+
+    async def _fake(text, hint):
+        nonlocal running, peak
+        running += 1
+        peak = max(peak, running)
+        await asyncio.sleep(0.05)
+        running -= 1
+        return []
+
+    monkeypatch.setattr(proofread, "_call_llm", _fake)
+    monkeypatch.setattr(proofread.settings, "proofread_concurrency", 3, raising=False)
+    await proofread.run_proofread(db_session, job)
+    assert peak > 1 and peak <= 3      # song song nhưng có chặn

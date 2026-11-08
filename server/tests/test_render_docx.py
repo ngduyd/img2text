@@ -424,3 +424,28 @@ def test_landscape_page_rendered_landscape_and_image_not_cut():
     assert sec.orientation == WD_ORIENT.LANDSCAPE
     shape = doc.inline_shapes[0]
     assert shape.width <= int(geo.text_width) * 635 + 2000    # không tràn vùng chữ
+
+def test_header_two_columns_render_as_borderless_table():
+    """Header đề thi: khối trái (3 dòng) + khối phải (3 dòng) nằm cạnh nhau phải
+    thành BẢNG 2 Ô KHÔNG VIỀN, mỗi cột thẳng hàng (trước: gộp tab → lệch cột)."""
+    import io
+
+    from docx import Document
+    from app.services.ir import spec_ir
+    from app.services.render_docx import render_docx_ir
+
+    result = {"pages": [{"index": 1, "width": 1242, "height": 1713, "regions": [
+        {"id": "p1_b0", "bbox": [132, 67, 439, 174], "verdict": "ok",
+         "text": "BỘ GIÁO DỤC VÀ ĐÀO TẠO\nĐỀ THI CHÍNH THỨC\n(Để thi có 04 trang)"},
+        {"id": "p1_b1", "bbox": [519, 62, 1154, 155], "verdict": "ok",
+         "text": "KỲ THI TỐT NGHIỆP\nMôn thi: TIẾNG ANH\nThời gian: 50 phút"},
+        {"id": "p1_b2", "bbox": [60, 400, 1180, 500], "verdict": "ok",
+         "text": "Read the following announcement and mark the letter A, B, C or D."},
+    ]}]}
+    doc = Document(io.BytesIO(render_docx_ir(spec_ir(result))))
+    assert len(doc.tables) == 1
+    cells = doc.tables[0].rows[0].cells
+    assert cells[0].text.startswith("BỘ GIÁO DỤC VÀ ĐÀO TẠO")
+    assert "Môn thi: TIẾNG ANH" in cells[1].text
+    assert "w:val=\"none\"" in doc.tables[0]._tbl.xml      # không viền
+    assert any("Read the following" in p.text for p in doc.paragraphs)

@@ -17,6 +17,7 @@ the module-local seam (conftest stub fails fast; fakes override), the
 global fake_llm patches never reach this module.
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -287,20 +288,35 @@ async def run_proofread(session: AsyncSession, job: Job) -> int:
             )
         ).scalars()
     }
-    for index, page in enumerate(pages):
+    # Song song có chặn: 1 trang ~80-140s → job 20 trang tuần tự ~30 phút.
+    # PROOFREAD_CONCURRENCY (env, mặc định 3) trang cùng lúc; LLM lỗi 1 trang →
+    # cả lượt trả 0 (giữ nguyên contract: gợi ý là all-or-nothing).
+    sem = asyncio.Semaphore(max(1, settings.proofread_concurrency))
+
+    async def _one(index: int, page: dict) -> list[dict] | None:
         text = _page_text(page)
         if not text.strip():
-            continue
-        # hint = text REGION ĐẦU (header: trường/đề thi) = ngữ cảnh tài liệu
+            return []
         regions = page.get("regions") or []
         hint = (regions[0].get("text") or "") if regions else ""
-        try:
-            items = await _call_llm(text, hint)
-        except ProofreadError as exc:
-            logger.warning("proofread: LLM failed job=%s page=%d: %s", job.id, index, exc)
-            return 0
+        async with sem:
+            try:
+                return await _call_llm(text, hint)
+            except ProofreadError as exc:
+                logger.warning(
+                    "proofread: LLM failed job=%s page=%d: %s", job.id, index, exc
+                )
+                return None
+
+    results = await asyncio.gather(
+        *(_one(i, page) for i, page in enumerate(pages))
+    )
+    if any(r is None for r in results):
+        return 0
+    for index, items in enumerate(results):
+        text = _page_text(pages[index])
         seen: set[tuple[str, str]] = set()
-        for item in items:
+        for item in items or []:
             phrase = (item.get("phrase") or "").strip()
             suggestion = (item.get("suggestion") or "").strip()
             if not phrase or not suggestion:

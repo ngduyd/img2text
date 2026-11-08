@@ -474,6 +474,59 @@ def _add_text_runs(para, lines: list[str], underline: list[dict] | None,
         if idx < len(lines) - 1:
             para.runs[-1].add_break()
 
+def _pair_columns(blocks: list) -> tuple[list, list[tuple]]:
+    """Tách cặp block 2 CỘT (x-disjoint + chồng dọc ≥50%) khỏi danh sách.
+
+    Header đề thi / dòng "ký tên … ngày" có 2 khối nhiều dòng nằm cạnh nhau.
+    Gộp bằng tab làm cột phải lệch (tab tính riêng từng dòng) → render thành
+    bảng 2 ô KHÔNG viền: mỗi ô một cột chữ, thẳng hàng như bản gốc.
+    """
+    pairs: list[tuple] = []
+    used: set[int] = set()
+    for i, a in enumerate(blocks):
+        if i in used or a.kind != "text" or len(a.lines) < 2:
+            continue
+        for j in range(i + 1, len(blocks)):
+            b = blocks[j]
+            if j in used or b.kind != "text" or len(b.lines) < 2:
+                continue
+            left, right = (a, b) if a.x0 <= b.x0 else (b, a)
+            if left.x1 > right.x0 - 2.0:            # chồng x → không phải 2 cột
+                continue
+            overlap = min(a.y1, b.y1) - max(a.y0, b.y0)
+            if overlap < 0.5 * min(a.h, b.h):
+                continue
+            pairs.append((left, right))
+            used.update({i, j})
+            break
+    rest = [b for k, b in enumerate(blocks) if k not in used]
+    return rest, pairs
+
+
+def _add_pair_table(doc, left, right, font_pt: float = 0.0,
+                    pitch_pt: float = 0.0) -> None:
+    """2 ô không viền: cột trái + cột phải giữ đúng thứ tự dòng của bản gốc."""
+    table = doc.add_table(rows=1, cols=2)
+    table.autofit = False
+    table.style = doc.styles["Table Grid"] if False else table.style
+    for cell, blk in zip(table.rows[0].cells, (left, right)):
+        cell.width = Twips(round(blk.w * TWIPS_PER_PX * 1.0))
+        para = cell.paragraphs[0]
+        para.alignment = _SPEC_ALIGN.get(blk.align, WD_ALIGN_PARAGRAPH.LEFT)
+        _add_text_runs(para, blk.lines, blk.underline,
+                       _heading_size(font_pt, blk.level))
+    # bỏ viền: bảng chỉ để căn cột, không phải kẻ khung
+    tbl_pr = table._tbl.tblPr
+    borders = parse_xml(
+        '<w:tblBorders %s>'
+        '<w:top w:val="none"/><w:left w:val="none"/>'
+        '<w:bottom w:val="none"/><w:right w:val="none"/>'
+        '<w:insideH w:val="none"/><w:insideV w:val="none"/>'
+        "</w:tblBorders>" % nsdecls("w")
+    )
+    tbl_pr.append(borders)
+
+
 def _add_spec_block(
     doc, blk: BlockSpec, crops: dict[str, bytes] | None = None,
     scale: float = 1.0, font_pt: float = 0.0, pitch_pt: float = 0.0,
@@ -655,7 +708,14 @@ def render_docx_ir(
             _set_section_cols(
                 doc.sections[-1], cols, scale=geo.scale, text_width=geo.text_width
             )
-            for blk in blocks:
+            # Chỉ ghép cặp khi section là 1 CỘT: trang 2 cột thật thì 2 block
+            # cạnh nhau là 2 cột của trang, không phải header trái/phải.
+            rest, pairs = (
+                _pair_columns(blocks) if len(cols) <= 1 else (blocks, [])
+            )
+            for left, right in pairs:
+                _add_pair_table(doc, left, right, font_pt, pitch_pt)
+            for blk in rest:
                 # Ảnh phải vừa CỘT chứa nó: rộng hơn cột là bị Word/LibreOffice
                 # cắt cụt (job 90 p3: screenshot 19cm nằm trong cột 6cm).
                 _add_spec_block(

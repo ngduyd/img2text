@@ -337,7 +337,7 @@ def test_script_contract():
     # cờ pipeline đọc từ batch_opts.json (run_one --opt) với mặc định giữ nguyên
     assert "use_doc_orientation_classify=opts[\"orientation\"]" in src
     assert "use_doc_unwarping=opts[\"unwarp\"]" in src
-    assert 'opts = {"orientation": True, "unwarp": False}' in src
+    assert '"orientation": True, "unwarp": False, "batch_predict": False' in src
     # no backend/secrets coupling anywhere
     for banned in ("RUNNER_KEY", "BASE_URL", "usersecrets"):
         assert banned.lower() not in low
@@ -484,9 +484,15 @@ def test_batch_opts_read_from_dataset_and_defaults(tmp_path, monkeypatch):
 
     root = tmp_path / "input"
     (root / "jhandf" / "ds").mkdir(parents=True)
-    assert mod.batch_opts(str(root)) == {"orientation": True, "unwarp": False}
-    (root / "jhandf" / "ds" / "batch_opts.json").write_text('{"unwarp": true}')
-    assert mod.batch_opts(str(root)) == {"orientation": True, "unwarp": True}
+    assert mod.batch_opts(str(root)) == {
+        "orientation": True, "unwarp": False, "batch_predict": False,
+    }
+    (root / "jhandf" / "ds" / "batch_opts.json").write_text(
+        '{"unwarp": true, "batch_predict": true}'
+    )
+    assert mod.batch_opts(str(root)) == {
+        "orientation": True, "unwarp": True, "batch_predict": True,
+    }
 
 
 def test_stage_input_writes_opts(tmp_path):

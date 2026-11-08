@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     # hàng đợi free tier có lúc >15 phút → URL 900s hết hạn → kernel 403 rồi bỏ
     # job (job 88). 6 giờ, vẫn chỉ là object upload của chính user.
     batch_input_url_expires: int = 21600
+    # Số trang proofread gọi LLM song song (1 trang ~80-140s ⇒ 20 trang tuần tự
+    # ~30 phút). 3 là mức an toàn cho router free; tăng nếu provider chịu được.
+    proofread_concurrency: int = 3
     # #12 (spec 2026-10-15): daily pg_dump — cron expr (APScheduler
     # from_crontab: "min hour dom mon dow"); override qua Setting row
     # backup_cron / backup_retention_days (runtime_settings, không qua

@@ -242,6 +242,8 @@ def _ocr_phase(argv: list[str]) -> int:
 
     t0 = time.time()
     opts = batch_opts()
+    if opts.get("batch_predict"):
+        os.environ["BATCH_PREDICT"] = "1"   # predict cả loạt trang 1 lần (GPU)
     print(f"[batch] opts: {opts}", flush=True)
     pipeline = PaddleOCRVL(
         pipeline_version=PIPELINE_VERSION,
@@ -526,7 +528,7 @@ def batch_opts(root: str = "/kaggle/input") -> dict:
     # unwarp MẶC ĐỊNH TẮT: UVDoc nắn phẳng + cắt lề → chữ sát mép (header đề
     # thi) bị cụt/mất (job 86: mất "BỘ GIÁO DỤC…/KỲ THI…"; bật lại thì 21 block,
     # tắt thì 23 block có header). Trang cong/chụp nghiêng nặng: --opt unwarp=true.
-    opts = {"orientation": True, "unwarp": False}
+    opts = {"orientation": True, "unwarp": False, "batch_predict": False}
     try:
         for path in sorted(glob.glob(os.path.join(root, "**", "batch_opts.json"),
                                      recursive=True)):
@@ -537,6 +539,8 @@ def batch_opts(root: str = "/kaggle/input") -> dict:
                     opts["unwarp"] = bool(data["unwarp"])
                 if "orientation" in data:
                     opts["orientation"] = bool(data["orientation"])
+                if "batch_predict" in data:
+                    opts["batch_predict"] = bool(data["batch_predict"])
             break
     except Exception as exc:
         print(f"[batch] batch_opts lỗi (dùng mặc định): {exc}", flush=True)
