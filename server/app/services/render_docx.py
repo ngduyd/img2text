@@ -14,6 +14,7 @@ import re
 
 from docx import Document
 from docx.enum.section import WD_SECTION_START
+from docx.enum.section import WD_ORIENT
 from docx.enum.text import (
     WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER,
 )
@@ -204,11 +205,16 @@ class PageGeometry:
     scale: float        # px → twips của khung A4
     text_width: float   # twips
     margins: tuple[float, float, float, float]  # left, right, top, bottom
+    landscape: bool = False
 
 def _page_geometry(page: dict) -> PageGeometry:
     width = float(page.get("width") or 0.0) or 1.0
     height = float(page.get("height") or 0.0) or 1.0
-    scale = A4_W / (width * TWIPS_PER_PX)
+    # Trang NGANG (job 90 p1: chứng chỉ 2339×1653) phải xuất Word ngang, nếu ép
+    # A4 dọc thì nội dung bị bóp/cắt mất một khúc.
+    landscape = width > height
+    page_w = A4_H if landscape else A4_W
+    scale = page_w / (width * TWIPS_PER_PX)
     boxes = [
         (n.get("render") or {}).get("bbox_exact")
         for n in page.get("content") or []
@@ -226,11 +232,24 @@ def _page_geometry(page: dict) -> PageGeometry:
         max(MARGIN_MIN_TW if i < 2 else 0.0, round(v * px))
         for i, v in enumerate((left, right, top, bottom))
     )
-    text_width = A4_W - margins[0] - margins[1]
-    return PageGeometry(scale=scale, text_width=text_width, margins=margins)
+    text_width = page_w - margins[0] - margins[1]
+    return PageGeometry(
+        scale=scale, text_width=text_width, margins=margins, landscape=landscape
+    )
 
 LINE_BOX_TO_FONT = 0.5   # hộp dòng của OCR (bbox/lines) ≈ 2× cỡ chữ thật
 LINE_SPACING_RATIO = 1.2
+
+def _limit_width(blk, cols: list, geo: PageGeometry) -> float:
+    """Bề ngang tối đa cho block = min(vùng chữ, cột chứa nó)."""
+    limit = geo.text_width
+    idx = int(getattr(blk, "col_index", 0) or 0)
+    if 0 <= idx < len(cols):
+        col_w = (cols[idx].x1 - cols[idx].x0) * TWIPS_PER_PX * geo.scale
+        if col_w > 0:
+            limit = min(limit, col_w)
+    return limit
+
 
 def _page_metrics(page: dict, geo: PageGeometry) -> tuple[float, float] | None:
     """IR page → (font_pt, line_pitch_pt) theo đúng khung trang của trang gốc.
@@ -280,7 +299,10 @@ def _apply_page_metrics(doc, pages: list[dict], geo: PageGeometry) -> None:
     pitch_pt = max(font_pt * 1.05, round(pitch_pt, 2))
     normal = doc.styles["Normal"]
     normal.font.size = Pt(font_pt)
-    normal.paragraph_format.line_spacing = Pt(pitch_pt)
+    # KHÔNG đặt line_spacing EXACT ở style Normal: nó áp cho cả paragraph chứa
+    # ẢNH → Word/LibreOffice coi chiều cao dòng = X pt và CẮT ảnh (ảnh cao hơn
+    # dòng bị đẩy lên toạ độ âm, không vẽ ra). Line spacing exact chỉ đặt cho
+    # paragraph văn bản (xem _add_spec_block).
     normal.paragraph_format.space_before = Pt(0)
     normal.paragraph_format.space_after = Pt(0)
     ratio = font_pt / 11.0
@@ -289,8 +311,11 @@ def _apply_page_metrics(doc, pages: list[dict], geo: PageGeometry) -> None:
             doc.styles[name].font.size = Pt(round(base * ratio, 1))
 
 def _apply_page_setup(section, geo: PageGeometry) -> None:
-    section.page_width = Twips(A4_W)
-    section.page_height = Twips(A4_H)
+    section.page_width = Twips(A4_H if geo.landscape else A4_W)
+    section.page_height = Twips(A4_W if geo.landscape else A4_H)
+    section.orientation = (
+        WD_ORIENT.LANDSCAPE if geo.landscape else WD_ORIENT.PORTRAIT
+    )
     left, right, top, bottom = geo.margins
     section.left_margin = Twips(left)
     section.right_margin = Twips(right)
@@ -339,7 +364,8 @@ def _set_section_cols(
     )
 
 def _add_image_block(
-    doc, blk: BlockSpec, crops: dict[str, bytes], scale: float = 1.0
+    doc, blk: BlockSpec, crops: dict[str, bytes], scale: float = 1.0,
+    text_width: float = 0.0,
 ) -> None:
     """Crop bytes cho region_id → ảnh đúng bbox width; thiếu/lỗi → placeholder."""
     data = crops.get(blk.region_id)
@@ -347,8 +373,19 @@ def _add_image_block(
         try:
             para = doc.add_paragraph()
             para.alignment = _SPEC_ALIGN.get(blk.align, WD_ALIGN_PARAGRAPH.LEFT)
+            width_tw = round(blk.w * TWIPS_PER_PX * scale)
+            if text_width and width_tw > text_width:
+                # ảnh rộng hơn vùng chữ (screenshot full-page) → thu theo bề
+                # ngang, giữ tỉ lệ; nếu để nguyên thì bị cắt mất một khúc.
+                ratio = text_width / width_tw
+                para.add_run().add_picture(
+                    io.BytesIO(data),
+                    width=Twips(round(text_width)),
+                    height=Twips(round(blk.h * TWIPS_PER_PX * scale * ratio)),
+                )
+                return
             para.add_run().add_picture(
-                io.BytesIO(data), width=Twips(round(blk.w * TWIPS_PER_PX * scale))
+                io.BytesIO(data), width=Twips(width_tw)
             )
             return
         except Exception as exc:  # ảnh hỏng → giữ placeholder, không crash
@@ -440,9 +477,10 @@ def _add_text_runs(para, lines: list[str], underline: list[dict] | None,
 def _add_spec_block(
     doc, blk: BlockSpec, crops: dict[str, bytes] | None = None,
     scale: float = 1.0, font_pt: float = 0.0, pitch_pt: float = 0.0,
+    text_width: float = 0.0,
 ) -> None:
     if blk.kind == "image":
-        _add_image_block(doc, blk, crops or {}, scale)
+        _add_image_block(doc, blk, crops or {}, scale, text_width)
         return
     if blk.kind == "table":
         if blk.cells:
@@ -618,7 +656,12 @@ def render_docx_ir(
                 doc.sections[-1], cols, scale=geo.scale, text_width=geo.text_width
             )
             for blk in blocks:
-                _add_spec_block(doc, blk, crops, geo.scale, font_pt, pitch_pt)
+                # Ảnh phải vừa CỘT chứa nó: rộng hơn cột là bị Word/LibreOffice
+                # cắt cụt (job 90 p3: screenshot 19cm nằm trong cột 6cm).
+                _add_spec_block(
+                    doc, blk, crops, geo.scale, font_pt, pitch_pt,
+                    _limit_width(blk, cols, geo),
+                )
         if not first:
             doc.add_page_break()
     if style_overrides:

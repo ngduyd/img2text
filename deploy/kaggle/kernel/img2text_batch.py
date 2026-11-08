@@ -1292,12 +1292,47 @@ def extract_crops(input_path: str, pages_out: list, remove=None,
                     else:
                         pix = page.get_pixmap(clip=clip,
                                               matrix=fitz.Matrix(2, 2))
-                        crops[rid] = remove(pix.tobytes("png"))
+                        raw = pix.tobytes("png")
+                        crops[rid] = remove(raw) if _is_product_cutout(raw) else raw
                 except Exception as exc:  # partial-fail 1 crop
                     print(f"[batch] crop {rid} lỗi: {exc}", flush=True)
         return crops
     finally:
         doc.close()
+
+def _is_product_cutout(png: bytes) -> bool:
+    """rembg (xoá nền) CHỈ hợp cho ảnh vật thể trên nền trắng (logo, sản phẩm).
+
+    Screenshot / ảnh chụp tài liệu có nền sáng BÊN TRONG → rembg khoét thành
+    trong suốt, nhìn như "mất một khúc" (job 90: ảnh chụp web bị mất nửa trang).
+    Điều kiện: 4 viền gần như một màu và sáng.
+    """
+    try:
+        import statistics
+
+        from PIL import Image as _Image, ImageStat
+
+        with _Image.open(io.BytesIO(png)) as im:
+            rgb = im.convert("RGB")
+            w, h = rgb.size
+            if w < 8 or h < 8:
+                return False
+            edge = 1 if min(w, h) < 40 else 3
+            strips = [
+                rgb.crop((0, 0, w, edge)), rgb.crop((0, h - edge, w, h)),
+                rgb.crop((0, 0, edge, h)), rgb.crop((w - edge, 0, w, h)),
+            ]
+            means, devs = [], []
+            for strip in strips:
+                st = ImageStat.Stat(strip)
+                means.append(sum(st.mean) / 3)
+                devs.append(sum(st.stddev) / 3)
+        if statistics.mean(means) < 200:   # viền tối (thanh cửa sổ/khung)
+            return False
+        return statistics.mean(devs) < 12.0   # viền ĐỒNG NHẤT
+    except Exception:
+        return False
+
 
 def _extract_crops_pil(input_path: str, pages_out: list, remove) -> dict[str, bytes]:
     """Fallback crop cho ảnh fitz không mở được (HEIF/HEIC): PIL + scale."""
@@ -1320,7 +1355,8 @@ def _extract_crops_pil(input_path: str, pages_out: list, remove) -> dict[str, by
                 try:
                     buf = io.BytesIO()
                     img.crop(box).save(buf, "PNG")
-                    crops[str(b["id"])] = remove(buf.getvalue())
+                    raw = buf.getvalue()
+                    crops[str(b["id"])] = remove(raw) if _is_product_cutout(raw) else raw
                 except Exception as exc:   # partial-fail 1 crop
                     print(f"[batch] crop PIL {b['id']} lỗi: {exc}", flush=True)
     return crops

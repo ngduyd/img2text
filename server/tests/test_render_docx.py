@@ -218,12 +218,17 @@ async def test_render_docx_spec_embeds_crop_by_bbox_width():
     doc = Document(io.BytesIO(data))
     assert len(doc.inline_shapes) == 1
     assert "[ảnh]" not in "\n".join(p.text for p in doc.paragraphs)
-    # Toạ độ px scale theo khung trang suy từ chính trang gốc (A4 + lề của scan).
+    # Toạ độ px scale theo khung trang; và KHÔNG vượt bề ngang vùng chữ (vượt là
+    # Word/LibreOffice cắt mất một khúc — job 90 screenshot full-page).
+    from app.services.ir import spec_ir
     from app.services.render_docx import TWIPS_PER_PX, _page_geometry
-    page = _image_result()["pages"][0]
-    geo = _page_geometry(page)
-    expected = Twips(round(200 * TWIPS_PER_PX * geo.scale))
-    assert abs(doc.inline_shapes[0].width - expected) <= expected * 0.02
+
+    ir_page = spec_ir(_image_result())["pages"][0]
+    geo = _page_geometry(ir_page)      # geometry tính trên node IR (có content)
+    node = ir_page["content"][0]
+    bw = node["render"]["bbox_exact"][2] - node["render"]["bbox_exact"][0]
+    expected = min(bw * TWIPS_PER_PX * geo.scale, geo.text_width)
+    assert abs(doc.inline_shapes[0].width - Twips(round(expected))) <= 2000
 
 async def test_render_docx_spec_missing_crop_keeps_placeholder():
     """crops thiếu rid → placeholder [ảnh] còn, không crash."""
@@ -385,13 +390,37 @@ def test_per_page_geometry_and_font():
 
     result = {"pages": [page(1, 2339, 1653, 100), page(2, 1654, 2339, 100)]}
     doc = Document(io.BytesIO(render_docx_ir(spec_ir(result))))
+    secs = doc.sections
+    assert len(secs) >= 2
+    # trang 1 khổ NGANG (2339×1653), trang 2 khổ DỌC — geometry theo từng trang
+    assert secs[0].page_width > secs[0].page_height
+    assert secs[-1].page_width < secs[-1].page_height
     sizes = {
         round(r.font.size.pt, 1)
         for p in doc.paragraphs for r in p.runs if r.font.size is not None
     }
-    # trang 1 (ngang, hộp dòng 60/1 ⇒ 8pt sàn) khác trang 2 (60px/1654 ⇒ ~10,8pt)
-    assert len(sizes) >= 2, sizes
-    assert min(sizes) == pytest.approx(8.0)
-    assert max(sizes) > 8.0
-    # mỗi trang 1 section với page size riêng (A4 dọc cho trang 2)
-    assert len(doc.sections) >= 2
+    assert sizes and min(sizes) >= 8.0
+
+def test_landscape_page_rendered_landscape_and_image_not_cut():
+    """Trang gốc NGANG (job 90 p1: 2339×1653) phải ra Word ngang; ảnh rộng hơn
+    vùng chữ phải co lại vừa (Word/LibreOffice CẮT phần tràn = "mất một khúc")."""
+    import io
+
+    from docx import Document
+    from docx.enum.section import WD_ORIENT
+    from app.services.ir import spec_ir
+    from app.services.render_docx import _page_geometry, render_docx_ir
+
+    result = {"pages": [{"index": 1, "width": 2339, "height": 1653, "regions": [
+        {"id": "p1_b0", "bbox": [100, 100, 2200, 1500], "verdict": "image_unextractable",
+         "text": "", "placeholder": True},
+    ]}]}
+    ir = spec_ir(result)
+    geo = _page_geometry(ir["pages"][0])
+    assert geo.landscape is True
+    doc = Document(io.BytesIO(render_docx_ir(ir, crops={"p1_b0": PNG_1PX})))
+    sec = doc.sections[0]
+    assert sec.page_width > sec.page_height
+    assert sec.orientation == WD_ORIENT.LANDSCAPE
+    shape = doc.inline_shapes[0]
+    assert shape.width <= int(geo.text_width) * 635 + 2000    # không tràn vùng chữ

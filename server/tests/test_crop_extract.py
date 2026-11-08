@@ -13,6 +13,15 @@ sys.path.insert(0, str(Path(__file__).parents[2] / "deploy" / "kaggle" / "kernel
 import img2text_batch as kb  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _cutout(monkeypatch, request):
+    """Các test ở đây kiểm tra CƠ CHẾ crop; cổng "rembg chỉ cho ảnh cutout"
+    (viền sáng đồng nhất) có test riêng bên dưới → ép True cho gọn."""
+    if request.node.name.startswith("test_is_product_cutout"):
+        return
+    monkeypatch.setattr(kb, "_is_product_cutout", lambda png: True)
+
+
 def _pdf_2pages() -> bytes:
     """2 trang 200x300pt: trang 1 red rect (50,60)-(150,160), trang 2 xanh."""
     import fitz
@@ -267,3 +276,20 @@ def test_get_rembg_session_cached(monkeypatch):
     assert sess.get_rembg_session() == "SESSION"
     assert sess.get_rembg_session() == "SESSION"
     assert made == [1]
+
+
+def test_is_product_cutout_only_for_white_border():
+    """rembg chỉ dành cho ảnh vật thể nền trắng; screenshot (viền tối/lộn xộn)
+    phải giữ nguyên pixel — nếu không sẽ bị khoét lỗ trắng (job 90: mất nửa ảnh)."""
+    from PIL import Image
+
+    white = Image.new("RGB", (40, 40), (255, 255, 255))
+    white.paste((200, 30, 30), (10, 10, 30, 30))
+    buf = io.BytesIO(); white.save(buf, "PNG")
+    assert kb._is_product_cutout(buf.getvalue()) is True
+
+    shot = Image.new("RGB", (40, 40), (250, 250, 250))
+    for x in range(0, 40):
+        shot.putpixel((x, 0), (30, 30, 30))          # thanh cửa sổ tối phía trên
+    buf = io.BytesIO(); shot.save(buf, "PNG")
+    assert kb._is_product_cutout(buf.getvalue()) is False
