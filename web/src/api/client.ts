@@ -140,6 +140,15 @@ const TYPE_BY_EXT: Record<string, string> = {
 
 /** Content hash cho content-addressed key (uploads/{sha256}.{ext}). */
 export async function sha256Hex(blob: Blob): Promise<string> {
+  // http://<IP> (DEVELOP/tailnet preview) là insecure context → crypto.subtle
+  // undefined → digest ném TypeError → toast "Không kết nối được máy chủ" dù
+  // chưa gửi request nào. Key chỉ cần unique + 64 hex (server SHA256_RE).
+  // ponytail: mất dedupe theo nội dung ở origin http; serve HTTPS để lấy lại.
+  if (!crypto.subtle) {
+    return Array.from(crypto.getRandomValues(new Uint8Array(32)), (b) =>
+      b.toString(16).padStart(2, "0"),
+    ).join("");
+  }
   const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }

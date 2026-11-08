@@ -25,6 +25,23 @@ const IMAGE_TYPES = new Set([
   "image/heif",
   "image/avif",
 ]);
+/** Windows/Android hay report .jpg với type rỗng hoặc "image/jpg" → đoán theo
+ * đuôi, đừng chặn oan (server vẫn sniff magic byte). */
+const IMAGE_EXT = /\.(png|jpe?g|heic|heif|avif)$/i;
+const TYPE_BY_EXT: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  heic: "image/heic",
+  heif: "image/heif",
+  avif: "image/avif",
+};
+/** type rỗng/sai → gắn lại theo đuôi: pdf-lib (`embedJpg`) tin blob.type. */
+const normalizeImage = (f: File): File => {
+  const t = TYPE_BY_EXT[f.name.split(".").pop()?.toLowerCase() ?? ""];
+  return !t || IMAGE_TYPES.has(f.type) ? f : new File([f], f.name, { type: t });
+};
+const isImage = (f: File) => IMAGE_TYPES.has(f.type) || IMAGE_EXT.test(f.name);
 
 /**
  * Spec U1: multi-file (ảnh + PDF) với card per file, cap 25 trang, Gửi gộp → 1 PDF.
@@ -79,16 +96,17 @@ export default function MultiFileUpload({
     if (!files || disabled) return;
     let running = total(entriesRef.current);
     for (const f of Array.from(files)) {
-      if (IMAGE_TYPES.has(f.type)) {
+      if (isImage(f)) {
         if (running + 1 > MAX_PAGES) {
           toast.error(translate("upload.errMaxPages", { n: MAX_PAGES }));
           continue;
         }
         const id = idRef.current++;
-        const url = URL.createObjectURL(f);
+        const blob = normalizeImage(f);
+        const url = URL.createObjectURL(blob);
         urls.current.set(id, url);
         running += 1;
-        commit([...entriesRef.current, { id, kind: "image", name: f.name, blob: f, url }]);
+        commit([...entriesRef.current, { id, kind: "image", name: f.name, blob, url }]);
       } else if (f.type === "application/pdf") {
         try {
           const doc = await loadPdf(f);

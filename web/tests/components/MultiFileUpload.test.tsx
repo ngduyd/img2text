@@ -143,3 +143,31 @@ it("P2 DESIGN: badge rounded-full, card rounded-card", async () => {
   expect(card).toHaveClass("rounded-card");
   expect(card).not.toHaveClass("rounded-md");
 });
+
+/** Bug thật (user): Windows/Android report .jpg với type rỗng hoặc "image/jpg"
+ * → bị chặn "Định dạng file không được hỗ trợ." trước cả khi gọi presign
+ * (log server 6h không có request presign nào). */
+it("P1-3: .jpg với type rỗng hoặc image/jpg vẫn nhận (đoán theo đuôi)", async () => {
+  const onSubmit = vi.fn().mockResolvedValue(true);
+  render(<MultiFileUpload onSubmit={onSubmit} />);
+  add([new File(["x"], "anh-1.jpg", { type: "" })]);
+  expect(screen.getAllByTestId(/muf-card-/)).toHaveLength(1);
+  fireEvent.click(screen.getByTestId("muf-submit"));
+  await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+  expect(onSubmit.mock.calls[0][1]).toEqual({ page_count: 1, filename: "anh-1.jpg" });
+
+  add([new File(["x"], "anh-2.JPG", { type: "image/jpg" })]);
+  expect(screen.getAllByTestId(/muf-card-/)).toHaveLength(1);
+  expect(toast.error).not.toHaveBeenCalled();
+});
+
+/** Cùng bug ở nhánh merge: pdf-lib `embedJpg` tin blob.type → type rỗng phải
+ * được gắn lại theo đuôi (nếu không: "Chỉ hỗ trợ PNG/JPG"). */
+it("P1-3b: blob type rỗng được gắn lại image/jpeg trước khi merge/upload", async () => {
+  const onSubmit = vi.fn().mockResolvedValue(true);
+  render(<MultiFileUpload onSubmit={onSubmit} />);
+  add([new File(["x"], "a.jpg", { type: "" })]);
+  fireEvent.click(screen.getByTestId("muf-submit"));
+  await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+  expect(onSubmit.mock.calls[0][0].type).toBe("image/jpeg");
+});

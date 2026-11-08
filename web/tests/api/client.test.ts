@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { api } from "../../src/api/client";
+import { api, sha256Hex } from "../../src/api/client";
 
 // R30: pdfjs mocked at module boundary — uploadJob counts pages via loadPdf.
 vi.mock("../../src/lib/pdfjs", () => ({
@@ -100,6 +100,19 @@ describe("api client", () => {
       ),
     );
     await expect(api.uploadJob(new File([], "a.jpg"))).rejects.toThrow("Chưa được cấp quyền OCR.");
+  });
+
+  it("sha256Hex: insecure context (crypto.subtle undefined) → vẫn ra key 64 hex", async () => {
+    // Bug thật: http://100.86.205.2:5173 → isSecureContext=false, subtle=undefined
+    // → digest ném TypeError → toast "Không kết nối được máy chủ", không có request nào.
+    const real = globalThis.crypto.subtle; // subtle nằm trên prototype → giữ value
+    Object.defineProperty(globalThis.crypto, "subtle", { value: undefined, configurable: true });
+    try {
+      const h = await sha256Hex(new File(["x"], "a.jpg", { type: "image/jpeg" }));
+      expect(h).toMatch(/^[0-9a-f]{64}$/);
+    } finally {
+      Object.defineProperty(globalThis.crypto, "subtle", { value: real, configurable: true });
+    }
   });
 
   it("uploadJob presigns, PUTs the ArrayBuffer straight to storage, then creates metadata-only", async () => {
