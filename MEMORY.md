@@ -1,6 +1,10 @@
 # MEMORY
 
 ## Now
+- 2026-11-08 · Batch = dev/thủ công (`run_one.py --job N` claim→OCR→POST result), session = product.
+  `deploy/.env.dev` đặt `KAGGLE_MODE=batch` + `KAGGLE_KERNEL_REF=jhandf/img2text-batch` → job upload tự
+  chạy (job 86: queued → extracting → done KHÔNG cần tay). Còn lại: header trang bị PaddleOCR-VL bỏ
+  (`86_raw.json` chứng minh `parsing_res_list` không có block header) — lỗi model, không phải code.
 - 2026-11-08 · **Worker thật đã chạy job 86** bằng Kaggle batch (không cần backend public):
   dataset `jhandf/img2text-input-j86` (`86__job86.jpg`) + kernel `jhandf/img2text-batch-j86`
   (T4, v2 sau khi dataset kịp index — v1 nhận `invalidDatasetSources` → kernel chạy rỗng).
@@ -157,6 +161,8 @@
   `web/src/api/types.ts` chạy được.
 
 ## Measured
+- 2026-11-08 · Job 86 batch tự động: ~13 phút/trang (venv+deps ~300s + OCR). docx-layout 1 trang.
+- 2026-11-08 · server pytest **1003**, deploy/kaggle pytest **57**.
 - 2026-11-08 · Kernel batch: venv+deps ~300s, tổng ~620s/job ảnh 1 trang trên T4.
 - 2026-11-08 · job 86 VLM: text_version 0, IR 21 node / 1 band / 1 cột; docx 1 trang.
 - 2026-11-08 · server pytest **995**.
