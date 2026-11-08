@@ -1,6 +1,9 @@
 # MEMORY
 
 ## Now
+- 2026-11-08 · **Header đề thi mất là do UVDoc (use_doc_unwarping)**, không phải code: cùng trang job 86
+  unwarp ON = 21 block (mất header, box kẹp mép y0=1), unwarp OFF = 23 block (có header). Mặc định giờ
+  unwarp=False, `--opt unwarp=true` cho trang cong. docx 1 trang đủ header + gạch chân.
 - 2026-11-08 · Batch = dev/thủ công (`run_one.py --job N` claim→OCR→POST result), session = product.
   `deploy/.env.dev` đặt `KAGGLE_MODE=batch` + `KAGGLE_KERNEL_REF=jhandf/img2text-batch` → job upload tự
   chạy (job 86: queued → extracting → done KHÔNG cần tay). Còn lại: header trang bị PaddleOCR-VL bỏ
@@ -161,6 +164,7 @@
   `web/src/api/types.ts` chạy được.
 
 ## Measured
+- 2026-11-08 · OCR ra 21 block (unwarp on) vs 23 (off); thời gian kernel ~13 phút/lần chạy.
 - 2026-11-08 · Job 86 batch tự động: ~13 phút/trang (venv+deps ~300s + OCR). docx-layout 1 trang.
 - 2026-11-08 · server pytest **1003**, deploy/kaggle pytest **57**.
 - 2026-11-08 · Kernel batch: venv+deps ~300s, tổng ~620s/job ảnh 1 trang trên T4.
