@@ -1,6 +1,11 @@
 # MEMORY
 
 ## Now
+- 2026-11-08 · Mục tiêu chốt với user: **luôn lấy được VĂN BẢN**, không biến trang thành ảnh. Docx giờ
+  dựng geometry + cỡ chữ THEO TỪNG TRANG (job 90: trang chứng chỉ ngang + 19 trang text dọc).
+  Đo độ đầy đủ job 90: 13.5k ký tự docx vs 9.5k ký tự text gốc (gốc có trang scan 0 ký tự → OCR bù).
+  Gap còn lại: chữ NẰM TRONG vùng ảnh (số kích thước trên bản vẽ kỹ thuật job 88) không được OCR
+  → job 88 đạt 82% token gốc.
 - 2026-11-08 · **Job 91 (đề văn) fix xong**: trang 1 cột bị tách 3 cột giả → thân bài nhồi cột 432px
   (chữ gãy dòng, đảo thứ tự). Fix: ≥2 block rộng ≥60% ⇒ 1 cột → 1 trang đúng thứ tự.
   **Job 90 (20 trang, p1 = chứng chỉ scan, p2..20 = trang text)**: trang text OK nội dung nhưng chữ nhỏ
