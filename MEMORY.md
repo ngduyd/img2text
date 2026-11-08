@@ -1,6 +1,12 @@
 # MEMORY
 
 ## Now
+- 2026-11-08 · **Worker thật đã chạy job 86** bằng Kaggle batch (không cần backend public):
+  dataset `jhandf/img2text-input-j86` (`86__job86.jpg`) + kernel `jhandf/img2text-batch-j86`
+  (T4, v2 sau khi dataset kịp index — v1 nhận `invalidDatasetSources` → kernel chạy rỗng).
+  Output: 21 block PaddleOCR-VL → bơm vào `/api/jobs/86/result` (claim bằng runner key) →
+  docx-layout **1 trang** khớp bản gốc. Script: `/tmp/kbatch.py`, `/tmp/kpush2.py`.
+  (Lệnh tái sử dụng: `docker exec img2text-dev-server-1 python -u /tmp/kpush2.py`.)
 - 2026-11-08 · **Job 86 (đề thi 1 cột, 1242×1713)**: upload OK sau fix sha256; nhưng đứng `queued`
   vì `KAGGLE_KERNEL_REF` bị comment trong `deploy/.env.dev` → `kaggle_enabled=False` → scheduler
   không spawn kernel, dev compose cũng không có worker container. Đã bơm result tesseract
@@ -151,6 +157,9 @@
   `web/src/api/types.ts` chạy được.
 
 ## Measured
+- 2026-11-08 · Kernel batch: venv+deps ~300s, tổng ~620s/job ảnh 1 trang trên T4.
+- 2026-11-08 · job 86 VLM: text_version 0, IR 21 node / 1 band / 1 cột; docx 1 trang.
+- 2026-11-08 · server pytest **995**.
 - 2026-11-08 · docx job 86 @805fa8d = 3 trang; sau fix geometry = **1 trang** (font 9,2pt từ nhịp
   dòng 24px, lề A4 834/527/614/297 twips, vùng chữ ~7,1in). job 84 vẫn 2 trang, band 4 cột nguyên.
 - 2026-11-08 · Ép vùng chữ 6in (template cũ) làm chữ phải nhỏ ~35% mới vừa; cỡ chữ suy từ bbox
