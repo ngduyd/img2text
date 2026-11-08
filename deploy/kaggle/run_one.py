@@ -28,7 +28,10 @@ REPO_ROOT = DEPLOY_DIR.parent.parent
 KERNEL_SCRIPT = DEPLOY_DIR / "kernel" / "img2text_batch.py"
 KERNEL_META_TPL = DEPLOY_DIR / "kernel" / "kernel-batch-metadata.json"
 
-INPUT_SLUG = "img2text-input"
+# Slug RIÊNG cho chạy tay: orchestrator server cũng stage cùng dataset
+# "img2text-input" (manifest.json) → hai writer đè nhau, verify fail và job
+# của người này bị kernel của người kia xử lý.
+INPUT_SLUG = "img2text-input-manual"
 DEFAULT_KERNEL_SLUG = "img2text-batch"
 DEFAULT_ACCELERATOR = "NvidiaTeslaT4"
 DEFAULT_TIMEOUT = 3600
@@ -50,10 +53,15 @@ def staged_name(name: str, job_id: int) -> str:
     không có prefix số (spec 2026-10-09: server stage theo cùng contract)."""
     return f"{job_id}__{name}"
 
-def stage_input(src: Path, owner: str, stage: Path, job_id: int):
-    """Temp stage: input file (prefix job_id) + dataset-metadata.json."""
+def stage_input(src: Path, owner: str, stage: Path, job_id: int,
+                opts: dict | None = None):
+    """Temp stage: input file (prefix job_id) + dataset-metadata.json (+opts)."""
     stage.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(src, stage / staged_name(src.name, job_id))
+    if opts:
+        (stage / "batch_opts.json").write_text(
+            json.dumps(opts, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
     _write_meta(
         {
             "id": f"{owner}/{INPUT_SLUG}",
@@ -137,6 +145,12 @@ def build_kernel_stage(owner: str, accelerator: str, kernel_ref: str, stage: Pat
     stage.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(KERNEL_SCRIPT, stage / KERNEL_SCRIPT.name)
     meta = push._sub_owner(json.loads(KERNEL_META_TPL.read_text(encoding="utf-8")), owner)
+    # dataset_sources: input RIÊNG + giữ các dataset khác (wheels) từ template
+    sources = [
+        ref for ref in meta.get("dataset_sources") or []
+        if not str(ref).endswith("/img2text-input")
+    ]
+    meta["dataset_sources"] = [f"{owner}/{INPUT_SLUG}"] + sources
     meta["id"] = kernel_ref
     meta["title"] = kernel_ref.split("/")[-1]
     meta["code_file"] = KERNEL_SCRIPT.name
@@ -239,6 +253,8 @@ def main(argv=None):
     parser.add_argument("--job-id", type=int, default=1,
                         help="prefix job_id cho file local (kernel bỏ qua file không có prefix); "
                              "cũng là tên output `<id>_result.json`")
+    parser.add_argument("--opt", action="append", default=[], metavar="KEY=VALUE",
+                        help="cờ pipeline cho kernel (vd --opt unwarp=false); ghi batch_opts.json")
     parser.add_argument("--api", default=os.environ.get("IMG2TEXT_API", "http://localhost:8000"),
                         help="API base của server (mặc định http://localhost:8000 trong container)")
     parser.add_argument("--runner-key", default=os.environ.get("RUNNER_KEY", ""),
@@ -287,7 +303,13 @@ def main(argv=None):
     build = Path(tempfile.mkdtemp(prefix="kaggle-img2text-batch-"))
     try:
         input_stage = build / "input"
-        stage_input(src, owner, input_stage, job_id)
+        opts = {}
+        for item in args.opt:
+            key, _, raw = item.partition("=")
+            if not key or not raw:
+                sys.exit(f"error: --opt cần KEY=VALUE, nhận {item!r}")
+            opts[key] = raw.lower() not in ("0", "false", "no")
+        stage_input(src, owner, input_stage, job_id, opts or None)
         ensure_dataset(api, owner, INPUT_SLUG, input_stage, refresh=True)
         verify_dataset(api, owner, INPUT_SLUG, staged_name(src.name, job_id))
 

@@ -21,7 +21,7 @@ import run_one  # noqa: E402
 
 OWNER = "alice"
 KERNEL_REF = "alice/img2text-batch"
-INPUT_REF = "alice/img2text-input"
+INPUT_REF = "alice/img2text-input-manual"
 BATCH_SCRIPT = DEPLOY_DIR / "kernel" / "img2text_batch.py"
 BATCH_META_TPL = DEPLOY_DIR / "kernel" / "kernel-batch-metadata.json"
 
@@ -150,7 +150,7 @@ def test_dataset_meta_shape_kaggle_224(tmp_path):
     in_meta = json.loads((tmp_path / "in" / "dataset-metadata.json").read_text())
     assert in_meta == {
         "id": INPUT_REF,
-        "title": "img2text-input",
+        "title": "img2text-input-manual",
         "licenses": [{"name": "CC0-1.0"}],
     }
 
@@ -185,7 +185,7 @@ def test_exists_check_uses_dataset_list_method(fake_api, input_file):
     # AttributeError from the renamed create API
     run_one.main([str(input_file)])
     # dataset_list(search=slug) — real method, no owner prefix in search
-    assert fake_api.list_calls == ["img2text-input"]
+    assert fake_api.list_calls == [run_one.INPUT_SLUG]
 
 def test_exists_check_missing_method_fails_clearly(fake_api, input_file, monkeypatch):
     # hasattr check must fail → clear RuntimeError → SystemExit, no create
@@ -334,8 +334,10 @@ def test_script_contract():
     assert 'pipeline_version=PIPELINE_VERSION' in src
     assert 'VL_MODEL = "PaddleOCR-VL-1.5-0.9B"' in src
     assert 'LAYOUT_MODEL = "PP-DocLayoutV3"' in src
-    assert "use_doc_orientation_classify=True" in src
-    assert "use_doc_unwarping=True" in src
+    # cờ pipeline đọc từ batch_opts.json (run_one --opt) với mặc định giữ nguyên
+    assert "use_doc_orientation_classify=opts[\"orientation\"]" in src
+    assert "use_doc_unwarping=opts[\"unwarp\"]" in src
+    assert 'opts = {"orientation": True, "unwarp": False}' in src
     # no backend/secrets coupling anywhere
     for banned in ("RUNNER_KEY", "BASE_URL", "usersecrets"):
         assert banned.lower() not in low
@@ -453,9 +455,9 @@ def test_claim_job_returns_bytes_and_rejects_wrong_id(monkeypatch):
 def test_verify_dataset_fails_on_stale_dataset(fake_api):
     # Bug thật: dataset còn manifest.json cũ → kernel chạy rỗng, đốt 10' GPU
     fake_api._create(str(_staged_dir(fake_api)))     # dataset có 1__a.jpg
-    run_one.verify_dataset(fake_api, OWNER, "img2text-input", "1__a.jpg")
+    run_one.verify_dataset(fake_api, OWNER, run_one.INPUT_SLUG, "1__a.jpg")
     with pytest.raises(SystemExit) as exc:
-        run_one.verify_dataset(fake_api, OWNER, "img2text-input", "99__x.jpg", timeout=0)
+        run_one.verify_dataset(fake_api, OWNER, run_one.INPUT_SLUG, "99__x.jpg", timeout=0)
     assert "99__x.jpg" in str(exc.value.code)
 
 
@@ -468,3 +470,37 @@ def _staged_dir(api):
     (d / "dataset-metadata.json").write_text(json.dumps({"id": INPUT_REF}))
     (d / "1__a.jpg").write_bytes(b"\xff\xd8x")
     return d
+
+def test_batch_opts_read_from_dataset_and_defaults(tmp_path, monkeypatch):
+    """batch_opts.json (run_one --opt) điều khiển cờ pipeline; thiếu file →
+    giữ mặc định cũ (orientation+unwarp BẬT)."""
+    import importlib.util
+    from pathlib import Path
+
+    spec = importlib.util.spec_from_file_location("batch_kernel", BATCH_SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["batch_kernel"] = mod    # dataclasses cần module đã đăng ký
+    spec.loader.exec_module(mod)   # standalone script: exec an toàn (main() có guard)
+
+    root = tmp_path / "input"
+    (root / "jhandf" / "ds").mkdir(parents=True)
+    assert mod.batch_opts(str(root)) == {"orientation": True, "unwarp": False}
+    (root / "jhandf" / "ds" / "batch_opts.json").write_text('{"unwarp": true}')
+    assert mod.batch_opts(str(root)) == {"orientation": True, "unwarp": True}
+
+
+def test_stage_input_writes_opts(tmp_path):
+    src = tmp_path / "a.jpg"
+    src.write_bytes(b"\xff\xd8x")
+    stage = tmp_path / "in"
+    run_one.stage_input(src, OWNER, stage, 7, {"unwarp": False})
+    assert (stage / "7__a.jpg").exists()
+    assert json.loads((stage / "batch_opts.json").read_text()) == {"unwarp": False}
+
+def test_ocr_phase_helpers_defined_before_dispatch():
+    """Phải định nghĩa TRƯỚC `if __name__ == "__main__"` dispatch: pha OCR chạy
+    ở top-level nên hàm định nghĩa sau dispatch = NameError (bug thật: batch_opts)."""
+    src = BATCH_SCRIPT.read_text(encoding="utf-8")
+    dispatch = src.index('sys.argv[1] == "--ocr"')
+    for fn in ("def batch_opts(", "def _ocr_phase(", "def _predict_pages_one_by_one("):
+        assert src.index(fn) < dispatch, fn

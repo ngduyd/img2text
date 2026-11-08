@@ -162,14 +162,19 @@ def _ocr_phase(argv: list[str]) -> int:
         return 0
 
     t0 = time.time()
+    opts = batch_opts()
+    print(f"[batch] opts: {opts}", flush=True)
     pipeline = PaddleOCRVL(
         pipeline_version=PIPELINE_VERSION,
         vl_rec_model_name=VL_MODEL,
         layout_detection_model_name=LAYOUT_MODEL,
         # flags theo notebook user-proven; prod Colab worker không có
         # (parity ceiling — dễ bỏ cờ nếu tự thêm/sửa).
-        use_doc_orientation_classify=True,
-        use_doc_unwarping=True,
+        use_doc_orientation_classify=opts["orientation"],
+        # unwarping = UVDoc: nắn phẳng + CẮT lề trắng trước layout → toạ độ
+        # bbox lệch so với ảnh gốc và chữ sát mép (header đề thi) bị cụt
+        # (job 86: mất "BỘ GIÁO DỤC…/KỲ THI…/ĐỀ THI CHÍNH THỨC").
+        use_doc_unwarping=opts["unwarp"],
     )
     print(f"[batch] nạp model xong sau {time.time()-t0:.0f}s", flush=True)
 
@@ -414,6 +419,32 @@ def _bootstrap_venv_packages(notify) -> None:
         )
     print("venv deps:\n" + _paddle_check.stdout.strip())
     notify("paddle")
+
+def batch_opts(root: str = "/kaggle/input") -> dict:
+    """batch_opts.json (tuỳ chọn) trong input dataset → cờ pipeline.
+
+    Không có file → giữ mặc định cũ (orientation+unwarp bật). run_one ghi file
+    này khi cần thử nghiệm (vd `--opt unwarp=false` để giữ nguyên lề trang).
+    """
+    # unwarp MẶC ĐỊNH TẮT: UVDoc nắn phẳng + cắt lề → chữ sát mép (header đề
+    # thi) bị cụt/mất (job 86: mất "BỘ GIÁO DỤC…/KỲ THI…"; bật lại thì 21 block,
+    # tắt thì 23 block có header). Trang cong/chụp nghiêng nặng: --opt unwarp=true.
+    opts = {"orientation": True, "unwarp": False}
+    try:
+        for path in sorted(glob.glob(os.path.join(root, "**", "batch_opts.json"),
+                                     recursive=True)):
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                if "unwarp" in data:
+                    opts["unwarp"] = bool(data["unwarp"])
+                if "orientation" in data:
+                    opts["orientation"] = bool(data["orientation"])
+            break
+    except Exception as exc:
+        print(f"[batch] batch_opts lỗi (dùng mặc định): {exc}", flush=True)
+    return opts
+
 
 if __name__ == "__main__":
     # --ocr re-exec dispatch (OCR phase, venv) — BEFORE the heavy bootstrap
@@ -1267,18 +1298,33 @@ def process_job(job_id: int, input_path: str,
                 continue
             with open(os.path.join(ocr_raw_dir, name), encoding="utf-8") as f:
                 raw = json.load(f)
-            items = (raw.get("res", raw) or {}).get("parsing_res_list") or []
-            raw_dump.append({"page": name, "items": [
+            data = raw.get("res", raw) or {}
+            items = data.get("parsing_res_list") or []
+            raw_dump.append({"page": name,
+                             "raw_keys": sorted(data.keys()),
+                             "layout_det": [
+                                 {"label": b.get("label") or b.get("block_label"),
+                                  "bbox": b.get("bbox") or b.get("block_bbox"),
+                                  "score": b.get("score")}
+                                 for b in (data.get("layout_det_res") or {}).get("boxes") or []
+                             ][:40],
+                             "items": [
                 {"label": it.get("block_label"),
                  "bbox": it.get("block_bbox"),
                  "content": (it.get("block_content") or "")[:400]}
                 for it in items
             ]})
+        # ảnh ĐÃ preprocess mà OCR thực sự nhận (để đối chiếu crop/shift)
         for d in OUT_DIRS:
-            if os.path.isdir(d):
-                with open(os.path.join(d, f"{job_id}_raw.json"), "w",
-                          encoding="utf-8") as f:
-                    json.dump(raw_dump, f, ensure_ascii=False, indent=2)
+            if not os.path.isdir(d):
+                continue
+            with open(os.path.join(d, f"{job_id}_raw.json"), "w",
+                      encoding="utf-8") as f:
+                json.dump(raw_dump, f, ensure_ascii=False, indent=2)
+            for name in sorted(os.listdir(pre_dir))[:2]:
+                with open(os.path.join(pre_dir, name), "rb") as src, \
+                        open(os.path.join(d, f"{job_id}_pre_{name}"), "wb") as dst:
+                    dst.write(src.read())
     except Exception as exc:   # debug không được làm chết job
         print(f"job {job_id}: raw dump lỗi: {exc}", flush=True)
     _write_outputs(
