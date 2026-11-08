@@ -107,7 +107,9 @@ async def test_image_regions_embedded_in_exports(auth_client, done_job_with_mark
     # result has image_unextractable region p1r0 with bbox + crop already in R2
     await auth_client.post(f"/api/jobs/{done_job_with_marker_and_crop}/export", json={"fmt": "md"})
     md = (await storage.get(f"exports/{done_job_with_marker_and_crop}/md")).decode()
-    assert "![vùng p1r0](crops/p1r0.jpg)" in md
+    # .md tải về phải TỰ CHỨA ảnh (tempdir crops/ chết sau khi xuất)
+    assert "![vùng p1r0](data:image/jpeg;base64," in md
+    assert "](crops/" not in md
     assert "**[Hình ảnh chưa trích xuất: vùng p1r0]**" not in md
     await auth_client.post(f"/api/jobs/{done_job_with_marker_and_crop}/export", json={"fmt": "docx"})
     body = await storage.get(f"exports/{done_job_with_marker_and_crop}/docx")
