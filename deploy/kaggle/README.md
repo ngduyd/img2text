@@ -50,6 +50,32 @@ Script làm gì: copy `worker/pipeline.py` + `worker/verdict.py` → `deploy/kag
 - Quota GPU free ~**30h/tuần**. Accelerator ids: `NvidiaTeslaT4` (mặc định), `NvidiaTeslaP100`, `NvidiaTeslaK80`; CPU dùng `--accelerator CPU`.
 - Kaggle↔cloud storage sync để production sau (non-goal Plan K).
 
+## 5b. Hai chế độ: batch = dev/thủ công, session = production
+
+| | batch (`KAGGLE_MODE=batch`) | session (`KAGGLE_MODE=session`) |
+|---|---|---|
+| Ai drive | backend push kernel rồi poll output + ingest | kernel poll `GET /api/jobs/next` |
+| Cần public URL | **không** | **có** (`BASE_URL` secret + tunnel) |
+| Dùng cho | dev, sửa IR/render, chạy tay 1 job | production |
+
+`deploy/.env.dev` để `KAGGLE_MODE=batch` + `KAGGLE_KERNEL_REF=jhandf/img2text-batch`.
+Thiếu `KAGGLE_KERNEL_REF` → `kaggle_enabled=False` → job nằm `queued` mãi (bug 2026-11-08).
+
+### Chạy tay 1 job qua batch (claim → OCR → POST result)
+
+```bash
+# trong container dev (có app + kaggle); /app/deploy là read-only mount nên copy ra /tmp
+docker cp deploy/kaggle img2text-dev-server-1:/tmp/kg2
+docker exec -it img2text-dev-server-1 \
+  python -u /tmp/kg2/run_one.py --job 86 --api http://localhost:8000 \
+  --runner-key dev-runner-key --out /tmp/kgo-out
+```
+
+Script tự: claim job 86 (worker protocol) → stage `<id>__file` + verify dataset →
+push kernel → poll → pull output → `adapt_batch_document` → `POST /api/jobs/86/result`.
+File local (không qua API): `run_one.py ./anh.jpg --job-id 7` (prefix quyết định
+tên output `7_result.json`; kernel bỏ qua file không có prefix số).
+
 ## 6. Test nhanh (không cần backend public)
 
 Batch mode (Plan K4): client đẩy input → **single-file script kernel** chạy → client tự lấy output. **Không cần backend public, không cần Secrets (`BASE_URL`/`RUNNER_KEY`) mode này** — auth khuyên `KAGGLE_API_TOKEN` (kèm `KAGGLE_USERNAME` cho OWNER metadata; token path tự authenticate, username chỉ để đặt id trong metadata), hoặc legacy `KAGGLE_USERNAME`+`KAGGLE_KEY`.
