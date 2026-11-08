@@ -238,6 +238,17 @@ async def get_or_make_crop(
     img = Image.open(io.BytesIO(original))
     # no exif_transpose: crop must match VLM pixel frame (worker sees raw pixels)
     img = img.convert("RGB")  # RGBA/P-mode/WEBP originals cannot save as JPEG
+    # bbox nằm trong hệ px của ẢNH ĐƯA VÀO OCR (page.width) — ảnh gốc có thể lớn
+    # hơn (phone 3024px bị rasterize/giới hạn 3000/2500). Thiếu scale → crop
+    # lệch lên-trên (job 87: vùng QR bị cắt thành dòng chữ phía trên).
+    page_w = float((find_region_page(result, rid) or {}).get("width") or 0)
+    if page_w and img.width:
+        ratio = img.width / page_w
+        if abs(ratio - 1.0) > 0.01:
+            x1, y1, x2, y2 = (v * ratio for v in (x1, y1, x2, y2))
+    x1, y1 = max(0, int(x1)), max(0, int(y1))
+    x2 = min(img.width, int(round(x2)))
+    y2 = min(img.height, int(round(y2)))
     crop = img.crop((x1, y1, x2, y2))
     if crop.width > CROP_MAX_WIDTH:
         crop = crop.resize(

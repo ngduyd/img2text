@@ -159,3 +159,30 @@ async def test_crop_pdf_broken_original_404(auth_client, done_job_pdf, storage):
     await storage.put("uploads/test.pdf", b"khong-phai-pdf")
     r = await auth_client.get(f"/api/jobs/{done_job_pdf}/regions/p1r0/crop")
     assert r.status_code == 404
+
+async def test_crop_scales_bbox_from_ocr_frame_to_original_image(
+    auth_client, db_session, storage
+):
+    """bbox nằm trong hệ px của ẢNH ĐƯA VÀO OCR (page.width); ảnh gốc có thể lớn hơn.
+
+    Bug thật (job 87, ảnh HEIF 3024px bị rasterize còn 1875px): crop dùng bbox
+    thô trên ảnh gốc → lấy vùng lệch lên trên (QR bị cắt thành dòng chữ).
+    """
+    from app.routers.exports import get_or_make_crop
+
+    # ảnh gốc 800x600 (nửa phải ĐỎ); page.width=400 → bbox [200,0,400,300]
+    orig = Image.new("RGB", (800, 600), (255, 255, 255))
+    orig.paste("red", (400, 0, 800, 600))
+    buf = io.BytesIO()
+    orig.save(buf, "PNG")
+    jid = await _seed_done_job(db_session, storage, [200, 0, 400, 300],
+                               original=buf.getvalue(), storage_key="uploads/big.png")
+    job = await db_session.get(Job, jid)
+    job.result["pages"][0]["width"] = 400        # ảnh OCR nhỏ hơn ảnh gốc 2×
+    job.result["pages"][0]["height"] = 300
+    await db_session.commit()
+
+    key = await get_or_make_crop(jid, "p1r0", job, job.result, storage)
+    crop = Image.open(io.BytesIO(await storage.get(key))).convert("RGB")
+    # nửa phải (đỏ) của ảnh gốc; KHÔNG scale sẽ ra nửa trái (trắng)
+    assert crop.getpixel((crop.width // 2, crop.height // 2))[0] > 200

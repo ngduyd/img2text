@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     # trong artifact + giảm exposure URL presigned.
     crop_presign_expires: int = 3600
     input_url_expires: int = 900
+    # Batch (Kaggle) presign RIÊNG: kernel chỉ download khi tới lượt GPU —
+    # hàng đợi free tier có lúc >15 phút → URL 900s hết hạn → kernel 403 rồi bỏ
+    # job (job 88). 6 giờ, vẫn chỉ là object upload của chính user.
+    batch_input_url_expires: int = 21600
     # #12 (spec 2026-10-15): daily pg_dump — cron expr (APScheduler
     # from_crontab: "min hour dom mon dow"); override qua Setting row
     # backup_cron / backup_retention_days (runtime_settings, không qua

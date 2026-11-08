@@ -1194,3 +1194,14 @@ async def test_batch_max_jobs_zero_unlimited(
     assert len(creates) == 1
     entries = json.loads(creates[0][2]["manifest.json"])["jobs"]
     assert [e["job_id"] for e in entries] == [seed_job, job2, job3]
+
+async def test_batch_manifest_uses_long_presign_window(
+    kaggle_batch_env, api, storage_env, seed_job, monkeypatch, db_session
+):
+    """Kernel chỉ tải input khi tới lượt GPU (hàng đợi free tier >15 phút) →
+    manifest phải ký URL sống lâu (batch_input_url_expires), KHÔNG dùng
+    input_url_expires 900s của worker claim (job 88: 403 → kernel bỏ job)."""
+    monkeypatch.setattr(orch.settings, "batch_input_url_expires", 21600, raising=False)
+    assert await orch.ensure_worker(SessionLocal) is True
+    windows = [c.args[1] for c in storage_env.presign_get.await_args_list]
+    assert 21600 in windows and 900 not in windows

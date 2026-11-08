@@ -455,7 +455,15 @@ def _first_line_indent(block: BlockSpec) -> float:
 def _raw_font(block: BlockSpec) -> float:
     """Font ước lượng theo TỪNG dòng, KHÔNG clamp (block.h là chiều cao cả
     khối) — cùng công thức `render_md._render` dùng, để heading không bị nhiễu
-    bởi block nhiều dòng."""
+    bởi block nhiều dòng.
+
+    NGUY HIỂM đã biết (job 87): VLM trả cả ĐOẠN thành 1 chuỗi nên
+    `len(block.lines)` = 1 dù block 3 dòng → "font" = chiều cao khối → heading
+    giả (điều 2 của thẻ sinh viên bị in đậm/xanh). Bbox block KHÔNG có thông
+    tin dòng nên không tách được "khối cao vì nhiều dòng" và "font lớn"; thử
+    các ước lượng khác (line_h trang, sqrt(2wh/len)) đều làm hỏng fixture
+    heading thật → giữ nguyên, xem như hạn chế đã biết.
+    """
     return block.h / max(1, len(block.lines))
 
 def _font_px(block: BlockSpec) -> float:

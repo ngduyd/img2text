@@ -8,6 +8,7 @@ the pip/apt/venv bootstrap + heavy deps run only as __main__), no Kaggle."""
 
 import functools
 import hashlib
+import io
 import http.server
 import json
 import sys
@@ -598,3 +599,60 @@ def test_rasterize_image_input_closes_handles(tmp_path, monkeypatch):
     Image.new("RGB", (10, 6), "red").save(src, "JPEG")
     kb.rasterize_to_pages(str(src), str(tmp_path / "raw"))
     assert opened and all(s.closed for s in opened), "mọi Image.open phải đóng"
+
+def test_extract_crops_pil_fallback_when_fitz_cannot_open(tmp_path, monkeypatch):
+    """HEIF/HEIC: PyMuPDF mở không được → crop bằng PIL + scale bbox.
+
+    Bug thật (job 87): crops rỗng → server cắt bù bằng bbox thô trên ảnh gốc
+    (lệch hệ px) → vùng QR bị cắt thành dòng chữ phía trên.
+    """
+    import importlib.util
+    import sys as _sys
+    from PIL import Image
+
+    BATCH = Path(__file__).resolve().parents[2] / "deploy/kaggle/kernel/img2text_batch.py"
+    spec = importlib.util.spec_from_file_location("batch_kernel_crops", BATCH)
+    mod = importlib.util.module_from_spec(spec)
+    _sys.modules["batch_kernel_crops"] = mod
+    spec.loader.exec_module(mod)
+
+    # ảnh gốc 800x600: nửa phải đỏ; bbox ở hệ 400x300 (đã rasterize)
+    img = Image.new("RGB", (800, 600), "white")
+    img.paste("red", (400, 0, 800, 600))
+    src = tmp_path / "photo.png"
+    img.save(src)
+
+    pages = [{"page": 1, "width": 400, "height": 300, "blocks": [
+        {"id": "p1_b9", "type": "image", "bbox": [200, 0, 400, 300]},
+    ]}]
+    crops = mod._extract_crops_pil(str(src), pages, remove=lambda b: b)
+    assert set(crops) == {"p1_b9"}
+    got = Image.open(io.BytesIO(crops["p1_b9"])).convert("RGB")
+    assert got.getpixel((got.width // 2, got.height // 2))[0] > 200     # nửa ĐỎ
+
+def test_extract_crops_uses_pil_when_fitz_raises(tmp_path, monkeypatch):
+    """fitz.open ném lỗi (HEIF) → extract_crops rơi xuống nhánh PIL, không trả {}."""
+    import importlib.util
+    import sys as _sys
+    import pymupdf
+    from PIL import Image
+
+    BATCH = Path(__file__).resolve().parents[2] / "deploy/kaggle/kernel/img2text_batch.py"
+    spec = importlib.util.spec_from_file_location("batch_kernel_crops2", BATCH)
+    mod = importlib.util.module_from_spec(spec)
+    _sys.modules["batch_kernel_crops2"] = mod
+    spec.loader.exec_module(mod)
+
+    img = Image.new("RGB", (200, 100), "red")
+    src = tmp_path / "a.png"
+    img.save(src)
+
+    def boom(*a, **k):
+        raise pymupdf.FileDataError("cannot open as heif")
+
+    monkeypatch.setattr(pymupdf, "open", boom)
+    crops = mod.extract_crops(str(src),
+                              [{"page": 1, "width": 200, "height": 100, "blocks": [
+                                  {"id": "p1_b1", "type": "image", "bbox": [0, 0, 200, 100]}]}],
+                              remove=lambda b: b)
+    assert set(crops) == {"p1_b1"}

@@ -868,7 +868,7 @@ async def _spawn_batch_run(api, session_factory, jobs: list[Job]) -> bool:
                 {
                     "job_id": job.id,
                     "input_url": await storage.presign_get(
-                        job.storage_key, settings.input_url_expires
+                        job.storage_key, settings.batch_input_url_expires
                     ),
                     "filename": f"{job.id}__{Path(job.storage_key).name}",
                     # Kiểm tra toàn vẹn bằng SIZE (HEAD): key KHÔNG còn là
