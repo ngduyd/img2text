@@ -1,6 +1,11 @@
 # MEMORY
 
 ## Now
+- 2026-11-08 · Header 2 cột đề thi → **bảng 2 ô không viền** (job 86 render đúng: BỘ GIÁO DỤC… |
+  KỲ THI…). Proofread **song song** (concurrency 3): job 90 = 336s / 89 gợi ý (tuần tự ~27 phút).
+- 2026-11-08 · Bench GPU: 8 trang (trang 7–14 của job 90) đang chạy >30 phút ở chế độ TUẦN TỰ →
+  T4 16GB xử lý ~35–45s/trang; chưa đo được batch (predict nhiều trang) vì Kaggle trả output của
+  version kernel trước (dataset mount chưa sẵn sàng) — đã thêm DATASET_READY_WAIT=90s.
 - 2026-11-08 · **Flow gợi ý sửa lỗi tiếng Việt (proofread) đã chạy lại**: trước luôn 0 gợi ý vì
   (a) runtime setting `proofread_llm_model` = model free OpenCode (`zen/longcat-2.5-preview-free`) → 429/503,
   (b) router trả body = JSON + `data: [DONE]` → `resp.json()` ném Extra data → mất hết.
