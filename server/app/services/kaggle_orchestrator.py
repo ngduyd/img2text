@@ -639,7 +639,23 @@ def adapt_batch_document(doc: dict) -> dict:
                 region["html"] = b["html"]
             if b.get("cells"):
                 region["cells"] = b["cells"]
+            # Chữ nằm TRONG hình (kernel OCR vùng image): "document" = ảnh chụp
+            # bảng/đoạn văn → phải vào thân văn bản; "graphic" = bản vẽ/biểu đồ/
+            # logo/dấu → chữ thuộc về hình, chỉ giữ metadata (đưa vào thân sẽ sai
+            # trình bày: số đo rời rạc, nhãn trục...).
+            image_text = (b.get("image_text") or "").strip()
+            if is_image and image_text:
+                region["ocr_text"] = image_text
+                region["text_kind"] = b.get("text_kind") or "graphic"
             regions.append(region)
+            if is_image and image_text and region.get("text_kind") == "document":
+                regions.append({
+                    "id": f"{rid}_text",
+                    "bbox": b.get("bbox"),
+                    "text": image_text,
+                    "verdict": "ok",
+                    "placeholder": False,
+                })
             pos = None
             if is_image:
                 # same marker as deploy/kaggle pipeline.py → exports.py

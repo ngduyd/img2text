@@ -656,3 +656,33 @@ def test_extract_crops_uses_pil_when_fitz_raises(tmp_path, monkeypatch):
                                   {"id": "p1_b1", "type": "image", "bbox": [0, 0, 200, 100]}]}],
                               remove=lambda b: b)
     assert set(crops) == {"p1_b1"}
+
+# --- chữ nằm TRONG vùng ảnh: phân biệt "chữ của ảnh" vs "chữ của văn bản" ---
+
+def _kernel_mod(name="batch_kernel_cls"):
+    import importlib.util
+    import sys as _sys
+
+    BATCH = Path(__file__).resolve().parents[2] / "deploy/kaggle/kernel/img2text_batch.py"
+    spec = importlib.util.spec_from_file_location(name, BATCH)
+    mod = importlib.util.module_from_spec(spec)
+    _sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_classify_image_text_document_vs_graphic():
+    """Bảng/đoạn văn chụp trong ảnh → "document" (phải lấy chữ);
+    bản vẽ kỹ thuật/nhãn số rời rạc → "graphic" (chữ thuộc hình, không nhét vào thân)."""
+    mod = _kernel_mod()
+    table = [
+        "CPU Type Intel Mobile Ivy Bridge Processor rPGA988B socket",
+        "MB Chipset Panther Point Platform Controller Hub ( PCH ) QM77",
+        "System Memory Dual Channel, Non ECC, 2 x DDR3 1333 SO-DIMM",
+    ]
+    drawing = ["202.70", "200", "189.90", "150", "16.60", "5.10", "111.80", "19.10"]
+    logo = ["Lex", "SYSTEM"]
+    assert mod.classify_image_text(table) == "document"
+    assert mod.classify_image_text(drawing) == "graphic"
+    assert mod.classify_image_text(logo) == "graphic"
+    assert mod.classify_image_text([]) == "graphic"

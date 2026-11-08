@@ -1205,3 +1205,24 @@ async def test_batch_manifest_uses_long_presign_window(
     assert await orch.ensure_worker(SessionLocal) is True
     windows = [c.args[1] for c in storage_env.presign_get.await_args_list]
     assert 21600 in windows and 900 not in windows
+
+async def test_adapt_batch_document_image_text_kind():
+    """Chữ trong vùng image: "document" → thêm region text để vào thân văn bản;
+    "graphic" → chỉ metadata (ocr_text), không nhét số đo bản vẽ vào thân."""
+    doc = {"pages": [{"index": 1, "width": 1000, "height": 1400, "blocks": [
+        {"id": "p1_b0", "type": "image", "bbox": [10, 10, 500, 400], "text": "",
+         "image_text": "Bảng thông số\nCPU Type Intel Ivy Bridge\nMB Chipset QM77",
+         "text_kind": "document"},
+        {"id": "p1_b1", "type": "image", "bbox": [10, 500, 500, 900], "text": "",
+         "image_text": "202.70\n200\n189.90", "text_kind": "graphic"},
+    ]}]}
+    from app.services.kaggle_orchestrator import adapt_batch_document
+
+    body = adapt_batch_document(doc)
+    regions = {r["id"]: r for r in body["pages"][0]["regions"]}
+    assert regions["p1_b0"]["text_kind"] == "document"
+    assert "p1_b0_text" in regions                    # → có mặt trong md/docx
+    assert "CPU Type" in regions["p1_b0_text"]["text"]
+    assert regions["p1_b1"]["text_kind"] == "graphic"
+    assert "p1_b1_text" not in regions                 # → không vào thân
+    assert regions["p1_b1"]["ocr_text"].startswith("202.70")

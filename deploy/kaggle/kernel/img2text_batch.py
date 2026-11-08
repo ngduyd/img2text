@@ -96,6 +96,85 @@ def _log_gpu(tag: str) -> None:
     if (os.environ.get("GPU_EMPTY_CACHE") or "") == "1":
         paddle.device.cuda.empty_cache()
 
+IMAGE_TEXT_MIN_AREA_RATIO = 0.05   # vùng ảnh ≥5% diện tích trang mới OCR chữ
+IMAGE_OCR_LABELS = {"image", "figure", "chart", "seal", "header_image"}
+
+def classify_image_text(lines: list[str]) -> str:
+    """"chữ của ảnh" vs "chữ của văn bản" cho vùng được xếp loại image/figure.
+
+    - document: ≥3 dòng, ≥2 dòng dài (≥25 ký tự), ít token số → nhiều khả năng
+      là ảnh chụp bảng/đoạn văn (mất chữ nếu bỏ).
+    - graphic: còn lại (bản vẽ kỹ thuật, biểu đồ, logo, con dấu) — chữ thuộc về
+      hình, đưa vào thân văn bản sẽ sai trình bày → giữ ở metadata region.
+    """
+    lines = [ln.strip() for ln in lines if ln and ln.strip()]
+    if len(lines) < 3:
+        return "graphic"
+    long_lines = [ln for ln in lines if len(ln) >= 25]
+    words = [w for ln in lines for w in ln.split()]
+    numeric = sum(1 for w in words if any(ch.isdigit() for ch in w))
+    if len(long_lines) >= 2 and numeric / max(1, len(words)) < 0.4:
+        return "document"
+    return "graphic"
+
+def _image_text_of(crop_png: bytes, ocr) -> tuple[str, str] | None:
+    """Crop → (kind, text) bằng OCR text-line (det+rec), None nếu lỗi/không có chữ."""
+    try:
+        import numpy as _np
+        from PIL import Image as _Image
+
+        arr = _np.array(_Image.open(io.BytesIO(crop_png)).convert("RGB"))
+        res = ocr.predict(arr)
+        lines: list[str] = []
+        for r in res:
+            data = getattr(r, "json", None) or r
+            if isinstance(data, dict) and "res" in data:
+                data = data["res"]
+            texts = (data or {}).get("rec_texts") or []
+            lines.extend(str(t) for t in texts if str(t).strip())
+        if not lines:
+            return None
+        return classify_image_text(lines), "\n".join(lines)
+    except Exception as exc:   # OCR ảnh lỗi không được làm chết trang
+        print(f"[batch] OCR trong ảnh lỗi: {exc}", flush=True)
+        return None
+
+def attach_image_text(page_path: str, data: dict, ocr) -> int:
+    """Gắn image_text/text_kind cho block image lớn (chữ nằm TRONG hình).
+
+    Trả số block được gắn. OCR lỗi → bỏ qua (giữ nguyên hành vi cũ)."""
+    root = data.get("res", data) if isinstance(data, dict) else {}
+    items = root.get("parsing_res_list") or []
+    try:
+        from PIL import Image as _Image
+
+        with _Image.open(page_path) as img:
+            img = img.convert("RGB")
+            w, h = img.size
+            area_page = max(1, w * h)
+            added = 0
+            for it in items:
+                label = str(it.get("block_label") or "").lower()
+                bbox = it.get("block_bbox")
+                if label not in IMAGE_OCR_LABELS or not bbox or len(bbox) != 4:
+                    continue
+                x0, y0, x1, y1 = (int(round(v)) for v in bbox)
+                box_area = max(0, x1 - x0) * max(0, y1 - y0)
+                if box_area < IMAGE_TEXT_MIN_AREA_RATIO * area_page:
+                    continue
+                buf = io.BytesIO()
+                img.crop((max(0, x0), max(0, y0), min(w, x1), min(h, y1))).save(buf, "PNG")
+                got = _image_text_of(buf.getvalue(), ocr)
+                if not got:
+                    continue
+                kind, text = got
+                it["image_text"], it["text_kind"] = text, kind
+                added += 1
+            return added
+    except Exception as exc:
+        print(f"[batch] attach_image_text lỗi: {exc}", flush=True)
+        return 0
+
 def _predict_pages_one_by_one(pipeline, pages, save, raw_dir,
                               timeout: float | None = None,
                               cancel_check=None) -> bool:
@@ -178,7 +257,25 @@ def _ocr_phase(argv: list[str]) -> int:
     )
     print(f"[batch] nạp model xong sau {time.time()-t0:.0f}s", flush=True)
 
+    _state = {"ocr": None}
+
+    def _text_ocr():
+        if _state["ocr"] is None:
+            from paddleocr import PaddleOCR
+            _state["ocr"] = PaddleOCR(
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
+                use_textline_orientation=False,
+            )
+        return _state["ocr"]
+
     def save(p, data, t):
+        try:
+            n = attach_image_text(str(p), data, _text_ocr())
+            if n:
+                print(f"[batch] {p.name}: OCR chữ trong {n} vùng ảnh", flush=True)
+        except Exception as exc:
+            print(f"[batch] {p.name}: bỏ qua OCR-trong-ảnh ({exc})", flush=True)
         (raw_dir / f"{p.stem}.json").write_text(
             json.dumps(data, ensure_ascii=False, default=to_jsonable), encoding="utf-8"
         )
@@ -920,6 +1017,9 @@ def extract_blocks(raw: dict, page_no: int) -> list[dict]:
             "text": text,
             "empty": not text.strip(),
         }
+        if it.get("image_text"):
+            block["image_text"] = it["image_text"]
+            block["text_kind"] = it.get("text_kind") or "graphic"
         if "<table" in text.lower():
             # wave-3: parse MỘT LẦN ở kernel — html = nguồn sự thật,
             # cells = rows [{text,rowspan,colspan,header}], text = phẳng
