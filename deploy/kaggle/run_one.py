@@ -31,7 +31,14 @@ KERNEL_META_TPL = DEPLOY_DIR / "kernel" / "kernel-batch-metadata.json"
 # Slug RIÊNG cho chạy tay: orchestrator server cũng stage cùng dataset
 # "img2text-input" (manifest.json) → hai writer đè nhau, verify fail và job
 # của người này bị kernel của người kia xử lý.
+# Mỗi lần chạy dùng slug MỚI (kèm timestamp): delete+recreate dataset hay trả
+# version cũ (job 86/bench: 'thiếu 501__bench8.pdf (có: 86__job86.png)'), slug
+# mới thì không bao giờ stale. Xoá dataset cũ sau khi chạy xong (best-effort).
 INPUT_SLUG = "img2text-input-manual"
+
+
+def run_slug(job_id: int) -> str:
+    return f"{INPUT_SLUG}-{job_id}-{time.time_ns()}"   # ns: 2 lần/giây vẫn khác nhau
 DEFAULT_KERNEL_SLUG = "img2text-batch"
 DEFAULT_ACCELERATOR = "NvidiaTeslaT4"
 DEFAULT_TIMEOUT = 3600
@@ -54,7 +61,7 @@ def staged_name(name: str, job_id: int) -> str:
     return f"{job_id}__{name}"
 
 def stage_input(src: Path, owner: str, stage: Path, job_id: int,
-                opts: dict | None = None):
+                opts: dict | None = None, slug: str | None = None):
     """Temp stage: input file (prefix job_id) + dataset-metadata.json (+opts)."""
     stage.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(src, stage / staged_name(src.name, job_id))
@@ -64,8 +71,8 @@ def stage_input(src: Path, owner: str, stage: Path, job_id: int,
         )
     _write_meta(
         {
-            "id": f"{owner}/{INPUT_SLUG}",
-            "title": INPUT_SLUG,
+            "id": f"{owner}/{slug or INPUT_SLUG}",
+            "title": slug or INPUT_SLUG,
             "licenses": [{"name": "CC0-1.0"}],
         },
         stage / "dataset-metadata.json",
@@ -301,6 +308,7 @@ def main(argv=None):
     api.authenticate()
 
     build = Path(tempfile.mkdtemp(prefix="kaggle-img2text-batch-"))
+    slug = ""
     try:
         input_stage = build / "input"
         opts = {}
@@ -309,9 +317,10 @@ def main(argv=None):
             if not key or not raw:
                 sys.exit(f"error: --opt cần KEY=VALUE, nhận {item!r}")
             opts[key] = raw.lower() not in ("0", "false", "no")
-        stage_input(src, owner, input_stage, job_id, opts or None)
-        ensure_dataset(api, owner, INPUT_SLUG, input_stage, refresh=True)
-        verify_dataset(api, owner, INPUT_SLUG, staged_name(src.name, job_id))
+        slug = run_slug(job_id)
+        stage_input(src, owner, input_stage, job_id, opts or None, slug)
+        ensure_dataset(api, owner, slug, input_stage)   # slug MỚI mỗi lần chạy
+        verify_dataset(api, owner, slug, staged_name(src.name, job_id))
 
         kernel_stage = build / "kernel"
         build_kernel_stage(owner, args.accelerator, kernel_ref, kernel_stage)
@@ -327,6 +336,11 @@ def main(argv=None):
             post_result(args.api, job, json.loads(result_file.read_text(encoding="utf-8")))
     finally:
         shutil.rmtree(build, ignore_errors=True)
+        if slug:   # dọn dataset input của lần chạy này
+            try:
+                kcompat.api_delete_dataset(api, f"{owner}/{slug}")
+            except Exception as exc:
+                print(f"bỏ qua xoá dataset {slug}: {exc}", file=sys.stderr)
 
 if __name__ == "__main__":
     main()

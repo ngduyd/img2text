@@ -169,23 +169,23 @@ def test_directory_input_rejected(fake_api, tmp_path):
 
 def test_no_worker_files_dataset(fake_api, input_file):
     # K4: worker-files dataset dropped — the .py script IS the worker.
-    # run 1: input new → create; run 2: input exists → delete+recreate.
+    # Mỗi lần chạy dùng SLUG MỚI (input-<job>-<ts>): không delete+recreate nữa
+    # (delete+recreate hay trả version cũ → verify fail), và luôn sạch.
     assert not hasattr(run_one, "stage_worker")
     run_one.main([str(input_file)])
-    assert [ref for ref, _ in fake_api.create_calls] == [INPUT_REF]
-    assert fake_api.delete_calls == []
     run_one.main([str(input_file)])
-    assert fake_api.delete_calls == [INPUT_REF]
-    assert [ref for ref, _ in fake_api.create_calls] == [INPUT_REF, INPUT_REF]
-    # ONLY the input dataset is ever touched — no worker-files create call
-    assert all(ref == INPUT_REF for ref, _ in fake_api.create_calls)
+    refs = [ref for ref, _ in fake_api.create_calls]
+    assert len(refs) == 2 and refs[0] != refs[1]
+    assert all(ref.startswith("alice/img2text-input-manual-") for ref in refs)
+    assert all(files.get("1__a.jpg") for _, files in fake_api.create_calls)
 
 def test_exists_check_uses_dataset_list_method(fake_api, input_file):
     # the exists path must call a REAL list method — never a swallowed
     # AttributeError from the renamed create API
     run_one.main([str(input_file)])
-    # dataset_list(search=slug) — real method, no owner prefix in search
-    assert fake_api.list_calls == [run_one.INPUT_SLUG]
+    # exists check dùng MỘT lần list với slug của lần chạy (không owner prefix)
+    assert len(fake_api.list_calls) == 1
+    assert fake_api.list_calls[0].startswith(run_one.INPUT_SLUG)
 
 def test_exists_check_missing_method_fails_clearly(fake_api, input_file, monkeypatch):
     # hasattr check must fail → clear RuntimeError → SystemExit, no create
@@ -201,13 +201,12 @@ def test_second_run_uploads_fresh_input(fake_api, input_file):
     file_b.write_bytes(b"CONTENT-B")
     file_b.replace(input_file)          # run 2 serves a different file
     run_one.main([str(input_file)])
-    input_creates = [files for ref, files in fake_api.create_calls if ref == INPUT_REF]
-    # 1st run: create with A; 2nd run: exists → delete + recreate with B
+    input_creates = [files for _, files in fake_api.create_calls]
+    # Slug mới mỗi lần → 2 dataset riêng, mỗi cái có file tươi của lần đó
     assert len(input_creates) == 2
     # Tên staged PHẢI có prefix job_id — kernel bỏ qua file không có prefix số.
     assert input_creates[0]["1__a.jpg"] != b"CONTENT-B"   # run 1: file A
-    assert input_creates[1]["1__a.jpg"] == b"CONTENT-B"   # run 2 recreate: file B
-    assert INPUT_REF in fake_api.delete_calls
+    assert input_creates[1]["1__a.jpg"] == b"CONTENT-B"   # run 2: file B
 
 def test_kernel_metadata_contents(fake_api, input_file):
     run_one.main([str(input_file)])
