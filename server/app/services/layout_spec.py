@@ -22,6 +22,7 @@ logger = logging.getLogger("app.services.layout_spec")
 X_TOL = 4.0                 # px — 2 block coi như chồng cột
 Y_RATIO = 0.5               # tỉ lệ overlap dọc tối thiểu để coi là "cùng hàng"
 JUSTIFY_MIN_WIDTH_RATIO = 0.90   # block rộng ≥90% cột + ≥2 dòng → canh đều
+CENTER_MIN_GAP_RATIO = 0.08   # cả 2 bên phải trống ≥8% cột mới coi là center
 ALIGN_TOL_RATIO = 0.02      # 2% page width — |left_gap − right_gap| < tol → center
 FONT_MIN, FONT_MAX = 10.0, 48.0
 FONT_FALLBACK = 16.0
@@ -311,9 +312,17 @@ def _col_index_of(block: BlockSpec, cols: list[Col]) -> int:
 
 
 def _align_of(block: BlockSpec, col: Col, tol: float) -> str:
+    """center chỉ khi CẢ HAI bên đều trống rõ ràng (dòng thụt đầu paragraph
+    không phải center: nó chỉ trống bên trái, còn bên phải sát lề)."""
     left_gap = max(0.0, block.x0 - col.x0)
     right_gap = max(0.0, col.x1 - block.x1)
-    if left_gap > tol and abs(left_gap - right_gap) <= tol:
+    min_gap = CENTER_MIN_GAP_RATIO * max(1.0, col.x1 - col.x0)
+    if (
+        left_gap > tol
+        and left_gap >= min_gap
+        and right_gap >= min_gap
+        and abs(left_gap - right_gap) <= tol
+    ):
         return "center"
     if right_gap <= tol < left_gap:
         return "right"

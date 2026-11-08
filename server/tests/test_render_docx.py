@@ -2,6 +2,8 @@
 
 import io
 import json
+
+import pytest
 from pathlib import Path
 
 from docx import Document
@@ -216,13 +218,11 @@ async def test_render_docx_spec_embeds_crop_by_bbox_width():
     doc = Document(io.BytesIO(data))
     assert len(doc.inline_shapes) == 1
     assert "[ảnh]" not in "\n".join(p.text for p in doc.paragraphs)
-    # Toạ độ px của spec được scale về đúng bề ngang vùng chữ docx
-    # (8640 twips): pages 640 px → 9600 twips ⇒ scale 0.9.
-    from app.services.render_docx import TEXT_WIDTH_TWIPS, _scale_for
+    # Toạ độ px scale theo khung trang suy từ chính trang gốc (A4 + lề của scan).
+    from app.services.render_docx import TWIPS_PER_PX, _page_geometry
     page = _image_result()["pages"][0]
-    scale = _scale_for(page["width"])
-    assert abs(scale * page["width"] * 1440 / 96 - TEXT_WIDTH_TWIPS) < 1
-    expected = Twips(round(200 * 1440 / 96 * scale))
+    geo = _page_geometry(page)
+    expected = Twips(round(200 * TWIPS_PER_PX * geo.scale))
     assert abs(doc.inline_shapes[0].width - expected) <= expected * 0.02
 
 async def test_render_docx_spec_missing_crop_keeps_placeholder():
@@ -268,3 +268,37 @@ def test_formula_block_becomes_omml_not_text():
     assert "<m:oMath>" in xml
     assert "\\frac" not in xml
     assert "$$" not in xml
+
+def test_page_geometry_margins_from_content_and_a4():
+    """Trang gốc 1242x1713 px (A4 @150dpi), lề trắng ~90px → khung A4, lề quy đổi
+    sang twips, vùng chữ rộng hơn 6in của template (job 86: ép 6in làm chữ phải
+    thu 35% mới vừa → tràn trang)."""
+    from app.services.render_docx import A4_W, TWIPS_PER_PX, _page_geometry
+
+    page = {"width": 1242, "height": 1713, "content": [
+        {"render": {"bbox_exact": [90.0, 100.0, 1150.0, 130.0]}},
+        {"render": {"bbox_exact": [90.0, 130.0, 1120.0, 160.0]}},
+    ]}
+    geo = _page_geometry(page)
+    scale = A4_W / (1242 * TWIPS_PER_PX)
+    assert geo.scale == pytest.approx(scale)
+    assert geo.margins[0] == round(90 * TWIPS_PER_PX * scale)   # lề trái = x0 nhỏ nhất
+    assert geo.margins[1] == round((1242 - 1150) * TWIPS_PER_PX * scale)
+    assert geo.text_width == pytest.approx(A4_W - geo.margins[0] - geo.margins[1])
+    assert geo.text_width > 8640   # rộng hơn 6in template cũ
+
+
+def test_page_metrics_font_from_line_pitch_not_bbox_height():
+    """Cỡ chữ suy từ NHỊP DÒNG (pitch/1,25), không từ chiều cao bbox: bbox phình
+    vì dấu/khoảng trắng nên cho ra chữ to hơn bản gốc (job 86: 13,5pt → 3 trang)."""
+    from app.services.render_docx import PT_PER_PX, _page_geometry, _page_metrics
+
+    tops = [100.0, 124.0, 148.0, 172.0]      # nhịp 24px
+    page = {"width": 1242, "height": 1713, "content": [
+        {"render": {"bbox_exact": [90.0, t, 1150.0, t + 39.0]}} for t in tops
+    ]}
+    geo = _page_geometry(page)
+    font_pt, pitch_pt = _page_metrics(page, geo)
+    assert pitch_pt == pytest.approx(24 * PT_PER_PX * geo.scale)
+    assert font_pt == pytest.approx(pitch_pt / 1.25)
+    assert font_pt < 39 * PT_PER_PX * geo.scale    # nhỏ hơn cách tính theo bbox

@@ -7,6 +7,8 @@ LLM, không HTML render, không framePr.
 from __future__ import annotations
 
 import io
+import statistics
+from dataclasses import dataclass
 import logging
 import re
 
@@ -184,8 +186,101 @@ def _scale_for(page_width: float) -> float:
     return TEXT_WIDTH_TWIPS / max(1.0, page_width * TWIPS_PER_PX)
 
 
+A4_W = 11906.0
+A4_H = 16838.0
+MARGIN_MIN_TW = 567.0   # 1cm — Word/LibreOffice coi margin ~0 là lỗi in
+
+@dataclass
+class PageGeometry:
+    """Khung trang Word suy từ chính trang gốc: khổ A4 + lề = vùng trắng của bản
+    scan, để bề ngang vùng chữ ≈ bản gốc (trước đây ép mọi trang về 6in → chữ
+    phải thu nhỏ ~35% mới vừa, tràn trang)."""
+    scale: float        # px → twips của khung A4
+    text_width: float   # twips
+    margins: tuple[float, float, float, float]  # left, right, top, bottom
+
+def _page_geometry(page: dict) -> PageGeometry:
+    width = float(page.get("width") or 0.0) or 1.0
+    height = float(page.get("height") or 0.0) or 1.0
+    scale = A4_W / (width * TWIPS_PER_PX)
+    boxes = [
+        (n.get("render") or {}).get("bbox_exact")
+        for n in page.get("content") or []
+    ]
+    boxes = [b for b in boxes if b and len(b) == 4]
+    if boxes:
+        left = min(b[0] for b in boxes)
+        right = width - max(b[2] for b in boxes)
+        top = min(b[1] for b in boxes)
+        bottom = height - max(b[3] for b in boxes)
+    else:
+        left = right = top = bottom = 0.0
+    px = TWIPS_PER_PX * scale
+    margins = tuple(
+        max(MARGIN_MIN_TW if i < 2 else 0.0, round(v * px))
+        for i, v in enumerate((left, right, top, bottom))
+    )
+    text_width = A4_W - margins[0] - margins[1]
+    return PageGeometry(scale=scale, text_width=text_width, margins=margins)
+
+def _page_metrics(page: dict, geo: PageGeometry) -> tuple[float, float] | None:
+    """IR page → (font_pt, line_pitch_pt) theo đúng khung trang của trang gốc.
+
+    Nhịp dòng = median khoảng cách đỉnh-dòng liên tiếp; cỡ chữ suy từ nhịp dòng
+    (chữ thật ≈ pitch/1,25 với giãn dòng đơn), KHÔNG từ chiều cao bbox (bbox
+    phình vì dấu + khoảng trắng → chữ to hơn bản gốc).
+    """
+    tops: list[float] = []
+    for node in page.get("content") or []:
+        bbox = (node.get("render") or {}).get("bbox_exact")
+        if bbox and len(bbox) == 4:
+            tops.append(float(bbox[1]))
+    uniq = sorted(set(round(t, 1) for t in tops))
+    gaps = [b - a for a, b in zip(uniq, uniq[1:]) if b - a >= 4]
+    if not gaps:
+        return None
+    pitch_pt = statistics.median(gaps) * PT_PER_PX * geo.scale
+    return pitch_pt / 1.25, pitch_pt
+
+def _apply_page_metrics(doc, pages: list[dict], geo: PageGeometry) -> None:
+    """Cỡ chữ + giãn dòng khớp bản gốc (1 lần cho cả document).
+
+    Heading co theo cùng tỉ lệ để không phá hệ cấp bậc; space_after từng block
+    vẫn do block quyết (đã nhân scale ở `_add_spec_block`).
+    """
+    if not pages:
+        return
+    metrics = _page_metrics(pages[0], geo)
+    if metrics is None:
+        return
+    font_pt, pitch_pt = metrics
+    font_pt = max(6.0, min(12.0, round(font_pt, 1)))
+    pitch_pt = max(font_pt * 1.05, round(pitch_pt, 1))
+    normal = doc.styles["Normal"]
+    normal.font.size = Pt(font_pt)
+    normal.paragraph_format.line_spacing = Pt(pitch_pt)
+    normal.paragraph_format.space_before = Pt(0)
+    normal.paragraph_format.space_after = Pt(0)
+    ratio = font_pt / 11.0
+    for name, base in (("Heading 1", 16.0), ("Heading 2", 13.0), ("Heading 3", 12.0)):
+        if name in [st.name for st in doc.styles]:
+            doc.styles[name].font.size = Pt(round(base * ratio, 1))
+
+def _apply_page_setup(section, geo: PageGeometry) -> None:
+    section.page_width = Twips(A4_W)
+    section.page_height = Twips(A4_H)
+    left, right, top, bottom = geo.margins
+    section.left_margin = Twips(left)
+    section.right_margin = Twips(right)
+    section.top_margin = Twips(top)
+    section.bottom_margin = Twips(bottom)
+
 def _set_section_cols(
-    section, cols: list, n: int | None = None, scale: float = 1.0
+    section,
+    cols: list,
+    n: int | None = None,
+    scale: float = 1.0,
+    text_width: float = TEXT_WIDTH_TWIPS,
 ) -> None:
     """w:cols — python-docx không có API; chèn đúng vị trí schema.
 
@@ -203,7 +298,7 @@ def _set_section_cols(
     if count > 1 and len(cols) == count:
         span_px = max(1.0, cols[-1].x1 - cols[0].x0)
         gaps_px = [max(0.0, cols[i + 1].x0 - cols[i].x1) for i in range(count - 1)]
-        norm = TEXT_WIDTH_TWIPS / span_px
+        norm = text_width / span_px
         widths = [max(1, round((c.x1 - c.x0) * norm)) for c in cols]
         gaps = [max(0, round(g * norm)) for g in gaps_px]
         cols_el.set(qn("w:equalWidth"), "0")
@@ -314,7 +409,7 @@ def _add_spec_block(
         )
     pf.space_before = Pt(0)   # Word cộng space_before + space_after
     pf.space_after = Pt(
-        min(MAX_SPACE_AFTER_PT, round(blk.space_after_px * PT_PER_PX, 1))
+        min(MAX_SPACE_AFTER_PT, round(blk.space_after_px * PT_PER_PX * scale, 1))
     )
     # "\n" → <w:br/>, "\t" → <w:tab/> (python-docx Run.text xử lý sẵn)
     # KHÔNG ép cỡ chữ/giãn dòng theo bbox ở đây: đo bằng vòng VLM preview
@@ -428,15 +523,26 @@ def render_docx_ir(
     break, giữ ranh giới trang gốc. crops: {region_id: bytes} — thiếu → placeholder.
     """
     doc = Document()
+    pages = ir.get("pages") or []
+    page_scale = 1.0
+    if pages:
+        geo = _page_geometry(pages[0])
+        page_scale = geo.scale
+        _apply_page_metrics(doc, pages, geo)
     first = True
-    for page in ir.get("pages") or []:
+    for page in pages:
         for bi, (cols, width, blocks) in enumerate(_page_bands(page)):
             if first:
                 first = False
             else:
                 doc.add_section(WD_SECTION_START.CONTINUOUS)
-            _set_section_cols(doc.sections[-1], cols, scale=_scale_for(width))
-            page_scale = _scale_for(width)
+            if pages:
+                _apply_page_setup(doc.sections[-1], geo)
+                _set_section_cols(
+                    doc.sections[-1], cols, scale=page_scale, text_width=geo.text_width
+                )
+            else:  # pragma: no cover - IR rỗng
+                _set_section_cols(doc.sections[-1], cols, scale=_scale_for(width))
             for blk in blocks:
                 _add_spec_block(doc, blk, crops, page_scale)
         if not first:
