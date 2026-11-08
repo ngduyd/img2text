@@ -860,7 +860,7 @@ async def _spawn_batch_run(api, session_factory, jobs: list[Job]) -> bool:
         input_stage = build / "input"
         input_stage.mkdir()
         # F3: stage manifest.json ONLY (vài byte) — the kernel downloads each
-        # file from the presigned GET url and verifies sha256; KHÔNG copy file
+        # file from the presigned GET url and verifies size; KHÔNG copy file
         # lớn vào dataset. filename keeps the {job_id}__{orig} prefix contract
         # (mount fallback + unambiguous reverse mapping).
         manifest = {
@@ -871,8 +871,12 @@ async def _spawn_batch_run(api, session_factory, jobs: list[Job]) -> bool:
                         job.storage_key, settings.input_url_expires
                     ),
                     "filename": f"{job.id}__{Path(job.storage_key).name}",
-                    # content-addressed key uploads/{sha256}.{ext} → the hash
-                    "sha256": Path(job.storage_key).stem,
+                    # Kiểm tra toàn vẹn bằng SIZE (HEAD): key KHÔNG còn là
+                    # content hash — browser ở origin http (insecure context,
+                    # không có crypto.subtle) upload bằng key random → sha256
+                    # suy từ tên key sai và kernel loại input ("sha256 không
+                    # khớp", job 86 batch fail).
+                    "size_bytes": await storage.size(job.storage_key),
                     # P2-6: preprocess propagate → manifest → kernel batch
                     # đọc + áp dụng trước OCR (wave-2 #4; extra key không
                     # phá contract: entries khác giữ nguyên)

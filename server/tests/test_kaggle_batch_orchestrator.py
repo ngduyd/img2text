@@ -257,8 +257,11 @@ async def test_batch_happy_flow_spawn_then_complete_ingest(
     creates = [c for c in api.calls if c[0] == "dataset_create_new"]
     assert creates[0][1] == "testuser/img2text-input"
     entries = json.loads(creates[0][2]["manifest.json"])["jobs"]
-    assert entries[0]["job_id"] == job.id  # manifest carries id/url/filename/sha256
-    assert entries[0]["sha256"] == Path(job.storage_key).stem
+    assert entries[0]["job_id"] == job.id  # manifest carries id/url/filename/size
+    # key KHÔNG còn content-addressed (upload random hex ở origin http) → kiểm
+    # toàn vẹn bằng size, không suy sha256 từ tên key
+    assert isinstance(entries[0]["size_bytes"], int) and entries[0]["size_bytes"] > 0
+    assert "sha256" not in entries[0]
     assert "dataset-metadata.json" in creates[0][2]
     pushes = _pushes(api)
     assert len(pushes) == 1
@@ -423,7 +426,7 @@ async def test_batch_spawn_stages_all_queued_jobs_under_one_run(
     kaggle_batch_env, api, storage_env, seed_job, auth_client, db_session
 ):
     """Task 2(a) + F3: ONE tick stages EVERY queued job (cap 20) into ONE
-    manifest.json (input_url presigned GET + filename + sha256, no file
+    manifest.json (input_url presigned GET + filename + size, no file
     bytes); all marked extracting with the SAME ref."""
     job2 = await _extra_queued_job(auth_client, storage_env, "seed2")
     job3 = await _extra_queued_job(auth_client, storage_env, "seed3")
@@ -439,7 +442,7 @@ async def test_batch_spawn_stages_all_queued_jobs_under_one_run(
         job = await db_session.get(Job, jid)
         entry = entries[jid]
         assert entry["filename"] == f"{jid}__{Path(job.storage_key).name}"
-        assert entry["sha256"] == Path(job.storage_key).stem
+        assert entry["size_bytes"] > 0          # toàn vẹn theo size (không sha)
         assert job.storage_key in entry["input_url"]  # presigned GET (1h)
         assert job.status == "extracting"
         assert job.kaggle_ref == BATCH_REF

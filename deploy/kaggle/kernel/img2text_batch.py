@@ -686,10 +686,11 @@ def find_inputs(root: str = "/kaggle/input") -> list[tuple[int, str]]:
 
 
 def fetch_input(url: str, dest: str, sha256: str | None = None,
+                size_bytes: int | None = None,
                 timeout: float = 120.0) -> None:
     """Manifest mode (spec 2026-10-10): download presigned url → dest,
-    verify sha256 WHILE streaming; >MAX_INPUT_BYTES mid-stream → dest
-    removed + RuntimeError (server content-length-range spirit, enforced
+    verify size_bytes/sha256 WHILE streaming; >MAX_INPUT_BYTES mid-stream →
+    dest removed + RuntimeError (server content-length-range spirit, enforced
     client-side too). Mismatch → same (per-job partial-fail đã có)."""
     os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
     digest = hashlib.sha256()
@@ -712,6 +713,9 @@ def fetch_input(url: str, dest: str, sha256: str | None = None,
         if os.path.exists(dest):
             os.remove(dest)
         raise
+    if size_bytes is not None and total != size_bytes:
+        os.remove(dest)
+        raise RuntimeError(f"size không khớp — bỏ qua {dest} (expected {size_bytes})")
     if sha256 is not None and digest.hexdigest() != sha256:
         os.remove(dest)
         raise RuntimeError(f"sha256 không khớp — bỏ qua {dest}")
@@ -744,7 +748,10 @@ def fetch_manifest_jobs(jobs: list[dict], dest_dir: str,
         pp = entry.get("preprocess") or None
         dest = os.path.join(dest_dir, entry["filename"])
         try:
-            fetch_input(entry["input_url"], dest, entry.get("sha256"))
+            fetch_input(
+                entry["input_url"], dest,
+                entry.get("sha256"), entry.get("size_bytes"),
+            )
             out.append((job_id, dest, pp))
             continue
         except Exception as exc:
