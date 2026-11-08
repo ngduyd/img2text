@@ -1,6 +1,12 @@
 # MEMORY
 
 ## Now
+- 2026-11-08 · **Flow gợi ý sửa lỗi tiếng Việt (proofread) đã chạy lại**: trước luôn 0 gợi ý vì
+  (a) runtime setting `proofread_llm_model` = model free OpenCode (`zen/longcat-2.5-preview-free`) → 429/503,
+  (b) router trả body = JSON + `data: [DONE]` → `resp.json()` ném Extra data → mất hết.
+  Fix: DB setting → `role-scout`; `_response_json()` chấp nhận JSON/SSE/JSON+đuôi rác; `_parse()` cắt
+  object đầu tiên. Verify job 91: **19 gợi ý** (HỆT→HẾT, xào xac→xào xạc, in đạm→in đậm…).
+  Ưu tiên tiếp theo của user: 2 cột header đề thi bị LỆCH (job 86) — ảnh chỉ là test, không cần đầu tư.
 - 2026-11-08 · Job 88 chạy lại (queue GPU ~50 phút + OCR ~15 phút) → **verify chữ-trong-ảnh vào DB/API**:
   `p1_b2` (ảnh bo mạch) kind=graphic ocr_text="005 | 11 | y | 1 | O | CH5a…" (rác, KHÔNG vào thân);
   `p1_b18` (bản vẽ) kind=graphic ocr_text="202.70 | 200 | 189.90 | 503.40 | 506…" (số thật, giữ metadata).
