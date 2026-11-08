@@ -156,3 +156,31 @@ def test_html_to_docx_invalid_crop_bytes_dropped_not_500():
     doc = Document(io.BytesIO(data))
     assert len(doc.inline_shapes) == 0
     assert [p.text for p in doc.paragraphs if p.text] == ["trước", "sau"]
+
+async def test_md_export_inlines_crops_as_data_uri(
+    auth_client, app, done_job_with_result, db_session
+):
+    """File .md tải về phải TỰ CHỨA ảnh: tempdir crops/ chết ngay sau khi xuất
+    → `![](crops/x.png)` là ảnh hỏng (user: "không thấy ảnh được cắt")."""
+    import io
+
+    from PIL import Image
+
+    jid = done_job_with_result
+    st = app.state.storage
+    img = Image.new("RGB", (200, 400), "red")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG")
+    await st.put("uploads/test.jpg", buf.getvalue())   # original cho crop on-demand
+    from app.core.models import Job
+    job = await db_session.get(Job, jid)
+    result = dict(job.result or {})
+    result["markdown"] = "# tài liệu\n\n" + IMAGE_MARKER.format(region_id="r1")
+    job.result = result
+    await db_session.commit()
+
+    r = await auth_client.post(f"/api/jobs/{jid}/export", json={"fmt": "md"})
+    assert r.status_code == 200, r.text
+    md = (await st.get(f"exports/{jid}/md")).decode()
+    assert "data:image/" in md and "base64," in md
+    assert "](crops/" not in md

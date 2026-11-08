@@ -307,6 +307,22 @@ async def _materialize_crops(
             markdown = markdown.replace(marker, f"![vùng {rid}](crops/{fname})")
     return markdown
 
+_CROP_REF_RE = re.compile(r"crops/([\w.-]+\.(?:png|jpg|jpeg))")
+_MIME_BY_SUFFIX = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
+
+
+def _inline_crop_data_uris(markdown: str, root: Path) -> str:
+    """`crops/<name>` → data URI (file nằm trong tempdir của lần xuất này)."""
+    def repl(m: re.Match) -> str:
+        path = root / "crops" / m.group(1)
+        mime = _MIME_BY_SUFFIX.get(path.suffix.lower())
+        if not mime or not path.is_file():
+            return m.group(0)
+        return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode()}"
+
+    return _CROP_REF_RE.sub(repl, markdown)
+
+
 async def _pandoc_export(
     fmt: str, job_id: int, markdown: str, job: Job, storage: StorageDriver
 ) -> bytes:
@@ -685,11 +701,14 @@ async def export_job(
             if body.fmt == "pdf":
                 data = await _pdf_export(id, markdown, job, storage)
             elif body.fmt == "md":
-                # Task 4: crops embedded in ALL md-family exports
+                # Task 4: crops embedded in ALL md-family exports. tempdir CHẾT
+                # sau khi xuất → đường dẫn `crops/xxx.png` trong file .md tải về
+                # là ảnh hỏng (user không thấy ảnh). Inline data-URI để file tự chứa.
                 with tempfile.TemporaryDirectory() as td:
                     markdown = await _materialize_crops(
                         id, markdown, job, storage, Path(td)
                     )
+                    markdown = _inline_crop_data_uris(markdown, Path(td))
                 data = markdown.encode()
             else:  # html (bleach-sanitized) / docx via pandoc
                 data = await _pandoc_export(body.fmt, id, markdown, job, storage)
