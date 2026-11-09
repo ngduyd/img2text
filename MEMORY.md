@@ -1,6 +1,16 @@
 # MEMORY
 
 ## Now
+- 2026-11-09 · **Push + CI**: đẩy 72 commit lên `origin/master` (`9bd698c..c0bdc7b`). CI lần 1
+  (`42653086710`): web ✓, server ✓, **worker ✗** — `test_full_job_success_calls_heartbeat_per_page_and_result`
+  `assert 0 == 1`. Nguyên nhân: test dùng `default_pdftoppm` mặc định → runner thiếu binary `pdftoppm`
+  → FileNotFoundError → job fail sớm. Tái hiện: `env PATH=/tmp/nopop pytest` = cùng lỗi. Sửa: stub
+  `rasterize_fn` trả PNG thật (PIL) — test này kiểm heartbeat/result, không kiểm rasterize.
+  CI lần 2 (`42654575001`): **server + web + worker đều success**.
+- Đo: worker suite 29 test = 11,5s (CI 11,6s), server 1031 = ~275s, vitest 456.
+- CD (`.github/workflows/cd.yml`): chỉ chạy khi push tag `v*` (hoặc dispatch) → commit lên master
+  KHÔNG chạy CD. Secrets `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` đã có, lần chạy v0.2.0 (Oct 23) success.
+  Muốn phát hành bản demo: `git tag v0.3.0 && git push origin v0.3.0`.
 - 2026-11-09 · **Chốt bản demo (B2–B5 + N1–N4, N7)** — đã sửa: default LLM = `role-scout`
   (`llm_model` + `proofread_llm_model`, model free cũ đã chết); proofread lỗi giờ ghi
   `jobs.proofread_error` + UI hiện "chưa kiểm được" thay vì "0 gợi ý"; `deploy/demo/seed.py`
