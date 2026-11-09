@@ -116,7 +116,7 @@ def ensure_dataset(api, owner: str, slug: str, stage: Path, refresh: bool = Fals
         sys.exit(f"error: dataset {ref}: create failed ({exc})")
 
 VERIFY_TIMEOUT = 120.0
-DATASET_READY_WAIT = 90.0   # giây chờ Kaggle build version dataset trước khi push
+DATASET_READY_WAIT = 300.0   # tối đa chờ Kaggle build version dataset trước khi push
 VERIFY_INTERVAL = 3.0
 
 def verify_dataset(api, owner: str, slug: str, expected: str,
@@ -144,6 +144,31 @@ def verify_dataset(api, owner: str, slug: str, expected: str,
             )
         SLEEP(interval)
 
+def wait_dataset_ready(api, owner: str, slug: str,
+                       timeout: float = DATASET_READY_WAIT,
+                       interval: float = 10.0) -> None:
+    """Chờ Kaggle build xong version dataset TRƯỚC khi push kernel.
+
+    Push sớm → dataset chưa index → Kaggle đánh invalidDatasetSources và kernel
+    chạy với mount CŨ (bench 8 trang lại xử lý 86__job86.png của dataset khác).
+    """
+    ref = f"{owner}/{slug}"
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            status = str(api.dataset_status(ref) or "").strip().strip('"').lower()
+        except Exception:
+            status = ""
+        if status in ("ready", "ok", "complete"):
+            print(f"dataset {slug}: {status}", flush=True)
+            return
+        if time.monotonic() >= deadline:
+            print(f"dataset {slug}: chưa ready sau {timeout:.0f}s (status={status!r}) "
+                  "— vẫn push", flush=True)
+            return
+        SLEEP(interval)
+
+
 def build_kernel_stage(owner: str, accelerator: str, kernel_ref: str, stage: Path):
     """Copy standalone script + write kernel-metadata.json (OWNER substituted).
 
@@ -154,9 +179,13 @@ def build_kernel_stage(owner: str, accelerator: str, kernel_ref: str, stage: Pat
     shutil.copyfile(KERNEL_SCRIPT, stage / KERNEL_SCRIPT.name)
     meta = push._sub_owner(json.loads(KERNEL_META_TPL.read_text(encoding="utf-8")), owner)
     # dataset_sources: input RIÊNG + giữ các dataset khác (wheels) từ template
+    # bỏ MỌI dataset input cũ (img2text-input, img2text-input-manual*, ...) —
+    # chỉ giữ dataset phụ (wheels). Trước chỉ lọc đuôi "/img2text-input" nên
+    # slug "-manual" cũ vẫn được mount và kernel xử lý file của nó
+    # (bench lại ra 86__job86.png thay vì 702__bench4.pdf).
     sources = [
         ref for ref in meta.get("dataset_sources") or []
-        if not str(ref).endswith("/img2text-input")
+        if "img2text-input" not in str(ref)
     ]
     meta["dataset_sources"] = [f"{owner}/{INPUT_SLUG}"] + sources
     meta["id"] = kernel_ref
@@ -325,8 +354,7 @@ def main(argv=None):
         # Dataset vừa tạo cần thời gian build version: push kernel NGAY thì mount
         # rỗng và Kaggle lặng lẽ dùng dataset_sources của version TRƯỚC (bench:
         # outputs ra 86_* dù stage 502__bench8.pdf).
-        print(f"chờ dataset {slug} sẵn sàng để mount…", flush=True)
-        SLEEP(DATASET_READY_WAIT)
+        wait_dataset_ready(api, owner, slug)
 
         kernel_stage = build / "kernel"
         build_kernel_stage(owner, args.accelerator, kernel_ref, kernel_stage)

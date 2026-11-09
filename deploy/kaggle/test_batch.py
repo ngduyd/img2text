@@ -132,6 +132,9 @@ def fake_api(monkeypatch, request):
     monkeypatch.setenv("KAGGLE_USERNAME", OWNER)
     monkeypatch.setenv("KAGGLE_KEY", "k123")
     monkeypatch.setattr(run_one, "SLEEP", lambda s: None)
+    # chờ Kaggle build dataset: không liên quan nội dung test, bỏ qua để không
+    # quay vòng 300s (SLEEP đã bị vô hiệu)
+    monkeypatch.setattr(run_one, "wait_dataset_ready", lambda *a, **k: None)
     return api
 
 @pytest.fixture
