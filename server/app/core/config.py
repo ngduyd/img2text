@@ -101,7 +101,9 @@ class Settings(BaseSettings):
     # được poll gia hạn khi run còn sống.
     kaggle_timeout: int = 10800
     kaggle_min_queue: int = 1
-    kaggle_min_gap_seconds: int = 600
+    # Chốt phụ: điều kiện spawn thật là "kernel trước đã chết"
+    # (kernels_status), nên gap chỉ để tránh bắn dồn khi kernel chết liên tục.
+    kaggle_min_gap_seconds: int = 120
     # Batch one-run (spec 2026-10-09): max queued jobs staged into ONE kernel
     # run (env KAGGLE_BATCH_MAX_JOBS; extra jobs wait for the next tick).
     # 0 hoặc -1 = unlimited — gom hết queued trong một run.
@@ -138,13 +140,16 @@ class Settings(BaseSettings):
     # default (P0 spec 2026-10-15): prod fail-fast when kaggle (LLM) feature
     # enabled; dev value lives in deploy/.env.dev.
     llm_base_url: str = ""
-    llm_model: str = "oc/muse-spark-1.3-contributor-free"
+    # Free-tier alias: model free ĐỔI/CHẾT theo thời gian (oc/longcat-2.5-preview-free
+    # từng trả 429 FreeUsageLimitError). Đổi model thì sửa env hoặc Setting
+    # `proofread_llm_model` trong admin, không sửa code.
+    llm_model: str = "role-scout"
     # LLM request timeout (seconds)
     llm_timeout: int = Field(
         default=180, description="LLM request timeout (seconds)"
     )  # LLM free chậm — 180s (2 retry → worst ~6 phút/call)
     # Proofread dùng model riêng (khác layout model) — cùng endpoint.
-    proofread_llm_model: str = "oc/longcat-2.5-preview-free"
+    proofread_llm_model: str = "role-scout"
     # Bearer token for remote /v1/chat/completions; None = no Authorization
     # header (local servers without auth keep working unchanged).
     llm_api_key: str | None = Field(

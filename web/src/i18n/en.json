@@ -261,6 +261,7 @@
       "editRegion": "Edit region"
     },
     "suggestions": {
+      "failed": "Proofread could not run: {reason}. The 0 below means a service error, not a clean text.",
       "title": "Fixes ({n})"
     },
     "sourcePane": "Source",
@@ -693,6 +694,8 @@
     "emptyBody": "Upload photos of book pages or a PDF to start OCR. Each job processes up to 50 pages · 50MB.",
     "emptyWorker": "Jobs wait for the Colab worker to connect.",
     "emptyCta": "Upload a file to create your first job.",
+    "emptySample": "Open a sample result",
+    "emptySampleFailed": "Could not load the sample — try again later.",
     "emptyFilter": "No jobs match the filter.",
     "paginationAria": "Pagination",
     "prev": "Previous",

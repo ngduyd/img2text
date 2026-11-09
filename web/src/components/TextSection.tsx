@@ -153,6 +153,7 @@ export default function TextSection({
   jobId,
   regions,
   fileType,
+  proofreadError,
   onSaved,
   editingText: editingTextProp,
   onEditingTextChange,
@@ -161,6 +162,8 @@ export default function TextSection({
   jobId: string;
   regions?: RegionOut[];
   fileType?: string;
+  /** LLM lỗi ở lần proofread gần nhất (server) → hiện cảnh báo thay vì im lặng 0 gợi ý. */
+  proofreadError?: string | null;
   onSaved?: (result: ExtractionSaveResult) => void;
   /** U2: controlled từ JobDetail (nút Edit ở heading row); thiếu prop → internal (ExtractionPage). */
   editingText?: boolean;
@@ -561,6 +564,15 @@ export default function TextSection({
           )}
           {/* Danh sách đề xuất proofread: trước đây chỉ có highlight inline, phải
               bấm đúng chữ mới thấy → không biết có bao nhiêu, sửa cái gì. */}
+          {proofreadError && pendingSuggestions.length === 0 && (
+            <p
+              data-testid="proofread-error"
+              role="status"
+              className="mt-3 rounded-card border border-warning/40 bg-warning/5 p-3 text-sm text-muted"
+            >
+              {t("editor.suggestions.failed", { reason: proofreadError })}
+            </p>
+          )}
           {pendingSuggestions.length > 0 && (
             <section
               data-testid="suggestions-panel"

@@ -1,0 +1,566 @@
+{
+ "slug": "de-thi-ngu-van",
+ "filename": "De-Thi-Mon-Ngu-Van.jpg",
+ "file_type": "image",
+ "page_count": 1,
+ "image": "de-thi-ngu-van.jpg",
+ "sha256": "64bd054b9ac68976dd81f0e923986570d5f99b0a547426cb169a0fbab5e84a86",
+ "result": {
+  "pages": [
+   {
+    "index": 1,
+    "width": 930,
+    "height": 1384,
+    "regions": [
+     {
+      "id": "p1_b0",
+      "bbox": [
+       66,
+       56,
+       352,
+       152
+      ],
+      "text": "SỐ GIÁO DỤC VÀ ĐÀO TẠO\nNGHỆ AN\nĐỀ THI CHÍNH THỨC",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b1",
+      "bbox": [
+       403,
+       40,
+       867,
+       180
+      ],
+      "text": "KỸ THI TUYỀN SINH VÀO LỢP 10 THPT\nNĂM HỌC 2021 - 2022\nMôn thi: NGỮ VĂN\nhội gian làm bài: 120 phút, không kể thời gian giao đề",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b2",
+      "bbox": [
+       55,
+       218,
+       296,
+       246
+      ],
+      "text": "Câu 1. Đọc hiểu (2,0 điểm)",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b3",
+      "bbox": [
+       119,
+       246,
+       299,
+       270
+      ],
+      "text": "Đọc đoạn trích sau:",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b4",
+      "bbox": [
+       57,
+       257,
+       888,
+       318
+      ],
+      "text": "Mỗi người chúng ta đều là một con chim làm tổ trên cây, bổ mẹ chính là cây cổ thụ. Cây che nắng cháy gió mưa. che chả chim non đến khi đủ lông đủ cánh.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b5",
+      "bbox": [
+       56,
+       308,
+       891,
+       387
+      ],
+      "text": "Nhưng chim luôn hướng tới bầu trời, tò mò về thế giới chưa biết. Chim non lớn lên sẽ rồi khỏi tô, thinh thoảng lại biên mất, nhưng cây không thể đi theo, chỉ biết yên lặng chờ đợi nơi chốn cũ.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b6",
+      "bbox": [
+       58,
+       382,
+       888,
+       436
+      ],
+      "text": "Nuôi dạy con cái là nhìn chúng ngày càng đi xa khôi đòi mình, người làm bố làm mẹ chỉ có thể đưa tiễn phía sau.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b7",
+      "bbox": [
+       60,
+       429,
+       888,
+       483
+      ],
+      "text": "Tiếng nói của họ là tiếng lá cây xào xạc trong gió, mái tóc bạc của họ là vòng tuổi được khác bởi thời gian. (...)",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b8",
+      "bbox": [
+       61,
+       478,
+       887,
+       530
+      ],
+      "text": "Cây văn chờ ở chỗ cũ, đại cánh chim môi quay về, hết thảy xem như trời yên biển lặng, nhưng vòng tuổi mãi mãi vẫn luôn thay đổi.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b9",
+      "bbox": [
+       118,
+       530,
+       428,
+       555
+      ],
+      "text": "Tôi nghĩ, hôm nay đã đến lúc về nhà.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b10",
+      "bbox": [
+       119,
+       550,
+       888,
+       601
+      ],
+      "text": "(Trích Có một ngày, bố mẹ sẽ giả đi - Nhiều tác giả, Losedow dịch, NXB Thế giới, 2020, tr. 271) Thực hiện các yêu cầu:",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b11",
+      "bbox": [
+       111,
+       601,
+       655,
+       626
+      ],
+      "text": "-a. Chi-ra từ làm phép nổi để liên kết hai đoạn văn ở phần in đạm.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b12",
+      "bbox": [
+       59,
+       625,
+       891,
+       673
+      ],
+      "text": "b. Tìm từ lấy được sử dụng trong câu văn: Tiếng nói của họ là tiếng là cây xào xac trong gió, mái tóc bạc của họ là vòng tuổi được khác bởi thời gian.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b13",
+      "bbox": [
+       61,
+       672,
+       893,
+       719
+      ],
+      "text": "c. Em hiểu như thế nào về nội dung câu văn: Cây che nắng cháy gió mưa, che chở chim non đến khi đù lông đù cánh?",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b14",
+      "bbox": [
+       119,
+       718,
+       652,
+       745
+      ],
+      "text": "d. Theo em, tác giả muốn gửi gắm thông điệp gì qua đoạn trích?",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b15",
+      "bbox": [
+       73,
+       761,
+       383,
+       788
+      ],
+      "text": "Câu 2. Nghị luận xã hội (3,0 điểm)",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b16",
+      "bbox": [
+       137,
+       786,
+       550,
+       812
+      ],
+      "text": "Có một ngày, bố mẹ sẽ giả đi và cũng ta sẽ lớn...",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b17",
+      "bbox": [
+       74,
+       810,
+       907,
+       865
+      ],
+      "text": "Từ gợi ý trên, hãy viết bài văn trình bày suy nghĩ của em về vai trò của tính tự lập đối với giới trẻ.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b18",
+      "bbox": [
+       73,
+       878,
+       400,
+       911
+      ],
+      "text": "Câu 3. Nghị luận văn học (5,0 điểm)",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b19",
+      "bbox": [
+       144,
+       908,
+       346,
+       934
+      ],
+      "text": "Phân tích đoạn thơ sau:",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b20",
+      "bbox": [
+       333,
+       926,
+       529,
+       953
+      ],
+      "text": "Chân phải bước tới cha",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b21",
+      "bbox": [
+       334,
+       950,
+       518,
+       977
+      ],
+      "text": "Chân trái bước tới mẹ",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b22",
+      "bbox": [
+       334,
+       973,
+       542,
+       1001
+      ],
+      "text": "Một bước chạm tiếng nói",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b23",
+      "bbox": [
+       335,
+       997,
+       530,
+       1026
+      ],
+      "text": "Hai bước tới tiếng cười",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b24",
+      "bbox": [
+       335,
+       1021,
+       606,
+       1052
+      ],
+      "text": "Người đồng mình yêu lăm con ơi",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b25",
+      "bbox": [
+       337,
+       1047,
+       501,
+       1076
+      ],
+      "text": "Đan lò cải nan hoa",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b26",
+      "bbox": [
+       338,
+       1071,
+       519,
+       1100
+      ],
+      "text": "Vách nhà ken câu hát",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b27",
+      "bbox": [
+       338,
+       1099,
+       462,
+       1127
+      ],
+      "text": "Rìng cho hoa",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b28",
+      "bbox": [
+       338,
+       1110,
+       599,
+       1152
+      ],
+      "text": "Con đường cho những tấm lòng",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b29",
+      "bbox": [
+       222,
+       1140,
+       910,
+       1205
+      ],
+      "text": "(Trích Nói với con - Y Phương, Ngữ vấn 9, Tập hai, NXB Giáo dục Việt Nam, 2020, tr.72)",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b30",
+      "bbox": [
+       396,
+       1186,
+       594,
+       1228
+      ],
+      "text": "..... HỆT.....",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b31",
+      "bbox": [
+       131,
+       1213,
+       861,
+       1317
+      ],
+      "text": "Họ và tên thi sinh: Số báo danh:",
+      "verdict": "ok",
+      "placeholder": false
+     }
+    ],
+    "markdown": "SỐ GIÁO DỤC VÀ ĐÀO TẠO\nNGHỆ AN\nĐỀ THI CHÍNH THỨC\n\n# KỸ THI TUYỀN SINH VÀO LỢP 10 THPT\nNĂM HỌC 2021 - 2022\nMôn thi: NGỮ VĂN\nhội gian làm bài: 120 phút, không kể thời gian giao đề\n\n## Câu 1. Đọc hiểu (2,0 điểm)\n\nĐọc đoạn trích sau:\n\nMỗi người chúng ta đều là một con chim làm tổ trên cây, bổ mẹ chính là cây cổ thụ. Cây che nắng cháy gió mưa. che chả chim non đến khi đủ lông đủ cánh.\n\nNhưng chim luôn hướng tới bầu trời, tò mò về thế giới chưa biết. Chim non lớn lên sẽ rồi khỏi tô, thinh thoảng lại biên mất, nhưng cây không thể đi theo, chỉ biết yên lặng chờ đợi nơi chốn cũ.\n\nNuôi dạy con cái là nhìn chúng ngày càng đi xa khôi đòi mình, người làm bố làm mẹ chỉ có thể đưa tiễn phía sau.\n\nTiếng nói của họ là tiếng lá cây xào xạc trong gió, mái tóc bạc của họ là vòng tuổi được khác bởi thời gian. (...)\n\nCây văn chờ ở chỗ cũ, đại cánh chim môi quay về, hết thảy xem như trời yên biển lặng, nhưng vòng tuổi mãi mãi vẫn luôn thay đổi.\n\nTôi nghĩ, hôm nay đã đến lúc về nhà.\n\n(Trích Có một ngày, bố mẹ sẽ giả đi - Nhiều tác giả, Losedow dịch, NXB Thế giới, 2020, tr. 271) Thực hiện các yêu cầu:\n\n-a. Chi-ra từ làm phép nổi để liên kết hai đoạn văn ở phần in đạm.\n\nb. Tìm từ lấy được sử dụng trong câu văn: Tiếng nói của họ là tiếng là cây xào xac trong gió, mái tóc bạc của họ là vòng tuổi được khác bởi thời gian.\n\nc. Em hiểu như thế nào về nội dung câu văn: Cây che nắng cháy gió mưa, che chở chim non đến khi đù lông đù cánh?\n\nd. Theo em, tác giả muốn gửi gắm thông điệp gì qua đoạn trích?\n\n## Câu 2. Nghị luận xã hội (3,0 điểm)\n\nCó một ngày, bố mẹ sẽ giả đi và cũng ta sẽ lớn...\n\nTừ gợi ý trên, hãy viết bài văn trình bày suy nghĩ của em về vai trò của tính tự lập đối với giới trẻ.\n\nCâu 3. Nghị luận văn học (5,0 điểm)\n\nPhân tích đoạn thơ sau:\n\nChân phải bước tới cha\n\nChân trái bước tới mẹ\n\nMột bước chạm tiếng nói\n\nHai bước tới tiếng cười\n\nNgười đồng mình yêu lăm con ơi\n\nĐan lò cải nan hoa\n\nVách nhà ken câu hát\n\nRìng cho hoa\n\nCon đường cho những tấm lòng\n\n(Trích Nói với con - Y Phương, Ngữ vấn 9, Tập hai, NXB Giáo dục Việt Nam, 2020, tr.72)\n\n..... HỆT.....\n\nHọ và tên thi sinh: Số báo danh:",
+    "page_flag": "ok"
+   }
+  ],
+  "markdown": "SỐ GIÁO DỤC VÀ ĐÀO TẠO\nNGHỆ AN\nĐỀ THI CHÍNH THỨC\n\n# KỸ THI TUYỀN SINH VÀO LỢP 10 THPT\nNĂM HỌC 2021 - 2022\nMôn thi: NGỮ VĂN\nhội gian làm bài: 120 phút, không kể thời gian giao đề\n\n## Câu 1. Đọc hiểu (2,0 điểm)\n\nĐọc đoạn trích sau:\n\nMỗi người chúng ta đều là một con chim làm tổ trên cây, bổ mẹ chính là cây cổ thụ. Cây che nắng cháy gió mưa. che chả chim non đến khi đủ lông đủ cánh.\n\nNhưng chim luôn hướng tới bầu trời, tò mò về thế giới chưa biết. Chim non lớn lên sẽ rồi khỏi tô, thinh thoảng lại biên mất, nhưng cây không thể đi theo, chỉ biết yên lặng chờ đợi nơi chốn cũ.\n\nNuôi dạy con cái là nhìn chúng ngày càng đi xa khôi đòi mình, người làm bố làm mẹ chỉ có thể đưa tiễn phía sau.\n\nTiếng nói của họ là tiếng lá cây xào xạc trong gió, mái tóc bạc của họ là vòng tuổi được khác bởi thời gian. (...)\n\nCây văn chờ ở chỗ cũ, đại cánh chim môi quay về, hết thảy xem như trời yên biển lặng, nhưng vòng tuổi mãi mãi vẫn luôn thay đổi.\n\nTôi nghĩ, hôm nay đã đến lúc về nhà.\n\n(Trích Có một ngày, bố mẹ sẽ giả đi - Nhiều tác giả, Losedow dịch, NXB Thế giới, 2020, tr. 271) Thực hiện các yêu cầu:\n\n-a. Chi-ra từ làm phép nổi để liên kết hai đoạn văn ở phần in đạm.\n\nb. Tìm từ lấy được sử dụng trong câu văn: Tiếng nói của họ là tiếng là cây xào xac trong gió, mái tóc bạc của họ là vòng tuổi được khác bởi thời gian.\n\nc. Em hiểu như thế nào về nội dung câu văn: Cây che nắng cháy gió mưa, che chở chim non đến khi đù lông đù cánh?\n\nd. Theo em, tác giả muốn gửi gắm thông điệp gì qua đoạn trích?\n\n## Câu 2. Nghị luận xã hội (3,0 điểm)\n\nCó một ngày, bố mẹ sẽ giả đi và cũng ta sẽ lớn...\n\nTừ gợi ý trên, hãy viết bài văn trình bày suy nghĩ của em về vai trò của tính tự lập đối với giới trẻ.\n\nCâu 3. Nghị luận văn học (5,0 điểm)\n\nPhân tích đoạn thơ sau:\n\nChân phải bước tới cha\n\nChân trái bước tới mẹ\n\nMột bước chạm tiếng nói\n\nHai bước tới tiếng cười\n\nNgười đồng mình yêu lăm con ơi\n\nĐan lò cải nan hoa\n\nVách nhà ken câu hát\n\nRìng cho hoa\n\nCon đường cho những tấm lòng\n\n(Trích Nói với con - Y Phương, Ngữ vấn 9, Tập hai, NXB Giáo dục Việt Nam, 2020, tr.72)\n\n..... HỆT.....\n\nHọ và tên thi sinh: Số báo danh:",
+  "warnings": [
+   "p0:density:1/32 region lệch >4×/0.25× median"
+  ],
+  "gpu_seconds": 0.0,
+  "model_version": "PaddleOCR-VL-1.5-0.9B",
+  "edited_markdown": null
+ },
+ "suggestions": [
+  {
+   "page_index": 0,
+   "start": 0,
+   "end": 11,
+   "original": "SỐ GIÁO DỤC",
+   "suggestion": "SỞ GIÁO DỤC",
+   "reason": "thiếu dấu"
+  },
+  {
+   "page_index": 0,
+   "start": 71,
+   "end": 77,
+   "original": "LỢP 10",
+   "suggestion": "LỚP 10",
+   "reason": "sai chữ"
+  },
+  {
+   "page_index": 0,
+   "start": 120,
+   "end": 128,
+   "original": "hội gian",
+   "suggestion": "Thời gian",
+   "reason": "sai chữ"
+  },
+  {
+   "page_index": 0,
+   "start": 278,
+   "end": 283,
+   "original": "bổ mẹ",
+   "suggestion": "bố mẹ",
+   "reason": "sai ngữ cảnh"
+  },
+  {
+   "page_index": 0,
+   "start": 332,
+   "end": 339,
+   "original": "che chả",
+   "suggestion": "che chở",
+   "reason": "sai chữ"
+  },
+  {
+   "page_index": 0,
+   "start": 456,
+   "end": 462,
+   "original": "sẽ rồi",
+   "suggestion": "sẽ rời",
+   "reason": "sai ngữ cảnh"
+  },
+  {
+   "page_index": 0,
+   "start": 489,
+   "end": 497,
+   "original": "biên mất",
+   "suggestion": "biến mất",
+   "reason": "thiếu dấu"
+  },
+  {
+   "page_index": 0,
+   "start": 1208,
+   "end": 1220,
+   "original": "tiếng là cây",
+   "suggestion": "tiếng lá cây",
+   "reason": "thiếu dấu"
+  },
+  {
+   "page_index": 0,
+   "start": 1221,
+   "end": 1228,
+   "original": "xào xac",
+   "suggestion": "xào xạc",
+   "reason": "thiếu dấu"
+  },
+  {
+   "page_index": 0,
+   "start": 763,
+   "end": 772,
+   "original": "được khác",
+   "suggestion": "được đánh",
+   "reason": "sai ngữ cảnh"
+  },
+  {
+   "page_index": 0,
+   "start": 794,
+   "end": 801,
+   "original": "Cây văn",
+   "suggestion": "Cây vẫn",
+   "reason": "sai chữ"
+  },
+  {
+   "page_index": 0,
+   "start": 816,
+   "end": 841,
+   "original": "đại cánh chim môi quay về",
+   "suggestion": "đại cánh chim về",
+   "reason": "từ lạ"
+  },
+  {
+   "page_index": 0,
+   "start": 989,
+   "end": 995,
+   "original": "giả đi",
+   "suggestion": "giã đi",
+   "reason": "thiếu dấu (xuất hiện 2 lần)"
+  },
+  {
+   "page_index": 0,
+   "start": 1083,
+   "end": 1089,
+   "original": "Chi-ra",
+   "suggestion": "Chỉ ra",
+   "reason": "thiếu dấu"
+  },
+  {
+   "page_index": 0,
+   "start": 1138,
+   "end": 1144,
+   "original": "in đạm",
+   "suggestion": "in đậm",
+   "reason": "thiếu dấu"
+  },
+  {
+   "page_index": 0,
+   "start": 1156,
+   "end": 1164,
+   "original": "lấy được",
+   "suggestion": "được",
+   "reason": "từ lạ/thừa"
+  },
+  {
+   "page_index": 0,
+   "start": 1393,
+   "end": 1408,
+   "original": "đù lông đù cánh",
+   "suggestion": "đủ lông đủ cánh",
+   "reason": "thiếu dấu"
+  },
+  {
+   "page_index": 0,
+   "start": 1814,
+   "end": 1844,
+   "original": "Người đồng mình yêu lăm con ơi",
+   "suggestion": "Người thân mình yêu là con ơi",
+   "reason": "sai chữ"
+  },
+  {
+   "page_index": 0,
+   "start": 2020,
+   "end": 2023,
+   "original": "HỆT",
+   "suggestion": "HẾT",
+   "reason": "thiếu dấu"
+  }
+ ]
+}

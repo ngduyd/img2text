@@ -1,0 +1,344 @@
+{
+ "slug": "de-thi-tieng-anh",
+ "filename": "dap_an_de_thi_mon_tieng_anh_thpt_quoc_gia_1105_9fa3bc1962.jpg",
+ "file_type": "image",
+ "page_count": 1,
+ "image": "de-thi-tieng-anh.jpg",
+ "sha256": "01fc245c76aaafcbe4dad97cd3037b254fab5caa7f6e946b5d4ac2764b14df93",
+ "result": {
+  "pages": [
+   {
+    "index": 1,
+    "width": 1242,
+    "height": 1713,
+    "regions": [
+     {
+      "id": "p1_b0",
+      "bbox": [
+       132,
+       67,
+       439,
+       174
+      ],
+      "text": "BỘ GIÁO DỤC VÀ ĐÀO TẠO\nĐỀ THI CHÍNH THỨC\n(Để thi có 04 trang)",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b1",
+      "bbox": [
+       519,
+       62,
+       1154,
+       155
+      ],
+      "text": "KỸ THI TÓT NGHIỆP TRUNG HỌC PHỐ THÔNG NĂM 2025\nMôn thi: TIẾNG ANH\nThời gian làm bài: 50 phút, không kế thời gian phát đế",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b2",
+      "bbox": [
+       98,
+       185,
+       683,
+       244
+      ],
+      "text": "Họ, tên thí sinh: ___\nSố báo danh: ___",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b3",
+      "bbox": [
+       972,
+       198,
+       1098,
+       228
+      ],
+      "text": "Mã đề: 1105",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b4",
+      "bbox": [
+       100,
+       261,
+       1176,
+       314
+      ],
+      "text": "Read the following announcement and mark the letter A, B, C or D on your answer sheet to indicate the option that best fits each of the numbered blanks from 1 to 6.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b5",
+      "bbox": [
+       287,
+       321,
+       986,
+       348
+      ],
+      "text": "Vietnam International Art Exhibition 2025 – A Landmark Cultural Event",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b6",
+      "bbox": [
+       99,
+       349,
+       1179,
+       424
+      ],
+      "text": "Taking place from July 25th to 29th at the International Centre for Exhibition in Hanoi, the Vietnam International Art Exhibition 2025 will showcase over 100 famous galleries (1) ___ are derived from global art capitals alongside Vietnam's (2) ___ art institutions.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b7",
+      "bbox": [
+       100,
+       423,
+       1180,
+       472
+      ],
+      "text": "Visitors will gain exposure to a wide (3) ___ of oil paintings, sculptures, digital art, and mixed media, blending traditional and contemporary styles. The event will also feature live art demonstrations and insightful discussions",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b8",
+      "bbox": [
+       102,
+       469,
+       1061,
+       499
+      ],
+      "text": "(4) ___ by famous artists and curators, offering a deeper understanding of modern artistic trends.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b9",
+      "bbox": [
+       100,
+       489,
+       1179,
+       561
+      ],
+      "text": "This exhibition is a unique opportunity for (5) ___, investors, and art enthusiasts to discover emerging talents and (6) _____ some artworks. Don't miss this incredible celebration of artistic expression!",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b10",
+      "bbox": [
+       99,
+       568,
+       1180,
+       726
+      ],
+      "text": "Question 1. A. whose B. whom C. who D. which\nQuestion 2. A. flying B. leading C. heading D. rating\nQuestion 3. A. range B. amount C. deal D. number\nQuestion 4. A. holding B. have held C. be holding D. held\nQuestion 5. A. collectively B. collective C. collect D. collectors\nQuestion 6. A. pick up B. fill up C. come up D. get up",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b11",
+      "bbox": [
+       101,
+       736,
+       1186,
+       789
+      ],
+      "text": "Read the passage and mark the letter A, B, C or D on your answer sheet to indicate the best answer to each of the following questions from 7 to 14.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b12",
+      "bbox": [
+       100,
+       798,
+       1187,
+       918
+      ],
+      "text": "The concept of project farming, where farmers come together to collaborate on large-scale agricultural projects, has gained significant traction, and modern technology keeps this collaboration on track. Advanced technologies such as GPS, sensors, drones, and data analytics are used to optimise agricultural practices. Additionally, the collected real-time data on soil conditions, weather patterns, and plant growth enables farmers to accelerate the decision-making process that maximises productivity while minimising resource wastage.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b13",
+      "bbox": [
+       101,
+       917,
+       1187,
+       1035
+      ],
+      "text": "GPS technology allows farmers to precisely map out their fields and create customised planting plans. This ensures that seeds are sown at optimal locations based on soil characteristics and previous yield data. By avoiding areas with poor fertility, farmers can increase their overall crop yield. Camera traps provide advance warnings of insects, so farmers do not have to treat the whole field. This, therefore, helps curb chemical runoff and save money for every party involved in the project.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b14",
+      "bbox": [
+       101,
+       1034,
+       1185,
+       1131
+      ],
+      "text": "Technology also plays a vital role in optimising irrigation practices for sustainable agriculture. Specialised equipment reports dryness hour by hour, and weather apps forecast rain for the week ahead. Automated valves give each zone exactly the water it needs and pause when clouds are approaching. This cuts pumping costs and protects groundwater while keeping the crop healthy. On dry continents, such savings keep projects economically viable.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b15",
+      "bbox": [
+       102,
+       1128,
+       1185,
+       1250
+      ],
+      "text": "I've digital trail does not stop at the farm gate. Cloud platforms let project farmers, processors, and truck drivers input harvest weights, storage temperatures, and delivery times the moment they change, while blockchain records freeze each entry so customers can trust it. Analytic tools combine seasons of records to forecast demand, spot price opportunities, and mark weak points in the workflow. This allows project farmers to anticipate market demand, exploit resource allocation, and plan for potential challenges.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b16",
+      "bbox": [
+       810,
+       1248,
+       1184,
+       1269
+      ],
+      "text": "(Adapted from https://www.consumerresearch.com)",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b17",
+      "bbox": [
+       103,
+       1264,
+       1178,
+       1318
+      ],
+      "text": "Question 7. Which of the following is NOT mentioned in paragraph 1 as a type of collected real-time data?\nA. weather patterns B. soil conditions C. data analytics D. plant growth",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b18",
+      "bbox": [
+       102,
+       1314,
+       1122,
+       1366
+      ],
+      "text": "Question 8. The word  $ \\underline{\\text{accelerate}} $ in paragraph 1 can be best  $ \\underline{\\text{replaced by}} $ _____.\nA. require B. guide C. speed D. install",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b19",
+      "bbox": [
+       107,
+       1361,
+       1096,
+       1415
+      ],
+      "text": "Question 9. The word  $ \\underline{curb} $ in paragraph 2 is OPPOSITE in meaning to _____.\nA. limit B. reduce C. monitor D. increase",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b20",
+      "bbox": [
+       107,
+       1404,
+       1088,
+       1462
+      ],
+      "text": "A.  $ \\underline{Question} $ 10. The word  $ \\underline{it} $ in paragraph 3 refers to _____.\nA. dryness B. equipment C.  $ \\underline{C} $ zone D. week",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b21",
+      "bbox": [
+       107,
+       1459,
+       1066,
+       1651
+      ],
+      "text": "Question 11. Which of the following best paraphrases the underlined sentence in paragraph 3?\nA. In places with hot weather, economic projects are possible with money saved from smart irrigation.\nB. Money saved thanks to smart irrigation maintains the economic practicality of projects in dry areas.\nC. Continents with dry climate are the most likely to enjoy financial benefits from smart irrigation projects.\nD. Projects in dry regions are feasible because of the huge budget gained from applying smart irrigation.\nQuestion 12. Which of the following is TRUE according to paragraph 4?\nA. Customers tend to find the entries frozen by blockchain records untrustworthy.\nB. With the help of analytic tools, project farmers can anticipate market demand.",
+      "verdict": "ok",
+      "placeholder": false
+     },
+     {
+      "id": "p1_b22",
+      "bbox": [
+       904,
+       1646,
+       1181,
+       1673
+      ],
+      "text": "Trang 1/4 - Mã đề thi 1105",
+      "verdict": "ok",
+      "placeholder": false
+     }
+    ],
+    "markdown": "BỘ GIÁO DỤC VÀ ĐÀO TẠO\nĐỀ THI CHÍNH THỨC\n(Để thi có 04 trang)\n\n# KỸ THI TÓT NGHIỆP TRUNG HỌC PHỐ THÔNG NĂM 2025\nMôn thi: TIẾNG ANH\nThời gian làm bài: 50 phút, không kế thời gian phát đế\n\nHọ, tên thí sinh: ___\nSố báo danh: ___\n\nMã đề: 1105\n\nRead the following announcement and mark the letter A, B, C or D on your answer sheet to indicate the option that best fits each of the numbered blanks from 1 to 6.\n\n## Vietnam International Art Exhibition 2025 – A Landmark Cultural Event\n\nTaking place from July 25th to 29th at the International Centre for Exhibition in Hanoi, the Vietnam International Art Exhibition 2025 will showcase over 100 famous galleries (1) ___ are derived from global art capitals alongside Vietnam's (2) ___ art institutions.\n\nVisitors will gain exposure to a wide (3) ___ of oil paintings, sculptures, digital art, and mixed media, blending traditional and contemporary styles. The event will also feature live art demonstrations and insightful discussions\n\n(4) ___ by famous artists and curators, offering a deeper understanding of modern artistic trends.\n\nThis exhibition is a unique opportunity for (5) ___, investors, and art enthusiasts to discover emerging talents and (6) _____ some artworks. Don't miss this incredible celebration of artistic expression!\n\nQuestion 1. A. whose B. whom C. who D. which\nQuestion 2. A. flying B. leading C. heading D. rating\nQuestion 3. A. range B. amount C. deal D. number\nQuestion 4. A. holding B. have held C. be holding D. held\nQuestion 5. A. collectively B. collective C. collect D. collectors\nQuestion 6. A. pick up B. fill up C. come up D. get up\n\nRead the passage and mark the letter A, B, C or D on your answer sheet to indicate the best answer to each of the following questions from 7 to 14.\n\nThe concept of project farming, where farmers come together to collaborate on large-scale agricultural projects, has gained significant traction, and modern technology keeps this collaboration on track. Advanced technologies such as GPS, sensors, drones, and data analytics are used to optimise agricultural practices. Additionally, the collected real-time data on soil conditions, weather patterns, and plant growth enables farmers to accelerate the decision-making process that maximises productivity while minimising resource wastage.\n\nGPS technology allows farmers to precisely map out their fields and create customised planting plans. This ensures that seeds are sown at optimal locations based on soil characteristics and previous yield data. By avoiding areas with poor fertility, farmers can increase their overall crop yield. Camera traps provide advance warnings of insects, so farmers do not have to treat the whole field. This, therefore, helps curb chemical runoff and save money for every party involved in the project.\n\nTechnology also plays a vital role in optimising irrigation practices for sustainable agriculture. Specialised equipment reports dryness hour by hour, and weather apps forecast rain for the week ahead. Automated valves give each zone exactly the water it needs and pause when clouds are approaching. This cuts pumping costs and protects groundwater while keeping the crop healthy. On dry continents, such savings keep projects economically viable.\n\nI've digital trail does not stop at the farm gate. Cloud platforms let project farmers, processors, and truck drivers input harvest weights, storage temperatures, and delivery times the moment they change, while blockchain records freeze each entry so customers can trust it. Analytic tools combine seasons of records to forecast demand, spot price opportunities, and mark weak points in the workflow. This allows project farmers to anticipate market demand, exploit resource allocation, and plan for potential challenges.\n\n(Adapted from https://www.consumerresearch.com)\n\nQuestion 7. Which of the following is NOT mentioned in paragraph 1 as a type of collected real-time data?\nA. weather patterns B. soil conditions C. data analytics D. plant growth\n\nQuestion 8. The word  $ \\underline{\\text{accelerate}} $ in paragraph 1 can be best  $ \\underline{\\text{replaced by}} $ _____.\nA. require B. guide C. speed D. install\n\nQuestion 9. The word  $ \\underline{curb} $ in paragraph 2 is OPPOSITE in meaning to _____.\nA. limit B. reduce C. monitor D. increase\n\nA.  $ \\underline{Question} $ 10. The word  $ \\underline{it} $ in paragraph 3 refers to _____.\nA. dryness B. equipment C.  $ \\underline{C} $ zone D. week\n\nQuestion 11. Which of the following best paraphrases the underlined sentence in paragraph 3?\nA. In places with hot weather, economic projects are possible with money saved from smart irrigation.\nB. Money saved thanks to smart irrigation maintains the economic practicality of projects in dry areas.\nC. Continents with dry climate are the most likely to enjoy financial benefits from smart irrigation projects.\nD. Projects in dry regions are feasible because of the huge budget gained from applying smart irrigation.\nQuestion 12. Which of the following is TRUE according to paragraph 4?\nA. Customers tend to find the entries frozen by blockchain records untrustworthy.\nB. With the help of analytic tools, project farmers can anticipate market demand.\n\nTrang 1/4 - Mã đề thi 1105",
+    "page_flag": "ok"
+   }
+  ],
+  "markdown": "BỘ GIÁO DỤC VÀ ĐÀO TẠO\nĐỀ THI CHÍNH THỨC\n(Để thi có 04 trang)\n\n# KỸ THI TÓT NGHIỆP TRUNG HỌC PHỐ THÔNG NĂM 2025\nMôn thi: TIẾNG ANH\nThời gian làm bài: 50 phút, không kế thời gian phát đế\n\nHọ, tên thí sinh: ___\nSố báo danh: ___\n\nMã đề: 1105\n\nRead the following announcement and mark the letter A, B, C or D on your answer sheet to indicate the option that best fits each of the numbered blanks from 1 to 6.\n\n## Vietnam International Art Exhibition 2025 – A Landmark Cultural Event\n\nTaking place from July 25th to 29th at the International Centre for Exhibition in Hanoi, the Vietnam International Art Exhibition 2025 will showcase over 100 famous galleries (1) ___ are derived from global art capitals alongside Vietnam's (2) ___ art institutions.\n\nVisitors will gain exposure to a wide (3) ___ of oil paintings, sculptures, digital art, and mixed media, blending traditional and contemporary styles. The event will also feature live art demonstrations and insightful discussions\n\n(4) ___ by famous artists and curators, offering a deeper understanding of modern artistic trends.\n\nThis exhibition is a unique opportunity for (5) ___, investors, and art enthusiasts to discover emerging talents and (6) _____ some artworks. Don't miss this incredible celebration of artistic expression!\n\nQuestion 1. A. whose B. whom C. who D. which\nQuestion 2. A. flying B. leading C. heading D. rating\nQuestion 3. A. range B. amount C. deal D. number\nQuestion 4. A. holding B. have held C. be holding D. held\nQuestion 5. A. collectively B. collective C. collect D. collectors\nQuestion 6. A. pick up B. fill up C. come up D. get up\n\nRead the passage and mark the letter A, B, C or D on your answer sheet to indicate the best answer to each of the following questions from 7 to 14.\n\nThe concept of project farming, where farmers come together to collaborate on large-scale agricultural projects, has gained significant traction, and modern technology keeps this collaboration on track. Advanced technologies such as GPS, sensors, drones, and data analytics are used to optimise agricultural practices. Additionally, the collected real-time data on soil conditions, weather patterns, and plant growth enables farmers to accelerate the decision-making process that maximises productivity while minimising resource wastage.\n\nGPS technology allows farmers to precisely map out their fields and create customised planting plans. This ensures that seeds are sown at optimal locations based on soil characteristics and previous yield data. By avoiding areas with poor fertility, farmers can increase their overall crop yield. Camera traps provide advance warnings of insects, so farmers do not have to treat the whole field. This, therefore, helps curb chemical runoff and save money for every party involved in the project.\n\nTechnology also plays a vital role in optimising irrigation practices for sustainable agriculture. Specialised equipment reports dryness hour by hour, and weather apps forecast rain for the week ahead. Automated valves give each zone exactly the water it needs and pause when clouds are approaching. This cuts pumping costs and protects groundwater while keeping the crop healthy. On dry continents, such savings keep projects economically viable.\n\nI've digital trail does not stop at the farm gate. Cloud platforms let project farmers, processors, and truck drivers input harvest weights, storage temperatures, and delivery times the moment they change, while blockchain records freeze each entry so customers can trust it. Analytic tools combine seasons of records to forecast demand, spot price opportunities, and mark weak points in the workflow. This allows project farmers to anticipate market demand, exploit resource allocation, and plan for potential challenges.\n\n(Adapted from https://www.consumerresearch.com)\n\nQuestion 7. Which of the following is NOT mentioned in paragraph 1 as a type of collected real-time data?\nA. weather patterns B. soil conditions C. data analytics D. plant growth\n\nQuestion 8. The word  $ \\underline{\\text{accelerate}} $ in paragraph 1 can be best  $ \\underline{\\text{replaced by}} $ _____.\nA. require B. guide C. speed D. install\n\nQuestion 9. The word  $ \\underline{curb} $ in paragraph 2 is OPPOSITE in meaning to _____.\nA. limit B. reduce C. monitor D. increase\n\nA.  $ \\underline{Question} $ 10. The word  $ \\underline{it} $ in paragraph 3 refers to _____.\nA. dryness B. equipment C.  $ \\underline{C} $ zone D. week\n\nQuestion 11. Which of the following best paraphrases the underlined sentence in paragraph 3?\nA. In places with hot weather, economic projects are possible with money saved from smart irrigation.\nB. Money saved thanks to smart irrigation maintains the economic practicality of projects in dry areas.\nC. Continents with dry climate are the most likely to enjoy financial benefits from smart irrigation projects.\nD. Projects in dry regions are feasible because of the huge budget gained from applying smart irrigation.\nQuestion 12. Which of the following is TRUE according to paragraph 4?\nA. Customers tend to find the entries frozen by blockchain records untrustworthy.\nB. With the help of analytic tools, project farmers can anticipate market demand.\n\nTrang 1/4 - Mã đề thi 1105",
+  "warnings": [],
+  "gpu_seconds": 0.0,
+  "model_version": "PaddleOCR-VL-1.5-0.9B",
+  "edited_markdown": null
+ },
+ "suggestions": [
+  {
+   "page_index": 0,
+   "start": 42,
+   "end": 60,
+   "original": "Để thi có 04 trang",
+   "suggestion": "Đề thi có 04 trang",
+   "reason": "Thiếu dấu trên chữ 'Đề' (OCR đọc 'Để' thay vì 'Đề')"
+  },
+  {
+   "page_index": 0,
+   "start": 62,
+   "end": 108,
+   "original": "KỸ THI TÓT NGHIỆP TRUNG HỌC PHỐ THÔNG NĂM 2025",
+   "suggestion": "KỸ THI TỐT NGHIỆP TRUNG HỌC PHỔ THÔNG NĂM 2025",
+   "reason": "Sai nguyên âm: 'TÓT' → 'TỐT', 'PHỐ' → 'PHỔ' (thiếu dấu hỏi/ngã)"
+  },
+  {
+   "page_index": 0,
+   "start": 156,
+   "end": 182,
+   "original": "không kế thời gian phát đế",
+   "suggestion": "không kể thời gian phát đề",
+   "reason": "Sai từ: 'kế' → 'kể', 'đế' → 'đề' (phát đề = phát bài thi)"
+  },
+  {
+   "page_index": 0,
+   "start": 3228,
+   "end": 3278,
+   "original": "I've digital trail does not stop at the farm gate.",
+   "suggestion": "The digital trail does not stop at the farm gate.",
+   "reason": "OCR nhầm 'The' thành 'I've' (chữ 'The' bị tách thành 'I' + 've')"
+  },
+  {
+   "page_index": 0,
+   "start": 4395,
+   "end": 4421,
+   "original": "C. $ \\underline{C} $ zone",
+   "suggestion": "C. zone",
+   "reason": "Rác định dạng OCR: ký hiệu LaTeX/underline lẫn vào đáp án C"
+  }
+ ]
+}

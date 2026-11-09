@@ -267,8 +267,9 @@ async def _call_llm(page_text: str, hint: str) -> list[dict]:
 async def run_proofread(session: AsyncSession, job: Job) -> int:
     """job.result pages → LLM → OcrSuggestion rows; returns count.
 
-    LLM lỗi ở bất kỳ trang nào → WARNING + trả 0, không ghi gì (giữ gợi
-    ý cũ). Exception khác (DB) lan lên caller — hook/route log riêng.
+    LLM lỗi ở bất kỳ trang nào → WARNING + `job.proofread_error` = lý do +
+    trả 0 (giữ gợi ý cũ) để UI phân biệt với "văn bản sạch". Exception khác
+    (DB) lan lên caller — hook/route log riêng.
     """
     pages = (job.result or {}).get("pages") or []
     if not pages:
@@ -292,6 +293,7 @@ async def run_proofread(session: AsyncSession, job: Job) -> int:
     # PROOFREAD_CONCURRENCY (env, mặc định 3) trang cùng lúc; LLM lỗi 1 trang →
     # cả lượt trả 0 (giữ nguyên contract: gợi ý là all-or-nothing).
     sem = asyncio.Semaphore(max(1, settings.proofread_concurrency))
+    failures: list[str] = []
 
     async def _one(index: int, page: dict) -> list[dict] | None:
         text = _page_text(page)
@@ -306,12 +308,17 @@ async def run_proofread(session: AsyncSession, job: Job) -> int:
                 logger.warning(
                     "proofread: LLM failed job=%s page=%d: %s", job.id, index, exc
                 )
+                failures.append(str(exc))
                 return None
 
     results = await asyncio.gather(
         *(_one(i, page) for i, page in enumerate(pages))
     )
     if any(r is None for r in results):
+        # Ghi lý do vào job để UI nói "chưa chạy được" thay vì "0 gợi ý"
+        # (0 gợi ý thật = văn bản sạch, hai thứ khác nhau).
+        job.proofread_error = (failures[0] if failures else "LLM không phản hồi")[:300]
+        await session.commit()
         return 0
     for index, items in enumerate(results):
         text = _page_text(pages[index])
@@ -349,6 +356,7 @@ async def run_proofread(session: AsyncSession, job: Job) -> int:
         )
     )
     session.add_all(rows)
+    job.proofread_error = None            # lượt này OK → xoá lỗi cũ
     await session.commit()
     logger.info(
         "proofread: job=%s pages=%d suggestions=%d elapsed=%.1fs",

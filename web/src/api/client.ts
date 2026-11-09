@@ -310,6 +310,10 @@ export const api = {
     );
     return { ok: results.length - errors.length, errors };
   },
+  // Bản mẫu: clone job demo (kết quả OCR thật) cho user hiện tại — dùng khi
+  // chưa có worker/GPU. Server trả 503 nếu chưa chạy deploy/demo/seed.py.
+  createSampleJob: () =>
+    request<{ job_id: number }>("/api/jobs/sample", { method: "POST" }),
   retryLayout: (id: number | string) =>
     request<{ md: boolean; docx: boolean }>(`/api/jobs/${id}/retry-layout`, { method: "POST" }),
   getJobFile: (id: number | string) => request<{ url: string }>(`/api/jobs/${id}/file`),

@@ -9,6 +9,8 @@ __pycache__/
 *.jpg
 # Ảnh sản phẩm cho Landing (scripts/landing-shots.mjs) — cần có trong build.
 !web/public/shots/*.jpg
+# dữ liệu demo (seed.py + ảnh đề thi mẫu) cần có trong build/seed
+!deploy/demo/*.jpg
 .codegraph
 # #15: RotatingFileHandler viết server/logs/ (settings.log_path) khi test
 logs/
@@ -22,3 +24,4 @@ node_modules/
 # Artifact của flow/GUI agent — chứa cookie, log tunnel, ảnh chụp: không commit
 .pi-flow/
 .piwigo/
+.agents/

@@ -138,6 +138,9 @@ export interface Job {
   filename?: string;
   /** Contract GET /api/jobs/{id}: layout đã lỗi thời so với text → cần đồng bộ (vắng/[] = ẩn badge). */
   stale_layouts?: ("md" | "docx")[];
+  /** Lỗi LLM ở lần proofread gần nhất (null = lần cuối OK hoặc chưa chạy).
+   *  Khác với "0 gợi ý": 0 gợi ý thật = văn bản sạch. */
+  proofread_error?: string | null;
 }
 
 /** List endpoint subset: server /api/jobs items omit result; started_at/finished_at

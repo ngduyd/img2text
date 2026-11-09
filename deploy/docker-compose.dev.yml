@@ -106,6 +106,8 @@ services:
       # Plan K2: Kaggle kernel source templates (read-only — orchestrator
       # stages into KAGGLE_STAGE_DIR, never writes here).
       - ../deploy/kaggle:/app/deploy/kaggle:ro
+      # dữ liệu demo (seed.py + fixture) — chỉ đọc
+      - ../deploy/demo:/app/deploy/demo:ro
     depends_on:
       postgres:
         condition: service_healthy

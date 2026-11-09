@@ -85,13 +85,17 @@ docker compose -f deploy/docker-compose.yml up -d --build
 
 ## Worker
 
-Server chọn worker bằng `KAGGLE_MODE` (mặc định `session`):
+Server chọn worker bằng `KAGGLE_MODE`:
 
 | Mode | Cách chạy |
 |---|---|
-| `session` | 1 kernel session sống ~9h, tự claim → OCR → upload → lặp; server giữ watchdog + respawn |
-| `batch` *(deprecated)* | Server stage file vào dataset, push kernel script, poll kết quả |
-| `loop` *(Plan K2)* | Kernel worker poll `/api/jobs/next` — cần URL public + Kaggle Secrets |
+| `batch` | **Đang dùng cho dev / GPU free-tier.** Server gom tới `KAGGLE_BATCH_MAX_JOBS` job, stage vào 1 dataset, push kernel 1 lần, poll rồi ingest. Đo thật: 40 trang / 10 job = 18 phút (nhanh 4,4× so với 1 job/kernel vì setup ~7 phút được chia sẻ) |
+| `session` | 1 kernel session sống ~9h, tự claim → OCR → upload → lặp; server giữ watchdog + respawn. Dùng khi cần chạy liên tục |
+| `loop` | Kernel worker poll `/api/jobs/next` — cần URL public + Kaggle Secrets |
+
+Chỉ spawn kernel mới khi kernel trước **đã chết** (server hỏi `kernels_status`);
+`KAGGLE_MIN_GAP_SECONDS` chỉ là chốt phụ. Mỗi run batch có lease riêng và được
+gia hạn khi run còn sống, nên hàng đợi GPU dài không làm job bị requeue.
 
 Bật orchestration cần đủ `KAGGLE_USERNAME` + (`KAGGLE_KEY` hoặc
 `KAGGLE_API_TOKEN`) + `KAGGLE_KERNEL_REF`; thiếu thì feature tự tắt, server không
@@ -106,6 +110,17 @@ curl -X GET localhost:8010/api/jobs/next -H "Authorization: Bearer dev-runner-ke
 ```
 
 Job chuyển `done` → luồng preview / sửa / export dùng được ngay.
+
+Hoặc nạp sẵn dữ liệu demo (1 tài khoản đã verify + 2 đề thi có kết quả OCR thật,
+kèm gợi ý sửa lỗi) — không cần GPU:
+
+```bash
+docker compose -f deploy/docker-compose.dev.yml exec -T server \
+    python /app/deploy/demo/seed.py
+# demo@img2text.dev / demo-2024-pw
+```
+
+Chi tiết: [deploy/demo/README.md](deploy/demo/README.md).
 
 ## Cấu hình
 

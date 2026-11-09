@@ -352,6 +352,63 @@ async def presign_upload(
         "max_bytes": MAX_UPLOAD_BYTES,
     }
 
+DEMO_TEMPLATE_KEY = "demo/template.json"
+
+@router.post("/api/jobs/sample", status_code=201)  # BEFORE /api/jobs/{id}
+async def create_sample_job(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    storage: StorageDriver = Depends(get_storage),
+) -> dict:
+    """Bản mẫu: clone job demo sang tài khoản hiện tại (kết quả OCR thật).
+
+    Lý do: máy chưa có GPU/worker thì job upload nằm `queued` mãi, người mới mở
+    app chỉ thấy empty state. Template do `deploy/demo/seed.py` đẩy lên storage;
+    chưa nạp → 503 kèm lệnh cần chạy.
+    """
+    try:
+        raw = await storage.get(DEMO_TEMPLATE_KEY)
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Chưa nạp dữ liệu mẫu. Chạy: python deploy/demo/seed.py",
+        )
+    tpl = json.loads(raw)
+    now = datetime.now(timezone.utc)
+    job = Job(
+        user_id=user.id,
+        status="done",
+        storage_key=tpl["storage_key"],
+        filename=tpl["filename"],
+        file_type=tpl["file_type"],
+        page_count=tpl["page_count"],
+        output_format="docx",
+        mode="layout",
+        result=tpl["result"],
+        upload_bytes=tpl["upload_bytes"],
+        text_version=1,
+        created_at=now,
+        started_at=now,
+        finished_at=now,
+    )
+    session.add(job)
+    await session.flush()
+    for s in tpl["suggestions"]:
+        session.add(
+            OcrSuggestion(
+                job_id=job.id,
+                page_index=s["page_index"],
+                start=s["start"],
+                end=s["end"],
+                original=s["original"],
+                suggestion=s["suggestion"],
+                reason=s["reason"],
+                status="pending",
+            )
+        )
+    await session.commit()
+    return {"job_id": job.id}
+
 @router.post("/api/jobs", status_code=201)
 async def create_job(
     request: Request,
@@ -773,6 +830,9 @@ async def get_job(
         "started_at": job.started_at,
         "finished_at": job.finished_at,
         "text_version": job.text_version,
+        # Proofread: NULL = lần chạy cuối OK (hoặc chưa chạy); có giá trị =
+        # LLM lỗi → UI nói "chưa kiểm được" thay vì "0 gợi ý".
+        "proofread_error": job.proofread_error,
         "stale_layouts": stale_layouts,
         # wave-5 S1: quota bytes + badge purged
         "upload_bytes": job.upload_bytes,

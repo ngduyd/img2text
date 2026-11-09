@@ -530,3 +530,27 @@ async def test_proofread_runs_pages_in_parallel(monkeypatch, db_session, done_jo
     monkeypatch.setattr(proofread.settings, "proofread_concurrency", 3, raising=False)
     await proofread.run_proofread(db_session, job)
     assert peak > 1 and peak <= 3      # song song nhưng có chặn
+
+async def test_llm_failure_records_proofread_error(
+    monkeypatch, db_session, done_job_with_result
+):
+    """LLM chết → job.proofread_error = lý do, để UI nói "chưa kiểm được" thay
+    vì hiện "0 gợi ý" (0 gợi ý thật = văn bản sạch)."""
+    from app.services.proofread import ProofreadError
+
+    fake_llm(monkeypatch, [ProofreadError("upstream 503")])
+    job = await _job(db_session, done_job_with_result)
+    assert await run_proofread(db_session, job) == 0
+    await db_session.refresh(job)
+    assert job.proofread_error and "503" in job.proofread_error
+
+async def test_successful_run_clears_previous_proofread_error(
+    monkeypatch, db_session, done_job_with_result
+):
+    job = await _job(db_session, done_job_with_result)
+    job.proofread_error = "upstream 503"
+    await db_session.commit()
+    fake_llm(monkeypatch, [_llm_response([])])
+    await run_proofread(db_session, job)
+    await db_session.refresh(job)
+    assert job.proofread_error is None

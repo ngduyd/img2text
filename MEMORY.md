@@ -1,6 +1,21 @@
 # MEMORY
 
 ## Now
+- 2026-11-09 · **Chốt bản demo (B2–B5 + N1–N4, N7)** — đã sửa: default LLM = `role-scout`
+  (`llm_model` + `proofread_llm_model`, model free cũ đã chết); proofread lỗi giờ ghi
+  `jobs.proofread_error` + UI hiện "chưa kiểm được" thay vì "0 gợi ý"; `deploy/demo/seed.py`
+  (1 user verified + 2 job `done` thật, 19 + 5 gợi ý) + `POST /api/jobs/sample` clone bản mẫu
+  cho user mới + nút "Xem bản mẫu" ở empty state; `.env.dev.example` đủ 60 key (thiếu 0);
+  README sửa bảng mode (batch = dev, session = prod); LICENSE MIT; `.gitignore` thêm `.agents/`
+  + `!deploy/demo/*.jpg`; web/README ghi `SHOT_BASE`/`SHOT_EMAIL`.
+- 2026-11-09 · Đo lại sau demo: server pytest **1031** (thêm 2 test proofread_error + 2 test
+  /api/jobs/sample), web vitest **456**, tsc sạch, build OK, `audit:a11y` = `DONE 0 routes with
+  findings`. Đo bằng Playwright trên vite preview: demo login thấy 2 job done + 19 highlight;
+  user mới thấy empty state + nút bản mẫu → tạo job 113 mở đúng nội dung.
+- 2026-11-09 · Còn mở (không chặn demo): UI mặc định **tiếng Anh** (spec S2) trong khi nội dung
+  tiếng Việt — muốn đổi default `vi` thì sửa `web/src/i18n/index.tsx:12`. Dev DB còn 33 job
+  `failed` rác (chỉ ảnh hưởng nếu demo bằng chính DB này — seed dùng tài khoản riêng nên sạch).
+  B1 (đăng ký mới bị 403 `email_unverified` khi không có SMTP) chốt để cấu hình lúc deploy.
 - 2026-11-09 · **Audit demo (CV intern/fresher)** — đo lại: server pytest 1027 ✓, web vitest 456 ✓,
   tsc ✓, build ✓, `audit:a11y` = `DONE 0 routes with findings` (8 route × 1440/320) ✓, export
   docx/pdf/md job 106 trả presigned URL thật ✓. Chặn demo: (1) đăng ký mới → 403 `email_unverified`

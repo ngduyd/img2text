@@ -723,6 +723,7 @@ export default function JobDetail({
                   jobId={id!}
                   regions={regions}
                   fileType={job.file_type}
+                  proofreadError={job.proofread_error}
                   editingText={editingText}
                   onEditingTextChange={setEditingText}
                   onSaveStateChange={setTextSave}

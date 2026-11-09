@@ -81,6 +81,16 @@ export default function Jobs() {
   const filtering = q !== "" || filter !== "all";
   // Spec #2: theo dõi transition pending → done/failed của danh sách đang poll.
   useJobDoneToasts(items);
+  /** Bản mẫu: chưa có worker/GPU vẫn xem được kết quả OCR thật. */
+  const sampleJob = useMutation({
+    mutationFn: api.createSampleJob,
+    onSuccess: ({ job_id }) => {
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      navigate(`/jobs/${job_id}`);
+    },
+    onError: (err) =>
+      toast.error(mapApiError(err) || t("jobs.emptySampleFailed")),
+  });
   // Stats + filter tabs are trang hiện tại (server total sống riêng ở stats-total + pagination).
   const visible = filter === "all" ? items : items.filter((j) => j.status === filter);
   const pending = items.filter((j) => PENDING_STATUSES.includes(j.status)).length;
@@ -337,7 +347,20 @@ export default function Jobs() {
             title={t("jobs.emptyTitle")}
             body={t("jobs.emptyBody")}
             extra={<p className="mt-1 text-sm text-muted">{t("jobs.emptyWorker")}</p>}
-            action={<p className="text-sm font-medium text-accent-text">{t("jobs.emptyCta")}</p>}
+            action={
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-sm font-medium text-accent-text">{t("jobs.emptyCta")}</p>
+                <Button
+                  testid="btn-sample-job"
+                  variant="secondary"
+                  size="sm"
+                  loading={sampleJob.isPending}
+                  onClick={() => sampleJob.mutate()}
+                >
+                  {t("jobs.emptySample")}
+                </Button>
+              </div>
+            }
             testid="empty-state"
           />
         ) : visible.length === 0 ? (

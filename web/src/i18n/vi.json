@@ -261,6 +261,7 @@
       "editRegion": "Sửa vùng"
     },
     "suggestions": {
+      "failed": "Chưa kiểm được lỗi chính tả: {reason}. Số gợi ý 0 ở đây là do lỗi dịch vụ, không phải văn bản đã sạch.",
       "title": "Đề xuất sửa ({n})"
     },
     "sourcePane": "Soạn thảo",
@@ -693,6 +694,8 @@
     "emptyBody": "Tải ảnh trang sách hoặc file PDF để bắt đầu OCR. Mỗi job xử lý tối đa 50 trang · 50MB.",
     "emptyWorker": "Job chờ worker Colab kết nối.",
     "emptyCta": "Tải file lên để tạo công việc đầu tiên.",
+    "emptySample": "Xem bản mẫu có sẵn",
+    "emptySampleFailed": "Chưa nạp được bản mẫu — thử lại sau.",
     "emptyFilter": "Không có công việc nào khớp bộ lọc.",
     "paginationAria": "Phân trang",
     "prev": "Trước",

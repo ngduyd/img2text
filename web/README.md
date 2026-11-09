@@ -36,3 +36,28 @@ ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=... node scripts/capture.mjs
   (admin bootstrap, spec R28); thiếu → skip + warning.
 - Output khớp `GALLERY` trong `src/pages/Landing.tsx`: `landing-hero`, `login`,
   `jobdetail`, `layout-preview`, `export-menu`, `admin-users` (`.png`).
+
+## Audit UI (a11y + ảnh chụp)
+
+```sh
+npm run audit:a11y     # 8 route × 1440 + 320: contrast, target <24px, alt, h1, overflow
+node scripts/audit-shots.mjs shoot   # ảnh mọi route × 320/768/1024/1440 → /tmp/audit/
+node scripts/landing-shots.mjs       # ảnh cho Landing → public/shots/
+```
+
+Cả hai script mặc định `http://localhost:5173` + `admin@dev.local`. Khi vite
+preview bind IP khác (tailnet, container…) hoặc dùng tài khoản dev khác, set
+env — nếu không sẽ `ECONNREFUSED` / `login 401`:
+
+```sh
+SHOT_BASE=http://100.86.205.2:5173 SHOT_EMAIL=ui-demo@example.com \
+SHOT_PASSWORD=... npm run audit:a11y
+```
+
+`audit-a11y.mjs` không exit khác 0: gate là dòng cuối `DONE N routes with findings`
+(N phải = 0). Cần seed admin đã verify — với DB trắng:
+
+```sh
+docker compose -f ../deploy/docker-compose.dev.yml exec -T server \
+    python /app/deploy/demo/seed.py
+```

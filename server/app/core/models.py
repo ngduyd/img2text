@@ -267,6 +267,11 @@ class Job(Base):
         Integer, default=0, server_default=text("0"), nullable=False
     )
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Proofread lỗi gần nhất (NULL = lần chạy cuối thành công hoặc chưa chạy).
+    # Trước đây LLM chết → run_proofread trả 0, UI hiện "0 gợi ý" không phân
+    # biệt được với "văn bản sạch". ALTER-only migration:
+    #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS proofread_error TEXT;
+    proofread_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # WS-SERVER queue: text save khi rendering / sync targeted-fail →
     # finalize render lại tối đa 1 lần (loop guard 2). ALTER-only migration:
     #   ALTER TABLE jobs ADD COLUMN IF NOT EXISTS rerender_requested BOOLEAN NOT NULL DEFAULT false;
