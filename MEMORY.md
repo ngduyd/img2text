@@ -1,6 +1,11 @@
 # MEMORY
 
 ## Now
+- 2026-11-09 · **Spawn chỉ khi worker trước ĐÃ CHẾT**: trước khi spawn batch run, hỏi
+  `kernels_status(ref)`; running/queued/pending → skip tick (log "chờ worker cũ chết").
+  Lý do: `_batch_runs` là RAM → sau restart/crash giữa push và UPDATE DB, map rỗng dù kernel cũ
+  vẫn chạy ⇒ có thể spawn 2 kernel tranh cùng dataset input. `kaggle_min_gap_seconds` hạ 600 → **120s**
+  (runtime setting) vì điều kiện sống-chết giờ là chốt chính.
 - 2026-11-09 · **Đo gom cụm 10 job / 1 kernel** (10 job × 4 trang bench4, `kaggle_batch_max_jobs=20`):
   push 06:21:20 → job cuối done 06:39:22 = **~18 phút cho 400 trang? Không: 40 trang** (10 job × 4) ⇒
   ~108s/job, ~27s/trang (đã chia sẻ setup ~7 phút). 1 job/kernel (job 93) = 478s ⇒ gom 10 job
