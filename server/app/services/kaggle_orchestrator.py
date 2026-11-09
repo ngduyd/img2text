@@ -962,8 +962,12 @@ async def _spawn_batch_run(api, session_factory, jobs: list[Job]) -> bool:
                         status="extracting",
                         kaggle_ref=ref,
                         started_at=func.coalesce(Job.started_at, now),
+                        # lease dùng CHUNG công thức với worker claim
+                        # (lease_minutes_for); run sống lâu hơn thì _poll_batch_run
+                        # gia hạn tiếp — trước đây batch dùng kaggle_timeout 3h
+                        # phẳng nên hai đường có hai mức lease khác nhau.
                         lease_expires_at=now
-                        + timedelta(seconds=settings.kaggle_timeout),
+                        + timedelta(minutes=_lease_minutes(job.page_count)),
                     )
                 )
                 if result.rowcount:
@@ -983,8 +987,8 @@ async def _spawn_batch_run(api, session_factory, jobs: list[Job]) -> bool:
                 [j.id for j in jobs if j.id not in set(marked)], marked,
             )
         logger.info(
-            "kaggle batch: jobs %s → extracting (lease +%ds, ref %s)",
-            marked, settings.kaggle_timeout, ref,
+            "kaggle batch: jobs %s → extracting (lease +%d phút, ref %s)",
+            marked, _lease_minutes(max((j.page_count or 1) for j in jobs)), ref,
         )
     finally:
         shutil.rmtree(build, ignore_errors=True)
@@ -1146,6 +1150,31 @@ async def _fail_job_extracting(session_factory, job_id: int, error: str) -> None
                 job_id,
             )
 
+def _lease_minutes(page_count: int | None) -> int:
+    """MỘT công thức lease cho mọi đường (claim runner + spawn batch)."""
+    from app.routers.jobs import lease_minutes_for   # tránh vòng import ở top
+
+    return lease_minutes_for(int(page_count or 1))
+
+
+async def _extend_run_lease(session_factory, job_ids: list[int]) -> None:
+    """Poll thấy run còn sống → gia hạn lease (batch không có heartbeat riêng)."""
+    if not job_ids:
+        return
+    async with session_factory() as session:
+        jobs = (
+            await session.execute(
+                select(Job).where(Job.id.in_(job_ids), Job.status == "extracting")
+            )
+        ).scalars().all()
+        now = datetime.now(timezone.utc)
+        for job in jobs:
+            job.lease_expires_at = now + timedelta(
+                minutes=_lease_minutes(job.page_count)
+            )
+        await session.commit()
+
+
 async def _poll_batch_run(api, session_factory, run: dict) -> None:
     """One poll of a tracked run (ref-keyed; run["job_ids"] = the batch).
     complete → ONE pull + per-job ingest (ref dropped only AFTER every job
@@ -1162,6 +1191,20 @@ async def _poll_batch_run(api, session_factory, run: dict) -> None:
     # wave-2 #7: mỗi poll status → refresh last_seen của marker kaggle-batch
     await _touch_batch_heartbeat(session_factory, job_ids[0] if job_ids else None)
     status = _norm_status(await asyncio.to_thread(api.kernels_status, ref))
+    if time.monotonic() - run["pushed_at"] > settings.kaggle_timeout:
+        _batch_runs.pop(ref, None)
+        logger.warning(
+            "kaggle batch: ref %s older than kaggle_timeout=%ds — ref dropped, "
+            "jobs %s stay queued",
+            ref, settings.kaggle_timeout, job_ids,
+        )
+        for job_id in job_ids:
+            await _revert_job_queued(session_factory, job_id, "kaggle_timeout")
+        return
+    if status in _ACTIVE_STATUSES:
+        # run còn sống: lease phải sống theo (hàng đợi GPU có lúc dài hơn lease)
+        await _extend_run_lease(session_factory, job_ids)
+        return
     if status == "complete":
         try:
             await _ingest_complete_run(api, session_factory, run)
@@ -1200,16 +1243,6 @@ async def _poll_batch_run(api, session_factory, run: dict) -> None:
                 session_factory, job_id, f"Kaggle kernel {status}"
             )
         return
-    if time.monotonic() - run["pushed_at"] > settings.kaggle_timeout:
-        _batch_runs.pop(ref, None)
-        logger.warning(
-            "kaggle batch: ref %s older than kaggle_timeout=%ds — ref dropped, "
-            "jobs %s stay queued",
-            ref, settings.kaggle_timeout, job_ids,
-        )
-        for job_id in job_ids:
-            await _revert_job_queued(session_factory, job_id, "kaggle_timeout")
-
 async def _ensure_batch_runs(api, session_factory) -> bool:
     """Plan K5 batch tick: poll every tracked run, then spawn ONE new run
     staging ALL queued jobs up to kaggle_batch_max_jobs. True = spawned.

@@ -373,34 +373,6 @@ def test_per_page_predict_calls_one_page_at_a_time(tmp_path):
     assert saved == [page.name for page in pages]
     assert not list(tmp_path.glob("*.error.txt"))
 
-def test_per_page_predict_timeout_writes_error_and_continues(tmp_path):
-    """SIGALRM watchdog thật: trang treo (sleep) quá timeout → error.txt,
-    trang sau vẫn predict được."""
-    class _Pipe:
-        def predict(self, arg):
-            if str(arg).endswith("page_0001.png"):
-                time.sleep(2)  # treo — watchdog phải ném PagePredictTimeout
-            return _pipe_res(arg)
-
-    pages = [tmp_path / "page_0001.png", tmp_path / "page_0002.png"]
-    for p in pages:
-        p.write_bytes(b"x")
-    saved: list[str] = []
-    kb._predict_pages_one_by_one(
-        _Pipe(), pages, save=lambda p, d, t: saved.append(p.name),
-        raw_dir=tmp_path, timeout=0.2)
-    err = tmp_path / "page_0001.error.txt"
-    assert err.exists() and "0.2" in err.read_text(encoding="utf-8")
-    assert saved == ["page_0002.png"]  # trang sau vẫn chạy
-
-def test_page_timeout_env_override_and_bad_default(tmp_path, monkeypatch):
-    """BATCH_PAGE_TIMEOUT||600 — env rỗng/sai giá trị → 600."""
-    assert kb._page_timeout() == 600.0
-    monkeypatch.setenv("BATCH_PAGE_TIMEOUT", "42")
-    assert kb._page_timeout() == 42.0
-    monkeypatch.setenv("BATCH_PAGE_TIMEOUT", "abc")
-    assert kb._page_timeout() == 600.0
-
 def test_log_gpu_line_and_empty_cache_flag(monkeypatch, capsys):
     """[gpu] sau mỗi trang: alloc/reserved MB; GPU_EMPTY_CACHE=1 mới
     empty_cache (default OFF — run đầu quan sát GPU giữ/tràn tự nhiên)."""
@@ -767,3 +739,15 @@ def test_watchdog_no_marker_runs_to_completion(tmp_path):
         sleep=lambda s: None, now=lambda: 0.0,
     )
     assert code == 0
+
+
+def test_kernel_has_no_sigalrm_page_timeout():
+    """SIGALRM per page đã BỎ: nó không bao giờ bắn (PAGE_HARD_TIMEOUT 300s <
+    600s) và không cắt được predict kẹt native/CUDA. Cơ chế duy nhất còn lại là
+    watchdog mức process."""
+    BATCH = Path(__file__).resolve().parents[2] / "deploy/kaggle/kernel/img2text_batch.py"
+    src = BATCH.read_text(encoding="utf-8")
+    assert "PagePredictTimeout" not in src
+    assert "setitimer" not in src
+    assert "BATCH_PAGE_TIMEOUT" not in src
+    assert "PAGE_HARD_TIMEOUT" in src and "def run_ocr_once(" in src

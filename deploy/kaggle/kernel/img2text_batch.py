@@ -24,8 +24,8 @@ Ceilings (ponytail):
 - Per-job OCR subprocess = model reload per job (venv/paddle install vẫn
   1 lần); upgrade path = gộp page của nhiều job vào 1 lần predict.
 - OCR phase primary = predict TỪNG trang (1 pipeline, model load 1 lần) +
-  SIGALRM watchdog (BATCH_PAGE_TIMEOUT || 600s/trang); batch generator mode
-  chỉ còn sau BATCH_PREDICT=1. SIGALRM không interrupt được native/CUDA hang
+  watchdog mức PROCESS (PAGE_HARD_TIMEOUT = 300s/trang, kill process); batch generator mode
+  chỉ còn sau BATCH_PREDICT=1. Watchdog ở process CHA (PAGE_HARD_TIMEOUT)
   (upgrade path: subprocess watchdog từng trang, đổi lấy model reload).
 - result.json = notebook document shape (pages[]/blocks[]), NOT prod spec §4;
   page `image` paths point at the kernel tmp dir (not pulled back);
@@ -62,21 +62,6 @@ LAYOUT_MODEL = "PP-DocLayoutV3"
 # rewrite marker này thành ảnh crop khi render/export.
 IMAGE_MARKER = "**[Hình ảnh chưa trích xuất: vùng {region_id}]**"
 
-
-class PagePredictTimeout(RuntimeError):
-    """SIGALRM watchdog: predict 1 trang quá BATCH_PAGE_TIMEOUT."""
-
-def _alarm_handler(signum, frame):  # noqa: ARG001
-    raise PagePredictTimeout()
-
-def _page_timeout() -> float:
-    """BATCH_PAGE_TIMEOUT (giây/trang, mặc định 600) — env rỗng/sai giá trị
-    → mặc định (typo env không được kill cả OCR phase)."""
-    v = os.environ.get("BATCH_PAGE_TIMEOUT") or ""
-    try:
-        return float(v) if v else 600.0
-    except ValueError:
-        return 600.0
 
 def _log_gpu(tag: str) -> None:
     """Dòng [gpu] sau MỖI trang (alloc/reserved MB) — xác nhận GPU giữ cache
@@ -179,48 +164,32 @@ def attach_image_text(page_path: str, data: dict, ocr) -> int:
 def _predict_pages_one_by_one(pipeline, pages, save, raw_dir,
                               timeout: float | None = None,
                               cancel_check=None) -> bool:
-    """PRIMARY (lane H OCR perf): predict TỪNG trang, GIỮ 1 pipeline instance
-    (model load 1 lần) — batch generator mode (treo im lặng ~1h với ảnh
-    pathological) chỉ còn sau BATCH_PREDICT=1. Mỗi trang bọc SIGALRM
-    (setitimer): quá timeout → PagePredictTimeout → error.txt (như nhánh
-    exception), sang trang sau. GPU log sau MỖI trang.
+    """PRIMARY: predict TỪNG trang, GIỮ 1 pipeline instance (model load 1 lần).
 
-    ceiling (ponytail): SIGALRM chỉ raise khi bytecode Python chạy — predict
-    kẹt trong native/CUDA call không nhường GIL/bytecode → vẫn treo; upgrade
-    path = subprocess watchdog từng trang (đổi lấy model reload ~26s/trang).
-    Sau timeout GIỮ instance — trang sau cũng fail → error.txt, chạy tiếp.
+    Timeout mỗi trang do WATCHDOG MỨC PROCESS ở cha (`run_ocr_once`) lo: child
+    ghi marker `<page>.inflight` trước predict; quá PAGE_HARD_TIMEOUT → cha kill
+    cả process group. Đã bỏ SIGALRM trong child: nó không bao giờ bắn (300s <
+    600s) và không cắt được predict kẹt native/CUDA.
 
-    cancel_check (session kernel, AC7): callable trả False → dừng ngay,
-    trả False (giữ nguyên cache các trang đã xong — per-page resume);
-    mặc định None = hành vi cũ, luôn True."""
-    import signal
+    cancel_check (session kernel, AC7): callable trả False → dừng ngay, giữ
+    nguyên cache các trang đã xong."""
     import traceback
 
-    timeout = _page_timeout() if timeout is None else timeout
     for p in pages:
         if cancel_check is not None and not cancel_check():
             return False
         t2 = time.time()
-        signal.signal(signal.SIGALRM, _alarm_handler)
-        signal.setitimer(signal.ITIMER_REAL, timeout)
         marker = raw_dir / f"{p.stem}.inflight"
         try:
             marker.write_text("", encoding="utf-8")   # watchdog của cha đọc mtime
             res = list(pipeline.predict(str(p)))[0]
             save(p, res.json, time.time() - t2)
-        except PagePredictTimeout:
-            (raw_dir / f"{p.stem}.error.txt").write_text(
-                f"predict quá {timeout:g}s (BATCH_PAGE_TIMEOUT) — bỏ qua trang",
-                encoding="utf-8")
-            print(f"[batch] {p.name}: TIMEOUT {timeout:g}s (xem {p.stem}.error.txt)",
-                  flush=True)
         except Exception:
             (raw_dir / f"{p.stem}.error.txt").write_text(
                 traceback.format_exc(), encoding="utf-8")
             print(f"[batch] {p.name}: LỖI (xem {p.stem}.error.txt)", flush=True)
         finally:
-            signal.setitimer(signal.ITIMER_REAL, 0)  # hủy watchdog khi ra khỏi trang
-            raw_dir.joinpath(f"{p.stem}.inflight").unlink(missing_ok=True)
+            marker.unlink(missing_ok=True)
         _log_gpu(p.stem)
     return True
 
@@ -291,7 +260,7 @@ def _ocr_phase(argv: list[str]) -> int:
         print(f"[batch] {p.name}: xong ({t:.0f}s kể từ lúc bắt đầu)", flush=True)
 
     if os.environ.get("BATCH_PREDICT") != "1":
-        # PRIMARY (lane H): từng trang + SIGALRM watchdog + GPU log; batch
+        # PRIMARY (lane H): từng trang + GPU log; watchdog ở process cha; batch
         # generator mode giữ nguyên bên dưới (chỉ chạy khi BATCH_PREDICT=1)
         _predict_pages_one_by_one(pipeline, todo, save, raw_dir)
         return 0

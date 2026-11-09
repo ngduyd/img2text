@@ -96,6 +96,9 @@ class Settings(BaseSettings):
     kaggle_accelerator: str = "NvidiaTeslaT4"
     # Ceiling note only (P2): kaggle kernels_push has no reliable timeout kw —
     # real session cap = Kaggle platform; our control is the re-push gap guard.
+    # CHỈ còn là tuổi tối đa của 1 run batch (quá → drop ref + requeue job).
+    # Lease của job KHÔNG dùng biến này nữa: dùng chung lease_minutes_for() và
+    # được poll gia hạn khi run còn sống.
     kaggle_timeout: int = 10800
     kaggle_min_queue: int = 1
     kaggle_min_gap_seconds: int = 600

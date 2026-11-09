@@ -421,8 +421,11 @@ async def test_batch_spawn_marks_job_extracting_with_kaggle_ref(
     assert job.status == "extracting"
     assert job.kaggle_ref == "testuser/img2text-batch"
     assert job.started_at is not None and job.worker_token_hash is None
+    # lease dùng CHUNG công thức lease_minutes_for (không còn 3h phẳng)
+    from app.routers.jobs import lease_minutes_for
+
     expected = datetime.now(timezone.utc) + timedelta(
-        seconds=settings.kaggle_timeout
+        minutes=lease_minutes_for(job.page_count or 1)
     )
     assert abs((job.lease_expires_at - expected).total_seconds()) < 60
     assert job.lease_expires_at > datetime.now(timezone.utc)
@@ -1253,3 +1256,22 @@ async def test_batch_spawn_proceeds_when_previous_worker_complete(
     api.status = {"status": "COMPLETE"}
     assert await orch.ensure_worker(SessionLocal) is True
     assert len(_pushes(api)) == 1
+
+async def test_poll_extends_lease_while_run_alive(
+    kaggle_batch_env, api, storage_env, seed_job, db_session
+):
+    """Run còn sống (running) → poll gia hạn lease, KHÔNG để reaper requeue job
+    đang chạy (hàng đợi GPU có lúc dài hơn lease_minutes_for)."""
+    from datetime import timedelta as _td
+    from app.routers.jobs import lease_minutes_for
+
+    assert await orch.ensure_worker(SessionLocal) is True
+    job = await db_session.get(Job, seed_job)
+    job.lease_expires_at = datetime.now(timezone.utc) - _td(minutes=5)  # đã hết hạn
+    await db_session.commit()
+    api.status = {"status": "RUNNING"}
+    await orch.ensure_worker(SessionLocal)          # tick sau: poll run đang chạy
+    db_session.expire_all()
+    job = await db_session.get(Job, seed_job)
+    assert job.lease_expires_at > datetime.now(timezone.utc)
+    assert job.status == "extracting"
