@@ -686,3 +686,84 @@ def test_classify_image_text_document_vs_graphic():
     assert mod.classify_image_text(drawing) == "graphic"
     assert mod.classify_image_text(logo) == "graphic"
     assert mod.classify_image_text([]) == "graphic"
+
+# --- watchdog mức PROCESS: trang kẹt native (SIGALRM vô dụng) phải bị kill ---
+
+class _FakeProc:
+    def __init__(self, lines, alive_rounds=3):
+        self._lines = list(lines)
+        self.pid = 424242
+        self._alive = alive_rounds
+        self.killed = False
+        self.returncode = None
+
+    class _Out:
+        def __init__(self, lines):
+            self._lines = list(lines)
+
+        def readline(self):
+            return self._lines.pop(0) if self._lines else ""
+
+    def __init_out(self):
+        pass
+
+    @property
+    def stdout(self):
+        return self._out
+
+    def poll(self):
+        if self.killed:
+            return -9
+        self._alive -= 1
+        return None if self._alive > 0 else 0
+
+    def wait(self):
+        if self.returncode is None:
+            self.returncode = -9 if self.killed else 0
+        return self.returncode
+
+
+def _fake_proc_factory(lines, alive_rounds=4):
+    def _popen(cmd, **kw):
+        p = object.__new__(_FakeProc)
+        p.pid = 424242
+        p._out = _FakeProc._Out(lines)
+        p._alive = alive_rounds
+        p.killed = False
+        p.returncode = None
+        return p
+    return _popen
+
+
+def test_watchdog_kills_page_inflight_too_long(tmp_path, monkeypatch):
+    """1 trang treo > page_timeout → kill process, ghi error.txt cho trang đó,
+    trả -9 để vòng ngoài chạy lại các trang còn lại."""
+    mod = _kernel_mod("batch_kernel_wd")
+    raw = tmp_path
+    marker = raw / "page_0001.inflight"
+    marker.write_text("")
+
+    killed = {}
+    monkeypatch.setattr(mod.os, "killpg", lambda pid, sig: killed.setdefault("sig", sig))
+    monkeypatch.setattr(mod.os, "getpgid", lambda pid: pid)
+
+    clock = {"t": marker.stat().st_mtime + 10_000}
+    code = mod.run_ocr_once(
+        ["x"], raw, page_timeout=300.0,
+        popen=_fake_proc_factory(["[batch] page_0001.png: bắt đầu\n"]),
+        sleep=lambda s: None, now=lambda: clock["t"],
+    )
+    assert code == -9 and killed["sig"] == 9
+    assert (raw / "page_0001.error.txt").exists()
+    assert "watchdog" in (raw / "page_0001.error.txt").read_text()
+    assert not marker.exists()          # marker dọn để không kill oan trang sau
+
+
+def test_watchdog_no_marker_runs_to_completion(tmp_path):
+    mod = _kernel_mod("batch_kernel_wd2")
+    code = mod.run_ocr_once(
+        ["x"], tmp_path, page_timeout=300.0,
+        popen=_fake_proc_factory([], alive_rounds=2),
+        sleep=lambda s: None, now=lambda: 0.0,
+    )
+    assert code == 0

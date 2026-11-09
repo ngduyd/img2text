@@ -202,7 +202,9 @@ def _predict_pages_one_by_one(pipeline, pages, save, raw_dir,
         t2 = time.time()
         signal.signal(signal.SIGALRM, _alarm_handler)
         signal.setitimer(signal.ITIMER_REAL, timeout)
+        marker = raw_dir / f"{p.stem}.inflight"
         try:
+            marker.write_text("", encoding="utf-8")   # watchdog của cha đọc mtime
             res = list(pipeline.predict(str(p)))[0]
             save(p, res.json, time.time() - t2)
         except PagePredictTimeout:
@@ -217,6 +219,7 @@ def _predict_pages_one_by_one(pipeline, pages, save, raw_dir,
             print(f"[batch] {p.name}: LỖI (xem {p.stem}.error.txt)", flush=True)
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)  # hủy watchdog khi ra khỏi trang
+            raw_dir.joinpath(f"{p.stem}.inflight").unlink(missing_ok=True)
         _log_gpu(p.stem)
     return True
 
@@ -985,24 +988,81 @@ def _apply_preprocess(page_paths: list[str], preprocess_spec: dict | None
         out.append(p)
     return out
 
-def run_ocr(img_dir: str, raw_dir: str) -> None:
-    """Re-exec THIS file under the py3.12 venv; pump [batch] lines (cell 12)."""
-    os.makedirs(raw_dir, exist_ok=True)
-    cmd = [VENV_PY, os.path.abspath(__file__), "--ocr", img_dir, raw_dir, "0"]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, bufsize=1)
-    tail = []
-    for line in proc.stdout:
-        if "use GQA" in line:
+PAGE_HARD_TIMEOUT = 300.0   # giây/trang trước khi KILL process (native hang)
+OCR_MAX_RESTARTS = 6        # số lần chạy lại OCR phase sau khi kill trang treo
+
+
+def _inflight_page(raw_dir: Path) -> tuple[str, float] | None:
+    """Trang đang chạy: marker <page>.inflight (mtime = lúc bắt đầu predict)."""
+    newest = None
+    for marker in raw_dir.glob("*.inflight"):
+        started = marker.stat().st_mtime
+        if newest is None or started > newest[1]:
+            newest = (marker.stem, started)
+    return newest
+
+
+def run_ocr_once(cmd: list[str], raw_dir: Path, page_timeout: float,
+                 popen=subprocess.Popen, sleep=time.sleep,
+                 now=time.time) -> int:
+    """Một lượt OCR phase + watchdog. Trả returncode (hoặc -9 nếu bị kill).
+
+    SIGALRM trong child không cắt được predict kẹt trong native/CUDA (job 90:
+    trang ảnh chụp màn hình treo >100 phút). Watchdog ở ĐÂY (process cha) đọc
+    marker .inflight: quá `page_timeout` → kill cả cây process, viết error.txt
+    cho trang đó, trả -9 để vòng ngoài chạy lại các trang còn lại.
+    """
+    proc = popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                 text=True, bufsize=1, start_new_session=True)
+    killed: str | None = None
+    while True:
+        line = proc.stdout.readline()
+        if line:
+            if "use GQA" not in line and line.startswith("[batch]"):
+                print(line, end="")
             continue
-        tail.append(line)
-        tail = tail[-60:]
-        if line.startswith("[batch]"):
-            print(line, end="")
-    proc.wait()
-    if proc.returncode != 0:
-        print("".join(tail))
-        raise SystemExit(f"OCR phase exited {proc.returncode} — xem log ở trên")
+        if proc.poll() is not None:
+            break
+        inflight = _inflight_page(raw_dir)
+        if inflight and now() - inflight[1] > page_timeout:
+            killed = inflight[0]
+            print(f"[batch] WATCHDOG: trang {killed} treo >{page_timeout:.0f}s "
+                  f"→ kill process", flush=True)
+            try:
+                os.killpg(os.getpgid(proc.pid), 9)
+            except Exception:
+                proc.kill()
+            proc.wait()
+            (raw_dir / f"{killed}.error.txt").write_text(
+                f"watchdog: predict treo >{page_timeout:.0f}s — kill, bỏ trang",
+                encoding="utf-8",
+            )
+            (raw_dir / f"{killed}.inflight").unlink(missing_ok=True)
+            break
+        sleep(2.0)
+    if killed:
+        return -9
+    return proc.returncode if proc.returncode is not None else proc.wait()
+
+
+def run_ocr(img_dir: str, raw_dir: str) -> None:
+    """Re-exec THIS file under the py3.12 venv; pump [batch] lines (cell 12).
+
+    Watchdog mức PROCESS: mỗi trang child ghi marker `<page>.inflight` trước khi
+    predict. Trang kẹt native (không nhường bytecode → SIGALRM vô dụng) bị kill
+    cùng cả process, đánh dấu lỗi, rồi chạy lại OCR cho các trang còn lại.
+    """
+    raw = Path(raw_dir)
+    raw.mkdir(parents=True, exist_ok=True)
+    cmd = [VENV_PY, os.path.abspath(__file__), "--ocr", img_dir, raw_dir, "0"]
+    for attempt in range(1, OCR_MAX_RESTARTS + 2):
+        code = run_ocr_once(cmd, raw, PAGE_HARD_TIMEOUT)
+        if code == 0:
+            return
+        if code != -9:
+            raise SystemExit(f"OCR phase exited {code} — xem log ở trên")
+        print(f"[batch] OCR restart {attempt} sau khi bị watchdog kill", flush=True)
+    raise SystemExit("OCR phase: quá nhiều lần restart sau watchdog kill")
 
 
 def extract_blocks(raw: dict, page_no: int) -> list[dict]:
