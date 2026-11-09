@@ -907,6 +907,17 @@ async def _spawn_batch_run(api, session_factory, jobs: list[Job]) -> bool:
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
+        batch_predict = str(
+            await get_runtime_setting(
+                session_factory, "kaggle_batch_predict", settings.kaggle_batch_predict
+            )
+        ).lower() in ("1", "true", "on")
+        if batch_predict:
+            # kernel batch_opts() đọc file này → BATCH_PREDICT=1 (nhiều trang/lần)
+            (input_stage / "batch_opts.json").write_text(
+                json.dumps({"batch_predict": True}, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
         expected: list[str] = ["manifest.json"]
         (input_stage / "dataset-metadata.json").write_text(
             json.dumps(

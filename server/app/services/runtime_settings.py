@@ -49,6 +49,10 @@ RUNTIME_SETTING_KEYS = (
 
 def _parse(value: str, default):
     """Stored string → default's type; unparseable → default (env fallback)."""
+    if isinstance(default, bool):
+        # bool PHẢI xét trước int: `isinstance(False, int)` là True → int("true")
+        # ném ValueError → luôn trả default (bug: kaggle_batch_predict không bật được)
+        return str(value).strip().lower() in ("1", "true", "yes", "on")
     if isinstance(default, int):
         try:
             return int(value)

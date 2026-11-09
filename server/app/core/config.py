@@ -74,6 +74,9 @@ class Settings(BaseSettings):
     # Số trang proofread gọi LLM song song (1 trang ~80-140s ⇒ 20 trang tuần tự
     # ~30 phút). 3 là mức an toàn cho router free; tăng nếu provider chịu được.
     proofread_concurrency: int = 3
+    # Batch kernel: predict NHIỀU trang cùng lúc (PaddleOCR-VL use_queues) thay vì
+    # từng trang. Mặc định TẮT (đã có lần treo im lặng); bật để đo thông lượng GPU.
+    kaggle_batch_predict: bool = False
     # #12 (spec 2026-10-15): daily pg_dump — cron expr (APScheduler
     # from_crontab: "min hour dom mon dow"); override qua Setting row
     # backup_cron / backup_retention_days (runtime_settings, không qua
