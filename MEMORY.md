@@ -1,6 +1,13 @@
 # MEMORY
 
 ## Now
+- 2026-11-09 · **Audit demo (CV intern/fresher)** — đo lại: server pytest 1027 ✓, web vitest 456 ✓,
+  tsc ✓, build ✓, `audit:a11y` = `DONE 0 routes with findings` (8 route × 1440/320) ✓, export
+  docx/pdf/md job 106 trả presigned URL thật ✓. Chặn demo: (1) đăng ký mới → 403 `email_unverified`
+  vĩnh viễn vì không có SMTP; (2) default `LLM_MODEL`/`PROOFREAD_LLM_MODEL` là free model đã chết;
+  (3) proofread lỗi trả 0 im lặng; (4) không có seed/demo data; (5) không GPU → job đứng `queued`.
+  Lệch tài liệu: `.env.dev.example` thiếu 36/61 biến; README ghi batch deprecated trong khi dev dùng batch.
+  `audit-a11y.mjs` cần `SHOT_BASE` + `SHOT_EMAIL` khi vite preview bind IP tailnet (không phải localhost).
 - 2026-11-09 · **Spawn chỉ khi worker trước ĐÃ CHẾT**: trước khi spawn batch run, hỏi
   `kernels_status(ref)`; running/queued/pending → skip tick (log "chờ worker cũ chết").
   Lý do: `_batch_runs` là RAM → sau restart/crash giữa push và UPDATE DB, map rỗng dù kernel cũ
