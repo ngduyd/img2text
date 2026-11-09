@@ -1231,3 +1231,25 @@ async def test_adapt_batch_document_image_text_kind():
     assert regions["p1_b1"]["text_kind"] == "graphic"
     assert "p1_b1_text" not in regions                 # → không vào thân
     assert regions["p1_b1"]["ocr_text"].startswith("202.70")
+
+async def test_batch_spawn_waits_until_previous_worker_dead(
+    kaggle_batch_env, api, storage_env, seed_job, db_session
+):
+    """Điều kiện cứng: kernel cũ còn RUNNING (kể cả khi _batch_runs rỗng sau
+    restart) → KHÔNG spawn run mới, tránh 2 kernel tranh cùng dataset input."""
+    orch._batch_runs.clear()
+    api.status = {"status": "RUNNING"}
+    assert await orch.ensure_worker(SessionLocal) is False
+    assert [c for c in api.calls if c[0] == "dataset_create_new"] == []
+    assert _pushes(api) == []
+    db_session.expire_all()
+    assert (await db_session.get(Job, seed_job)).status == "queued"
+
+
+async def test_batch_spawn_proceeds_when_previous_worker_complete(
+    kaggle_batch_env, api, storage_env, seed_job
+):
+    orch._batch_runs.clear()
+    api.status = {"status": "COMPLETE"}
+    assert await orch.ensure_worker(SessionLocal) is True
+    assert len(_pushes(api)) == 1

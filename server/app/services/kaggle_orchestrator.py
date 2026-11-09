@@ -1274,6 +1274,22 @@ async def _ensure_batch_runs(api, session_factory) -> bool:
         await _poll_batch_run(api, session_factory, run)
     if _batch_runs:  # active run(s) — shared input slug: never overlap
         return False
+    # ĐIỀU KIỆN CỨNG: worker trước phải ĐÃ CHẾT. `_batch_runs` là RAM nên sau
+    # restart (hoặc crash giữa push và UPDATE DB) có thể rỗng dù kernel cũ vẫn
+    # đang chạy → hỏi thẳng Kaggle trước khi spawn, tránh 2 kernel tranh cùng
+    # dataset input.
+    ref = settings.kaggle_kernel_ref.strip()
+    if ref:
+        try:
+            status = _norm_status(await asyncio.to_thread(api.kernels_status, ref))
+        except Exception:
+            status = ""
+        if status in _ACTIVE_STATUSES:
+            logger.info(
+                "kaggle batch: kernel %s vẫn %s — chờ worker cũ chết rồi spawn",
+                ref, status,
+            )
+            return False
     now = time.monotonic()
     min_gap = await get_runtime_setting(
         session_factory, "kaggle_min_gap_seconds", settings.kaggle_min_gap_seconds
