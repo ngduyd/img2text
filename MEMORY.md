@@ -1,6 +1,10 @@
 # MEMORY
 
 ## Now
+- 2026-11-09 · **Phát hành v0.3.0**: tag `v0.3.0` (annotated) → `git push origin v0.3.0`.
+  CD `42657553958` success: ci/server + ci/web + ci/worker + docker. Image đẩy lên DockerHub
+  `img2text-server:v0.3.0|latest` và `img2text-web:v0.3.0|latest`. Quy trình phát hành từ giờ:
+  push master → CI xanh → `git tag vX.Y.Z && git push origin vX.Y.Z` → CD tự build/push image.
 - 2026-11-09 · **Push + CI**: đẩy 72 commit lên `origin/master` (`9bd698c..c0bdc7b`). CI lần 1
   (`42653086710`): web ✓, server ✓, **worker ✗** — `test_full_job_success_calls_heartbeat_per_page_and_result`
   `assert 0 == 1`. Nguyên nhân: test dùng `default_pdftoppm` mặc định → runner thiếu binary `pdftoppm`
