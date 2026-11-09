@@ -114,12 +114,24 @@ def flaky_factory():
 
 
 def test_full_job_success_calls_heartbeat_per_page_and_result():
+    """Rasterize được stub: test này kiểm heartbeat/result, không kiểm poppler —
+    để nguyên `default_pdftoppm` thì máy thiếu binary (CI runner) fail 0 == 1."""
     state = State(
         [httpx.Response(200, json=_job(file_type="pdf", page_count=2))],
         file_bytes=_pdf_two_pages(),
     )
     client = httpx.Client(transport=state.transport)
-    n = run_job(BASE, "key", client, pipeline_factory=lambda: FakePipeline(), sleep_fn=noop_guard(1))
+    n = run_job(
+        BASE,
+        "key",
+        client,
+        pipeline_factory=lambda: FakePipeline(),
+        sleep_fn=noop_guard(1),
+        rasterize_fn=lambda data, file_type: [
+            (_png(800, 600), 800, 600),
+            (_png(800, 600), 800, 600),
+        ],
+    )
     assert n == 1
     paths = [r.url.path for r in state.requests]
     assert paths.count("/api/jobs/1/heartbeat") == 2          # per page
