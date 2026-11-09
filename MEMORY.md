@@ -1,6 +1,13 @@
 # MEMORY
 
 ## Now
+- 2026-11-09 · **Đo GPU thật** (file 4 trang nặng job 90, chạy qua orchestrator):
+  tuần tự (job 93): 13+11+2+3 = **~29s OCR** (~7s/trang), wall 478s (setup ~7 phút);
+  gộp lô 4 trang (job 96, batch_predict=true): **~41s** (~10s/trang), wall 472s, KHÔNG OOM.
+  → T4 đã bão hoà với 1 trang/lần cho loại trang này; gộp lô không nhanh hơn ⇒ giữ `KAGGLE_BATCH_PREDICT=false`.
+  Watchdog process-level (300s/trang) đã có, không kích hoạt trong 2 run này.
+- 2026-11-09 · Bug: `runtime_settings._parse` xét `isinstance(default,int)` trước bool → 'true' luôn trả default
+  (cờ boolean không bật được từ DB) — đã sửa, có test.
 - 2026-11-08 · Header 2 cột đề thi → **bảng 2 ô không viền** (job 86 render đúng: BỘ GIÁO DỤC… |
   KỲ THI…). Proofread **song song** (concurrency 3): job 90 = 336s / 89 gợi ý (tuần tự ~27 phút).
 - 2026-11-08 · Bench GPU: 8 trang (trang 7–14 của job 90) đang chạy >30 phút ở chế độ TUẦN TỰ →
