@@ -1,6 +1,11 @@
 # MEMORY
 
 ## Now
+- 2026-11-09 · **Đo gom cụm 10 job / 1 kernel** (10 job × 4 trang bench4, `kaggle_batch_max_jobs=20`):
+  push 06:21:20 → job cuối done 06:39:22 = **~18 phút cho 400 trang? Không: 40 trang** (10 job × 4) ⇒
+  ~108s/job, ~27s/trang (đã chia sẻ setup ~7 phút). 1 job/kernel (job 93) = 478s ⇒ gom 10 job
+  **nhanh hơn ~4,4×**; cả 10 job done, mỗi job 12 region (kết quả giống nhau, không rỗng).
+  ⇒ Khi queue dài: gom job vào 1 run là tối ưu; muốn >20 job/run thì tăng `kaggle_batch_max_jobs`.
 - 2026-11-09 · **Đo GPU thật** (file 4 trang nặng job 90, chạy qua orchestrator):
   tuần tự (job 93): 13+11+2+3 = **~29s OCR** (~7s/trang), wall 478s (setup ~7 phút);
   gộp lô 4 trang (job 96, batch_predict=true): **~41s** (~10s/trang), wall 472s, KHÔNG OOM.
