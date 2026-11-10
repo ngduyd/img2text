@@ -42,10 +42,12 @@ services:
     # python:3.11-slim không có curl — urllib /healthz
     healthcheck:
       test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"
+        - CMD-SHELL
+        # podman-compose ghép mảng thành 1 chuỗi cho /bin/sh: dạng ["CMD","python","-c","..."]
+        # bị bóc nháy → sh thấy urlopen(... "(" không nháy → Syntax error. CMD-SHELL nhận
+        # nguyên văn cả chuỗi nên nháy đơn bảo vệ được dấu ngoặc.
+        - >-
+          python -c 'import urllib.request as u; u.urlopen("http://127.0.0.1:8000/healthz", timeout=3)'
       interval: 30s
       timeout: 5s
       retries: 5
