@@ -8,13 +8,27 @@ interface AuthLayoutProps {
   subtitle: string;
   footer: ReactNode;
   children: ReactNode;
+  /** Panel giới thiệu bên trái — chỉ hiện ≥lg (form vẫn là trung tâm ở mobile). */
+  aside?: ReactNode;
 }
 
-export default function AuthLayout({ title, subtitle, footer, children }: AuthLayoutProps) {
+export default function AuthLayout({
+  title,
+  subtitle,
+  footer,
+  children,
+  aside,
+}: AuthLayoutProps) {
   const { t } = useT();
   return (
     <main id="main" className="flex min-h-dvh flex-col justify-center px-4 py-10">
-      <div className="mx-auto w-full max-w-sm">
+      <div className="mx-auto flex w-full max-w-sm flex-col lg:max-w-4xl lg:flex-row lg:items-center lg:gap-16">
+        {aside && (
+          <div className="hidden flex-1 lg:block" data-testid="auth-aside">
+            {aside}
+          </div>
+        )}
+        <div className="w-full lg:max-w-sm">
         <Link
           to="/"
           className="mb-6 flex items-center justify-center gap-2"
@@ -31,6 +45,7 @@ export default function AuthLayout({ title, subtitle, footer, children }: AuthLa
           <div className="mt-6">{children}</div>
         </div>
         <p className="mt-4 text-center text-sm text-muted">{footer}</p>
+        </div>
       </div>
     </main>
   );

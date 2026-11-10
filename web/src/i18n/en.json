@@ -111,7 +111,26 @@
       "forgot": "Forgot password?",
       "signedIn": "Signed in."
     },
+    "oauth": {
+      "or": "or",
+      "google": "Continue with Google",
+      "denied": "Google sign-in was cancelled.",
+      "failed": "Google sign-in failed, try again.",
+      "unverified": "Your Google email is not verified."
+    },
     "signup": {
+      "aside1": "Structure kept: paragraphs, headings, tables, lists — not a wall of text.",
+      "aside2": "Fix once, re-export md / docx / pdf matching the original.",
+      "aside3": "No GPU needed: open a sample result first, attach a worker later.",
+      "passwordHint": "At least 8 characters.",
+      "verifyTitle": "Verify your email",
+      "verifySubtitle": "Enter the 6-digit code sent to {email}.",
+      "verifySubmit": "Verify and continue",
+      "verifyResend": "Resend code",
+      "verifySent": "Code resent.",
+      "verifyInvalid": "Incorrect or expired code.",
+      "stepLabel": "Step {n}/{total}",
+      "asideTitle": "Photo scans into editable text",
       "title": "Sign up",
       "subtitle": "Create an account to get started.",
       "haveAccount": "Already have an account?",

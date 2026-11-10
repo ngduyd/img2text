@@ -111,7 +111,26 @@
       "forgot": "Quên mật khẩu?",
       "signedIn": "Đã đăng nhập."
     },
+    "oauth": {
+      "or": "hoặc",
+      "google": "Tiếp tục với Google",
+      "denied": "Bạn đã huỷ đăng nhập Google.",
+      "failed": "Đăng nhập Google thất bại, thử lại.",
+      "unverified": "Email Google của bạn chưa được xác thực."
+    },
     "signup": {
+      "aside1": "Giữ cấu trúc: đoạn, tiêu đề, bảng, danh sách — không phải một mớ chữ phẳng.",
+      "aside2": "Sửa một chỗ, xuất lại md / docx / pdf khớp bản gốc.",
+      "aside3": "Không cần GPU: xem kết quả mẫu trước, cắm worker sau.",
+      "passwordHint": "Ít nhất 8 ký tự.",
+      "verifyTitle": "Xác thực email",
+      "verifySubtitle": "Nhập mã 6 số đã gửi tới {email}.",
+      "verifySubmit": "Xác thực và vào app",
+      "verifyResend": "Gửi lại mã",
+      "verifySent": "Đã gửi lại mã.",
+      "verifyInvalid": "Mã không đúng hoặc đã hết hạn.",
+      "stepLabel": "Bước {n}/{total}",
+      "asideTitle": "Ảnh chụp thành văn bản sửa được",
       "title": "Đăng ký",
       "subtitle": "Tạo tài khoản để bắt đầu.",
       "haveAccount": "Đã có tài khoản?",

@@ -7,6 +7,8 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import jwt
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
@@ -17,7 +19,7 @@ from app.services import email_sends
 from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user
-from app.core.limiter import rate_limit_auth
+from app.core.limiter import enforce_auth_target, rate_limit_auth
 from app.core.models import RefreshToken, User
 from app.core.security import (
     JWT_ISSUER,
@@ -29,6 +31,8 @@ from app.core.security import (
     set_auth_cookies,
     verify_password,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -140,6 +144,7 @@ def _user_out(user: User) -> UserOut:
 @router.post("/register", status_code=201)
 async def register(
     creds: RegisterBody,
+    request: Request,
     session: AsyncSession = Depends(get_session),
     _: None = Depends(rate_limit_auth),
 ) -> dict:
@@ -171,15 +176,35 @@ async def register(
             status_code=400,
             content={"code": "password_too_long", "max_bytes": 72},
         )
+    # Chốt chống spam theo (IP+email) — trần theo IP ở rate_limit_auth chỉ là
+    # bảo vệ thô, sau nginx/NAT nó dùng chung cho nhiều người.
+    enforce_auth_target(request, creds.email)
     existing = await session.scalar(select(User).where(User.email == creds.email))
     if existing is not None:
         return {"status": "ok"}
-    user = User(email=creds.email, password_hash=hash_password(creds.password))
+    # Không có SMTP = không có đường nào verify → tài khoản mới sẽ bị 403
+    # email_unverified vĩnh viễn. Tự verify (demo/dev) thay vì để user kẹt.
+    auto_verify = settings.auto_verify_email or not settings.smtp_host
+    user = User(
+        email=creds.email,
+        password_hash=hash_password(creds.password),
+        is_verified=auto_verify,
+        # Chế độ tự phục vụ (demo: không SMTP) → cho OCR luôn, không phải chờ
+        # admin bật tay; có SMTP thì giữ nguyên hàng đợi duyệt như cũ.
+        ocr_enabled=auto_verify,
+    )
     # Spec 2026-11-04 (A4): ghi nhận ToS đã đồng ý (version = settings hiện hành).
     user.tos_accepted_at = datetime.now(timezone.utc)
     user.tos_version = settings.tos_version
     session.add(user)
     await session.commit()  # id ổn định cho email_sends + code hash
+    if auto_verify:
+        # Không gửi mail (không có SMTP / tắt xác thực) — bỏ hẳn bước code.
+        logger.info(
+            "register: tự verify %s (auto_verify_email=%s, smtp=%s)",
+            user.email, settings.auto_verify_email, bool(settings.smtp_host),
+        )
+        return {"status": "ok"}
     code = generate_email_code()
     user.email_verify_code_hash = hash_email_code(user.email, code)
     user.email_verify_expires_at = datetime.now(timezone.utc) + _EMAIL_CODE_TTL
@@ -218,12 +243,14 @@ class CodeIn(BaseModel):
 @router.post("/verify")
 async def verify_email(
     body: CodeIn,
+    request: Request,
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
     _: None = Depends(rate_limit_auth),
 ) -> dict:
     """S5: hash compare + TTL 5p — sai/hết hạn → 422. Đúng →
     is_verified=true, xóa code (single-use). Gated user gọi được (exempt)."""
+    enforce_auth_target(request, user.email)   # dò mã 6 số: 10 lần/15 phút/tài khoản
     now = datetime.now(timezone.utc)
     if (
         user.email_verify_code_hash is None
@@ -273,10 +300,12 @@ async def verify_resend(
 @router.post("/login", response_model=UserOut)
 async def login(
     creds: Credentials,
+    request: Request,
     response: Response,
     session: AsyncSession = Depends(get_session),
     _: None = Depends(rate_limit_auth),
 ) -> UserOut:
+    enforce_auth_target(request, creds.email)
     user = await session.scalar(select(User).where(User.email == creds.email))
     if user is None or not verify_password(creds.password, user.password_hash):
         raise HTTPException(status_code=401, detail="invalid credentials")
@@ -438,6 +467,7 @@ async def forgot(
 @router.post("/password/reset")
 async def reset(
     body: ResetIn,
+    request: Request,
     session: AsyncSession = Depends(get_session),
     _: None = Depends(rate_limit_auth),
 ) -> dict:
@@ -448,6 +478,7 @@ async def reset(
     (single commit; code single-use vì đã NULL claim).
 
     #11: password >72 byte → 400 TRƯỚC code claim (spec: đủ code vẫn 400)."""
+    enforce_auth_target(request, body.email)   # dò mã reset: 10 lần/15 phút
     if password_too_long(body.password):
         return JSONResponse(
             status_code=400,

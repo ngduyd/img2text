@@ -1,21 +1,34 @@
-import { useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useState, type FormEvent } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import { useT } from "../i18n";
 import { mapApiError } from "../lib/errors";
 import AuthLayout from "../components/AuthLayout";
+import OAuthButtons from "../components/OAuthButtons";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 
 export default function Login() {
   const { t } = useT();
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Google trả về ?oauth=denied|failed|unverified — nói rõ thay vì im lặng.
+  useEffect(() => {
+    const reason = params.get("oauth");
+    if (!reason) return;
+    const key = `auth.oauth.${reason}`;
+    const msg = t(key);
+    if (msg !== key) toast.error(msg);
+    params.delete("oauth");
+    setParams(params, { replace: true });
+  }, [params, setParams, t]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -40,7 +53,7 @@ export default function Login() {
       footer={
         <>
           {t("auth.signin.noAccount")}{" "}
-          <Link to="/signup" className="text-accent-text hover:underline">
+          <Link to="/signup" className="inline-flex min-h-6 items-center text-accent-text hover:underline">
             {t("nav.signUp")}
           </Link>
         </>
@@ -60,7 +73,7 @@ export default function Login() {
             <label htmlFor="input-password" className="text-sm text-muted">
               {t("auth.password")}
             </label>
-            <Link to="/forgot" className="text-xs text-accent-text hover:underline">
+            <Link to="/forgot" className="inline-flex min-h-6 items-center text-xs text-accent-text hover:underline">
               {t("auth.signin.forgot")}
             </Link>
           </div>
@@ -77,7 +90,7 @@ export default function Login() {
             <button
               type="button"
               onClick={() => setShowPassword((s) => !s)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted hover:text-text"
+              className="absolute right-2 top-1/2 inline-flex min-h-6 -translate-y-1/2 items-center px-1 text-xs text-muted hover:text-text"
             >
               {showPassword ? t("auth.hide") : t("auth.show")}
             </button>
@@ -92,6 +105,7 @@ export default function Login() {
           {t("nav.signIn")}
         </Button>
       </form>
+      <OAuthButtons />
     </AuthLayout>
   );
 }

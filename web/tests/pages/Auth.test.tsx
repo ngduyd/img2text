@@ -93,8 +93,10 @@ it("register → tự login (register không set cookie) → route theo is_verif
   await userEvent.click(screen.getByTestId("input-tos"));
   await userEvent.click(screen.getByTestId("btn-register"));
   await waitFor(() => expect(api.login).toHaveBeenCalledWith("u@x.io", "secret123"));
-  // Chưa verify → trang chủ "/" (route guard VerifyGating sẽ mở modal verify).
-  expect(mockNavigate).toHaveBeenCalledWith("/");
+  // Chưa verify → hiện ngay bước nhập mã 6 số tại chỗ (không đẩy về "/" rồi
+  // mở modal nữa — user vừa đăng ký xong mà bị chặn thì không hiểu vì sao).
+  expect(await screen.findByTestId("input-verify-code")).toBeTruthy();
+  expect(mockNavigate).not.toHaveBeenCalled();
 });
 
 it("register → login: đã verify → /jobs (như login thường)", async () => {
@@ -107,6 +109,8 @@ it("register → login: đã verify → /jobs (như login thường)", async () 
     is_verified: true,
   } as User);
   renderWithRouter(<Signup />);
+  await userEvent.type(screen.getByTestId("input-email"), "u@x.io");
+  await userEvent.type(screen.getByTestId("input-password"), "secret123");
   await userEvent.click(screen.getByTestId("input-tos"));
   await userEvent.click(screen.getByTestId("btn-register"));
   await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/jobs"));

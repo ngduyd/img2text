@@ -34,6 +34,11 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String, unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String)
+    # OAuth: "google" + sub (id người dùng bên provider). NULL = tài khoản mật
+    # khẩu thuần. Một email có thể có cả 2 (đăng nhập bằng cách nào cũng được).
+    # ALTER-only migration: docs/migrations/2026-11-10_oauth.sql
+    oauth_provider: Mapped[str | None] = mapped_column(Text, nullable=True)
+    oauth_sub: Mapped[str | None] = mapped_column(Text, nullable=True)
     role: Mapped[str] = mapped_column(String, default="user")
     ocr_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     # WS-ADMIN quota (spec 2026-10-13): trang/ngày (local Asia/Ho_Chi_Minh)

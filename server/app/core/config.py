@@ -118,6 +118,16 @@ class Settings(BaseSettings):
     # default = kernel hard cap (deploy/kaggle MAX_PDF_PAGES=100). Web upload
     # UI cap (25) thuộc lane web — server chỉ expose config này.
     max_pages: int = 100
+    # Đăng ký: SMTP chưa cấu hình thì KHÔNG có cách nào verify email → user mới
+    # bị 403 email_unverified vĩnh viễn. True = tự verify ngay khi đăng ký
+    # (demo/dev). Khi smtp_host rỗng thì luôn tự verify dù cờ này false.
+    auto_verify_email: bool = False
+    # OAuth (Google). Bỏ trống client_id → nút đăng nhập Google bị ẩn/501.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # Ghi đè redirect URI (mặc định {BASE_URL}/api/auth/oauth/google/callback);
+    # cần khi app chạy sau proxy/domain khác BASE_URL.
+    oauth_redirect_base: str = ""
     # Spec 2026-11-04: ToS version hiện hành ghi vào users.tos_version khi
     # register (A4) + lease động theo số trang (B2) + cap lần reap (B3).
     tos_version: str = "2026-11-04"

@@ -1,6 +1,17 @@
 # MEMORY
 
 ## Now
+- 2026-11-10 · **Đăng ký + OAuth Google**: (a) `AUTH_LIMIT` 10→**60/giờ/IP** + thêm chốt theo
+  `(IP+email)` 10/15 phút (login, register, verify code, reset) — nguyên nhân 429 trong log là
+  trần 10/giờ dùng chung sau nginx/NAT. (b) register: `smtp_host` rỗng hoặc `AUTO_VERIFY_EMAIL=true`
+  → tự verify + bật `ocr_enabled` (trước đây tài khoản mới bị 403 `email_unverified` vĩnh viễn).
+  (c) OAuth Google: `server/app/routers/oauth.py` (`/config`, `/google/start`, `/google/callback`),
+  cột `users.oauth_provider|oauth_sub` + migration `2026-11-10_oauth.sql`, id_token xác thực qua
+  `oauth2.googleapis.com/tokeninfo` (không tự parse JWT), liên kết theo email thay vì tạo trùng.
+  (d) UI: trang đăng ký thiết kế lại (panel giới thiệu ≥lg, hint mật khẩu, toggle hiện/ẩn, bước
+  nhập mã 6 số tại chỗ thay vì đẩy về "/" mở modal), nút Google ở cả /signin và /signup.
+  Gate: pytest 1044, vitest 456, tsc sạch, build OK, `audit:a11y /signup,/signin` 0 findings
+  (đã sửa 3 target <24px: toggle Hiện/Ẩn, link Quên mật khẩu, link Đăng ký).
 - 2026-11-09 · **Phát hành v0.3.0**: tag `v0.3.0` (annotated) → `git push origin v0.3.0`.
   CD `42657553958` success: ci/server + ci/web + ci/worker + docker. Image đẩy lên DockerHub
   `img2text-server:v0.3.0|latest` và `img2text-web:v0.3.0|latest`. Quy trình phát hành từ giờ:

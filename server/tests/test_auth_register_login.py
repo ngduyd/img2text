@@ -62,3 +62,64 @@ async def test_email_case_insensitive(client):
         "/api/auth/register", json={"accept_tos": True, "email": "CASE@x.io", "password": "secret123"}
     )
     assert dup.status_code == 201 and dup.json() == {"status": "ok"}  # P1-1: không leak
+
+async def test_register_auto_verifies_when_smtp_missing(
+    client, monkeypatch, db_session
+):
+    """Không có SMTP = không có cách nào verify → tài khoản mới phải dùng được
+    ngay (trước đây 403 email_unverified vĩnh viễn)."""
+    from sqlalchemy import func, select
+    from app.core.config import settings
+    from app.core.models import EmailSend, User
+
+    monkeypatch.setattr(settings, "smtp_host", "")
+    monkeypatch.setattr(settings, "auto_verify_email", False)
+    r = await client.post(
+        "/api/auth/register",
+        json={"email": "auto@x.io", "password": "pw-12345678", "accept_tos": True},
+    )
+    assert r.status_code == 201
+    user = await db_session.scalar(select(User).where(User.email == "auto@x.io"))
+    assert user.is_verified is True
+    assert user.ocr_enabled is True          # demo tự phục vụ: OCR bật luôn
+    sent = await db_session.scalar(
+        select(func.count()).select_from(EmailSend).where(EmailSend.user_id == user.id)
+    )
+    assert sent == 0                          # không hẹn gửi mail vô nghĩa
+
+
+async def test_register_keeps_verification_when_smtp_configured(
+    client, monkeypatch, db_session
+):
+    from sqlalchemy import select
+    from app.core.config import settings
+    from app.core.models import User
+
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.com")
+    monkeypatch.setattr(settings, "auto_verify_email", False)
+    r = await client.post(
+        "/api/auth/register",
+        json={"email": "verif@x.io", "password": "pw-12345678", "accept_tos": True},
+    )
+    assert r.status_code == 201
+    user = await db_session.scalar(select(User).where(User.email == "verif@x.io"))
+    assert user.is_verified is False
+    assert user.email_verify_code_hash
+
+
+async def test_login_rate_limited_per_account(client):
+    """Trần theo IP là 60/giờ (NAT dùng chung) nhưng mỗi tài khoản chỉ 10
+    lần/15 phút → dò mật khẩu vẫn bị chặn."""
+    await client.post(
+        "/api/auth/register",
+        json={"email": "brute@x.io", "password": "pw-12345678", "accept_tos": True},
+    )
+    codes = []
+    for _ in range(11):
+        r = await client.post(
+            "/api/auth/login", json={"email": "brute@x.io", "password": "sai-mat-khau"}
+        )
+        codes.append(r.status_code)
+    assert codes[0] == 401
+    assert codes[-1] == 429
+    assert 429 in codes

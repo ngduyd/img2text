@@ -240,6 +240,8 @@ export const api = {
   verifyCode: (code: string) =>
     request<unknown>("/api/auth/verify", { method: "POST", body: { code } }),
   verifyResend: () => request<unknown>("/api/auth/verify/resend", { method: "POST" }),
+  // OAuth: provider nào đang bật (server tắt → google=false → UI ẩn nút)
+  oauthConfig: () => request<{ google: boolean }>("/api/auth/oauth/config"),
   forgotEmail: (email: string) =>
     request<unknown>("/api/auth/password/forgot", { method: "POST", body: { email } }),
   // S5: reset contract {email, code, password} (mã 6 số TTL 5p — không còn token).

@@ -14,8 +14,14 @@ from app.core.deps import ACCESS_COOKIE
 from app.core.net import client_ip
 from app.core.security import decode_access_sub
 
-AUTH_LIMIT = 10
+# Trần theo IP: đủ rộng cho NAT/văn phòng/proxy (nhiều người chung 1 IP ra
+# internet). Trước đây 10/giờ/IP: sau nginx, nếu thiếu X-Forwarded-For thì MỌI
+# người dùng chung 1 key → 2 lần đăng nhập là cả hệ thống bị 429.
+AUTH_LIMIT = 60
 AUTH_WINDOW_SECONDS = 3600
+# Chốt thật chống dò mật khẩu: theo (IP + email) — 10 lần / 15 phút / tài khoản.
+AUTH_TARGET_LIMIT = 10
+AUTH_TARGET_WINDOW_SECONDS = 900
 
 # P2 #20 (spec 2026-10-16): per-user windows cho feedback + upload.
 FEEDBACK_LIMIT = 10
@@ -78,6 +84,20 @@ async def rate_limit_auth(request: Request) -> None:
         limiter = request.app.state.auth_limiter = SlidingWindow(AUTH_LIMIT, AUTH_WINDOW_SECONDS)
     if not limiter.check(client_ip(request)):
         raise HTTPException(status_code=429, detail="Quá nhiều yêu cầu.")
+
+def enforce_auth_target(request: Request, target: str) -> None:
+    """10 lần/15 phút cho mỗi (IP + email) — chặn dò mật khẩu mà không khoá cả
+    NAT. Gọi SAU khi parse body (login/register) vì cần email."""
+    limiter = getattr(request.app.state, "auth_target_limiter", None)
+    if limiter is None:
+        limiter = request.app.state.auth_target_limiter = SlidingWindow(
+            AUTH_TARGET_LIMIT, AUTH_TARGET_WINDOW_SECONDS
+        )
+    if not limiter.check(f"{client_ip(request)}|{target.strip().lower()}"):
+        raise HTTPException(
+            status_code=429,
+            detail="Quá nhiều lần thử cho tài khoản này, thử lại sau ít phút.",
+        )
 
 def _per_user_key(request: Request) -> str:
     """P2 #20: key per-user (access cookie JWT sub); anonymous → fallback

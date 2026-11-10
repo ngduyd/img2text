@@ -29,7 +29,17 @@ from app.core.middleware import (
     RequestLogsMiddleware,
     flush_request_logs,
 )
-from app.routers import admin, auth, exports, feedback, health, jobs, profile, region_edit
+from app.routers import (
+    admin,
+    auth,
+    exports,
+    feedback,
+    health,
+    jobs,
+    oauth,
+    profile,
+    region_edit,
+)
 from app.services.scheduler import init_scheduler
 from app.services.storage import build_storage
 
@@ -141,6 +151,7 @@ def create_app() -> FastAPI:
     app.state.storage = build_storage()
     app.include_router(health.router)
     app.include_router(auth.router)
+    app.include_router(oauth.router)
     # profile after auth (same /api/auth prefix; PATCH /profile)
     app.include_router(profile.router)
     app.include_router(admin.router)
