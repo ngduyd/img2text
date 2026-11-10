@@ -83,7 +83,6 @@ it("register → tự login (register không set cookie) → route theo is_verif
     id: 1,
     email: "u@x.io",
     role: "user",
-    ocr_enabled: false,
     is_verified: false,
   } as User);
   renderWithRouter(<Signup />);
@@ -105,7 +104,6 @@ it("register → login: đã verify → /jobs (như login thường)", async () 
     id: 1,
     email: "u@x.io",
     role: "user",
-    ocr_enabled: false,
     is_verified: true,
   } as User);
   renderWithRouter(<Signup />);

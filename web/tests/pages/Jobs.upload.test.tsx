@@ -93,7 +93,7 @@ it("Gửi → presign → XHR progress → pdf.js count → metadata-only create
     const body = url_ === "/api/quota/me"
       ? QUOTA
       : url_.startsWith("/api/auth/me")
-      ? { id: 1, role: "user", ocr_enabled: true }
+      ? { id: 1, role: "user" }
       : String(url).startsWith("/api/jobs?")
         ? { items: [], total: 0, page: 1, page_size: 10 }
         : PRESIGN;

@@ -4,7 +4,7 @@ export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 export type ButtonSize = "sm" | "md";
 
 const BASE =
-  "inline-flex cursor-pointer items-center justify-center gap-2 rounded-md font-medium transition duration-150 ease-out active:-translate-y-px active:brightness-110 disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex cursor-pointer items-center justify-center gap-2 rounded-md font-medium transition duration-150 ease-out active:-translate-y-px active:brightness-110 disabled:cursor-not-allowed disabled:border disabled:border-border disabled:bg-surface-2 disabled:text-muted disabled:opacity-100";
 
 /* secondary = outline role (bordered, non-accent). No glow, no ring on rest. */
 const VARIANTS: Record<ButtonVariant, string> = {

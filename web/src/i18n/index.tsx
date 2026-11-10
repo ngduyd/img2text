@@ -7,9 +7,12 @@ export type Lang = "en" | "vi";
 const DICTS: Record<Lang, Record<string, unknown>> = { en, vi: viDict };
 export const LANG_KEY = "lang";
 
-/** Spec S2: default "en"; stored lang wins (read before render). */
+/** Ngôn ngữ đã chọn (localStorage) thắng; chưa chọn thì theo trình duyệt —
+ *  mặc định cứng "en" trước đây làm người dùng Việt lần đầu luôn thấy tiếng Anh. */
 export function readLang(): Lang {
-  return localStorage.getItem(LANG_KEY) === "vi" ? "vi" : "en";
+  const stored = localStorage.getItem(LANG_KEY);
+  if (stored === "vi" || stored === "en") return stored;
+  return (navigator.language ?? "").toLowerCase().startsWith("vi") ? "vi" : "en";
 }
 
 function lookup(dict: Record<string, unknown>, key: string): string | undefined {

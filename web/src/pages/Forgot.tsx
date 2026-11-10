@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { ApiError, api } from "../api/client";
+import AuthIntro from "../components/AuthIntro";
 import AuthLayout from "../components/AuthLayout";
 import { useT } from "../i18n";
 import Button from "../components/ui/Button";
@@ -31,8 +32,9 @@ export default function Forgot() {
     <AuthLayout
       title={t("auth.forgot.title")}
       subtitle={t("auth.forgot.subtitle")}
+      aside={<AuthIntro />}
       footer={
-        <Link to="/signin" className="text-accent-text hover:underline">
+        <Link to="/signin" className="inline-flex min-h-6 items-center text-accent-text hover:underline">
           {t("auth.forgot.backToSignin")}
         </Link>
       }

@@ -427,9 +427,6 @@ export const api = {
     }),
   adminListUsers: (page: number) =>
     request<{ items: User[]; total: number }>(`/api/admin/users?page=${page}`),
-  adminPatchUser: (id: number | string, body: { ocr_enabled: boolean }) =>
-    request<User>(`/api/admin/users/${id}`, { method: "PATCH", body }),
-  // WS-ADMIN T5: inline edit 2 limit quota (204 no body)
   adminPatchQuota: (id: number | string, body: QuotaPatch) =>
     request<void>(`/api/admin/users/${id}/quota`, { method: "PATCH", body }),
   adminStats: (from: string, to: string) =>

@@ -1,6 +1,32 @@
 # MEMORY
 
 ## Now
+- 2026-11-10 · **Bỏ gate OCR + review vòng 2**: xoá `require_ocr`/`_ocr_user`, route PATCH
+  `ocr_enabled`, `OcrBadge` + badge/banner trong UI, `UserOut.ocr_enabled`; GIỮ cột DB (không
+  migration). Sửa luôn 3 bug thật tìm được khi review: (1) `Jobs.tsx` còn `disabled={denied}` →
+  ReferenceError; (2) nav "Sign up" trùng `data-testid="btn-register"` với nút submit → Playwright
+  strict-mode fail, đổi thành `nav-link-signup`; (3) middleware `core/ratelimit.py` 1 giây/request
+  theo (IP+UA) làm login ngay sau register luôn 429 `rate_limited` — đúng nguyên nhân "429 mà vẫn
+  gửi email"; client retry 1 lần sau 1,2s.
+- 2026-11-10 · **Review (subagent `reviewer`, model `ocg/deepseek-v4.1-flash`) → CHANGES-REQUIRED**,
+  đã sửa hết: OAuth state giờ gắn trình duyệt (cookie HttpOnly `oauth_state`, so khớp + xoá 1 lần)
+  chống login-CSRF; `client_ip` chỉ tin X-Forwarded-For khi peer thuộc `TRUSTED_PROXIES` (mặc định
+  loopback + 10/172.16/192.168) — trước đó XFF tự đặt vô hiệu toàn bộ rate limit; `reset` clear
+  bộ đếm sau khi thành công; verify email dùng conditional UPDATE…RETURNING (atomic); dọn
+  `ocr_enabled` khỏi UserOut + fixture `grant_ocr`; test rate-limit đổi thành 12 lần login để thật
+  sự chứng minh `clear_auth_target`.
+- 2026-11-10 · **Review UI (subagent `uiux`)** → CHANGES-REQUIRED, đã sửa: panel auth bỏ card thứ
+  hai + bỏ eyebrow lặp brand, headline xuống `text-lg`; `AuthLayout` neo top (`lg:pt-24`) nên card
+  KHÔNG nhảy dọc giữa signup ↔ bước nhập mã (đo lại: card top = 217 ở cả hai); mobile `pt-10`;
+  toast `offset top 72` không còn che nav/hamburger; Button disabled đọc ra là khoá (xám, không
+  còn accent); lang mặc định theo `navigator.language` thay vì cứng "en"; bước nhập mã: ô 6 số cỡ
+  lớn căn giữa, đếm ngược gửi lại 60s, link "đổi email", bỏ footer thừa.
+- 2026-11-10 · **Dead end**: 2 subagent (`frontend`, `backend`) chết vì `429 FreeUsageLimitError`
+  trên model free `9router/oc/nemotron-3.5-super-vl-free` — dùng `ocg/deepseek-v4.1-flash` thì chạy.
+- 2026-11-10 · **Sự cố tự gây**: script xoá fixture `grant_ocr` trong `server/tests/conftest.py`
+  dùng `rindex("@pytest_asyncio.fixture")` → xoá luôn `db_truncate` (grant_ocr là hàm thường, không
+  có decorator) → cả suite fail vì DB test không được dọn. Khôi phục `git checkout f14fc38 -- conftest.py`
+  rồi xoá bằng so khớp chuỗi nguyên khối. Bài học: file test dùng index-math thì phải so khớp text.
 - 2026-11-10 · **Đăng ký + OAuth Google**: (a) `AUTH_LIMIT` 10→**60/giờ/IP** + thêm chốt theo
   `(IP+email)` 10/15 phút (login, register, verify code, reset) — nguyên nhân 429 trong log là
   trần 10/giờ dùng chung sau nginx/NAT. (b) register: `smtp_host` rỗng hoặc `AUTO_VERIFY_EMAIL=true`

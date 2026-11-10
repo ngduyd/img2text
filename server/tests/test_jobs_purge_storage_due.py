@@ -12,7 +12,6 @@ from sqlalchemy import select
 
 from app.core.deps import ACCESS_COOKIE
 from app.core.models import Job, User
-from tests.conftest import grant_ocr
 
 
 async def _register_login(app, db_session, prefix: str):
@@ -25,7 +24,6 @@ async def _register_login(app, db_session, prefix: str):
         "/api/auth/register", json={"accept_tos": True, "email": email, "password": "secret123"}
     )
     assert r.status_code == 201, r.text
-    await grant_ocr(db_session, email)
     r = await c.post(
         "/api/auth/login", json={"email": email, "password": "secret123"}
     )

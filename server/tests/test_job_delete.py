@@ -17,8 +17,7 @@ async def other_client(app, db_session):
     from httpx import ASGITransport, AsyncClient
 
     from app.core.deps import ACCESS_COOKIE
-    from tests.conftest import grant_ocr
-
+    
     email = f"o-{uuid4().hex}@test.io"
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -27,7 +26,6 @@ async def other_client(app, db_session):
             "/api/auth/register", json={"accept_tos": True, "email": email, "password": "secret123"}
         )
         assert r.status_code == 201, r.text
-        await grant_ocr(db_session, email)
         r = await c.post(
             "/api/auth/login", json={"email": email, "password": "secret123"}
         )

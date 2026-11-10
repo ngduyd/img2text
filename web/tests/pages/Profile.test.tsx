@@ -34,7 +34,7 @@ function renderWithRouter(ui: ReactElement, { route = "/profile" } = {}) {
   });
 }
 
-const USER: User = { id: 7, email: "u@x.io", role: "user", ocr_enabled: true };
+const USER: User = { id: 7, email: "u@x.io", role: "user" };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -45,7 +45,6 @@ it("renders info card: email, role badge, ocr badge, id, join note", async () =>
   renderWithRouter(<Profile />);
   expect(await screen.findByTestId("profile-email")).toHaveTextContent("u@x.io");
   expect(screen.getByTestId("profile-role")).toHaveTextContent("User");
-  expect(screen.getByTestId("badge-ocr-profile")).toHaveTextContent("OCR enabled");
   expect(screen.getByTestId("profile-id")).toHaveTextContent("7");
   // joined row hidden without created_at (no dangling label)
   expect(screen.queryByText(/Joined|tham gia/)).not.toBeInTheDocument();

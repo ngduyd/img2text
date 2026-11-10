@@ -85,19 +85,8 @@ async function openSubmitModal() {
   return user;
 }
 
-it("banner and disabled Gửi/input when ocr_enabled false", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: false } as User);
-  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
-  renderWithRouter(<Jobs />);
-  expect(await screen.findByTestId("banner-no-access")).toHaveTextContent("Waiting for admin to grant OCR access");
-  // D5: chưa có file → chỉ còn CTA chọn file (nút Gửi chỉ hiện khi có file).
-  expect(screen.queryByTestId("muf-submit")).not.toBeInTheDocument();
-  expect(screen.getByTestId("muf-pick")).toBeDisabled();
-  expect(screen.getByTestId("muf-input")).toBeDisabled();
-});
-
 it("Gửi → modal → confirm: uploadJob(gộp PDF, layout+md) + toast + navigate", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   vi.mocked(api.uploadJob).mockResolvedValue({ id: 42, status: "queued" } as Job);
   renderWithRouter(<Jobs />);
@@ -118,7 +107,7 @@ it("Gửi → modal → confirm: uploadJob(gộp PDF, layout+md) + toast + navig
 });
 
 it("modal: default layout+md; Hủy → không upload, giữ card", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Jobs />);
   const user = await openSubmitModal();
@@ -133,7 +122,7 @@ it("modal: default layout+md; Hủy → không upload, giữ card", async () => 
 });
 
 it("modal choices: layout → docx; extract_only → mode + md", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   vi.mocked(api.uploadJob).mockResolvedValue({ id: 42, status: "queued" } as Job);
   renderWithRouter(<Jobs />);
@@ -162,7 +151,7 @@ it("modal choices: layout → docx; extract_only → mode + md", async () => {
 });
 
 it("upload error surfaces server detail; giữ card để gửi lại", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   vi.mocked(api.uploadJob).mockRejectedValue(new ApiError("Đã đạt giới hạn upload hôm nay."));
   renderWithRouter(<Jobs />);
@@ -178,7 +167,7 @@ it("upload error surfaces server detail; giữ card để gửi lại", async ()
 });
 
 it("job rows render status badge", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({
     items: [
       {
@@ -199,7 +188,7 @@ it("job rows render status badge", async () => {
 });
 
 it("filter tabs show counts and click filters rows", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({
     items: [
       { id: 1, status: "queued", page_count: 1, file_type: "pdf", created_at: "2026-10-04T00:00:00Z", error: null },
@@ -236,7 +225,7 @@ it("filter tabs show counts and click filters rows", async () => {
 });
 
 it("empty state renders guidance with limits and Colab note", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Jobs />);
   const empty = await screen.findByTestId("empty-state");
@@ -245,7 +234,7 @@ it("empty state renders guidance with limits and Colab note", async () => {
 });
 
 it("filter with no matches shows empty-filter message", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({
     items: [
       { id: 2, status: "done", page_count: 2, file_type: "pdf", created_at: "2026-10-04T00:00:00Z", error: null },
@@ -263,7 +252,7 @@ it("filter with no matches shows empty-filter message", async () => {
 
 // Task 2: loading state = Skeleton rows (testid "skeleton"), never a spinner/blank.
 it("loading state renders skeleton rows while the jobs list is pending", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockReturnValue(new Promise<never>(() => {})); // never resolves
   renderWithRouter(<Jobs />);
   expect((await screen.findAllByTestId("skeleton")).length).toBeGreaterThan(0);
@@ -271,7 +260,7 @@ it("loading state renders skeleton rows while the jobs list is pending", async (
 
 // Phase 4 Task 2: pagination controls render + click page 2 → refetch.
 it("pagination shows page controls and click page 2 refetches the list", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   const pageOne = { id: 11, status: "queued", page_count: 1, file_type: "pdf", created_at: "2026-10-04T00:00:00Z", error: null } as Job;
   const pageTwo = { id: 21, status: "done", page_count: 2, file_type: "jpg", created_at: "2026-10-04T00:00:00Z", error: null } as Job;
   vi.mocked(api.listJobs).mockImplementation((page = 1) =>
@@ -295,7 +284,7 @@ const doneJ = (id: number) =>
   ({ id, status: "done", page_count: 1, file_type: "jpg", created_at: "2026-10-04T00:00:00Z", error: null }) as Job;
 
 it("checkbox select shows bulk bar count; select-all toggles the whole page", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [failed(1), failed(2), doneJ(3)], total: 3, page: 1, page_size: 10 });
   renderWithRouter(<Jobs />);
   await screen.findByTestId("job-row-1");
@@ -312,7 +301,7 @@ it("checkbox select shows bulk bar count; select-all toggles the whole page", as
 });
 
 it("bulk-retry disabled until a failed job is selected", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [doneJ(3)], total: 1, page: 1, page_size: 10 });
   renderWithRouter(<Jobs />);
   await userEvent.click(await screen.findByTestId("row-select-3"));
@@ -320,7 +309,7 @@ it("bulk-retry disabled until a failed job is selected", async () => {
 });
 
 it("bulk retry calls retryJobs per selected failed job, toasts, clears selection", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [failed(1), failed(2), doneJ(3)], total: 3, page: 1, page_size: 10 });
   vi.mocked(api.retryJobs).mockResolvedValue({ ok: 2, errors: [] });
   renderWithRouter(<Jobs />);
@@ -334,7 +323,7 @@ it("bulk retry calls retryJobs per selected failed job, toasts, clears selection
 });
 
 it("bulk retry partial failure: error toast fires, batch not aborted", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [failed(1), failed(2)], total: 2, page: 1, page_size: 10 });
   vi.mocked(api.retryJobs).mockResolvedValue({ ok: 1, errors: ["job not retryable"] });
   renderWithRouter(<Jobs />);
@@ -347,7 +336,7 @@ it("bulk retry partial failure: error toast fires, batch not aborted", async () 
 
 /** P2: thay vì toast errors[0] only → toast tổng hợp "n job lỗi" (R59 testids giữ). */
 it("bulk retry 2 job fail → error toast contains count 2", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [failed(1), failed(2)], total: 2, page: 1, page_size: 10 });
   vi.mocked(api.retryJobs).mockResolvedValue({ ok: 0, errors: ["job 1 not retryable", "job 2 not retryable"] });
   renderWithRouter(<Jobs />);
@@ -360,7 +349,7 @@ it("bulk retry 2 job fail → error toast contains count 2", async () => {
 });
 
 it("header shows job stats (total, pending, done)", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({
     items: [
       { id: 1, status: "queued", page_count: 1, file_type: "pdf", created_at: "2026-10-04T00:00:00Z", error: null },
@@ -380,7 +369,7 @@ it("header shows job stats (total, pending, done)", async () => {
 });
 
 it("toolbar shows filter tabs without an output-format select", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Jobs />);
   await screen.findByTestId("empty-state");
@@ -393,7 +382,7 @@ it("toolbar shows filter tabs without an output-format select", async () => {
 });
 
 it("empty state shows CTA hint", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Jobs />);
   const empty = await screen.findByTestId("empty-state");
@@ -401,7 +390,7 @@ it("empty state shows CTA hint", async () => {
 });
 
 it("job row shows file type icon", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({
     items: [
       { id: 7, status: "queued", page_count: 2, file_type: "pdf", created_at: "2026-10-04T00:00:00Z", error: null },
@@ -427,7 +416,7 @@ it("windowed pagination: 1 + last + ±2 quanh current, ellipsis giữa gap", asy
 
 // Spec #3: search debounced 300ms + sort select + status đẩy server-side.
 it("search input debounced → listJobs receives q param", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Jobs />);
   await screen.findByTestId("jobs-search");
@@ -445,7 +434,7 @@ it("search input debounced → listJobs receives q param", async () => {
 });
 
 it("q active + total 0 → empty-filter, không hiện empty-state", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Jobs />);
   await screen.findByTestId("empty-state"); // tổng 0, chưa search → empty-state
@@ -458,7 +447,7 @@ it("q active + total 0 → empty-filter, không hiện empty-state", async () =>
 });
 
 it("sort select change → listJobs receives sort param", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Jobs />);
   await screen.findByTestId("jobs-sort");
@@ -473,7 +462,7 @@ it("sort select change → listJobs receives sort param", async () => {
 });
 
 it("status filter tab pushes status param server-side", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   renderWithRouter(<Jobs />);
   await screen.findByTestId("filter-done");
@@ -485,4 +474,20 @@ it("status filter tab pushes status param server-side", async () => {
       expect.objectContaining({ status: "done" }),
     ),
   );
+});
+
+
+it("user thường vẫn upload được (gate OCR đã bỏ: không banner, ô chọn file không disabled)", async () => {
+  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
+  vi.mocked(api.me).mockResolvedValue({
+    id: 9,
+    email: "plain@x.io",
+    role: "user",
+    is_verified: true,
+  });
+  renderWithRouter(<Jobs />);
+  expect(await screen.findByTestId("empty-state")).toBeInTheDocument();
+  expect(screen.queryByTestId("banner-no-access")).toBeNull();
+  const pick = screen.getByTestId("muf-pick");
+  expect(pick).toBeEnabled();
 });

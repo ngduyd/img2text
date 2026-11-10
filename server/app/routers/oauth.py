@@ -30,6 +30,7 @@ from app.core.config import settings
 from app.core.db import get_session
 from app.core.models import User
 from app.core.security import (
+    _cookie_secure,
     create_access_token,
     hash_password,
     set_auth_cookies,
@@ -77,21 +78,38 @@ async def oauth_config() -> dict:
     return {"google": _enabled()}
 
 
+STATE_COOKIE = "oauth_state"
+STATE_COOKIE_PATH = "/api/auth/oauth"
+
 @router.get("/google/start")
 async def google_start() -> RedirectResponse:
     if not _enabled():
         raise HTTPException(status_code=501, detail="Google OAuth chưa được cấu hình.")
+    state = _sign_state()
     params = {
         "client_id": settings.google_client_id,
         "redirect_uri": _redirect_uri(),
         "response_type": "code",
         "scope": "openid email profile",
-        "state": _sign_state(),
+        "state": state,
         "prompt": "select_account",
     }
-    return RedirectResponse(
+    response = RedirectResponse(
         f"{GOOGLE_AUTH_URL}?{urlencode(params)}", status_code=302
     )
+    # Gắn state vào CHÍNH trình duyệt này: nếu không, kẻ tấn công tự gọi /start
+    # lấy state hợp lệ rồi gửi nạn nhân link callback?code=<code của hắn> →
+    # nạn nhân bị đăng nhập vào tài khoản của kẻ tấn công (login-CSRF).
+    response.set_cookie(
+        STATE_COOKIE,
+        state,
+        max_age=STATE_TTL_SECONDS,
+        httponly=True,
+        samesite="lax",          # callback là điều hướng top-level từ Google
+        secure=_cookie_secure(),
+        path=STATE_COOKIE_PATH,
+    )
+    return response
 
 
 @router.get("/google/callback")
@@ -108,6 +126,11 @@ async def google_callback(
         # người dùng bấm "Huỷ" ở màn hình Google, hoặc URL thiếu tham số
         return RedirectResponse("/signin?oauth=denied", status_code=302)
     _check_state(state)
+    # state phải khớp cookie của CHÍNH trình duyệt đang gọi callback
+    cookie_state = request.cookies.get(STATE_COOKIE, "")
+    if not cookie_state or not secrets.compare_digest(cookie_state, state):
+        logger.warning("oauth: state không khớp cookie — nghi login-CSRF")
+        return RedirectResponse("/signin?oauth=failed", status_code=302)
 
     async with httpx.AsyncClient(timeout=20) as client:
         token = await client.post(
@@ -148,13 +171,11 @@ async def google_callback(
     if user is None:
         user = await session.scalar(select(User).where(User.email == email))
     if user is None:
-        self_serve = settings.auto_verify_email or not settings.smtp_host
         user = User(
             email=email,
             # mật khẩu ngẫu nhiên: đăng nhập bằng OAuth, không có mật khẩu thật
             password_hash=hash_password(secrets.token_urlsafe(32)),
             is_verified=True,
-            ocr_enabled=self_serve,
             tos_accepted_at=datetime.now(timezone.utc),
             tos_version=settings.tos_version,
         )
@@ -173,4 +194,5 @@ async def google_callback(
 
     response = RedirectResponse("/jobs", status_code=302)
     set_auth_cookies(response, access=token_jwt, refresh=refresh)
+    response.delete_cookie(STATE_COOKIE, path=STATE_COOKIE_PATH)   # one-time
     return response

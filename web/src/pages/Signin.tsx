@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import { useT } from "../i18n";
 import { mapApiError } from "../lib/errors";
+import AuthIntro from "../components/AuthIntro";
 import AuthLayout from "../components/AuthLayout";
 import OAuthButtons from "../components/OAuthButtons";
 import Button from "../components/ui/Button";
@@ -50,6 +51,7 @@ export default function Login() {
     <AuthLayout
       title={t("auth.signin.title")}
       subtitle={t("auth.signin.subtitle")}
+      aside={<AuthIntro />}
       footer={
         <>
           {t("auth.signin.noAccount")}{" "}
@@ -61,7 +63,7 @@ export default function Login() {
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         <Input
-          label="Email"
+          label={t("auth.email")}
           testid="input-email"
           type="email"
           autoComplete="email"

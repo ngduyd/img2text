@@ -34,8 +34,7 @@
     "features": "Features",
     "storage": "Storage",
     "language": "Language",
-    "theme": "Appearance",
-    "ocr": "OCR"
+    "theme": "Appearance"
   },
   "status": {
     "queued": "Queued",
@@ -59,10 +58,6 @@
     "filePurged": "Original file was deleted by the storage retention policy.",
     "tos_required": "You need to accept the terms of service to sign up.",
     "rate_limited": "Too fast — try again in a second."
-  },
-  "ocr": {
-    "enabled": "OCR enabled",
-    "pending": "Waiting for admin to grant OCR access"
   },
   "issues": {
     "cropAria": "Crop of region {rid}"
@@ -119,6 +114,7 @@
       "unverified": "Your Google email is not verified."
     },
     "signup": {
+      "rateLimited": "Your account was created, but sign-in is temporarily rate limited. Try signing in again in a few minutes; if you received a verification email, use that code.",
       "aside1": "Structure kept: paragraphs, headings, tables, lists — not a wall of text.",
       "aside2": "Fix once, re-export md / docx / pdf matching the original.",
       "aside3": "No GPU needed: open a sample result first, attach a worker later.",
@@ -137,7 +133,11 @@
       "created": "Account created. Enter the verification code.",
       "tosPrefix": "I agree to the",
       "tosLink": "terms of service",
-      "tosRequired": "You must accept the terms of service to sign up."
+      "tosRequired": "You must accept the terms of service to sign up.",
+      "changeEmail": "Use a different email",
+      "verifyResendIn": "Resend code in {s}s",
+      "passwordTooShort": "Password needs at least 8 characters.",
+      "verifyHelp": "The code has 6 digits. No email? Check spam, or use a different email below."
     },
     "forgot": {
       "title": "Forgot password",
@@ -171,7 +171,8 @@
       "mismatch": "Passwords do not match.",
       "submit": "Reset password",
       "backToSignin": "Back to sign in"
-    }
+    },
+    "email": "Email"
   },
   "jd": {
     "title": "Job detail",
@@ -481,7 +482,6 @@
       "to": "To"
     },
     "users": {
-      "updated": "Updated.",
       "quotaInvalid": "Limits must be integers between 0 and 10000.",
       "emptyTitle": "No users yet",
       "emptyBody": "New users will appear here after they sign up.",
@@ -494,9 +494,7 @@
       "colWeekly": "Weekly",
       "quotaDaily": "{used}/{limit} today ({remaining} left)",
       "quotaWeekly": "{used}/{limit} this week ({remaining} left)",
-      "saveQuota": "Save quota",
-      "ocrOn": "Enable OCR for {email}",
-      "ocrOff": "Disable OCR for {email}"
+      "saveQuota": "Save quota"
     },
     "workers": {
       "queue": "Queue:",
@@ -704,8 +702,6 @@
       "chipDone": "Done",
       "chipFailed": "Failed"
     },
-    "deniedTitle": "Waiting for admin to grant OCR access",
-    "deniedHint": "Dev environment: sign in as an admin, open Users, and enable OCR for this account.",
     "uploadQueued": "Uploaded — queued for processing.",
     "countingPages": "Counting pages…",
     "selectAll": "Select all on this page",

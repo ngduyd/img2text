@@ -36,13 +36,13 @@
 
 **Files:**
 - Create: `web/src/styles/tokens.css`, `web/src/components/ui/{Button,Badge,Card,Input}.tsx` (+ .test.tsx each), `web/src/components/ThemeToggle.tsx`
-- Modify: `web/src/index.css` (import tokens, tailwind dark strategy), `web/src/App.tsx` (nav rework: LEFT brand+Công việc+Quản trị(role); RIGHT auth zone — logged out: btn-login+btn-register; logged in: OCR badge + avatar initials + btn-profile + btn-logout), `web/src/main.tsx`, all pages (migrate buttons/inputs to ui components), existing tests (only testid/DOM-role adaptations).
+- Modify: `web/src/index.css` (import tokens, tailwind dark strategy), `web/src/App.tsx` (nav rework: LEFT brand+Công việc+Quản trị(role); RIGHT auth zone — logged out: btn-login+nav-link-signup; logged in: OCR badge + avatar initials + btn-profile + btn-logout), `web/src/main.tsx`, all pages (migrate buttons/inputs to ui components), existing tests (only testid/DOM-role adaptations).
 
 **Interfaces:**
 - Produces: Button props `{variant,size,loading,disabled,testid,onClick,children,type}`, Badge `{tone,children,testid}`, Card `{title,testid,children,actions?}`, Input `{label,testid,error,...input props}`, ThemeToggle (toggles `dark` class on documentElement, persists `img2text-theme`).
-- Nav contract (binding): LEFT `nav-brand|nav-link-jobs|nav-link-admin`; RIGHT `auth-zone` container: logged-out `btn-login`(primary sm)+"Đăng nhập", `btn-register`(ghost sm)+"Đăng ký"; logged-in `badge-ocr` (🟢"OCR đã cấp"/🟡"Chờ admin cấp quyền"), `nav-avatar` (initials, title=role), `btn-profile`(ghost)+"Hồ sơ", `btn-logout`(danger ghost)+"Đăng xuất". Remove LEFT login link (test updated accordingly — assertion MOVED not deleted).
+- Nav contract (binding): LEFT `nav-brand|nav-link-jobs|nav-link-admin`; RIGHT `auth-zone` container: logged-out `btn-login`(primary sm)+"Đăng nhập", `nav-link-signup`(ghost sm)+"Đăng ký"; logged-in `nav-avatar` (initials, title=role), `btn-profile`(ghost)+"Hồ sơ", `btn-logout`(danger ghost)+"Đăng xuất". Remove LEFT login link (test updated accordingly — assertion MOVED not deleted).
 
-- [ ] Step 1: Failing tests (Button variants/states; Input error; ThemeToggle default-dark+persistence; App nav: logged-out right-zone has login+register, NO left login; logged-in right-zone has profile+logout+badge-ocr both tones; admin sees nav-link-admin, user doesn't)
+- [ ] Step 1: Failing tests (Button variants/states; Input error; ThemeToggle default-dark+persistence; App nav: logged-out right-zone has login+register, NO left login; logged-in right-zone has profile+logout; admin sees nav-link-admin, user doesn't)
 - [ ] Step 2: Run → FAIL
 - [ ] Step 3: Implement (migrate ALL existing buttons/inputs to ui components; keep testids; suite green)
 - [ ] Step 4: Run → PASS (full web suite + tsc + lint + build)

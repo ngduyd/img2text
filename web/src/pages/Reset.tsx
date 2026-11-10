@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
+import AuthIntro from "../components/AuthIntro";
 import AuthLayout from "../components/AuthLayout";
 import { useT } from "../i18n";
 import { mapApiError } from "../lib/errors";
@@ -47,8 +48,9 @@ export default function Reset() {
     <AuthLayout
       title={t("auth.reset.title")}
       subtitle={t("auth.reset.subtitle")}
+      aside={<AuthIntro />}
       footer={
-        <Link to="/signin" className="text-accent-text hover:underline">
+        <Link to="/signin" className="inline-flex min-h-6 items-center text-accent-text hover:underline">
           {t("auth.reset.backToSignin")}
         </Link>
       }

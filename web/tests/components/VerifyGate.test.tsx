@@ -20,7 +20,6 @@ const VERIFIED = {
   id: 1,
   email: "u@x.io",
   role: "user",
-  ocr_enabled: true,
   is_verified: true,
 } as User;
 const UNVERIFIED = { ...VERIFIED, is_verified: false } as User;

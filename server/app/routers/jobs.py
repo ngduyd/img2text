@@ -29,7 +29,6 @@ from app.core.deps import (
     get_current_user,
     get_runner_key,
     get_session_key,
-    require_ocr,
 )
 from app.core.limiter import DailyCounter, rate_limit_upload
 from app.core.models import (
@@ -189,9 +188,6 @@ def _validate_layout_style(style: dict) -> None:
             if not isinstance(value, bool):
                 raise bad()
 
-def _ocr_user(user: User = Depends(get_current_user)) -> User:
-    return require_ocr(user)
-
 # --- Presign: POST /api/jobs/presign (spec 2026-10-10, R2 direct upload) ---
 
 class PresignBody(BaseModel):
@@ -307,7 +303,7 @@ async def my_quota(
 @router.post("/api/jobs/presign")
 async def presign_upload(
     body: PresignBody,
-    user: User = Depends(_ocr_user),
+    user: User = Depends(get_current_user),
     storage: StorageDriver = Depends(get_storage),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -413,7 +409,7 @@ async def create_sample_job(
 async def create_job(
     request: Request,
     body: JobCreateBody,
-    user: User = Depends(_ocr_user),
+    user: User = Depends(get_current_user),
     _: None = Depends(rate_limit_upload),  # P2 #20: 30/giờ per user
     storage: StorageDriver = Depends(get_storage),
     session: AsyncSession = Depends(get_session),

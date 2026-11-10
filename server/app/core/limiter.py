@@ -99,6 +99,17 @@ def enforce_auth_target(request: Request, target: str) -> None:
             detail="Quá nhiều lần thử cho tài khoản này, thử lại sau ít phút.",
         )
 
+def clear_auth_target(request: Request, target: str) -> None:
+    """Xoá bộ đếm (IP+email) sau khi đăng nhập/xác thực THÀNH CÔNG.
+
+    Nếu chỉ đếm mà không xoá, người dùng đăng nhập đúng 10 lần trong 15 phút
+    (đổi máy, đăng xuất/đăng nhập) cũng bị khoá — chốt này để chống dò mật
+    khẩu, không phải chống sử dụng bình thường."""
+    limiter = getattr(request.app.state, "auth_target_limiter", None)
+    if limiter is None:
+        return
+    limiter._hits.pop(f"{client_ip(request)}|{target.strip().lower()}", None)
+
 def _per_user_key(request: Request) -> str:
     """P2 #20: key per-user (access cookie JWT sub); anonymous → fallback
     theo IP (endpoint auth đều đi qua get_current_user nên nhánh IP chỉ

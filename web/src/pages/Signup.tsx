@@ -1,11 +1,11 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { FileText, Languages, ShieldCheck } from "lucide-react";
 import { ApiError, api } from "../api/client";
 import { useT } from "../i18n";
 import { mapApiError } from "../lib/errors";
+import AuthIntro from "../components/AuthIntro";
 import AuthLayout from "../components/AuthLayout";
 import OAuthButtons from "../components/OAuthButtons";
 import Button from "../components/ui/Button";
@@ -13,32 +13,18 @@ import Input from "../components/ui/Input";
 
 const PASSWORD_MIN = 8;
 
-/** Panel giới thiệu: chỉ hiện ≥lg, để form vẫn là trung tâm ở màn hẹp. */
-function SignupAside() {
-  const { t } = useT();
-  const points = [
-    { icon: FileText, text: t("auth.signup.aside1") },
-    { icon: Languages, text: t("auth.signup.aside2") },
-    { icon: ShieldCheck, text: t("auth.signup.aside3") },
-  ];
-  return (
-    <div className="rounded-card border border-border bg-surface p-8">
-      <p className="text-xs font-medium uppercase tracking-wider text-accent-text">
-        img2text
-      </p>
-      <h2 className="mt-3 text-2xl font-bold leading-tight text-text">
-        {t("auth.signup.asideTitle")}
-      </h2>
-      <ul className="mt-6 flex flex-col gap-4">
-        {points.map(({ icon: Icon, text }) => (
-          <li key={text} className="flex gap-3 text-sm text-muted">
-            <Icon className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" aria-hidden="true" />
-            <span className="leading-relaxed">{text}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
+/** Login ngay sau register: chịu middleware 1s/request của /api/auth/* → thử
+ *  lại 1 lần sau 1,2s khi gặp 429 rate_limited. Các 429 khác trả nguyên. */
+async function loginAfterRegister(email: string, password: string) {
+  try {
+    return await api.login(email, password);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 429 && err.code === "rate_limited") {
+      await new Promise((r) => setTimeout(r, 1200));
+      return await api.login(email, password);
+    }
+    throw err;
+  }
 }
 
 export default function Register() {
@@ -54,31 +40,54 @@ export default function Register() {
   /** Bước 2: chỉ dùng khi server bật xác thực email (có SMTP). */
   const [step, setStep] = useState<"form" | "verify">("form");
   const [code, setCode] = useState("");
+  /** Đồng hồ gửi lại mã: mở bước 2 là bắt đầu 60s, hết mới bấm được. */
+  const [cooldown, setCooldown] = useState(0);
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
 
   const passwordTooShort = password.length > 0 && password.length < PASSWORD_MIN;
+
+  useEffect(() => {
+    if (step !== "verify" || cooldown <= 0) return;
+    const id = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [step, cooldown]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (passwordTooShort) return;
     setError(null);
     setLoading(true);
+    let registered = false;
     try {
       await api.register(email, password, true);
-      // S5: register KHÔNG set cookie → tự login lấy session.
-      const user = await api.login(email, password);
+      registered = true;
+      // S5: register KHÔNG set cookie → tự login lấy session. Server có
+      // middleware 1 giây/lần cho mỗi (IP + User-Agent) trên các route auth →
+      // login ngay sau register bị 429 {code:"rate_limited"}. Chờ 1,2s rồi thử
+      // lại MỘT lần thay vì báo lỗi cho người dùng vừa đăng ký xong.
+      const user = await loginAfterRegister(email, password);
       queryClient.setQueryData(["me"], user);
       if (user.is_verified === false) {
         // Có SMTP: sang bước nhập mã ngay tại đây (thay vì đẩy về "/" rồi mở
         // modal — user không hiểu vì sao bị chặn sau khi vừa đăng ký xong).
         setStep("verify");
+        setCooldown(60);
         toast.success(t("auth.signup.created"));
         return;
       }
       toast.success(t("auth.signup.created"));
       navigate("/jobs");
     } catch (err) {
+      // 429 có thể rơi vào bước login NGAY SAU register: tài khoản + email xác
+      // thực đã được tạo rồi, nên đừng để người dùng tưởng đăng ký thất bại
+      // (họ vẫn nhận được email — trước đây gây hiểu là "429 mà vẫn gửi mail").
+      if (registered && err instanceof ApiError && err.status === 429) {
+        // 429 ở bước login NGAY SAU register: tài khoản + email đã tạo thật.
+        toast.error(t("auth.signup.rateLimited"));
+        navigate("/signin");
+        return;
+      }
       setError(err instanceof ApiError ? err.detail : t("errors.generic"));
       toast.error(mapApiError(err));
     } finally {
@@ -92,6 +101,12 @@ export default function Register() {
     setVerifying(true);
     try {
       await api.verifyCode(code.trim());
+      // setQueryData trước invalidate: VerifyGate đọc cache ["me"], nếu chỉ
+      // invalidate thì trong lúc refetch nó vẫn thấy is_verified=false → bật lại
+      // modal mã xác nhận ngay sau khi vừa xác nhận xong.
+      queryClient.setQueryData(["me"], (u?: { is_verified?: boolean }) =>
+        u ? { ...u, is_verified: true } : u,
+      );
       await queryClient.invalidateQueries({ queryKey: ["me"] });
       toast.success(t("auth.verify.success"));
       navigate("/jobs");
@@ -110,6 +125,7 @@ export default function Register() {
     setResending(true);
     try {
       await api.verifyResend();
+      setCooldown(60);
       toast.success(t("auth.signup.verifySent"));
     } catch (err) {
       toast.error(mapApiError(err));
@@ -132,18 +148,32 @@ export default function Register() {
       <AuthLayout
         title={t("auth.signup.verifyTitle")}
         subtitle={t("auth.signup.verifySubtitle", { email })}
-        footer={footer}
+        footer={null}
+        aside={<AuthIntro />}
       >
         <form onSubmit={onVerify} className="flex flex-col gap-4">
-          <Input
-            label={t("auth.verify.codeLabel")}
-            testid="input-verify-code"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            maxLength={6}
-            value={code}
-            onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-          />
+          {/* Ô mã cỡ lớn, căn giữa, giãn chữ: 6 số đọc như một khối thay vì
+              dòng text bình thường (dễ đếm, dễ soát khi gõ sai). */}
+          <div className="flex flex-col gap-1">
+            <label htmlFor="input-verify-code" className="text-sm text-muted">
+              {t("auth.verify.codeLabel")}
+            </label>
+            <input
+              id="input-verify-code"
+              data-testid="input-verify-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
+              maxLength={6}
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+              aria-describedby="verify-help"
+              className="h-14 w-full rounded-sm border border-border bg-surface text-center font-mono text-2xl tracking-[0.5em] text-text tabular-nums"
+            />
+            <p id="verify-help" className="text-xs text-muted">
+              {t("auth.signup.verifyHelp")}
+            </p>
+          </div>
           {error && (
             <p data-testid="error-detail" role="alert" className="text-sm text-error">
               {error}
@@ -158,17 +188,34 @@ export default function Register() {
           >
             {t("auth.signup.verifySubmit")}
           </Button>
-          <Button
-            testid="btn-resend"
-            type="button"
-            variant="ghost"
-            size="sm"
-            loading={resending}
-            onClick={onResend}
-            className="w-full"
-          >
-            {t("auth.signup.verifyResend")}
-          </Button>
+          <div className="flex items-center justify-between gap-2">
+            <Button
+              testid="btn-resend"
+              type="button"
+              variant="ghost"
+              size="sm"
+              loading={resending}
+              disabled={cooldown > 0}
+              onClick={onResend}
+            >
+              {cooldown > 0
+                ? t("auth.signup.verifyResendIn", { s: cooldown })
+                : t("auth.signup.verifyResend")}
+            </Button>
+            <button
+              type="button"
+              data-testid="btn-change-email"
+              onClick={() => {
+                setStep("form");
+                setCode("");
+                setError(null);
+                setCooldown(0);
+              }}
+              className="inline-flex min-h-6 items-center text-sm text-accent-text hover:underline"
+            >
+              {t("auth.signup.changeEmail")}
+            </button>
+          </div>
         </form>
       </AuthLayout>
     );
@@ -179,11 +226,11 @@ export default function Register() {
       title={t("auth.signup.title")}
       subtitle={t("auth.signup.subtitle")}
       footer={footer}
-      aside={<SignupAside />}
+      aside={<AuthIntro />}
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         <Input
-          label="Email"
+          label={t("auth.email")}
           testid="input-email"
           type="email"
           autoComplete="email"
@@ -207,7 +254,9 @@ export default function Register() {
               onChange={(e) => setPassword(e.target.value)}
               aria-describedby="password-hint"
               aria-invalid={passwordTooShort || undefined}
-              className="h-10 w-full rounded-sm border border-border bg-surface px-3 pr-16 text-text placeholder:text-muted"
+              className={`h-10 w-full rounded-sm border bg-surface px-3 pr-16 text-text placeholder:text-muted ${
+                passwordTooShort ? "border-error" : "border-border"
+              }`}
             />
             <button
               type="button"
@@ -222,7 +271,7 @@ export default function Register() {
             data-testid="password-hint"
             className={`text-xs ${passwordTooShort ? "text-error" : "text-muted"}`}
           >
-            {t("auth.signup.passwordHint")}
+            {passwordTooShort ? t("auth.signup.passwordTooShort") : t("auth.signup.passwordHint")}
           </p>
         </div>
         {/* Spec 2026-11-04 (A2): bắt buộc đồng ý ToS — nút register khoá tới khi tick. */}

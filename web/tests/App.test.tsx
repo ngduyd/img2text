@@ -123,7 +123,6 @@ it("logged-in user at / still sees the Landing (trang chủ)", async () => {
     id: 1,
     email: "user@x.io",
     role: "user",
-    ocr_enabled: true,
   } as User);
   render(<App />);
   // Settle authed first: nav-avatar only renders once me resolves.
@@ -134,56 +133,24 @@ it("logged-in user at / still sees the Landing (trang chủ)", async () => {
   expect(window.location.pathname).toBe("/");
 });
 
-it("logged-out auth-zone (RIGHT) has btn-login + btn-register; NO left nav-link-login", async () => {
+it("logged-out auth-zone (RIGHT) has btn-login + nav-link-signup; NO left nav-link-login", async () => {
   // Realistic logged-out: /api/auth/me → 401 (data stays undefined).
   vi.mocked(api.me).mockRejectedValue(new ApiError("Unauthorized."));
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   render(<App />);
   const zone = within(await screen.findByTestId("auth-zone"));
   expect(await screen.findByTestId("btn-login")).toHaveTextContent("Sign in");
-  expect(zone.getByTestId("btn-register")).toHaveTextContent("Sign up");
+  expect(zone.getByTestId("nav-link-signup")).toHaveTextContent("Sign up");
   // Removed from left per binding contract — assertion moved here, not deleted.
   expect(screen.queryByTestId("nav-link-login")).not.toBeInTheDocument();
   expect(screen.queryByTestId("btn-logout")).not.toBeInTheDocument();
 });
 
-it("logged-in user sees badge-ocr success + avatar + profile + logout in auth-zone", async () => {
-  vi.mocked(api.me).mockResolvedValue({
-    id: 1,
-    email: "user@x.io",
-    role: "user",
-    ocr_enabled: true,
-  } as User);
-  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
-  render(<App />);
-  const zone = within(await screen.findByTestId("auth-zone"));
-  const avatar = await screen.findByTestId("nav-avatar");
-  expect(avatar).toHaveTextContent("US");
-  expect(avatar).toHaveAttribute("title", "user@x.io");
-  expect(avatar).toHaveAttribute("aria-expanded", "false");
-  expect(avatar).toHaveAttribute("aria-haspopup", "menu");
-  // Profile/logout live inside the dropdown — hidden until nav-avatar opens it.
-  expect(zone.queryByTestId("btn-profile")).not.toBeInTheDocument();
-  expect(zone.queryByTestId("btn-logout")).not.toBeInTheDocument();
-  await userEvent.click(avatar);
-  expect(avatar).toHaveAttribute("aria-expanded", "true");
-  const menu = screen.getByTestId("nav-user-menu");
-  expect(menu).toHaveTextContent("user@x.io");
-  expect(menu).toHaveTextContent("user");
-  // OCR status chuyển từ nav bar vào menu (SPEC-ui-redesign D2).
-  expect(within(menu).getByTestId("badge-ocr-menu")).toHaveTextContent("OCR enabled");
-  expect(within(menu).getByTestId("btn-profile")).toHaveTextContent("Profile");
-  expect(within(menu).getByTestId("btn-logout")).toHaveTextContent("Sign out");
-  expect(zone.queryByTestId("btn-login")).not.toBeInTheDocument();
-});
-
-/** Lane B Task 4: QuotaBadge mount vào AppNav (header) — quota → hiện, null → ẩn. */
 it("header renders quota-remaining when quota resolves; hidden when null", async () => {
   vi.mocked(api.me).mockResolvedValue({
     id: 1,
     email: "user@x.io",
     role: "user",
-    ocr_enabled: true,
   } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   vi.mocked(api.getMyQuota).mockResolvedValue({
@@ -202,24 +169,11 @@ it("header renders quota-remaining when quota resolves; hidden when null", async
   expect(badge).toHaveTextContent("110/150 this week");
 });
 
-it("user without OCR sees badge-ocr warning in auth-zone", async () => {
-  vi.mocked(api.me).mockResolvedValue({
-    id: 2,
-    email: "b@x.io",
-    role: "user",
-    ocr_enabled: false,
-  } as User);
-  vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
-  render(<App />);
-  expect(await screen.findByTestId("badge-ocr")).toHaveTextContent("Waiting for admin to grant OCR access");
-});
-
 it("admin sees BOTH nav-link-jobs and nav-link-admin (first-run upload path)", async () => {
   vi.mocked(api.me).mockResolvedValue({
     id: 3,
     email: "admin@x.io",
     role: "admin",
-    ocr_enabled: true,
   } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   render(<App />);
@@ -228,7 +182,7 @@ it("admin sees BOTH nav-link-jobs and nav-link-admin (first-run upload path)", a
 });
 
 it("logged-in user sees nav-link-jobs, NOT nav-link-admin", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   render(<App />);
   expect(await screen.findByTestId("nav-link-jobs")).toBeInTheDocument();
@@ -236,7 +190,7 @@ it("logged-in user sees nav-link-jobs, NOT nav-link-admin", async () => {
 });
 
 it("logged-in user sees btn-logout in dropdown; click calls api.logout and navigates to /signin", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, email: "user@x.io", role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, email: "user@x.io", role: "user" } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   vi.mocked(api.logout).mockResolvedValue({});
   render(<App />);
@@ -252,7 +206,6 @@ it("btn-profile inside dropdown links to /profile placeholder route", async () =
     id: 1,
     email: "user@x.io",
     role: "user",
-    ocr_enabled: true,
   } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   render(<App />);
@@ -266,7 +219,6 @@ it("user dropdown: nav-avatar opens nav-user-menu containing email + role", asyn
     id: 7,
     email: "menu@x.io",
     role: "user",
-    ocr_enabled: true,
   } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   render(<App />);
@@ -282,7 +234,6 @@ it("outside click closes the user dropdown menu (mousedown outside wrapper)", as
     id: 7,
     email: "menu@x.io",
     role: "user",
-    ocr_enabled: true,
   } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   render(<App />);
@@ -297,7 +248,6 @@ it("clicking nav-avatar again closes the dropdown (toggle)", async () => {
     id: 7,
     email: "menu@x.io",
     role: "user",
-    ocr_enabled: true,
   } as User);
   vi.mocked(api.listJobs).mockResolvedValue({ items: [], total: 0 });
   render(<App />);
@@ -310,7 +260,7 @@ it("clicking nav-avatar again closes the dropdown (toggle)", async () => {
 
 // P2: me → undefined (logout) must reset menuOpen; re-login must not auto-open menu.
 it("AuthZone: logout (me=undefined) resets menu open state for re-login", async () => {
-  const meUser = { id: 1, email: "user@x.io", role: "user", ocr_enabled: true } as User;
+  const meUser = { id: 1, email: "user@x.io", role: "user" } as User;
   const wrap = (me: User | undefined) => (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
@@ -507,7 +457,6 @@ it("AC8 (/legal): route công khai — render nội dung, KHÔNG bị VerifyGate
     id: 1,
     email: "u@x.io",
     role: "user",
-    ocr_enabled: false,
     is_verified: false,
   } as User);
   window.history.pushState({}, "", "/legal");

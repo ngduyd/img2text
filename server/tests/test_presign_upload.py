@@ -138,17 +138,6 @@ async def test_presign_rejects_invalid_mode(auth_client):
     assert r.status_code == 422
     assert r.json()["detail"] == "Chế độ xử lý không hợp lệ."
 
-async def test_presign_requires_ocr_enabled(client):
-    await client.post(
-        "/api/auth/register", json={"accept_tos": True, "email": "e@x.io", "password": "secret123"}
-    )
-    # P1-1: register không cookie → login để test ocr_enabled gate
-    await client.post(
-        "/api/auth/login", json={"email": "e@x.io", "password": "secret123"}
-    )
-    r = await client.post("/api/jobs/presign", json=_presign_body())
-    assert r.status_code == 403
-
 async def test_presign_failure_is_500(app, auth_client, monkeypatch):
     """presign_put fail (storage down) → 500, never a signed URL."""
     monkeypatch.setattr(

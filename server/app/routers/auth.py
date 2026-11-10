@@ -19,7 +19,7 @@ from app.services import email_sends
 from app.core.config import settings
 from app.core.db import get_session
 from app.core.deps import ACCESS_COOKIE, REFRESH_COOKIE, get_current_user
-from app.core.limiter import enforce_auth_target, rate_limit_auth
+from app.core.limiter import clear_auth_target, enforce_auth_target, rate_limit_auth
 from app.core.models import RefreshToken, User
 from app.core.security import (
     JWT_ISSUER,
@@ -123,7 +123,6 @@ class UserOut(BaseModel):
     id: int
     email: str
     role: str
-    ocr_enabled: bool
     # S5: gating 403 email_unverified đọc state này (web route guard)
     is_verified: bool
     # wave-5 S1: settings toggle + first-upload notice state (web đọc state)
@@ -133,7 +132,7 @@ class UserOut(BaseModel):
 
 def _user_out(user: User) -> UserOut:
     return UserOut(
-        id=user.id, email=user.email, role=user.role, ocr_enabled=user.ocr_enabled,
+        id=user.id, email=user.email, role=user.role,
         is_verified=user.is_verified,
         # legacy NULL (ALTER-only) → default theo spec
         auto_purge=user.auto_purge is not False,
@@ -189,9 +188,6 @@ async def register(
         email=creds.email,
         password_hash=hash_password(creds.password),
         is_verified=auto_verify,
-        # Chế độ tự phục vụ (demo: không SMTP) → cho OCR luôn, không phải chờ
-        # admin bật tay; có SMTP thì giữ nguyên hàng đợi duyệt như cũ.
-        ocr_enabled=auto_verify,
     )
     # Spec 2026-11-04 (A4): ghi nhận ToS đã đồng ý (version = settings hiện hành).
     user.tos_accepted_at = datetime.now(timezone.utc)
@@ -251,20 +247,27 @@ async def verify_email(
     """S5: hash compare + TTL 5p — sai/hết hạn → 422. Đúng →
     is_verified=true, xóa code (single-use). Gated user gọi được (exempt)."""
     enforce_auth_target(request, user.email)   # dò mã 6 số: 10 lần/15 phút/tài khoản
-    now = datetime.now(timezone.utc)
-    if (
-        user.email_verify_code_hash is None
-        or user.email_verify_expires_at is None
-        or user.email_verify_expires_at <= now
-        or not hmac.compare_digest(
-            user.email_verify_code_hash, hash_email_code(user.email, body.code)
+    # Atomic claim: 2 request song song cùng một mã thì chỉ MỘT UPDATE thắng
+    # (đọc-hash-rồi-set trên ORM sẽ cho cả hai đi qua).
+    claimed = await session.scalar(
+        update(User)
+        .where(
+            User.id == user.id,
+            User.email_verify_code_hash
+            == hash_email_code(user.email, body.code),
+            User.email_verify_expires_at > datetime.now(timezone.utc),
         )
-    ):
+        .values(
+            is_verified=True,
+            email_verify_code_hash=None,
+            email_verify_expires_at=None,
+        )
+        .returning(User.id)
+    )
+    if claimed is None:
         raise HTTPException(status_code=422, detail="invalid or expired code")
-    user.is_verified = True
-    user.email_verify_code_hash = None
-    user.email_verify_expires_at = None
     await session.commit()
+    clear_auth_target(request, user.email)
     return {}
 
 @router.post("/verify/resend", status_code=202)
@@ -309,6 +312,7 @@ async def login(
     user = await session.scalar(select(User).where(User.email == creds.email))
     if user is None or not verify_password(creds.password, user.password_hash):
         raise HTTPException(status_code=401, detail="invalid credentials")
+    clear_auth_target(request, creds.email)   # đăng nhập đúng → trả lại lượt
     token = create_access_token(sub=str(user.id), role=user.role)
     # Task 3 ponytail deferred refresh-cookie plumbing to Task 4: mint+store
     # refresh at login so the session has a rotatable refresh token.

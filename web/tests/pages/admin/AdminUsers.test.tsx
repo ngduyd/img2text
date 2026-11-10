@@ -36,7 +36,6 @@ const quotaUser = {
   id: 2,
   email: "a@x.io",
   role: "user",
-  ocr_enabled: true,
   daily_limit: 25,
   daily_used: 3,
   daily_remaining: 22,

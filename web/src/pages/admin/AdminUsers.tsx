@@ -1,4 +1,4 @@
-import { ScanText, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -15,21 +15,11 @@ import Skeleton from "../../components/ui/Skeleton";
 
 /** Admin user list — DESIGN.md §5 density 6: sticky thead (surface-2 + border-b),
  * divider rows (no zebra), mono IDs/dates, role badge, icon OCR toggle (44px,
- * title + aria). Testids R51: users-loading/empty, user-row-*, role-badge-*, toggle-ocr-*. */
+ * title + aria). Testids R51: users-loading/empty, user-row-*, role-badge-*. */
 export default function AdminUsers() {
   const { t } = useT();
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ["admin-users"], queryFn: () => api.adminListUsers(1) });
-
-  const patchUser = useMutation({
-    mutationFn: (vars: { id: number; ocr_enabled: boolean }) =>
-      api.adminPatchUser(vars.id, { ocr_enabled: vars.ocr_enabled }),
-    onSuccess: () => {
-      toast.success(translate("admin.users.updated"));
-      qc.invalidateQueries({ queryKey: ["admin-users"] });
-    },
-    onError: (err) => toast.error(mapApiError(err)),
-  });
 
   // WS-ADMIN T5: inline edit 2 limit (0–10000 — mirror server 422)
   const patchQuota = useMutation({
@@ -112,7 +102,6 @@ export default function AdminUsers() {
                   t("admin.users.colRole"),
                   t("admin.users.colCreated"),
                   t("admin.users.colQuota"),
-                  "OCR",
                 ].map((h) => (
                   <th
                     key={h}
@@ -126,7 +115,6 @@ export default function AdminUsers() {
             </thead>
             <tbody className="divide-y divide-border">
               {items.map((u: User) => {
-                const on = u.ocr_enabled;
                 return (
                   <tr
                     key={u.id}
@@ -207,23 +195,6 @@ export default function AdminUsers() {
                           {t("admin.users.saveQuota")}
                         </Button>
                       </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        data-testid={`toggle-ocr-${u.id}`}
-                        aria-pressed={on}
-                        aria-label={`OCR ${u.email}`}
-                        title={t(on ? "admin.users.ocrOff" : "admin.users.ocrOn", { email: u.email })}
-                        onClick={() => patchUser.mutate({ id: u.id, ocr_enabled: !on })}
-                        className={`inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center rounded-md border transition duration-150 ease-out active:-translate-y-px ${
-                          on
-                            ? "border-accent/40 bg-accent/10 text-accent-text"
-                            : "border-border bg-surface text-muted"
-                        }`}
-                      >
-                        <ScanText className="h-4 w-4" aria-hidden="true" />
-                      </button>
                     </td>
                   </tr>
                 );

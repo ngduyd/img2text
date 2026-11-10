@@ -22,6 +22,11 @@ export default function VerifyGate() {
 
   async function handleVerified() {
     setGated(false);
+    // Ghi cache trước: refetch là async, trong lúc chờ mà cache còn
+    // is_verified=false thì modal mã xác nhận hiện lại ngay sau khi vừa xác nhận.
+    queryClient.setQueryData(["me"], (u?: { is_verified?: boolean }) =>
+      u ? { ...u, is_verified: true } : u,
+    );
     await queryClient.invalidateQueries({ queryKey: ["me"] });
   }
 

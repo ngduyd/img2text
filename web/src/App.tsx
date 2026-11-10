@@ -6,7 +6,6 @@ import { Toaster, toast } from "sonner";
 import { api } from "./api/client";
 import type { User } from "./api/types";
 import ThemeToggle from "./components/ThemeToggle";
-import OcrBadge from "./components/OcrBadge";
 import LangSwitch from "./components/LangSwitch";
 import SiteFooter from "./components/SiteFooter";
 import VerifyGate from "./components/VerifyGate";
@@ -47,7 +46,7 @@ export function AuthZone({ me, onLogout }: { me: User | undefined; onLogout: () 
       <Link to="/signin" data-testid="btn-login" className={buttonClasses("primary", "sm")}>
         {t("nav.signIn")}
       </Link>
-      <Link to="/signup" data-testid="btn-register" className={buttonClasses("ghost", "sm")}>
+      <Link to="/signup" data-testid="nav-link-signup" className={buttonClasses("ghost", "sm")}>
         {t("nav.signUp")}
       </Link>
     </div>
@@ -93,8 +92,6 @@ function NavUser({ me, onLogout }: { me: User; onLogout: () => void }) {
           {quota.daily_remaining}/{quota.daily_limit}
         </span>
       )}
-      {/* Cảnh báo khi OCR chưa được cấp — trạng thái actionable duy nhất cần thấy ngay. */}
-      {!me.ocr_enabled && <OcrBadge enabled={false} />}
       <div ref={userRef} className="relative flex items-center">
         <button
           type="button"
@@ -131,10 +128,6 @@ function NavUser({ me, onLogout }: { me: User; onLogout: () => void }) {
             <div className="flex items-center justify-between gap-2 px-2 py-1 text-sm">
               <span className="text-muted">{t("nav.theme")}</span>
               <ThemeToggle />
-            </div>
-            <div className="flex items-center justify-between gap-2 px-2 py-1 text-sm">
-              <span className="text-muted">{t("nav.ocr")}</span>
-              <OcrBadge enabled={me.ocr_enabled} testid="badge-ocr-menu" />
             </div>
             <div className="my-1 border-t border-border" />
             <Link
@@ -377,6 +370,8 @@ export default function App() {
             theme={document.documentElement.classList.contains("dark") ? "dark" : "light"}
             position="top-right"
             richColors
+            offset={{ top: 72, right: 16 }}
+            mobileOffset={{ top: 72, right: 12, left: 12 }}
           />
           <Routes>
             <Route path="/signin" element={<Signin />} />

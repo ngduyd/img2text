@@ -11,7 +11,6 @@ vi.mock("../../api/client", () => ({
   api: {
     adminListUsers: (...a: unknown[]) => listUsers(...a),
     adminPatchQuota: (...a: unknown[]) => patchQuota(...a),
-    adminPatchUser: vi.fn(),
   },
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -20,7 +19,6 @@ const USER = {
   id: 2,
   email: "u@test.io",
   role: "user",
-  ocr_enabled: false,
   created_at: "2026-01-01T00:00:00Z",
   daily_limit: 25,
   daily_used: 0,

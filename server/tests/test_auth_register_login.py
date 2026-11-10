@@ -81,7 +81,6 @@ async def test_register_auto_verifies_when_smtp_missing(
     assert r.status_code == 201
     user = await db_session.scalar(select(User).where(User.email == "auto@x.io"))
     assert user.is_verified is True
-    assert user.ocr_enabled is True          # demo tự phục vụ: OCR bật luôn
     sent = await db_session.scalar(
         select(func.count()).select_from(EmailSend).where(EmailSend.user_id == user.id)
     )
@@ -123,3 +122,19 @@ async def test_login_rate_limited_per_account(client):
     assert codes[0] == 401
     assert codes[-1] == 429
     assert 429 in codes
+
+async def test_successful_login_clears_target_counter(client):
+    """Đăng nhập đúng phải trả lại lượt: nếu không, 10 lần login hợp lệ trong 15
+    phút (đổi máy, logout/login) cũng bị 429 oan.
+
+    12 lần > chốt 10/15' nên test này CHỈ xanh khi bộ đếm thật sự được xoá.
+    """
+    await client.post(
+        "/api/auth/register",
+        json={"email": "ok@x.io", "password": "pw-12345678", "accept_tos": True},
+    )
+    for n in range(12):
+        r = await client.post(
+            "/api/auth/login", json={"email": "ok@x.io", "password": "pw-12345678"}
+        )
+        assert r.status_code == 200, f"lần {n + 1}: {r.status_code} {r.text}"

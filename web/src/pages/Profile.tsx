@@ -3,7 +3,6 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ApiError, api } from "../api/client";
 import { mapApiError } from "../lib/errors";
-import OcrBadge from "../components/OcrBadge";
 import Badge from "../components/ui/Badge";
 import Button from "../components/ui/Button";
 import Card from "../components/ui/Card";
@@ -116,10 +115,6 @@ export default function Profile() {
               <Badge testid="profile-role" tone={me.role === "admin" ? "info" : "neutral"}>
                 {me.role === "admin" ? "Admin" : "User"}
               </Badge>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-muted">OCR:</span>
-              <OcrBadge enabled={me.ocr_enabled} testid="badge-ocr-profile" />
             </div>
             <div className="flex items-center gap-2">
               <span className="text-muted">ID:</span>

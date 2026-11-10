@@ -6,6 +6,16 @@ import re
 
 import pytest
 
+from app.core.config import settings
+
+@pytest.fixture(autouse=True)
+def _smtp_configured(monkeypatch):
+    """Cả file này kiểm luồng XÁC THỰC EMAIL (mã 6 số), nên server phải coi như
+    đã cấu hình SMTP. Thiếu fixture này, `smtp_host` rỗng → register tự verify
+    (chế độ demo) → không có mã nào được gửi, mọi test ở đây fail."""
+    monkeypatch.setattr(settings, "smtp_host", "smtp.test.local")
+    monkeypatch.setattr(settings, "auto_verify_email", False)
+
 async def test_user_defaults_unverified_no_codes(db_session):
     from app.core.models import User
 

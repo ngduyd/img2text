@@ -230,14 +230,6 @@ async def db_truncate(request):
                 )
     yield
 
-
-async def grant_ocr(session: AsyncSession, email: str) -> None:
-    """Ruling R10: enable ocr_enabled directly in DB (no admin HTTP flow)."""
-    await session.execute(
-        update(User).where(User.email == email).values(ocr_enabled=True)
-    )
-    await session.commit()
-
 @pytest_asyncio.fixture
 async def app():
     """create_app() with moto-backed S3 driver wired into app.state.storage."""
@@ -285,13 +277,12 @@ async def client(app):
 
 @pytest_asyncio.fixture
 async def auth_client(client, db_session):
-    """Ruling R10: fresh registered+logged-in user, ocr_enabled granted."""
+    """Fresh registered+logged-in user (gate OCR đã bỏ — không cần cấp quyền)."""
     email = f"u-{uuid4().hex}@test.io"
     r = await client.post(
         "/api/auth/register", json={"accept_tos": True, "email": email, "password": "secret123"}
     )
     assert r.status_code == 201, r.text
-    await grant_ocr(db_session, email)
     r = await client.post(
         "/api/auth/login", json={"email": email, "password": "secret123"}
     )

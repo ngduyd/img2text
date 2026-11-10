@@ -1,4 +1,4 @@
-"""Admin routers: users (list + ocr_enabled PATCH), stats, request-log
+"""Admin routers: users (list + quota PATCH), stats, request-log
 filter + safe tail. Job retry lives in jobs.py (POST /api/jobs/{id}/retry).
 """
 
@@ -13,7 +13,7 @@ import httpx
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from httpx import AsyncClient
-from pydantic import BaseModel, ConfigDict, StrictBool, StrictInt
+from pydantic import BaseModel, ConfigDict, StrictInt
 from sqlalchemy import Date, Float, and_, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -55,15 +55,11 @@ logger = logging.getLogger(__name__)
 def _admin_user(user: User = Depends(get_current_user)) -> User:
     return require_admin(user)
 
-class OcrPatch(BaseModel):
-    ocr_enabled: StrictBool  # StrictBool: "yes" must 422, not coerce to True
-
 def _user_json(u: User) -> dict:
     return {
         "id": u.id,
         "email": u.email,
         "role": u.role,
-        "ocr_enabled": u.ocr_enabled,
         "created_at": u.created_at.isoformat() if u.created_at else None,
     }
 
@@ -168,20 +164,6 @@ async def patch_user_quota(
     user.daily_page_limit = body.daily_page_limit
     user.weekly_page_limit = body.weekly_page_limit
     await session.commit()
-
-@router.patch("/users/{user_id}")
-async def patch_user(
-    user_id: int,
-    body: OcrPatch,
-    session: AsyncSession = Depends(get_session),
-    _: User = Depends(_admin_user),
-) -> dict:
-    user = await session.get(User, user_id)
-    if user is None:
-        raise HTTPException(status_code=404, detail="user not found")
-    user.ocr_enabled = body.ocr_enabled
-    await session.commit()
-    return _user_json(user)
 
 @router.post("/users/{user_id}/revoke-sessions", status_code=204)
 async def admin_revoke_sessions(

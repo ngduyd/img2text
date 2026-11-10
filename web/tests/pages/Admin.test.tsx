@@ -17,7 +17,6 @@ vi.mock("../../src/api/client", async (importOriginal) => {
       ...actual.api,
       me: vi.fn(),
       adminListUsers: vi.fn(),
-      adminPatchUser: vi.fn(),
       adminStats: vi.fn(),
       adminLogs: vi.fn(),
       adminLogsTail: vi.fn(),
@@ -49,7 +48,7 @@ function renderWithRouter(ui: ReactElement, { route = "/" } = {}) {
   });
 }
 
-const adminMe = { id: 1, role: "admin", ocr_enabled: true } as User;
+const adminMe = { id: 1, role: "admin" } as User;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -180,34 +179,25 @@ it("api tab aggregates paths client-side, collapsing numeric segments", async ()
   expect(within(loginRow).getAllByText("0")).toHaveLength(2);
 });
 
-it("users tab shows created_at and toggles ocr", async () => {
+it("users tab shows created_at (toggle OCR đã bỏ cùng gate OCR)", async () => {
   vi.mocked(api.me).mockResolvedValue(adminMe);
   vi.mocked(api.adminListUsers).mockResolvedValue({
     items: [
-      { id: 2, email: "a@x.io", role: "user", ocr_enabled: false, created_at: "2026-10-04T12:00:00Z" } as User,
+      { id: 2, email: "a@x.io", role: "user", created_at: "2026-10-04T12:00:00Z" } as User,
     ],
     total: 1,
   });
-  vi.mocked(api.adminPatchUser).mockResolvedValue({
-    id: 2,
-    email: "a@x.io",
-    role: "user",
-    ocr_enabled: true,
-    created_at: "2026-10-04T12:00:00Z",
-  } as User);
   renderWithRouter(<Admin />);
   const user = userEvent.setup();
   await user.click(await screen.findByTestId("tab-users"));
   expect(screen.getByText("Created")).toBeInTheDocument();
   expect(screen.getByText(/10\/4\/2026/)).toBeInTheDocument();
-  const toggle = await screen.findByTestId("toggle-ocr-2");
-  // ui-ux redo: role badge tone + icon toggle exposes pressed state (a11y)
+  // ui-ux redo: role badge tone
   expect(screen.getByTestId("role-badge-2")).toHaveAttribute("data-tone", "neutral");
   // Task 3: high-density rule — numeric ID column rendered mono (DESIGN.md §3)
   expect(screen.getByText("2")).toHaveClass("font-mono");
-  expect(toggle).toHaveAttribute("aria-pressed", "false");
-  await user.click(toggle);
-  expect(api.adminPatchUser).toHaveBeenCalledWith(2, { ocr_enabled: true });
+  // Gate OCR đã bỏ → không còn công tắc cấp quyền OCR trong bảng users
+  expect(screen.queryByTestId("toggle-ocr-2")).toBeNull();
 });
 
 it("stats tab renders cost column", async () => {
@@ -330,7 +320,7 @@ it("clicking rail users item mounts AdminUsers", async () => {
 });
 
 it("non-admin is redirected to trang chủ '/'", async () => {
-  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user", ocr_enabled: true } as User);
+  vi.mocked(api.me).mockResolvedValue({ id: 1, role: "user" } as User);
   renderWithRouter(<Admin />, { route: "/admin" });
   await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/"));
   expect(screen.queryByTestId("tab-users")).not.toBeInTheDocument();

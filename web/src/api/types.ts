@@ -6,7 +6,6 @@ export interface User {
   id: number;
   email: string;
   role: string;
-  ocr_enabled: boolean;
   /** S5: UserOut (login/me) trả; false → gating 403 + verify modal. Optional vì
    *  một số response/mock cũ không set. */
   is_verified?: boolean;

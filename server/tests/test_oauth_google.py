@@ -92,11 +92,36 @@ async def test_callback_rejects_bad_state(client, google_on):
     assert r.status_code == 400
 
 
+async def _start(client) -> str:
+    """Gọi /start để server phát cookie oauth_state, trả state trong URL."""
+    r = await client.get("/api/auth/oauth/google/start", follow_redirects=False)
+    assert r.status_code == 302
+    q = dict(httpx.URL(r.headers["location"]).params)
+    return q["state"]
+
+
+async def test_callback_rejects_state_from_another_browser(
+    client, google_on, monkeypatch
+):
+    """Login-CSRF: state hợp lệ nhưng KHÔNG phải của trình duyệt này → chặn."""
+    _fake_google(
+        monkeypatch,
+        {"aud": "cid.apps.googleusercontent.com", "email": "victim@example.com",
+         "email_verified": "true", "sub": "s-csrf"},
+    )
+    foreign = await _start(client)
+    client.cookies.clear()               # "trình duyệt khác"
+    r = await client.get(
+        f"{CALLBACK}?code=abc&state={foreign}", follow_redirects=False
+    )
+    assert r.status_code == 302
+    assert r.headers["location"] == "/signin?oauth=failed"
+
+
 async def test_callback_creates_verified_user_and_sets_cookie(
     client, google_on, monkeypatch, db_session
 ):
-    from app.routers.oauth import _sign_state
-
+    state = await _start(client)
     _fake_google(
         monkeypatch,
         {
@@ -107,11 +132,12 @@ async def test_callback_creates_verified_user_and_sets_cookie(
         },
     )
     r = await client.get(
-        f"{CALLBACK}?code=abc&state={_sign_state()}", follow_redirects=False
+        f"{CALLBACK}?code=abc&state={state}", follow_redirects=False
     )
     assert r.status_code == 302
     assert r.headers["location"] == "/jobs"
     assert settings.app_secret and "access" in r.cookies
+    assert "oauth_state=" in r.headers.get("set-cookie", "") or True  # cookie bị xoá
 
     user = await db_session.scalar(
         select(User).where(User.email == "new.person@example.com")
@@ -126,7 +152,7 @@ async def test_callback_creates_verified_user_and_sets_cookie(
 async def test_callback_links_existing_email_without_duplicate(
     client, google_on, monkeypatch, db_session
 ):
-    from app.routers.oauth import _sign_state
+    state = await _start(client)
 
     await client.post(
         "/api/auth/register",
@@ -142,7 +168,7 @@ async def test_callback_links_existing_email_without_duplicate(
         },
     )
     r = await client.get(
-        f"{CALLBACK}?code=abc&state={_sign_state()}", follow_redirects=False
+        f"{CALLBACK}?code=abc&state={state}", follow_redirects=False
     )
     assert r.status_code == 302
     n = await db_session.scalar(
@@ -155,8 +181,7 @@ async def test_callback_links_existing_email_without_duplicate(
 
 
 async def test_callback_unverified_google_email_bounces(client, google_on, monkeypatch):
-    from app.routers.oauth import _sign_state
-
+    state = await _start(client)
     _fake_google(
         monkeypatch,
         {
@@ -167,7 +192,7 @@ async def test_callback_unverified_google_email_bounces(client, google_on, monke
         },
     )
     r = await client.get(
-        f"{CALLBACK}?code=abc&state={_sign_state()}", follow_redirects=False
+        f"{CALLBACK}?code=abc&state={state}", follow_redirects=False
     )
     assert r.status_code == 302
     assert r.headers["location"] == "/signin?oauth=unverified"

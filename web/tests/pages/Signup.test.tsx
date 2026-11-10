@@ -68,7 +68,6 @@ it("submit gửi accept_tos: true", async () => {
     id: 1,
     email: "t@x.io",
     role: "user",
-    ocr_enabled: false,
     is_verified: false,
   } as User);
   renderSignup();

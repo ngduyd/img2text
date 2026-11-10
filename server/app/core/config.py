@@ -122,6 +122,9 @@ class Settings(BaseSettings):
     # bị 403 email_unverified vĩnh viễn. True = tự verify ngay khi đăng ký
     # (demo/dev). Khi smtp_host rỗng thì luôn tự verify dù cờ này false.
     auto_verify_email: bool = False
+    # Danh sách CIDR proxy được tin để đọc X-Forwarded-For (mặc định: loopback +
+    # mạng riêng Docker/k8s). Rỗng → dùng mặc định trong core/net.py.
+    trusted_proxies: str = ""
     # OAuth (Google). Bỏ trống client_id → nút đăng nhập Google bị ẩn/501.
     google_client_id: str = ""
     google_client_secret: str = ""

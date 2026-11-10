@@ -131,7 +131,7 @@ async def test_response_shape_equals_me(auth_client):
     assert me.status_code == 200, me.text
     assert r.json() == me.json()
     assert set(r.json()) == {
-        "id", "email", "role", "ocr_enabled", "is_verified",
+        "id", "email", "role", "is_verified",
         # wave-5 S1
         "auto_purge", "purge_notice_seen",
     }

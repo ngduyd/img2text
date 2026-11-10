@@ -34,8 +34,7 @@
     "features": "Tính năng",
     "storage": "Dung lượng",
     "language": "Ngôn ngữ",
-    "theme": "Giao diện",
-    "ocr": "OCR"
+    "theme": "Giao diện"
   },
   "status": {
     "queued": "Đang lập lịch",
@@ -59,10 +58,6 @@
     "filePurged": "File gốc đã bị xoá theo chính sách lưu trữ.",
     "tos_required": "Cần đồng ý điều khoản sử dụng để đăng ký.",
     "rate_limited": "Thao tác quá nhanh, thử lại sau 1 giây."
-  },
-  "ocr": {
-    "enabled": "OCR đã cấp",
-    "pending": "Chờ admin cấp quyền"
   },
   "issues": {
     "cropAria": "Cắt vùng {rid}"
@@ -119,6 +114,7 @@
       "unverified": "Email Google của bạn chưa được xác thực."
     },
     "signup": {
+      "rateLimited": "Tài khoản đã được tạo nhưng đăng nhập đang bị giới hạn tạm thời. Thử đăng nhập lại sau ít phút — nếu đã nhận email xác thực thì dùng mã trong email.",
       "aside1": "Giữ cấu trúc: đoạn, tiêu đề, bảng, danh sách — không phải một mớ chữ phẳng.",
       "aside2": "Sửa một chỗ, xuất lại md / docx / pdf khớp bản gốc.",
       "aside3": "Không cần GPU: xem kết quả mẫu trước, cắm worker sau.",
@@ -137,7 +133,11 @@
       "created": "Tài khoản đã được tạo. Nhập mã xác minh.",
       "tosPrefix": "Tôi đồng ý với",
       "tosLink": "điều khoản sử dụng",
-      "tosRequired": "Bạn cần đồng ý điều khoản sử dụng để đăng ký."
+      "tosRequired": "Bạn cần đồng ý điều khoản sử dụng để đăng ký.",
+      "changeEmail": "Đổi email khác",
+      "verifyResendIn": "Gửi lại mã sau {s}s",
+      "passwordTooShort": "Mật khẩu cần ít nhất 8 ký tự.",
+      "verifyHelp": "Mã gồm 6 chữ số. Không thấy email? Kiểm tra mục Spam hoặc đổi email bên dưới."
     },
     "forgot": {
       "title": "Quên mật khẩu",
@@ -171,7 +171,8 @@
       "mismatch": "Mật khẩu nhập lại không khớp.",
       "submit": "Đặt lại mật khẩu",
       "backToSignin": "Quay lại đăng nhập"
-    }
+    },
+    "email": "Email"
   },
   "jd": {
     "title": "Chi tiết công việc",
@@ -481,7 +482,6 @@
       "to": "Đến"
     },
     "users": {
-      "updated": "Đã cập nhật.",
       "quotaInvalid": "Giới hạn phải là số nguyên trong khoảng 0–10000.",
       "emptyTitle": "Chưa có người dùng",
       "emptyBody": "Người dùng mới sẽ xuất hiện tại đây sau khi đăng ký.",
@@ -494,9 +494,7 @@
       "colWeekly": "Tuần",
       "quotaDaily": "{used}/{limit} hôm nay (còn {remaining})",
       "quotaWeekly": "{used}/{limit} tuần (còn {remaining})",
-      "saveQuota": "Lưu quota",
-      "ocrOn": "Bật OCR cho {email}",
-      "ocrOff": "Tắt OCR cho {email}"
+      "saveQuota": "Lưu quota"
     },
     "workers": {
       "queue": "Hàng đợi:",
@@ -704,8 +702,6 @@
       "chipDone": "Hoàn tất",
       "chipFailed": "Thất bại"
     },
-    "deniedTitle": "Chờ admin cấp quyền",
-    "deniedHint": "Môi trường dev: đăng nhập tài khoản admin → mục Người dùng → bật OCR cho tài khoản này.",
     "uploadQueued": "Đã tải lên — đang chờ xử lý.",
     "countingPages": "Đang đếm trang...",
     "selectAll": "Chọn cả trang",

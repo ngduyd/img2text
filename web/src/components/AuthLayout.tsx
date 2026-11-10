@@ -21,14 +21,14 @@ export default function AuthLayout({
 }: AuthLayoutProps) {
   const { t } = useT();
   return (
-    <main id="main" className="flex min-h-dvh flex-col justify-center px-4 py-10">
-      <div className="mx-auto flex w-full max-w-sm flex-col lg:max-w-4xl lg:flex-row lg:items-center lg:gap-16">
+    <main id="main" className="flex min-h-dvh flex-col justify-start px-4 pt-10 pb-10 lg:pt-24">
+      <div className="mx-auto flex w-full max-w-sm flex-col lg:max-w-4xl lg:flex-row lg:items-start lg:gap-16">
         {aside && (
-          <div className="hidden flex-1 lg:block" data-testid="auth-aside">
+          <div className="hidden flex-1 lg:block lg:pt-2" data-testid="auth-aside">
             {aside}
           </div>
         )}
-        <div className="w-full lg:max-w-sm">
+        <div className="w-full lg:max-w-sm" data-testid="auth-card">
         <Link
           to="/"
           className="mb-6 flex items-center justify-center gap-2"

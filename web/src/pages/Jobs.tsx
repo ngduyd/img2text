@@ -61,9 +61,6 @@ export default function Jobs() {
       q.state.data?.items.some((j) => PENDING_STATUSES.includes(j.status)) ? 3000 : false,
   });
   // Upload flow (spec U1-U3): Gửi → SubmitModal (mode+format) → merge → presign (R2) → tạo job.
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: api.me });
-  // ponytail: gate only after me resolves — server enforces anyway.
-  const denied = me !== undefined && !(me?.ocr_enabled ?? false);
   // "uploading" = POST form → storage (XHR progress), "counting" = pdf.js đếm trang.
   const [phase, setPhase] = useState<"idle" | "uploading" | "counting">("idle");
   const [percent, setPercent] = useState(0);
@@ -195,17 +192,6 @@ export default function Jobs() {
       </div>
 
       {/* Spec U3: Gửi → modal mode/format; U1: multi-file cards + crop/page-select. */}
-      {denied && (
-        <div
-          data-testid="banner-no-access"
-          className="mb-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-warning"
-        >
-          {t("jobs.deniedTitle")}
-          <p className="mt-1 text-xs">
-            {t("jobs.deniedHint")}
-          </p>
-        </div>
-      )}
       {uploadError && (
         <div
           data-testid="upload-error"
@@ -237,7 +223,6 @@ export default function Jobs() {
         </p>
       )}
       <MultiFileUpload
-        disabled={denied}
         beforeSubmit={
           () =>
             new Promise<boolean>((res) => {

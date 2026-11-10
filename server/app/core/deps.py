@@ -60,11 +60,6 @@ def require_admin(user: User) -> User:
     return user
 
 
-def require_ocr(user: User) -> User:
-    if not user.ocr_enabled:
-        raise HTTPException(status_code=403, detail="Chưa được cấp quyền OCR.")
-    return user
-
 
 def get_runner_key(request: Request) -> str:
     auth = request.headers.get("Authorization", "")
