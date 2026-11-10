@@ -29,11 +29,13 @@ services:
     # urllib raises on non-200 (503 from /healthz) → exit 1.
     healthcheck:
       test:
-        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
       interval: 30s
       timeout: 5s
-      retries: 3
-      start_period: 15s
+      retries: 5
+      # 15s là quá ngắn: lần boot đầu còn create_all + apply_migrations, chưa
+      # kể pull image chậm → container bị đánh unhealthy dù đang khởi động đúng.
+      start_period: 60s
     # Single uvicorn worker by design — in-process rate limits assume it.
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
@@ -50,7 +52,9 @@ services:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
       interval: 30s
       timeout: 5s
-      retries: 3
+      retries: 5
+      # /healthz là proxy sang server:8000 → phải chờ server+DB sẵn sàng
+      start_period: 60s
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ../web/dist:/usr/share/nginx/html:ro
