@@ -1,6 +1,10 @@
 # MEMORY
 
 ## Now
+- 2026-11-10 · **Phát hành v0.3.2**: tag → CD `42770848524` success (ci server/web/worker + docker).
+  Image `img2text-server:v0.3.2` + `img2text-web:v0.3.2` (+`:latest`) đã có trên DockerHub.
+  Trên VM: đặt `IMG_TAG=v0.3.2` + `GOOGLE_CLIENT_ID/SECRET` rồi `up -d`; migration
+  `2026-11-09_proofread_error.sql` + `2026-11-10_oauth.sql` tự chạy lúc boot (apply_migrations).
 - 2026-11-10 · **Bỏ gate OCR + review vòng 2**: xoá `require_ocr`/`_ocr_user`, route PATCH
   `ocr_enabled`, `OcrBadge` + badge/banner trong UI, `UserOut.ocr_enabled`; GIỮ cột DB (không
   migration). Sửa luôn 3 bug thật tìm được khi review: (1) `Jobs.tsx` còn `disabled={denied}` →
