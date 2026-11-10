@@ -76,6 +76,21 @@ cd .. && cp deploy/.env.example deploy/.env       # điền APP_SECRET, RUNNER_K
 docker compose -f deploy/docker-compose.yml up -d --build
 ```
 
+Hoặc **chỉ kéo image dựng sẵn** (host không cần Node/Python toolchain — mỗi git tag
+`v*` CD đẩy `img2text-server` + `img2text-web` lên DockerHub):
+
+```bash
+cp deploy/.env.example deploy/.env    # điền secrets + IMG_TAG=v0.3.0 + WEB_PORT
+docker compose -f deploy/docker-compose.images.yml up -d
+```
+
+Migration vẫn chạy tay trên DB đã có (create_all không ALTER), ví dụ:
+
+```bash
+docker compose -f deploy/docker-compose.images.yml exec -T postgres \
+  psql -U img2text -d img2text < docs/migrations/2026-11-09_proofread_error.sql
+```
+
 - Nginx phục vụ `web/dist` + proxy `/api/`, listen HTTP :80 (TLS do proxy ngoài
   terminate), có healthcheck cho cả server và nginx.
 - **Một uvicorn worker theo thiết kế** — rate limit trong process (auth

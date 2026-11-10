@@ -1,15 +1,26 @@
 # img2text prod stack — PREBUILT IMAGES (không build trên host).
-#   cp deploy/.env.example deploy/.env   # điền secrets, ENV=prod
+#
+#   cp deploy/.env.example deploy/.env      # điền secrets, ENV=prod
 #   docker compose -f deploy/docker-compose.images.yml up -d
-# UI: image web tĩnh (SPA nginx) + mount deploy/nginx.conf edge
+#
+# Vì sao có file này: `deploy/docker-compose.yml` build từ source (cần Node/Python
+# toolchain trên host). File này chỉ kéo image đã CI build sẵn (tag = git tag),
+# nên host chỉ cần Docker.
+#
+# UI: image web tĩnh (SPA nginx) + mount source `deploy/nginx.conf` làm edge
 #     (SPA fallback + /api proxy → server:8000 + /healthz + security headers).
+#     Mount conf thay vì tin conf trong image để sửa edge không cần build lại.
+#
+# Nâng version: đổi IMG_TAG trong .env (`IMG_TAG=v0.3.0`) hoặc `... up -d` sau khi
+# đổi ở đây — cả 2 image dùng CÙNG tag để không lệch schema/contract.
+
 services:
   postgres:
     image: docker.io/library/postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: img2text
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set trong .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set trong deploy/.env}
       POSTGRES_DB: img2text
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -20,7 +31,7 @@ services:
       retries: 15
 
   server:
-    image: docker.io/ngduyd/img2text-server:v0.1.0
+    image: docker.io/ngduyd/img2text-server:${IMG_TAG:-v0.3.0}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -43,18 +54,22 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
   web:
-    image: docker.io/ngduyd/img2text-web:v0.1.0
+    image: docker.io/ngduyd/img2text-web:${IMG_TAG:-v0.3.0}
     restart: unless-stopped
     ports:
-      - "18080:80"   # 80 đã có portfolio trên host
+      # WEB_PORT trong .env: host đã dùng 80 (portfolio…) thì đặt 18080.
+      - "${WEB_PORT:-80}:80"
     volumes:
-      # Edge config: SPA + /api + /healthz proxy → server:8000 (thay nginx.conf tĩnh trong image)
+      # Edge config: SPA + /api + /healthz proxy → server:8000 (thay nginx.conf
+      # tĩnh trong image). Đường dẫn tương đối theo thư mục file compose = deploy/.
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       server:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/healthz"]
+      # 127.0.0.1 chứ không "localhost": busybox wget resolve localhost → ::1
+      # trước, mà nginx `listen 80` chỉ mở IPv4 → healthcheck fail vĩnh viễn.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
